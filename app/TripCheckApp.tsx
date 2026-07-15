@@ -92,23 +92,6 @@ export default function TripCheckApp() {
     };
   }, []);
 
-  useEffect(() => {
-    const nodes = document.querySelectorAll<HTMLElement>(".reveal");
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            entry.target.classList.add("is-visible");
-            observer.unobserve(entry.target);
-          }
-        });
-      },
-      { rootMargin: "0px 0px -10%", threshold: 0.1 },
-    );
-    nodes.forEach((node) => observer.observe(node));
-    return () => observer.disconnect();
-  }, [locale, analysis]);
-
   function loadSample() {
     setItinerary(t.sample);
     setHasChecked(false);
