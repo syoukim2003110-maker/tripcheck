@@ -29,9 +29,13 @@ test("server-renders the TripCheck landing experience", async () => {
 
   const html = await response.text();
   assert.match(html, /<title>TripCheck Japan — AI Itinerary Reality Check<\/title>/i);
-  assert.match(html, /But will it actually work\?/);
+  assert.match(html, /Reality may disagree\./);
   assert.match(html, /Reality-check my trip/);
-  assert.match(html, /Facts decide\. AI explains\./);
+  assert.match(html, /Facts decide\./);
+  assert.match(html, /AI explains\./);
+  assert.match(html, /English/);
+  assert.match(html, /日本語/);
+  assert.match(html, /한국어/);
+  assert.match(html, /简体中文/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Your site is taking shape/i);
 });
-

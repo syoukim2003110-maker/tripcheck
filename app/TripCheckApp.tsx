@@ -1,327 +1,367 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { copy, localeLabels, type Locale } from "../lib/i18n";
 import {
   analyzeTrip,
   type Pace,
   type Severity,
-  type TripAnalysis,
 } from "../lib/trip-analysis";
 
-const sampleItinerary = `Day 1
-08:30 Tsukiji Outer Market
-10:30 teamLab Planets
-13:00 Senso-ji and Asakusa
-15:30 Ghibli Museum
-18:00 Shibuya Sky
-20:00 Golden Gai, Shinjuku
+const localeOrder: Locale[] = ["en", "ja", "ko", "zh"];
 
-Day 2
-09:00 Meiji Jingu
-11:00 Harajuku
-14:00 Akihabara
-17:00 Tokyo Skytree`;
+function IssueMark({ kind }: { kind: Severity }) {
+  return <span className={`issue-glyph ${kind}`} aria-hidden="true">{kind === "note" ? "i" : "!"}</span>;
+}
 
-const severityLabels: Record<Severity, string> = {
-  critical: "Must fix",
-  warning: "At risk",
-  note: "Worth knowing",
-};
-
-function Mark({ kind }: { kind: Severity }) {
-  if (kind === "critical") {
-    return (
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M12 3 2.8 20h18.4L12 3Z" />
-        <path d="M12 8.2v5.8M12 17.2h.01" />
-      </svg>
-    );
-  }
-
-  if (kind === "warning") {
-    return (
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <circle cx="12" cy="12" r="9" />
-        <path d="M12 7.5v6M12 16.8h.01" />
-      </svg>
-    );
-  }
-
+function Brand() {
   return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <circle cx="12" cy="12" r="9" />
-      <path d="M12 10.5v6M12 7.2h.01" />
-    </svg>
+    <span className="brand-lockup">
+      <span className="brand-symbol" aria-hidden="true"><i /></span>
+      <span>TripCheck <b>Japan</b></span>
+    </span>
   );
 }
 
 export default function TripCheckApp() {
+  const [locale, setLocale] = useState<Locale>("en");
   const [itinerary, setItinerary] = useState("");
   const [pace, setPace] = useState<Pace>("balanced");
-  const [travelMonth, setTravelMonth] = useState("October");
-  const [analysis, setAnalysis] = useState<TripAnalysis | null>(null);
+  const [monthIndex, setMonthIndex] = useState(9);
+  const [hasChecked, setHasChecked] = useState(false);
   const [isChecking, setIsChecking] = useState(false);
+  const [navCompact, setNavCompact] = useState(false);
+  const heroRef = useRef<HTMLElement>(null);
+  const t = copy[locale];
+
+  const analysis = useMemo(
+    () => (hasChecked ? analyzeTrip(itinerary, pace, locale) : null),
+    [hasChecked, itinerary, locale, pace],
+  );
 
   const characterCount = itinerary.length;
   const canCheck = itinerary.trim().length >= 30 && !isChecking;
-  const scoreTone = useMemo(() => {
-    if (!analysis) return "";
-    return analysis.score < 60 ? "score-low" : "score-mid";
-  }, [analysis]);
+
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem("tripcheck-locale") as Locale | null;
+      if (stored && localeOrder.includes(stored)) {
+        window.setTimeout(() => setLocale(stored), 0);
+      }
+    } catch {
+      // Language persistence is optional.
+    }
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.lang = locale === "zh" ? "zh-CN" : locale;
+    try {
+      window.localStorage.setItem("tripcheck-locale", locale);
+    } catch {
+      // The interface still works without storage.
+    }
+  }, [locale]);
+
+  useEffect(() => {
+    let frame = 0;
+    const update = () => {
+      const hero = heroRef.current;
+      if (hero) {
+        const rect = hero.getBoundingClientRect();
+        const distance = Math.max(1, rect.height - window.innerHeight);
+        const progress = Math.min(1, Math.max(0, -rect.top / distance));
+        hero.style.setProperty("--hero-progress", progress.toFixed(3));
+      }
+      setNavCompact(window.scrollY > 30);
+      frame = 0;
+    };
+    const onScroll = () => {
+      if (!frame) frame = window.requestAnimationFrame(update);
+    };
+    update();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
+      if (frame) window.cancelAnimationFrame(frame);
+    };
+  }, []);
+
+  useEffect(() => {
+    const nodes = document.querySelectorAll<HTMLElement>(".reveal");
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("is-visible");
+            observer.unobserve(entry.target);
+          }
+        });
+      },
+      { rootMargin: "0px 0px -12%", threshold: 0.12 },
+    );
+    nodes.forEach((node) => observer.observe(node));
+    return () => observer.disconnect();
+  }, [locale, analysis]);
 
   function loadSample() {
-    setItinerary(sampleItinerary);
-    setAnalysis(null);
+    setItinerary(t.sample);
+    setHasChecked(false);
+    window.setTimeout(() => document.getElementById("trip-input")?.focus(), 30);
   }
 
   function runCheck() {
     if (!canCheck) return;
     setIsChecking(true);
     window.setTimeout(() => {
-      setAnalysis(analyzeTrip(itinerary, pace));
+      setHasChecked(true);
       setIsChecking(false);
       window.setTimeout(() => {
-        document
-          .getElementById("analysis-result")
-          ?.scrollIntoView({ behavior: "smooth", block: "start" });
-      }, 50);
-    }, 520);
+        document.getElementById("analysis-result")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 80);
+    }, 720);
   }
 
   return (
-    <main>
-      <header className="site-header">
-        <a className="brand" href="#top" aria-label="TripCheck Japan home">
-          <span className="brand-mark" aria-hidden="true">
-            T<span>✓</span>
-          </span>
-          <span>
-            TripCheck
-            <small>JAPAN</small>
-          </span>
-        </a>
-        <nav aria-label="Main navigation">
-          <a href="#how-it-works">How it works</a>
-          <a href="#trust">Trust & data</a>
-          <span className="beta-pill">
-            <i /> Tokyo beta
-          </span>
-        </nav>
+    <main className="experience" data-locale={locale}>
+      <header className={`global-nav ${navCompact ? "is-compact" : ""}`}>
+        <div className="nav-inner">
+          <a href="#top" aria-label="TripCheck Japan home"><Brand /></a>
+          <nav aria-label="Main navigation">
+            <a href="#method">{t.nav.method}</a>
+            <a href="#trust">{t.nav.trust}</a>
+            <span className="beta-badge"><i />{t.nav.beta}</span>
+          </nav>
+          <label className="locale-switcher">
+            <span className="sr-only">{t.languageLabel}</span>
+            <span aria-hidden="true">◎</span>
+            <select value={locale} onChange={(event) => setLocale(event.target.value as Locale)} aria-label={t.languageLabel}>
+              {localeOrder.map((option) => <option value={option} key={option}>{localeLabels[option]}</option>)}
+            </select>
+          </label>
+        </div>
       </header>
 
-      <section className="hero" id="top">
-        <div className="hero-kicker">
-          <span>AI itinerary reality check</span>
-          <span className="kicker-line" />
-          <span>01 · Tokyo</span>
-        </div>
-        <h1>
-          Your Japan itinerary looks good.
-          <em>But will it actually work?</em>
-        </h1>
-        <p className="hero-copy">
-          Paste the plan you made with ChatGPT, Gemini, a spreadsheet, or your own
-          notes. We&apos;ll find the impossible jumps, fragile reservations, and
-          exhausting days—then rebuild it around reality.
-        </p>
-        <div className="trust-strip" aria-label="Product principles">
-          <span><b>01</b> No account</span>
-          <span><b>02</b> Reasons, not magic</span>
-          <span><b>03</b> You keep the final say</span>
+      <section className="cinematic-hero" id="top" ref={heroRef}>
+        <div className="hero-sticky">
+          <div className="hero-aurora" aria-hidden="true" />
+          <div className="hero-copy-block">
+            <p className="hero-eyebrow"><span />{t.hero.eyebrow}</p>
+            <h1>
+              <span>{t.hero.line1}</span>
+              <strong>{t.hero.line2}</strong>
+            </h1>
+            <p className="hero-body">{t.hero.body}</p>
+            <a className="hero-cta" href="#checker">{t.hero.cta}<span aria-hidden="true">↓</span></a>
+          </div>
+
+          <div className="hero-product" aria-label="Animated itinerary analysis preview">
+            <div className="map-stage">
+              <div className="map-grid" />
+              <div className="route-stroke route-one" />
+              <div className="route-stroke route-two" />
+              <span className="map-district district-one">ASAKUSA</span>
+              <span className="map-district district-two">MITAKA</span>
+              <span className="map-district district-three">SHIBUYA</span>
+              <span className="map-node node-one"><i />08:30</span>
+              <span className="map-node node-two conflict"><i />15:30</span>
+              <span className="map-node node-three"><i />18:00</span>
+              <div className="conflict-wave" />
+            </div>
+            <div className="floating-plan-card">
+              <p>{t.visual.draft}<span>Day 1</span></p>
+              <ol>
+                <li><time>08:30</time><span>Tsukiji</span></li>
+                <li><time>13:00</time><span>Asakusa</span></li>
+                <li className="is-conflict"><time>15:30</time><span>Ghibli Museum</span></li>
+                <li><time>18:00</time><span>Shibuya Sky</span></li>
+              </ol>
+            </div>
+            <div className="floating-status-card">
+              <span className="status-orb" />
+              <p><b>{t.visual.checking}</b><small>{t.visual.rebuild}</small></p>
+            </div>
+            <div className="floating-warning-card">
+              <span>!</span><p><b>{t.visual.conflict}</b><small>{t.visual.reservation}</small></p>
+            </div>
+          </div>
+
+          <p className="scroll-cue"><span />{t.hero.scroll}</p>
         </div>
       </section>
 
-      <section className="checker-shell" aria-label="Itinerary checker">
-        <div className="checker-head">
-          <div>
-            <span className="step-number">01</span>
-            <div>
-              <p className="overline">Paste your draft</p>
-              <h2>What are you trying to fit in?</h2>
-            </div>
+      <section className="story-section" id="method">
+        <div className="story-inner">
+          <p className="section-eyebrow reveal">{t.story.eyebrow}</p>
+          <h2 className="display-title reveal"><span>{t.story.title}</span><strong>{t.story.accent}</strong></h2>
+          <p className="story-body reveal">{t.story.body}</p>
+          <div className="metric-row">
+            {t.story.metrics.map((metric, index) => (
+              <article className="metric-card reveal" style={{ transitionDelay: `${index * 90}ms` }} key={metric.value}>
+                <strong>{metric.value}</strong><span>{metric.label}</span>
+              </article>
+            ))}
           </div>
-          <button className="sample-button" onClick={loadSample} type="button">
-            Load a messy example <span>↗</span>
-          </button>
+        </div>
+      </section>
+
+      <section className="friction-section">
+        <div className="friction-orb" aria-hidden="true" />
+        <div className="friction-inner">
+          <p className="section-eyebrow reveal">{t.friction.eyebrow}</p>
+          <div className="friction-heading">
+            <h2 className="reveal">{t.friction.title}</h2>
+            <p className="reveal">{t.friction.body}</p>
+          </div>
+          <div className="friction-cards">
+            {t.friction.cards.map((card, index) => (
+              <article className="friction-card reveal" style={{ transitionDelay: `${index * 100}ms` }} key={card.number}>
+                <span>{card.number}</span>
+                <div className={`friction-icon icon-${index + 1}`} aria-hidden="true"><i /><i /><i /></div>
+                <h3>{card.title}</h3><p>{card.body}</p>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="checker-section" id="checker">
+        <div className="checker-intro reveal">
+          <p className="section-eyebrow">{t.checker.eyebrow}</p>
+          <h2>{t.checker.title}</h2>
+          <p>{t.checker.body}</p>
         </div>
 
-        <div className="input-tabs" role="tablist" aria-label="Input type">
-          <button className="active" role="tab" aria-selected="true" type="button">
-            Itinerary text
-          </button>
-          <button role="tab" aria-selected="false" type="button" disabled>
-            Saved places <span>Soon</span>
-          </button>
-        </div>
-
-        <label className="textarea-frame">
-          <span className="sr-only">Paste your itinerary</span>
-          <textarea
-            value={itinerary}
-            onChange={(event) => {
-              setItinerary(event.target.value);
-              setAnalysis(null);
-            }}
-            placeholder={`Day 1\n09:00 Senso-ji\n11:30 teamLab…\n\nPaste any format. Rough notes are fine.`}
-            rows={11}
-          />
-          <span className="character-count">{characterCount.toLocaleString()} / 8,000</span>
-        </label>
-
-        <div className="preferences">
-          <label>
-            <span>Travel month</span>
-            <select
-              value={travelMonth}
-              onChange={(event) => setTravelMonth(event.target.value)}
-            >
-              {[
-                "January", "February", "March", "April", "May", "June",
-                "July", "August", "September", "October", "November", "December",
-              ].map((month) => <option key={month}>{month}</option>)}
-            </select>
+        <div className="checker-console reveal">
+          <div className="console-topbar">
+            <div className="console-lights" aria-hidden="true"><i /><i /><i /></div>
+            <button className="sample-link" onClick={loadSample} type="button">{t.checker.sample}<span>↗</span></button>
+          </div>
+          <div className="console-tabs" role="tablist" aria-label="Input type">
+            <button className="active" role="tab" aria-selected="true" type="button">{t.checker.itinerary}</button>
+            <button role="tab" aria-selected="false" type="button" disabled>{t.checker.saved}<small>{t.checker.soon}</small></button>
+          </div>
+          <label className="itinerary-input" htmlFor="trip-input">
+            <span className="sr-only">{t.checker.inputLabel}</span>
+            <span className="line-numbers" aria-hidden="true">01<br />02<br />03<br />04<br />05<br />06<br />07<br />08</span>
+            <textarea
+              id="trip-input"
+              value={itinerary}
+              onChange={(event) => { setItinerary(event.target.value); setHasChecked(false); }}
+              placeholder={t.checker.placeholder}
+              rows={11}
+              maxLength={8000}
+            />
+            <span className="character-count">{characterCount.toLocaleString(locale)} / 8,000</span>
           </label>
-          <fieldset>
-            <legend>Your pace</legend>
-            <div className="pace-control">
-              {(["relaxed", "balanced", "fast"] as Pace[]).map((option) => (
-                <button
-                  className={pace === option ? "active" : ""}
-                  key={option}
-                  onClick={() => setPace(option)}
-                  type="button"
-                >
-                  {option[0].toUpperCase() + option.slice(1)}
-                </button>
-              ))}
-            </div>
-          </fieldset>
-          <button
-            className="check-button"
-            disabled={!canCheck}
-            onClick={runCheck}
-            type="button"
-          >
-            {isChecking ? "Checking the joins…" : "Reality-check my trip"}
-            <span aria-hidden="true">→</span>
-          </button>
+          <div className="console-controls">
+            <label className="select-field">
+              <span>{t.checker.travelMonth}</span>
+              <select value={monthIndex} onChange={(event) => setMonthIndex(Number(event.target.value))}>
+                {t.months.map((month, index) => <option value={index} key={month}>{month}</option>)}
+              </select>
+            </label>
+            <fieldset className="pace-field">
+              <legend>{t.checker.pace}</legend>
+              <div>
+                {(["relaxed", "balanced", "fast"] as Pace[]).map((option) => (
+                  <button className={pace === option ? "active" : ""} key={option} onClick={() => setPace(option)} type="button">{t.pace[option]}</button>
+                ))}
+              </div>
+            </fieldset>
+            <button className="check-button" disabled={!canCheck} onClick={runCheck} type="button">
+              <span>{isChecking ? t.checker.checking : t.checker.button}</span><b aria-hidden="true">→</b>
+            </button>
+          </div>
+          <p className="prototype-note"><b>{t.checker.prototype}</b>{t.checker.prototypeBody}</p>
         </div>
-        <p className="prototype-note">
-          <span>Prototype</span> This version uses illustrative local rules. It does
-          not yet verify live opening hours, tickets, weather, or train routes.
-        </p>
       </section>
 
       {analysis ? (
-        <section className="results" id="analysis-result" aria-live="polite">
-          <div className="result-lead">
-            <div className={`score-ring ${scoreTone}`}>
-              <span>{analysis.score}</span>
-              <small>/ 100</small>
+        <section className="results-section" id="analysis-result" aria-live="polite">
+          <div className="result-hero reveal">
+            <div className={`reality-gauge ${analysis.score < 60 ? "is-low" : ""}`}>
+              <span>{analysis.score}</span><small>{t.result.score}</small>
             </div>
             <div>
-              <p className="overline">Reality score · {travelMonth} · {pace} pace</p>
-              <h2>{analysis.headline}</h2>
-              <p>{analysis.subhead}</p>
+              <p className="section-eyebrow">{t.result.eyebrow} · {t.months[monthIndex]} · {t.pace[pace]}</p>
+              <h2>{analysis.headline}</h2><p>{analysis.subhead}</p>
             </div>
           </div>
-
-          <div className="summary-grid">
-            <div><strong>{analysis.criticalCount}</strong><span>must-fix conflicts</span></div>
-            <div><strong>{analysis.warningCount}</strong><span>fragile assumptions</span></div>
-            <div><strong>{analysis.hiddenTransit}</strong><span>estimated hidden transit</span></div>
+          <div className="result-stats reveal">
+            <div><strong>{analysis.criticalCount}</strong><span>{t.result.critical}</span></div>
+            <div><strong>{analysis.warningCount}</strong><span>{t.result.warning}</span></div>
+            <div><strong>{analysis.hiddenTransit}</strong><span>{t.result.transit}</span></div>
           </div>
-
-          <div className="result-grid">
-            <div className="issues-column">
-              <div className="section-title">
-                <span>02</span>
-                <div><p className="overline">What breaks</p><h2>Fix these first</h2></div>
-              </div>
+          <div className="result-layout">
+            <div className="issue-column">
+              <div className="column-heading reveal"><p>{t.result.issuesEyebrow}</p><h3>{t.result.issuesTitle}</h3></div>
               <div className="issue-list">
                 {analysis.issues.map((issue, index) => (
-                  <article className={`issue-card ${issue.severity}`} key={`${issue.title}-${index}`}>
-                    <div className="issue-icon"><Mark kind={issue.severity} /></div>
+                  <article className={`issue-card reveal ${issue.severity}`} style={{ transitionDelay: `${index * 70}ms` }} key={`${issue.title}-${index}`}>
+                    <IssueMark kind={issue.severity} />
                     <div>
-                      <div className="issue-meta">
-                        <span>{severityLabels[issue.severity]}</span>
-                        <span>{issue.eyebrow}</span>
-                        <span>{issue.confidence} confidence</span>
-                      </div>
-                      <h3>{issue.title}</h3>
-                      <p>{issue.detail}</p>
-                      <div className="issue-action"><b>Better move</b>{issue.action}</div>
+                      <div className="issue-meta"><span>{t.result.severity[issue.severity]}</span><span>{issue.eyebrow}</span><span>{t.result.confidence[issue.confidence]}</span></div>
+                      <h4>{issue.title}</h4><p>{issue.detail}</p>
+                      <div className="issue-action"><b>{t.result.action}</b><span>{issue.action}</span></div>
                     </div>
                   </article>
                 ))}
               </div>
             </div>
-
-            <aside className="revision-column">
-              <div className="section-title">
-                <span>03</span>
-                <div><p className="overline">One better version</p><h2>Same trip, calmer order</h2></div>
-              </div>
-              <p className="revision-intro">
-                We moved the day—not your priorities. Fixed reservations become
-                anchors; flexible stops become options.
-              </p>
+            <aside className="revision-panel reveal">
+              <p className="section-eyebrow">{t.result.revisedEyebrow}</p>
+              <h3>{t.result.revisedTitle}</h3><p className="revision-intro">{t.result.revisedIntro}</p>
               <div className="day-list">
                 {analysis.revisedDays.map((day) => (
                   <article className="day-card" key={day.day}>
-                    <header>
-                      <div><span>{day.day}</span><h3>{day.theme}</h3></div>
-                      <em>{day.load}</em>
-                    </header>
+                    <header><div><span>{day.day}</span><h4>{day.theme}</h4></div><em>{t.result.load[day.load]}</em></header>
                     <ol>
                       {day.stops.map((stop, index) => (
-                        <li key={`${stop.name}-${index}`}>
-                          <time>{stop.time}</time>
-                          <span><b>{stop.name}</b>{stop.note && <small>{stop.note}</small>}</span>
-                        </li>
+                        <li key={`${stop.name}-${index}`}><time>{stop.time}</time><span><b>{stop.name}</b>{stop.note && <small>{stop.note}</small>}</span></li>
                       ))}
                     </ol>
                   </article>
                 ))}
               </div>
-              <button className="secondary-button" type="button" disabled>
-                Save this revision <span>Coming next</span>
-              </button>
+              <button className="save-button" type="button" disabled>{t.result.save}<span>{t.result.coming}</span></button>
             </aside>
           </div>
         </section>
       ) : null}
 
-      <section className="how-it-works" id="how-it-works">
-        <div className="section-title light">
-          <span>04</span>
-          <div><p className="overline">Not another travel chatbot</p><h2>Facts decide. AI explains.</h2></div>
-        </div>
-        <div className="principle-grid">
-          <article><b>01</b><h3>Parse the mess</h3><p>AI turns rough notes into structured days, times, and candidate places.</p></article>
-          <article><b>02</b><h3>Check the constraints</h3><p>Deterministic rules test geography, time, reservations, load, and freshness.</p></article>
-          <article><b>03</b><h3>Explain every trade-off</h3><p>You see why something moved, what remains uncertain, and how to put it back.</p></article>
+      <section className="method-section">
+        <div className="method-inner">
+          <p className="section-eyebrow reveal">{t.method.eyebrow}</p>
+          <h2 className="display-title reveal"><span>{t.method.title}</span><strong>{t.method.accent}</strong></h2>
+          <div className="method-cards">
+            {t.method.cards.map((card, index) => (
+              <article className="method-card reveal" style={{ transitionDelay: `${index * 90}ms` }} key={card.number}>
+                <span>{card.number}</span><h3>{card.title}</h3><p>{card.body}</p>
+              </article>
+            ))}
+          </div>
         </div>
       </section>
 
       <section className="trust-section" id="trust">
-        <p className="overline">Built for earned trust</p>
-        <h2>We would rather say “unverified” than invent certainty.</h2>
-        <div className="trust-grid">
-          <p><span>A</span><b>Verified constraints</b>Editorially checked attractions with a source and freshness date.</p>
-          <p><span>B</span><b>Volatile places</b>Restaurants and shops stay soft warnings unless recently confirmed.</p>
-          <p><span>C</span><b>Your unknowns</b>We keep unfamiliar places in the plan and label what we cannot yet prove.</p>
+        <div className="trust-inner">
+          <p className="section-eyebrow reveal">{t.trust.eyebrow}</p>
+          <h2 className="reveal">{t.trust.title}</h2>
+          <div className="trust-cards">
+            {t.trust.cards.map((card, index) => (
+              <article className="trust-card reveal" style={{ transitionDelay: `${index * 90}ms` }} key={card.letter}>
+                <span>{card.letter}</span><div><h3>{card.title}</h3><p>{card.body}</p></div>
+              </article>
+            ))}
+          </div>
         </div>
       </section>
 
-      <footer>
-        <a className="brand inverse" href="#top">
-          <span className="brand-mark">T<span>✓</span></span>
-          <span>TripCheck<small>JAPAN</small></span>
-        </a>
-        <p>Working prototype · Tokyo only · Live data connection comes next.</p>
+      <footer className="site-footer">
+        <a href="#top"><Brand /></a><p>{t.footer}</p>
       </footer>
     </main>
   );
 }
-

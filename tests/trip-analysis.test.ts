@@ -46,3 +46,31 @@ test("labels unmatched input as prototype coverage instead of inventing facts", 
   assert.match(result.issues[0].title, /live verification is still required/i);
 });
 
+test("recognises and explains the Japanese sample in Japanese", () => {
+  const result = analyzeTrip(
+    `1日目\n09:00 浅草寺\n13:00 三鷹の森ジブリ美術館\n18:00 渋谷スカイ`,
+    "balanced",
+    "ja",
+  );
+
+  assert.ok(result.criticalCount >= 2);
+  assert.match(result.headline, /今の順番/);
+  assert.match(result.issues[0].title, /浅草からジブリ美術館/);
+  assert.equal(result.revisedDays[0].day, "1日目");
+});
+
+test("recognises Korean and Chinese day headings", () => {
+  const korean = analyzeTrip(
+    `1일차\n09:00 아사쿠사\n14:00 지브리 미술관`,
+    "balanced",
+    "ko",
+  );
+  const chinese = analyzeTrip(
+    `第1天\n09:00 浅草寺\n14:00 三鹰之森吉卜力美术馆`,
+    "balanced",
+    "zh",
+  );
+
+  assert.match(korean.issues[0].title, /아사쿠사/);
+  assert.match(chinese.issues[0].title, /浅草/);
+});
