@@ -68,6 +68,8 @@ export default function TripCheckApp() {
 
   useEffect(() => {
     let frame = 0;
+    document.documentElement.classList.add("motion-ready");
+
     const update = () => {
       const hero = heroRef.current;
       if (hero) {
@@ -76,6 +78,14 @@ export default function TripCheckApp() {
         const progress = Math.min(1, Math.max(0, -rect.top / distance));
         hero.style.setProperty("--hero-progress", progress.toFixed(3));
       }
+
+      document.querySelectorAll<HTMLElement>(".reveal:not(.is-visible)").forEach((node) => {
+        const rect = node.getBoundingClientRect();
+        if (rect.top < window.innerHeight * 0.88 && rect.bottom > -80) {
+          node.classList.add("is-visible");
+        }
+      });
+
       setNavCompact(window.scrollY > 24);
       frame = 0;
     };
@@ -88,6 +98,7 @@ export default function TripCheckApp() {
     return () => {
       window.removeEventListener("scroll", onScroll);
       window.removeEventListener("resize", onScroll);
+      document.documentElement.classList.remove("motion-ready");
       if (frame) window.cancelAnimationFrame(frame);
     };
   }, []);
@@ -112,6 +123,11 @@ export default function TripCheckApp() {
 
   return (
     <main className="experience" data-locale={locale}>
+      <div className="opening-splash" aria-hidden="true">
+        <Brand />
+        <span>ITINERARY / REALITY / TOKYO</span>
+      </div>
+
       <header className={`global-nav ${navCompact ? "is-compact" : ""}`}>
         <a href="#top" aria-label="TripCheck Japan home"><Brand /></a>
         <nav aria-label="Main navigation">
@@ -153,7 +169,23 @@ export default function TripCheckApp() {
             <span>GEOGRAPHY / TIME / CERTAINTY</span>
             <span>{t.hero.scroll} ↓</span>
           </div>
+
+          <div className="hero-threshold" aria-hidden="true">
+            <span>ENTER</span>
+            <strong>TOKYO</strong>
+          </div>
         </div>
+      </section>
+
+      <section className="visual-portal visual-portal-geography" aria-label={t.friction.cards[0].title}>
+        <img src="/chapter-geography-v3.webp" alt="A folded-paper Tokyo route connecting distant landmarks" />
+        <div className="portal-shade" aria-hidden="true" />
+        <div className="portal-caption reveal">
+          <span>01 / GEOGRAPHY</span>
+          <h2>{t.friction.cards[0].title}</h2>
+          <p>{t.friction.cards[0].body}</p>
+        </div>
+        <div className="portal-scroll" aria-hidden="true">SCROLL / 02 ↓</div>
       </section>
 
       <section className="manifesto-section" id="method">
@@ -188,6 +220,13 @@ export default function TripCheckApp() {
           </div>
           <p className="reveal">{t.friction.body}</p>
         </header>
+        <figure className="chapter-visual chapter-visual-time reveal">
+          <img src="/chapter-time-v3.webp" alt="A sculptural clock crossed by a Tokyo rail line" />
+          <figcaption>
+            <span>02 / TIME</span>
+            <strong>{t.friction.cards[1].title}</strong>
+          </figcaption>
+        </figure>
         <div className="criteria-list">
           {t.friction.cards.map((card, index) => (
             <article className="criterion reveal" style={{ transitionDelay: `${index * 70}ms` }} key={card.number}>
@@ -321,6 +360,13 @@ export default function TripCheckApp() {
           <p className="section-eyebrow reveal">06 / {t.trust.eyebrow}</p>
           <h2 className="reveal">{t.trust.title}</h2>
         </header>
+        <figure className="chapter-visual chapter-visual-certainty reveal">
+          <img src="/chapter-certainty-v3.webp" alt="Three sculptural frames representing verified, volatile, and unknown information" />
+          <figcaption>
+            <span>03 / CERTAINTY</span>
+            <strong>{t.friction.cards[2].title}</strong>
+          </figcaption>
+        </figure>
         <div className="trust-list">
           {t.trust.cards.map((card, index) => (
             <article className="trust-row reveal" style={{ transitionDelay: `${index * 70}ms` }} key={card.letter}>

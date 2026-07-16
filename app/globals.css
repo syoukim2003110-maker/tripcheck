@@ -1,6 +1,9 @@
 @import "tailwindcss";
 
 :root {
+  --font-body: "Noto Sans JP";
+  --font-display-latin: "Archivo Black";
+  --font-display-cjk: "Dela Gothic One";
   --paper: #f2efe6;
   --paper-deep: #e7e2d6;
   --ink: #171715;
@@ -24,7 +27,7 @@ html {
 body {
   background: var(--paper);
   color: var(--ink);
-  font-family: var(--font-geist-sans), "Helvetica Neue", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+  font-family: var(--font-body), "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
   margin: 0;
   overflow-x: hidden;
   text-rendering: optimizeLegibility;
@@ -69,6 +72,69 @@ select:focus-visible {
 .experience {
   background: var(--paper);
   min-height: 100vh;
+}
+
+.hero-title-block h1,
+.portal-caption h2,
+.chapter-visual figcaption strong,
+.manifesto-copy h2,
+.criteria-heading h2,
+.criterion h3,
+.checker-heading h2,
+.result-head h2,
+.column-heading h3,
+.revision-panel > h3,
+.method-title h2,
+.method-row h3,
+.trust-section header h2,
+.trust-row h3 {
+  font-family: var(--font-display-latin), Impact, sans-serif;
+  font-weight: 400;
+}
+
+.experience[data-locale="ja"] :is(.hero-title-block h1, .portal-caption h2, .chapter-visual figcaption strong, .manifesto-copy h2, .criteria-heading h2, .criterion h3, .checker-heading h2, .result-head h2, .column-heading h3, .revision-panel > h3, .method-title h2, .method-row h3, .trust-section header h2, .trust-row h3),
+.experience[data-locale="ko"] :is(.hero-title-block h1, .portal-caption h2, .chapter-visual figcaption strong, .manifesto-copy h2, .criteria-heading h2, .criterion h3, .checker-heading h2, .result-head h2, .column-heading h3, .revision-panel > h3, .method-title h2, .method-row h3, .trust-section header h2, .trust-row h3),
+.experience[data-locale="zh"] :is(.hero-title-block h1, .portal-caption h2, .chapter-visual figcaption strong, .manifesto-copy h2, .criteria-heading h2, .criterion h3, .checker-heading h2, .result-head h2, .column-heading h3, .revision-panel > h3, .method-title h2, .method-row h3, .trust-section header h2, .trust-row h3) {
+  font-family: var(--font-display-cjk), var(--font-body), sans-serif;
+  font-weight: 400;
+}
+
+.opening-splash {
+  align-items: end;
+  animation: opening-splash-out 1.35s cubic-bezier(0.76, 0, 0.24, 1) 0.25s forwards;
+  background: var(--blue);
+  color: var(--paper);
+  display: flex;
+  inset: 0;
+  justify-content: space-between;
+  padding: 34px 36px;
+  pointer-events: none;
+  position: fixed;
+  z-index: 500;
+}
+
+.opening-splash::before {
+  background: var(--red);
+  content: "";
+  height: 7px;
+  left: 36px;
+  position: absolute;
+  right: 36px;
+  top: 34px;
+  transform-origin: left;
+}
+
+.opening-splash > span:last-child {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 9px;
+  letter-spacing: 0.14em;
+}
+
+@keyframes opening-splash-out {
+  0% { clip-path: inset(0 0 0 0); opacity: 1; visibility: visible; }
+  78% { clip-path: inset(0 0 0 0); opacity: 1; }
+  99% { clip-path: inset(0 0 100% 0); opacity: 1; visibility: visible; }
+  100% { clip-path: inset(0 0 100% 0); opacity: 0; visibility: hidden; }
 }
 
 .experience[data-locale="ja"],
@@ -228,7 +294,7 @@ select:focus-visible {
 
 .editorial-hero {
   --hero-progress: 0;
-  height: 155vh;
+  height: 182vh;
   position: relative;
 }
 
@@ -266,10 +332,11 @@ select:focus-visible {
 
 .hero-title-block {
   left: 36px;
+  opacity: clamp(0.16, calc(1 - var(--hero-progress) * 1.18), 1);
   position: absolute;
   right: 36px;
   top: 14vh;
-  transform: translateY(calc(var(--hero-progress) * -7vh));
+  transform: translateY(calc(var(--hero-progress) * -11vh));
   z-index: 3;
 }
 
@@ -297,7 +364,6 @@ select:focus-visible {
 
 .hero-title-block h1 {
   font-size: clamp(62px, 9.4vw, 154px);
-  font-weight: 730;
   letter-spacing: -0.078em;
   line-height: 0.8;
   margin: 24px 0 0;
@@ -321,7 +387,7 @@ select:focus-visible {
   height: min(69vw, 820px);
   position: absolute;
   right: -2vw;
-  transform: translate3d(calc(var(--hero-progress) * -4vw), calc(var(--hero-progress) * -6vh), 0) rotate(calc(-5deg + var(--hero-progress) * 9deg)) scale(calc(0.82 + var(--hero-progress) * 0.17));
+  transform: translate3d(calc(var(--hero-progress) * -7vw), calc(var(--hero-progress) * -10vh), 0) rotate(calc(-5deg + var(--hero-progress) * 13deg)) scale(calc(0.82 + var(--hero-progress) * 0.3));
   transform-origin: 58% 55%;
   width: min(74vw, 1100px);
   z-index: 2;
@@ -371,6 +437,7 @@ select:focus-visible {
   bottom: 85px;
   left: 36px;
   max-width: 330px;
+  opacity: clamp(0, calc(1 - var(--hero-progress) * 1.7), 1);
   position: absolute;
   transform: translateY(calc(var(--hero-progress) * 18px));
   z-index: 4;
@@ -430,16 +497,129 @@ select:focus-visible {
   text-align: right;
 }
 
+.hero-threshold {
+  align-items: center;
+  color: var(--ink);
+  display: flex;
+  flex-direction: column;
+  inset: 0;
+  justify-content: center;
+  opacity: clamp(0, calc((var(--hero-progress) - 0.55) * 4.5), 1);
+  pointer-events: none;
+  position: absolute;
+  transform: translateY(calc(46px - var(--hero-progress) * 46px));
+  z-index: 5;
+}
+
+.hero-threshold span {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 9px;
+  letter-spacing: 0.24em;
+  margin-bottom: 10px;
+}
+
+.hero-threshold strong {
+  color: var(--paper);
+  font-family: var(--font-display-latin), Impact, sans-serif;
+  font-size: clamp(78px, 15vw, 240px);
+  font-weight: 400;
+  letter-spacing: -0.07em;
+  line-height: 0.78;
+  mix-blend-mode: difference;
+}
+
 .reveal {
   clip-path: none;
   opacity: 1;
   transform: none;
 }
 
+.motion-ready .reveal {
+  clip-path: inset(0 0 108% 0);
+  opacity: 0;
+  transform: translateY(44px);
+  transition: opacity 700ms cubic-bezier(0.22, 1, 0.36, 1), transform 950ms cubic-bezier(0.22, 1, 0.36, 1), clip-path 950ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.motion-ready .reveal.is-visible,
 .reveal.is-visible {
-  clip-path: none;
+  clip-path: inset(0 0 0 0);
   opacity: 1;
   transform: none;
+}
+
+.visual-portal {
+  background: var(--blue-dark);
+  color: var(--paper);
+  height: 100svh;
+  min-height: 680px;
+  overflow: hidden;
+  position: relative;
+}
+
+.visual-portal > img {
+  height: 100%;
+  object-fit: cover;
+  position: absolute;
+  transform: scale(1.035);
+  width: 100%;
+}
+
+.portal-shade {
+  background: linear-gradient(180deg, rgba(8, 20, 58, 0.02) 30%, rgba(8, 20, 58, 0.72) 100%);
+  inset: 0;
+  position: absolute;
+}
+
+.portal-caption {
+  bottom: 52px;
+  left: 36px;
+  max-width: 760px;
+  position: absolute;
+  z-index: 2;
+}
+
+.portal-caption > span,
+.portal-scroll,
+.chapter-visual figcaption span {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.portal-caption h2 {
+  font-size: clamp(76px, 11.5vw, 176px);
+  letter-spacing: -0.065em;
+  line-height: 0.82;
+  margin: 16px 0 22px;
+}
+
+.portal-caption p {
+  font-size: 14px;
+  line-height: 1.6;
+  margin: 0;
+  max-width: 430px;
+}
+
+.portal-scroll {
+  position: absolute;
+  right: 36px;
+  top: 35px;
+  z-index: 2;
+}
+
+@supports (animation-timeline: view()) {
+  .visual-portal > img {
+    animation: portal-image-drift linear both;
+    animation-range: cover 0% cover 100%;
+    animation-timeline: view();
+  }
+}
+
+@keyframes portal-image-drift {
+  from { transform: scale(1.08) translateY(-2%); }
+  to { transform: scale(1.16) translateY(3%); }
 }
 
 .manifesto-section {
@@ -597,6 +777,70 @@ select:focus-visible {
   line-height: 1.6;
   margin: 0;
   max-width: 420px;
+}
+
+.chapter-visual {
+  height: min(76vh, 820px);
+  margin: 0 0 110px;
+  min-height: 520px;
+  overflow: hidden;
+  position: relative;
+}
+
+.chapter-visual img {
+  height: 100%;
+  object-fit: cover;
+  transition: transform 1.4s cubic-bezier(0.22, 1, 0.36, 1);
+  width: 100%;
+}
+
+.chapter-visual:hover img {
+  transform: scale(1.025);
+}
+
+.chapter-visual figcaption {
+  align-items: end;
+  bottom: 0;
+  color: var(--paper);
+  display: flex;
+  justify-content: space-between;
+  left: 0;
+  padding: 34px 36px;
+  position: absolute;
+  right: 0;
+  isolation: isolate;
+  z-index: 2;
+}
+
+.chapter-visual figcaption::before {
+  background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.68));
+  bottom: 0;
+  content: "";
+  height: 180px;
+  left: 0;
+  position: absolute;
+  right: 0;
+  z-index: -1;
+}
+
+.chapter-visual figcaption strong {
+  font-size: clamp(48px, 7vw, 106px);
+  letter-spacing: -0.06em;
+  line-height: 0.86;
+  max-width: 58%;
+  text-align: right;
+}
+
+.chapter-visual-certainty {
+  margin-bottom: 105px;
+}
+
+.chapter-visual-certainty figcaption {
+  color: var(--ink);
+}
+
+.chapter-visual-certainty figcaption::before {
+  background: linear-gradient(180deg, transparent, rgba(242, 239, 230, 0.82));
 }
 
 .criteria-list {
@@ -1359,6 +1603,23 @@ select:focus-visible {
   padding-bottom: 8px;
 }
 
+.hero-title-block h1,
+.portal-caption h2,
+.chapter-visual figcaption strong,
+.manifesto-copy h2,
+.criteria-heading h2,
+.criterion h3,
+.checker-heading h2,
+.result-head h2,
+.column-heading h3,
+.revision-panel > h3,
+.method-title h2,
+.method-row h3,
+.trust-section header h2,
+.trust-row h3 {
+  font-weight: 400;
+}
+
 @media (max-width: 980px) {
   .global-nav {
     padding: 0 22px;
@@ -1400,6 +1661,14 @@ select:focus-visible {
     height: 70vw;
     right: -9vw;
     width: 88vw;
+  }
+
+  .visual-portal {
+    min-height: 620px;
+  }
+
+  .chapter-visual {
+    min-height: 460px;
   }
 
   .manifesto-section,
@@ -1450,6 +1719,20 @@ select:focus-visible {
 }
 
 @media (max-width: 720px) {
+  .opening-splash {
+    padding: 24px 16px;
+  }
+
+  .opening-splash::before {
+    left: 16px;
+    right: 16px;
+    top: 22px;
+  }
+
+  .opening-splash > span:last-child {
+    display: none;
+  }
+
   .global-nav {
     height: 62px;
     padding: 0 16px;
@@ -1460,7 +1743,7 @@ select:focus-visible {
   }
 
   .editorial-hero {
-    height: 145vh;
+    height: 165vh;
   }
 
   .hero-sticky {
@@ -1507,6 +1790,10 @@ select:focus-visible {
     max-width: min(82vw, 330px);
   }
 
+  .hero-threshold strong {
+    font-size: 24vw;
+  }
+
   .hero-summary p {
     display: none;
   }
@@ -1522,6 +1809,36 @@ select:focus-visible {
 
   .hero-footerline {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .visual-portal {
+    height: 92svh;
+    min-height: 610px;
+  }
+
+  .visual-portal > img {
+    object-position: 55% center;
+  }
+
+  .portal-caption {
+    bottom: 28px;
+    left: 16px;
+    right: 16px;
+  }
+
+  .portal-caption h2 {
+    font-size: clamp(58px, 18vw, 94px);
+    margin-bottom: 16px;
+  }
+
+  .portal-caption p {
+    font-size: 12px;
+    max-width: 82%;
+  }
+
+  .portal-scroll {
+    right: 16px;
+    top: 20px;
   }
 
   .manifesto-section,
@@ -1602,6 +1919,33 @@ select:focus-visible {
   .criteria-heading > p,
   .checker-heading > p:last-child {
     margin-top: 28px;
+  }
+
+  .chapter-visual {
+    height: 70svh;
+    margin-bottom: 70px;
+    min-height: 470px;
+  }
+
+  .chapter-visual-time img {
+    object-position: 58% center;
+  }
+
+  .chapter-visual-certainty img {
+    object-position: 48% center;
+  }
+
+  .chapter-visual figcaption {
+    align-items: start;
+    flex-direction: column;
+    gap: 13px;
+    padding: 22px 18px;
+  }
+
+  .chapter-visual figcaption strong {
+    font-size: clamp(43px, 13vw, 68px);
+    max-width: 90%;
+    text-align: left;
   }
 
   .criterion {
@@ -1784,7 +2128,12 @@ select:focus-visible {
     transform: none !important;
   }
 
-  .reveal {
+  .opening-splash {
+    display: none;
+  }
+
+  .reveal,
+  .motion-ready .reveal {
     clip-path: none;
     opacity: 1;
     transform: none;

@@ -1,12 +1,14 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist_Mono } from "next/font/google";
+import "@fontsource/archivo-black/latin-400.css";
+import "@fontsource/dela-gothic-one/latin-400.css";
+import "@fontsource/dela-gothic-one/japanese-400.css";
+import "@fontsource/noto-sans-jp/latin-400.css";
+import "@fontsource/noto-sans-jp/japanese-400.css";
+import "@fontsource/noto-sans-jp/latin-700.css";
+import "@fontsource/noto-sans-jp/japanese-700.css";
 import "./globals.css";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
 
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
@@ -46,7 +48,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${geistSans.variable} ${geistMono.variable}`}>
+      <body className={geistMono.variable}>
         {children}
       </body>
     </html>
