@@ -1,19 +1,18 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
-import { Geist_Mono } from "next/font/google";
-import "@fontsource/archivo-black/latin-400.css";
+import "@fontsource/anton/latin-400.css";
 import "@fontsource/dela-gothic-one/latin-400.css";
 import "@fontsource/dela-gothic-one/japanese-400.css";
+import "@fontsource/ibm-plex-mono/latin-400.css";
+import "@fontsource/ibm-plex-mono/latin-500.css";
+import "@fontsource/ibm-plex-mono/latin-600.css";
 import "@fontsource/noto-sans-jp/latin-400.css";
 import "@fontsource/noto-sans-jp/japanese-400.css";
 import "@fontsource/noto-sans-jp/latin-700.css";
 import "@fontsource/noto-sans-jp/japanese-700.css";
+import "@fontsource/shippori-mincho/japanese-400.css";
+import "@fontsource/shippori-mincho/japanese-600.css";
 import "./globals.css";
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
 
 export async function generateMetadata(): Promise<Metadata> {
   const requestHeaders = await headers();
@@ -82,9 +81,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={geistMono.variable}>
-        {children}
-      </body>
+      <body>{children}</body>
     </html>
   );
 }
