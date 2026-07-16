@@ -28,11 +28,15 @@ test("server-renders the TripCheck landing experience", async () => {
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
-  assert.match(html, /<title>TripCheck Japan — AI Itinerary Reality Check<\/title>/i);
+  assert.match(html, /<title>Tokyo Itinerary Checker \| TripCheck Japan<\/title>/i);
   assert.match(html, /Reality may disagree\./);
   assert.match(html, /Reality-check my trip/);
   assert.match(html, /Facts decide\./);
   assert.match(html, /AI explains\./);
+  assert.match(html, /The itinerary repair layer/);
+  assert.match(html, /FAQPage/);
+  assert.match(html, /SoftwareApplication/);
+  assert.match(html, /How is it different from ChatGPT or Google Maps\?/);
   assert.match(html, /English/);
   assert.match(html, /日本語/);
   assert.match(html, /한국어/);

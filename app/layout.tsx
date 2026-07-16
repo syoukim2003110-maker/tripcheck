@@ -20,23 +20,57 @@ export async function generateMetadata(): Promise<Metadata> {
   const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host") ?? "tripcheck-japan-tokyo.syoki.chatgpt.site";
   const protocol = requestHeaders.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
   const origin = `${protocol}://${host}`;
-  const title = "TripCheck Japan — AI Itinerary Reality Check";
-  const description = "Paste your Tokyo itinerary. Find impossible jumps, fragile reservations, and exhausting days, then rebuild it around reality.";
+  const title = "Tokyo Itinerary Checker | TripCheck Japan";
+  const description = "Paste a Tokyo itinerary and check whether its order, travel time and fixed reservations work in reality. Find conflicts and get a calmer, explainable revision.";
 
   return {
+    metadataBase: new URL(origin),
     title,
     description,
+    applicationName: "TripCheck Japan",
+    category: "travel",
+    keywords: [
+      "Tokyo itinerary checker",
+      "Japan trip planner",
+      "AI itinerary reality check",
+      "Tokyo travel planning",
+      "Tokyo itinerary review",
+    ],
+    alternates: {
+      canonical: origin,
+      languages: {
+        "en": `${origin}/`,
+        "ja": `${origin}/ja`,
+        "ko": `${origin}/ko`,
+        "zh-CN": `${origin}/zh`,
+        "x-default": `${origin}/`,
+      },
+    },
+    robots: {
+      index: true,
+      follow: true,
+      googleBot: {
+        index: true,
+        follow: true,
+        "max-image-preview": "large",
+        "max-snippet": -1,
+        "max-video-preview": -1,
+      },
+    },
     openGraph: {
       title,
       description,
       type: "website",
-      images: [{ url: `${origin}/og-v2.png`, width: 1536, height: 1024, alt: "TripCheck Japan itinerary reality check" }],
+      url: origin,
+      siteName: "TripCheck Japan",
+      locale: "en_US",
+      images: [{ url: `${origin}/og-cinema-v1.png`, width: 1536, height: 1024, alt: "TripCheck Japan — Tokyo itinerary reality check" }],
     },
     twitter: {
       card: "summary_large_image",
       title,
       description,
-      images: [`${origin}/og-v2.png`],
+      images: [`${origin}/og-cinema-v1.png`],
     },
   };
 }

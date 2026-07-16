@@ -93,7 +93,7 @@ export type AppCopy = {
 export const copy: Record<Locale, AppCopy> = {
   en: {
     languageLabel: "Language",
-    nav: { method: "How it works", trust: "Trust", beta: "Tokyo beta" },
+    nav: { method: "How it works", trust: "Why TripCheck", beta: "Tokyo beta" },
     hero: {
       eyebrow: "AI itinerary reality check",
       line1: "Your itinerary is beautiful.",
@@ -176,12 +176,12 @@ export const copy: Record<Locale, AppCopy> = {
       ],
     },
     trust: {
-      eyebrow: "Certainty is a product decision",
-      title: "We would rather say “unverified” than invent confidence.",
+      eyebrow: "The itinerary repair layer",
+      title: "We don’t just flag a bad day. We find the smallest change that saves it.",
       cards: [
-        { letter: "A", title: "Verified constraints", body: "Editorially checked attractions with a source and freshness date." },
-        { letter: "B", title: "Volatile places", body: "Restaurants and shops remain soft warnings unless recently confirmed." },
-        { letter: "C", title: "Your unknowns", body: "Unfamiliar places stay in the plan, clearly labelled as unverified." },
+        { letter: "A", title: "Protect your priorities", body: "Must-do places and confirmed tickets become anchors that the repair cannot casually move." },
+        { letter: "B", title: "Repair the joins", body: "We change the order, day or buffer around a stop—not your entire idea of the trip." },
+        { letter: "C", title: "Explain the alternative", body: "Every move includes its reason, trade-off and the condition under which you can undo it." },
       ],
     },
     footer: "Working prototype · Tokyo only · Live data connection comes next.",
@@ -203,7 +203,7 @@ Day 2
   },
   ja: {
     languageLabel: "言語",
-    nav: { method: "仕組み", trust: "信頼性", beta: "東京ベータ" },
+    nav: { method: "仕組み", trust: "TripCheckの違い", beta: "東京ベータ" },
     hero: {
       eyebrow: "AI旅程のリアリティチェック",
       line1: "その旅程は、美しい。",
@@ -280,12 +280,12 @@ Day 2
       ],
     },
     trust: {
-      eyebrow: "確信度もプロダクトの一部",
-      title: "確信を捏造するくらいなら「未検証」と伝える。",
+      eyebrow: "旅程を修復するレイヤー",
+      title: "無理だと指摘するだけではない。旅を救える最小限の変更を見つける。",
       cards: [
-        { letter: "A", title: "検証済み制約", body: "出典と確認日を持つ、編集確認済みの観光地。" },
-        { letter: "B", title: "変化しやすい場所", body: "飲食店や店舗は、直近確認できない限り柔らかい警告にします。" },
-        { letter: "C", title: "未知の候補", body: "知らない場所も削除せず、未検証と明示して旅程に残します。" },
+        { letter: "A", title: "優先順位を守る", body: "必ず行きたい場所と確定チケットを、簡単には動かさない軸にします。" },
+        { letter: "B", title: "つなぎ目だけを直す", body: "旅全体ではなく、順番、日付、前後の余白を必要な分だけ変えます。" },
+        { letter: "C", title: "代替案を説明する", body: "動かす理由、失うもの、元に戻せる条件をすべて示します。" },
       ],
     },
     footer: "開発中のプロトタイプ · 東京限定 · 次はライブデータ接続",
@@ -307,7 +307,7 @@ Day 2
   },
   ko: {
     languageLabel: "언어",
-    nav: { method: "작동 방식", trust: "신뢰", beta: "도쿄 베타" },
+    nav: { method: "작동 방식", trust: "TripCheck의 차이", beta: "도쿄 베타" },
     hero: {
       eyebrow: "AI 여행 일정 현실성 검사",
       line1: "일정은 아름답습니다.",
@@ -384,12 +384,12 @@ Day 2
       ],
     },
     trust: {
-      eyebrow: "확실성도 제품의 일부입니다",
-      title: "근거 없는 자신감보다 ‘미확인’을 선택합니다.",
+      eyebrow: "일정을 복구하는 레이어",
+      title: "문제를 지적하는 데서 끝나지 않고, 여행을 살리는 가장 작은 수정을 찾습니다.",
       cards: [
-        { letter: "A", title: "검증된 제약", body: "출처와 확인 날짜를 가진 편집 검증 관광지입니다." },
-        { letter: "B", title: "변동이 큰 장소", body: "식당과 상점은 최근 확인 전까지 부드러운 경고로 유지합니다." },
-        { letter: "C", title: "알 수 없는 후보", body: "낯선 장소도 삭제하지 않고 미확인 표시와 함께 일정에 남깁니다." },
+        { letter: "A", title: "우선순위 보호", body: "꼭 가고 싶은 장소와 확정 티켓을 함부로 움직이지 않는 기준점으로 둡니다." },
+        { letter: "B", title: "연결만 복구", body: "여행 전체가 아니라 순서, 날짜 또는 여유 시간만 필요한 만큼 바꿉니다." },
+        { letter: "C", title: "대안 설명", body: "이동 이유, 감수할 점, 되돌릴 수 있는 조건을 모두 보여 줍니다." },
       ],
     },
     footer: "개발 중 프로토타입 · 도쿄 전용 · 다음은 실시간 데이터 연결",
@@ -411,7 +411,7 @@ Day 2
   },
   zh: {
     languageLabel: "语言",
-    nav: { method: "工作方式", trust: "可信度", beta: "东京测试版" },
+    nav: { method: "工作方式", trust: "TripCheck的不同", beta: "东京测试版" },
     hero: {
       eyebrow: "AI行程现实性检查",
       line1: "你的行程很漂亮。",
@@ -488,12 +488,12 @@ Day 2
       ],
     },
     trust: {
-      eyebrow: "可信度也是产品决策",
-      title: "我们宁愿说“未验证”，也不制造确定感。",
+      eyebrow: "行程修复层",
+      title: "不只指出糟糕的一天，而是找到能挽救行程的最小修改。",
       cards: [
-        { letter: "A", title: "已验证约束", body: "经编辑核查、带来源与确认日期的景点。" },
-        { letter: "B", title: "易变地点", body: "餐厅与商店在近期确认前只提供柔性警告。" },
-        { letter: "C", title: "未知候选", body: "陌生地点不会被删除，而是以未验证状态保留。" },
+        { letter: "A", title: "保护你的优先级", body: "必去地点和已确认门票会成为不能随意移动的锚点。" },
+        { letter: "B", title: "只修复衔接", body: "我们只调整顺序、日期或缓冲时间，而不是改写整趟旅行。" },
+        { letter: "C", title: "解释替代方案", body: "每次移动都会说明原因、取舍以及可以撤销的条件。" },
       ],
     },
     footer: "开发中原型 · 仅限东京 · 下一步连接实时数据",

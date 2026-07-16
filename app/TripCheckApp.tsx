@@ -1,10 +1,63 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import CinematicJourney from "./CinematicJourney";
 import { copy, localeLabels, type Locale } from "../lib/i18n";
 import { analyzeTrip, type Pace, type Severity } from "../lib/trip-analysis";
 
 const localeOrder: Locale[] = ["en", "ja", "ko", "zh"];
+
+const answerCopy: Record<Locale, {
+  eyebrow: string;
+  title: string;
+  intro: string;
+  items: Array<{ question: string; answer: string }>;
+}> = {
+  en: {
+    eyebrow: "Direct answers",
+    title: "Before you trust the plan.",
+    intro: "TripCheck is a Tokyo itinerary checker: it tests whether the order, timing and fixed reservations in a draft can work in the real city.",
+    items: [
+      { question: "What does TripCheck Japan check?", answer: "It checks the joins between stops: cross-city travel, station walking, queues, timed-entry buffers, daily load and the energy cost of a long day." },
+      { question: "How is it different from ChatGPT or Google Maps?", answer: "Those tools are strong at discovery and directions. TripCheck focuses on feasibility: it identifies the smallest change that protects your must-do places and explains every trade-off." },
+      { question: "Does TripCheck replace my itinerary?", answer: "No. Confirmed tickets and must-do places become anchors. Flexible stops move around them, so the repair keeps your priorities instead of generating a different trip." },
+      { question: "Is the current Tokyo checker live?", answer: "The current version is a free prototype using illustrative rules. Live opening hours, ticket inventory, weather and train routing are not connected yet." },
+    ],
+  },
+  ja: {
+    eyebrow: "端的な答え",
+    title: "その旅程を信じる前に。",
+    intro: "TripCheckは東京旅行の旅程チェッカーです。予定の順番、所要時間、固定予約が実際の街で成立するかを検査します。",
+    items: [
+      { question: "TripCheck Japanは何を検査しますか？", answer: "場所と場所のつなぎ目を検査します。東京横断、駅構内の徒歩、行列、時間指定予約の余白、一日の密度、長時間行動の体力負荷が対象です。" },
+      { question: "ChatGPTやGoogle Mapsとの違いは？", answer: "発見や経路検索ではなく、旅程の成立判定に特化しています。行きたい場所を守れる最小限の変更を見つけ、すべての取捨を説明します。" },
+      { question: "元の旅程は作り直されますか？", answer: "いいえ。確定チケットと必須の場所を軸にし、柔軟な候補だけを動かします。別の旅行を生成するのではなく、あなたの優先順位を残します。" },
+      { question: "現在の東京チェッカーはライブデータ対応ですか？", answer: "現在は無料で試せるプロトタイプです。最新の営業時間、チケット在庫、天候、鉄道経路にはまだ接続していません。" },
+    ],
+  },
+  ko: {
+    eyebrow: "바로 답하기",
+    title: "그 일정을 믿기 전에.",
+    intro: "TripCheck는 도쿄 일정 검사기입니다. 순서, 이동 시간, 고정 예약이 실제 도시에서 가능한지 확인합니다.",
+    items: [
+      { question: "TripCheck Japan은 무엇을 확인하나요?", answer: "장소 사이의 연결을 확인합니다. 도쿄 횡단 이동, 역 내부 도보, 대기 줄, 예약 여유, 하루 밀도와 체력 부담을 봅니다." },
+      { question: "ChatGPT나 Google Maps와 무엇이 다른가요?", answer: "발견이나 길찾기보다 일정의 실행 가능성에 집중합니다. 꼭 가고 싶은 장소를 지키는 가장 작은 수정을 찾고 모든 선택의 이유를 설명합니다." },
+      { question: "원래 일정을 완전히 바꾸나요?", answer: "아닙니다. 확정 티켓과 필수 장소를 기준점으로 두고 유연한 후보만 옮겨 우선순위를 유지합니다." },
+      { question: "현재 검사기는 실시간 데이터와 연결되나요?", answer: "현재는 무료 프로토타입입니다. 최신 영업시간, 티켓, 날씨, 철도 경로는 아직 연결되지 않았습니다." },
+    ],
+  },
+  zh: {
+    eyebrow: "直接回答",
+    title: "在相信这份行程之前。",
+    intro: "TripCheck是一款东京行程检查器，用来判断顺序、时间和固定预约能否在真实城市中成立。",
+    items: [
+      { question: "TripCheck Japan检查什么？", answer: "它检查景点之间的衔接：跨城移动、车站内步行、排队、预约缓冲、每日密度以及长时间活动的体力负担。" },
+      { question: "它与ChatGPT或Google Maps有什么不同？", answer: "它不以发现或导航为核心，而专注于可执行性。它寻找能保留必去地点的最小修改，并解释每个取舍。" },
+      { question: "它会完全替换原行程吗？", answer: "不会。已确认的门票和必去地点会成为锚点，只移动灵活的候选地点，从而保留你的优先级。" },
+      { question: "当前检查器连接实时数据了吗？", answer: "当前是可免费试用的原型。最新营业时间、门票库存、天气和铁路路线尚未连接。" },
+    ],
+  },
+};
 
 function IssueMark({ kind }: { kind: Severity }) {
   return (
@@ -27,16 +80,16 @@ function Brand() {
   );
 }
 
-export default function TripCheckApp() {
-  const [locale, setLocale] = useState<Locale>("en");
+export default function TripCheckApp({ initialLocale = "en" }: { initialLocale?: Locale }) {
+  const [locale, setLocale] = useState<Locale>(initialLocale);
   const [itinerary, setItinerary] = useState("");
   const [pace, setPace] = useState<Pace>("balanced");
   const [monthIndex, setMonthIndex] = useState(9);
   const [hasChecked, setHasChecked] = useState(false);
   const [isChecking, setIsChecking] = useState(false);
   const [navCompact, setNavCompact] = useState(false);
-  const heroRef = useRef<HTMLElement>(null);
   const t = copy[locale];
+  const answers = answerCopy[locale];
 
   const analysis = useMemo(
     () => (hasChecked ? analyzeTrip(itinerary, pace, locale) : null),
@@ -45,17 +98,6 @@ export default function TripCheckApp() {
 
   const characterCount = itinerary.length;
   const canCheck = itinerary.trim().length >= 30 && !isChecking;
-
-  useEffect(() => {
-    try {
-      const stored = window.localStorage.getItem("tripcheck-locale") as Locale | null;
-      if (stored && localeOrder.includes(stored)) {
-        window.setTimeout(() => setLocale(stored), 0);
-      }
-    } catch {
-      // Language persistence is optional.
-    }
-  }, []);
 
   useEffect(() => {
     document.documentElement.lang = locale === "zh" ? "zh-CN" : locale;
@@ -71,14 +113,6 @@ export default function TripCheckApp() {
     document.documentElement.classList.add("motion-ready");
 
     const update = () => {
-      const hero = heroRef.current;
-      if (hero) {
-        const rect = hero.getBoundingClientRect();
-        const distance = Math.max(1, rect.height - window.innerHeight);
-        const progress = Math.min(1, Math.max(0, -rect.top / distance));
-        hero.style.setProperty("--hero-progress", progress.toFixed(3));
-      }
-
       document.querySelectorAll<HTMLElement>(".reveal:not(.is-visible)").forEach((node) => {
         const rect = node.getBoundingClientRect();
         if (rect.top < window.innerHeight * 0.88 && rect.bottom > -80) {
@@ -103,6 +137,17 @@ export default function TripCheckApp() {
     };
   }, []);
 
+  function changeLocale(nextLocale: Locale) {
+    setLocale(nextLocale);
+    try {
+      window.localStorage.setItem("tripcheck-locale", nextLocale);
+    } catch {
+      // Language persistence is optional.
+    }
+    const nextPath = nextLocale === "en" ? "/" : `/${nextLocale}`;
+    window.history.replaceState({}, "", `${nextPath}${window.location.hash}`);
+  }
+
   function loadSample() {
     setItinerary(t.sample);
     setHasChecked(false);
@@ -122,12 +167,7 @@ export default function TripCheckApp() {
   }
 
   return (
-    <main className="experience" data-locale={locale}>
-      <div className="opening-splash" aria-hidden="true">
-        <Brand />
-        <span>ITINERARY / REALITY / TOKYO</span>
-      </div>
-
+    <main className="experience" data-locale={locale} lang={locale === "zh" ? "zh-CN" : locale}>
       <header className={`global-nav ${navCompact ? "is-compact" : ""}`}>
         <a href="#top" aria-label="TripCheck Japan home"><Brand /></a>
         <nav aria-label="Main navigation">
@@ -136,108 +176,13 @@ export default function TripCheckApp() {
         </nav>
         <label className="locale-switcher">
           <span className="sr-only">{t.languageLabel}</span>
-          <select value={locale} onChange={(event) => setLocale(event.target.value as Locale)} aria-label={t.languageLabel}>
+          <select value={locale} onChange={(event) => changeLocale(event.target.value as Locale)} aria-label={t.languageLabel}>
             {localeOrder.map((option) => <option value={option} key={option}>{localeLabels[option]}</option>)}
           </select>
         </label>
       </header>
 
-      <section className="editorial-hero" id="top" ref={heroRef}>
-        <div className="hero-sticky">
-          <div className="hero-coordinate hero-coordinate-top" aria-hidden="true">35.6762° N / 139.6503° E</div>
-          <div className="hero-title-block">
-            <p className="hero-eyebrow"><span>01</span>{t.hero.eyebrow}</p>
-            <h1>
-              <span>{t.hero.line1}</span>
-              <strong>{t.hero.line2}</strong>
-            </h1>
-          </div>
-
-          <div className="hero-object" role="img" aria-label="A sculptural Tokyo route made from folded paper">
-            <div className="hero-object-image" />
-            <span className="hero-orbit hero-orbit-one" aria-hidden="true" />
-            <span className="hero-orbit hero-orbit-two" aria-hidden="true" />
-          </div>
-
-          <div className="hero-summary">
-            <p>{t.hero.body}</p>
-            <a href="#checker">{t.hero.cta}<span aria-hidden="true">↘</span></a>
-          </div>
-
-          <div className="hero-footerline">
-            <span>{t.nav.beta}</span>
-            <span>GEOGRAPHY / TIME / CERTAINTY</span>
-            <span>{t.hero.scroll} ↓</span>
-          </div>
-
-          <div className="hero-threshold" aria-hidden="true">
-            <span>ENTER</span>
-            <strong>TOKYO</strong>
-          </div>
-        </div>
-      </section>
-
-      <section className="visual-portal visual-portal-geography" aria-label={t.friction.cards[0].title}>
-        <img src="/chapter-geography-v3.webp" alt="A folded-paper Tokyo route connecting distant landmarks" />
-        <div className="portal-shade" aria-hidden="true" />
-        <div className="portal-caption reveal">
-          <span>01 / GEOGRAPHY</span>
-          <h2>{t.friction.cards[0].title}</h2>
-          <p>{t.friction.cards[0].body}</p>
-        </div>
-        <div className="portal-scroll" aria-hidden="true">SCROLL / 02 ↓</div>
-      </section>
-
-      <section className="manifesto-section" id="method">
-        <div className="manifesto-index reveal">02 / THE HIDDEN LAYER</div>
-        <div className="manifesto-copy">
-          <p className="section-eyebrow reveal">{t.story.eyebrow}</p>
-          <h2 className="reveal">
-            <span>{t.story.title}</span>
-            <strong>{t.story.accent}</strong>
-          </h2>
-          <p className="manifesto-body reveal">{t.story.body}</p>
-        </div>
-        <div className="metric-rail">
-          {t.story.metrics.map((metric, index) => (
-            <article className="metric-item reveal" style={{ transitionDelay: `${index * 80}ms` }} key={metric.value}>
-              <span>0{index + 1}</span>
-              <strong>{metric.value}</strong>
-              <p>{metric.label}</p>
-            </article>
-          ))}
-        </div>
-        <div className="manifesto-marquee" aria-hidden="true">
-          <div>{t.friction.cards.map((card) => <span key={card.number}>{card.title} <i>●</i></span>)}</div>
-        </div>
-      </section>
-
-      <section className="criteria-section">
-        <header className="criteria-heading">
-          <div>
-            <p className="section-eyebrow reveal">03 / {t.friction.eyebrow}</p>
-            <h2 className="reveal">{t.friction.title}</h2>
-          </div>
-          <p className="reveal">{t.friction.body}</p>
-        </header>
-        <figure className="chapter-visual chapter-visual-time reveal">
-          <img src="/chapter-time-v3.webp" alt="A sculptural clock crossed by a Tokyo rail line" />
-          <figcaption>
-            <span>02 / TIME</span>
-            <strong>{t.friction.cards[1].title}</strong>
-          </figcaption>
-        </figure>
-        <div className="criteria-list">
-          {t.friction.cards.map((card, index) => (
-            <article className="criterion reveal" style={{ transitionDelay: `${index * 70}ms` }} key={card.number}>
-              <span className="criterion-number">{card.number}</span>
-              <h3>{card.title}</h3>
-              <p>{card.body}</p>
-              <span className={`criterion-object criterion-object-${index + 1}`} aria-hidden="true"><i /></span>
-            </article>
-          ))}
-        </div>
-      </section>
+      <CinematicJourney locale={locale} t={t} />
 
       <section className="checker-section" id="checker">
         <header className="checker-heading">
@@ -341,36 +286,18 @@ export default function TripCheckApp() {
         </section>
       ) : null}
 
-      <section className="method-section">
-        <div className="method-title">
-          <p className="section-eyebrow reveal">05 / {t.method.eyebrow}</p>
-          <h2 className="reveal"><span>{t.method.title}</span><strong>{t.method.accent}</strong></h2>
-        </div>
-        <div className="method-list">
-          {t.method.cards.map((card, index) => (
-            <article className="method-row reveal" style={{ transitionDelay: `${index * 70}ms` }} key={card.number}>
-              <span>{card.number}</span><h3>{card.title}</h3><p>{card.body}</p>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="trust-section" id="trust">
-        <header>
-          <p className="section-eyebrow reveal">06 / {t.trust.eyebrow}</p>
-          <h2 className="reveal">{t.trust.title}</h2>
+      <section className="answer-section" id="trust">
+        <header className="answer-heading reveal">
+          <p className="section-eyebrow">07 / {answers.eyebrow}</p>
+          <h2>{answers.title}</h2>
+          <p>{answers.intro}</p>
         </header>
-        <figure className="chapter-visual chapter-visual-certainty reveal">
-          <img src="/chapter-certainty-v3.webp" alt="Three sculptural frames representing verified, volatile, and unknown information" />
-          <figcaption>
-            <span>03 / CERTAINTY</span>
-            <strong>{t.friction.cards[2].title}</strong>
-          </figcaption>
-        </figure>
-        <div className="trust-list">
-          {t.trust.cards.map((card, index) => (
-            <article className="trust-row reveal" style={{ transitionDelay: `${index * 70}ms` }} key={card.letter}>
-              <span>{card.letter}</span><h3>{card.title}</h3><p>{card.body}</p>
+        <div className="answer-list">
+          {answers.items.map((item, index) => (
+            <article className="answer-row reveal" style={{ transitionDelay: `${index * 60}ms` }} key={item.question}>
+              <span>0{index + 1}</span>
+              <h3>{item.question}</h3>
+              <p>{item.answer}</p>
             </article>
           ))}
         </div>

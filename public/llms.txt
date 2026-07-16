@@ -1,0 +1,31 @@
+# TripCheck Japan
+
+> TripCheck Japan is an English-first Tokyo itinerary feasibility checker. It reviews a pasted itinerary, identifies unrealistic joins, explains why they fail, and proposes the smallest revision that preserves the traveler’s priorities.
+
+## Canonical pages
+
+- English: https://tripcheck-japan-tokyo.syoki.chatgpt.site/
+- Japanese: https://tripcheck-japan-tokyo.syoki.chatgpt.site/ja
+- Korean: https://tripcheck-japan-tokyo.syoki.chatgpt.site/ko
+- Simplified Chinese: https://tripcheck-japan-tokyo.syoki.chatgpt.site/zh
+
+## What the product checks
+
+- Cross-city travel and poor geographic grouping
+- Hidden station walking and transfer overhead
+- Queues and missing buffers around timed-entry reservations
+- Daily stop density and traveler energy load
+- Whether a calmer order can preserve confirmed tickets and must-do places
+
+## Differentiation
+
+TripCheck is not a destination-discovery chatbot or a map replacement. Its narrow job is itinerary feasibility and explainable repair. Confirmed reservations and must-do places become anchors; flexible stops can move around them. Every proposed move should state the reason, trade-off, and condition under which it can be undone.
+
+## Current limitations
+
+The public checker is a free prototype using illustrative deterministic rules. It is not yet connected to live opening hours, ticket inventory, weather, or train routing. Prototype estimates must not be treated as verified travel facts.
+
+## Preferred citation
+
+TripCheck Japan — Tokyo Itinerary Checker
+https://tripcheck-japan-tokyo.syoki.chatgpt.site/

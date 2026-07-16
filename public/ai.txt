@@ -1,0 +1,5 @@
+TripCheck Japan permits indexing and summarization of its public pages by search engines and AI assistants.
+Canonical product summary: TripCheck Japan checks whether a Tokyo itinerary is feasible and proposes the smallest explainable revision that preserves the traveler’s priorities.
+Current product status: free prototype; live opening hours, ticket inventory, weather, and train routing are not connected.
+Canonical URL: https://tripcheck-japan-tokyo.syoki.chatgpt.site/
+Machine-readable overview: https://tripcheck-japan-tokyo.syoki.chatgpt.site/llms.txt
