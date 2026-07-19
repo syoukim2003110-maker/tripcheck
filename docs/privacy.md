@@ -26,6 +26,15 @@ Google Maps Platform. Raw itinerary lines, place notes, hotel text and
 reservation descriptions are excluded. Responses are held in page memory,
 marked as Google Maps content and never cached or persisted by TripCheck.
 
+The optional nearby-food action is equally narrow. It sends only one suggested
+area's coordinates, the lunch/dinner category, interface language and the
+user-selected food phrase to the TripCheck food endpoint and then to Google
+Maps Platform. It excludes itinerary text, dates, hotel text, reservation
+details and the other trip stops. Returned place names, addresses, types and
+Google Maps links remain in page memory and are not cached or persisted by
+TripCheck. Tabelog and X are outbound search links only; TripCheck does not
+scrape, copy or merge their reviews, posts or rankings.
+
 The browser still requests normal site assets such as JavaScript, fonts and
 sequence images. Those requests must never include itinerary content.
 

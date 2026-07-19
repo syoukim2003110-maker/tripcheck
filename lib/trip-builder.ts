@@ -60,6 +60,20 @@ export type CrowdOutlook = {
   peakTime: boolean;
 };
 
+export type FoodRecommendationSlot = {
+  id: string;
+  dayIndex: number;
+  dayLabel: string;
+  date: string | null;
+  kind: MealKind;
+  area: string;
+  latitude: number;
+  longitude: number;
+  window: string;
+  rationale: string;
+  queryIdeas: string[];
+};
+
 export type WishlistStopConstraint = {
   priority: StopPriority;
   fixedDay: number | null;
@@ -119,6 +133,7 @@ export type BuiltTripPlan = {
   hotelResolved: boolean;
   baseRecommendations: BaseRecommendation[];
   airportConstraints: AirportConstraint[];
+  foodRecommendationSlots: FoodRecommendationSlot[];
   days: BuiltPlanDay[];
 };
 
@@ -238,102 +253,6 @@ function addDaysToIsoDate(value: string | undefined, days: number) {
   return date.toISOString().slice(0, 10);
 }
 
-function isMealStop(stop: RouteStop) {
-  return stop.id.startsWith("meal-");
-}
-
-function mealKindForStop(stop: RouteStop): MealKind | null {
-  if (stop.id.includes("-lunch")) return "lunch";
-  if (stop.id.includes("-dinner")) return "dinner";
-  return null;
-}
-
-function makeMealStop(kind: MealKind, anchor: RouteStop, dayIndex: number, locale: Locale): RouteStop {
-  const label = kind === "lunch"
-    ? { en: "Lunch", ja: "昼食", ko: "점심", zh: "午餐" }[locale]
-    : { en: "Dinner", ja: "夕食", ko: "저녁", zh: "晚餐" }[locale];
-  const connector = { en: "in", ja: "・", ko: " · ", zh: " · " }[locale];
-  return {
-    id: `meal-${dayIndex + 1}-${kind}`,
-    name: locale === "en" ? `${label} ${connector} ${anchor.area}` : `${anchor.area}${connector}${label}`,
-    area: anchor.area,
-    latitude: anchor.latitude,
-    longitude: anchor.longitude,
-    sourceUrl: "https://www.gotokyo.org/en/see-and-do/drinking-and-dining/",
-    verifiedAt: "2026-07-19",
-    confidence: "medium",
-    planningDurationMinutes: kind === "lunch" ? 60 : 75,
-    isAnchor: false,
-  };
-}
-
-function sequenceTiming(
-  ordered: RouteStop[],
-  base: TripBase | null,
-  startMinutes: number,
-  constraints: Map<string, WishlistStopConstraint>,
-  liveTransitMinutes?: Record<string, number>,
-) {
-  let cursor = startMinutes;
-  let lateMinutes = 0;
-  const arrivals = new Map<string, number>();
-  if (base && ordered[0]) cursor += routeTravelMinutes(base, ordered[0], liveTransitMinutes);
-  ordered.forEach((stop, index) => {
-    const fixed = constraints.get(stop.id)?.fixedTimeMinutes;
-    if (fixed !== null && fixed !== undefined) {
-      lateMinutes += Math.max(0, cursor - fixed);
-      cursor = Math.max(cursor, fixed);
-    }
-    arrivals.set(stop.id, cursor);
-    cursor += stop.planningDurationMinutes;
-    if (ordered[index + 1]) cursor += routeTravelMinutes(stop, ordered[index + 1], liveTransitMinutes);
-  });
-  return { arrivals, finishMinutes: cursor, lateMinutes };
-}
-
-function insertMealBreaks(
-  places: RouteStop[],
-  dayIndex: number,
-  locale: Locale,
-  mealPlan: MealPlan,
-  base: TripBase | null,
-  startMinutes: number,
-  constraints: Map<string, WishlistStopConstraint>,
-  liveTransitMinutes?: Record<string, number>,
-) {
-  if (mealPlan === "none" || places.length === 0) return places;
-  let sequence = [...places];
-  const requestedMeals: Array<{ kind: MealKind; target: number }> = mealPlan === "all"
-    ? [{ kind: "lunch", target: 12 * 60 + 15 }, { kind: "dinner", target: 18 * 60 + 30 }]
-    : [{ kind: "dinner", target: 18 * 60 + 30 }];
-
-  for (const requested of requestedMeals) {
-    const currentTiming = sequenceTiming(sequence, base, startMinutes, constraints, liveTransitMinutes);
-    const shouldAdd = requested.kind === "lunch"
-      ? startMinutes <= 14 * 60 && currentTiming.finishMinutes >= 11 * 60 + 15
-      : startMinutes <= 20 * 60 && currentTiming.finishMinutes >= 17 * 60 + 15;
-    if (!shouldAdd) continue;
-
-    let bestSequence = sequence;
-    let bestScore = Number.POSITIVE_INFINITY;
-    for (let position = 1; position <= sequence.length; position += 1) {
-      const anchor = sequence[position - 1];
-      const meal = makeMealStop(requested.kind, anchor, dayIndex, locale);
-      const candidate = [...sequence.slice(0, position), meal, ...sequence.slice(position)];
-      const timing = sequenceTiming(candidate, base, startMinutes, constraints, liveTransitMinutes);
-      const mealArrival = timing.arrivals.get(meal.id) ?? timing.finishMinutes;
-      const targetDistance = Math.abs(mealArrival - requested.target);
-      const score = timing.lateMinutes * 100_000 + targetDistance * 100 + timing.finishMinutes;
-      if (score < bestScore) {
-        bestScore = score;
-        bestSequence = candidate;
-      }
-    }
-    sequence = bestSequence;
-  }
-  return sequence;
-}
-
 function buildCrowdOutlook(date: string | null, arrival: string, stop: RouteStop): CrowdOutlook | null {
   if (!date) return null;
   const parsedDate = new Date(`${date}T00:00:00Z`);
@@ -341,23 +260,136 @@ function buildCrowdOutlook(date: string | null, arrival: string, stop: RouteStop
   const day = parsedDate.getUTCDay();
   const isWeekend = day === 0 || day === 6;
   const arrivalMinutes = clockMinutes(arrival) ?? 0;
-  const mealKind = mealKindForStop(stop);
-  const peakTime = mealKind === "lunch"
-    ? arrivalMinutes >= 11 * 60 + 30 && arrivalMinutes <= 13 * 60 + 30
-    : mealKind === "dinner"
-      ? arrivalMinutes >= 18 * 60 && arrivalMinutes <= 20 * 60
-      : arrivalMinutes >= 11 * 60 && arrivalMinutes <= 16 * 60;
-  let score = mealKind ? 1 : stop.isAnchor ? 2 : 1;
+  const peakTime = arrivalMinutes >= 11 * 60 && arrivalMinutes <= 16 * 60;
+  let score = stop.isAnchor ? 2 : 1;
   if (peakTime) score += 1;
   if (isWeekend) score += 1;
   const levels: CrowdLevel[] = ["quiet", "moderate", "busy", "veryBusy"];
   return {
     level: levels[Math.min(levels.length - 1, score)],
-    confidence: mealKind || stop.confidence === "low" ? "low" : "medium",
+    confidence: stop.confidence === "low" ? "low" : "medium",
     isWeekend,
     weekendUplift: isWeekend ? 1 : 0,
     peakTime,
   };
+}
+
+const foodProfiles: Array<{
+  areas: RegExp;
+  ideas: Record<Locale, string[]>;
+}> = [
+  {
+    areas: /Tsukiji|Toyosu|築地|豊洲|쓰키지|도요스|筑地|丰洲/i,
+    ideas: {
+      en: ["sushi & seafood", "market breakfast", "casual Japanese"],
+      ja: ["寿司・海鮮", "市場らしい朝ごはん", "気軽な和食"],
+      ko: ["스시·해산물", "시장 아침 식사", "캐주얼 일식"],
+      zh: ["寿司与海鲜", "市场早餐", "轻松日料"],
+    },
+  },
+  {
+    areas: /Asakusa|Oshiage|浅草|押上|아사쿠사|오시아게|浅草|押上/i,
+    ideas: {
+      en: ["tempura & soba", "old-Tokyo classics", "kissaten café"],
+      ja: ["天ぷら・そば", "下町の定番", "喫茶店・甘味"],
+      ko: ["덴푸라·소바", "도쿄 서민 음식", "킷사텐 카페"],
+      zh: ["天妇罗与荞麦面", "下町经典", "复古咖啡馆"],
+    },
+  },
+  {
+    areas: /Shibuya|Harajuku|渋谷|原宿|시부야|하라주쿠|涩谷|原宿/i,
+    ideas: {
+      en: ["modern Japanese", "small-plate izakaya", "specialty café"],
+      ja: ["今っぽい和食", "小皿系の居酒屋", "専門店カフェ"],
+      ko: ["모던 일식", "소접시 이자카야", "스페셜티 카페"],
+      zh: ["现代日料", "小盘居酒屋", "精品咖啡馆"],
+    },
+  },
+  {
+    areas: /Shinjuku|新宿|신주쿠/i,
+    ideas: {
+      en: ["yakitori & izakaya", "ramen", "late-night Japanese"],
+      ja: ["焼き鳥・居酒屋", "ラーメン", "遅めでも入れる和食"],
+      ko: ["야키토리·이자카야", "라멘", "늦은 시간 일식"],
+      zh: ["烤鸡串与居酒屋", "拉面", "深夜日料"],
+    },
+  },
+  {
+    areas: /Akihabara|Ueno|秋葉原|上野|아키하바라|우에노|秋叶原|上野/i,
+    ideas: {
+      en: ["ramen & curry", "tonkatsu", "casual izakaya"],
+      ja: ["ラーメン・カレー", "とんかつ", "気軽な居酒屋"],
+      ko: ["라멘·카레", "돈카츠", "캐주얼 이자카야"],
+      zh: ["拉面与咖喱", "炸猪排", "轻松居酒屋"],
+    },
+  },
+  {
+    areas: /Mitaka|三鷹|미타카|三鹰/i,
+    ideas: {
+      en: ["neighborhood Japanese", "set meal", "quiet café"],
+      ja: ["街の和食店", "定食", "落ち着いたカフェ"],
+      ko: ["동네 일식", "정식", "조용한 카페"],
+      zh: ["社区日料", "定食", "安静咖啡馆"],
+    },
+  },
+];
+
+function foodIdeasForArea(area: string, locale: Locale) {
+  const profile = foodProfiles.find((candidate) => candidate.areas.test(area));
+  if (profile) return profile.ideas[locale];
+  return {
+    en: ["local Japanese", "casual set meal", "café break"],
+    ja: ["その街らしい和食", "気軽な定食", "カフェ休憩"],
+    ko: ["현지 일식", "캐주얼 정식", "카페 휴식"],
+    zh: ["当地日料", "轻松定食", "咖啡休息"],
+  }[locale];
+}
+
+function buildFoodRecommendationSlots(days: BuiltPlanDay[], mealPlan: MealPlan, locale: Locale) {
+  if (mealPlan === "none") return [];
+  const slots: FoodRecommendationSlot[] = [];
+  days.forEach((day, dayIndex) => {
+    if (day.stops.length === 0) return;
+    const requestedKinds: MealKind[] = mealPlan === "all" ? ["lunch", "dinner"] : ["dinner"];
+    for (const kind of requestedKinds) {
+      const deadlineMinutes = clockMinutes(day.deadline ?? undefined);
+      if (kind === "lunch" && clockMinutes(day.startTime)! > 14 * 60) continue;
+      if (kind === "dinner" && deadlineMinutes !== null && deadlineMinutes < 17 * 60 + 30) continue;
+      const anchor = kind === "lunch"
+        ? day.stops.reduce((closest, stop) => {
+          const target = 12 * 60 + 30;
+          return Math.abs((clockMinutes(stop.arrival) ?? target) - target) < Math.abs((clockMinutes(closest.arrival) ?? target) - target) ? stop : closest;
+        })
+        : day.stops.at(-1)!;
+      const rationale = kind === "lunch"
+        ? {
+          en: `Easy to reach around ${anchor.stop.name}, without adding a cross-city detour.`,
+          ja: `${anchor.stop.name}の前後で寄りやすく、わざわざ別の街へ移動せずに済みます。`,
+          ko: `${anchor.stop.name} 전후로 들르기 쉬워 도시를 가로지를 필요가 없습니다.`,
+          zh: `适合在${anchor.stop.name}前后前往，不必额外跨城移动。`,
+        }[locale]
+        : {
+          en: `A flexible finish near ${anchor.stop.name}; keep it here or move dinner back toward the hotel.`,
+          ja: `${anchor.stop.name}を見終えた流れで選びやすいエリアです。疲れていたらホテル周辺へ変えても大丈夫。`,
+          ko: `${anchor.stop.name} 이후 자연스럽게 고를 수 있고, 피곤하면 호텔 근처로 바꿔도 됩니다.`,
+          zh: `游览${anchor.stop.name}后顺路选择即可；累了也可以改到酒店附近。`,
+        }[locale];
+      slots.push({
+        id: `food-${dayIndex + 1}-${kind}`,
+        dayIndex,
+        dayLabel: day.label,
+        date: day.date,
+        kind,
+        area: anchor.stop.area,
+        latitude: anchor.stop.latitude,
+        longitude: anchor.stop.longitude,
+        window: kind === "lunch" ? "11:30–14:00" : "17:30–21:00",
+        rationale,
+        queryIdeas: foodIdeasForArea(anchor.stop.area, locale),
+      });
+    }
+  });
+  return slots;
 }
 
 function routeDistanceFromBase(stops: RouteStop[], base: RouteStop) {
@@ -707,7 +739,6 @@ function buildDay(
   requestedStart?: string,
   startDate?: string,
   liveTransitMinutes?: Record<string, number>,
-  mealPlan: MealPlan = "none",
 ): BuiltPlanDay {
   const arrivalConstraint = index === 0 ? airportConstraints.find((constraint) => constraint.direction === "arrival") : null;
   const departureConstraint = index === dayCount - 1 ? airportConstraints.find((constraint) => constraint.direction === "departure") : null;
@@ -716,17 +747,7 @@ function buildDay(
     : 9 * 60;
   const requestedStartMinutes = clockMinutes(requestedStart) ?? 9 * 60;
   const startMinutes = Math.max(requestedStartMinutes, arrivalReadyMinutes);
-  const orderedPlaces = orderForReservations(stops, base, startMinutes, constraints, liveTransitMinutes);
-  const ordered = insertMealBreaks(
-    orderedPlaces,
-    index,
-    locale,
-    mealPlan,
-    base,
-    startMinutes,
-    constraints,
-    liveTransitMinutes,
-  );
+  const ordered = orderForReservations(stops, base, startMinutes, constraints, liveTransitMinutes);
   const date = addDaysToIsoDate(startDate, index);
   const legs = ordered.slice(0, -1).map((from, stopIndex): BuiltPlanLeg => {
     const to = ordered[stopIndex + 1];
@@ -739,7 +760,7 @@ function buildDay(
         transit: buildGoogleMapsUrl([from, to], "transit"),
         taxi: buildGoogleMapsUrl([from, to], "driving"),
       },
-      isLocalMealPause: (isMealStop(from) || isMealStop(to)) && straightLineDistanceKm(from, to) < 0.05,
+      isLocalMealPause: false,
     };
   });
   let cursor = startMinutes;
@@ -762,8 +783,8 @@ function buildDay(
       stop,
       arrival,
       departure,
-      kind: isMealStop(stop) ? "meal" : "place",
-      mealKind: mealKindForStop(stop),
+      kind: "place",
+      mealKind: null,
       priority: constraint.priority,
       fixedTime: constraint.fixedTime,
       reservationLateMinutes,
@@ -859,7 +880,6 @@ export function buildTripFromWishlist(
     context.dayStartTimes?.[index],
     context.tripStartDate,
     context.liveTransitMinutes,
-    context.mealPlan ?? "none",
   ));
   const lastIndex = days.length - 1;
   if (lastIndex >= 0) {
@@ -878,17 +898,16 @@ export function buildTripFromWishlist(
         context.dayStartTimes?.[lastIndex],
         context.tripStartDate,
         context.liveTransitMinutes,
-        context.mealPlan ?? "none",
       );
     }
   }
   const scheduledStopCount = days.reduce((sum, day) => sum + day.stops.filter((stop) => stop.kind === "place").length, 0);
-  const mealBreakCount = days.reduce((sum, day) => sum + day.stops.filter((stop) => stop.kind === "meal").length, 0);
+  const foodRecommendationSlots = buildFoodRecommendationSlots(days, context.mealPlan ?? "none", locale);
   return {
     requestedDays,
     recognizedStopCount: knownStops.length,
     scheduledStopCount,
-    mealBreakCount,
+    mealBreakCount: 0,
     unknownEntries: [...new Set(unknownEntries)],
     deferredOptionalStops,
     constraintCount: [...constraints.values()].filter((constraint) => (
@@ -901,6 +920,7 @@ export function buildTripFromWishlist(
     hotelResolved: hotelQuery.length > 0 && selectedBase !== null,
     baseRecommendations,
     airportConstraints,
+    foodRecommendationSlots,
     days,
   };
 }

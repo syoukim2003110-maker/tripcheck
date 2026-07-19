@@ -3,7 +3,7 @@ import Link from "next/link";
 export default function PrivacyPage() {
   return (
     <main className="legal-page">
-      <header><p>TRIPCHECK / LEGAL / 001</p><h1>Privacy.</h1><span>Last updated July 18, 2026</span></header>
+      <header><p>TRIPCHECK / LEGAL / 001</p><h1>Privacy.</h1><span>Last updated July 19, 2026</span></header>
       <section>
         <h2>The short version</h2>
         <p>Your pasted itinerary is analysed in your browser. TripCheck does not store it in a database or make it available for human review.</p>
@@ -12,6 +12,11 @@ export default function PrivacyPage() {
         <h2>Optional live transit</h2>
         <p>If you choose “Update train times,” TripCheck sends only the origin and destination coordinates and planned departure time for each route leg to a protected TripCheck endpoint. That endpoint requests a current route from Google Maps Platform. Your pasted notes, hotel text and reservation descriptions are not included.</p>
         <p>Live route responses are used in memory for the current page and are not stored by TripCheck. Google processes the route request under the <a href="https://policies.google.com/privacy" rel="noreferrer" target="_blank">Google Privacy Policy</a>.</p>
+      </section>
+      <section>
+        <h2>Optional nearby food search</h2>
+        <p>If you ask TripCheck to find nearby restaurants, it sends only the suggested area&apos;s coordinates, meal type, interface language and the food phrase you selected to a protected TripCheck endpoint. That endpoint requests nearby restaurant names from Google Maps Platform. The itinerary text, hotel text, dates, reservation details and other trip stops are not included.</p>
+        <p>Results are held only in memory for the current page and are not stored by TripCheck. Links to Tabelog and X open searches on those services; TripCheck does not retrieve, copy or combine their reviews or rankings.</p>
       </section>
       <section>
         <h2>Device storage</h2>

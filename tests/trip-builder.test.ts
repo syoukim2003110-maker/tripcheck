@@ -191,7 +191,7 @@ test("uses fresh transit minutes when supplied while preserving estimated altern
   assert.ok(options.filter((option) => option.mode !== "transit").every((option) => option.source === "estimate"));
 });
 
-test("protects lunch and dinner as real schedule time without inventing restaurants", () => {
+test("suggests lunch and dinner near the route without changing schedule time", () => {
   const plan = buildTripFromWishlist(`Tsukiji Outer Market
 teamLab Planets
 Senso-ji
@@ -199,22 +199,27 @@ Tokyo Skytree`, 1, "fast", "en", {
     mealPlan: "all",
     tripStartDate: "2026-09-19",
   });
-  const meals = plan.days[0].stops.filter((stop) => stop.kind === "meal");
+  const baseline = buildTripFromWishlist(`Tsukiji Outer Market
+teamLab Planets
+Senso-ji
+Tokyo Skytree`, 1, "fast", "en", { mealPlan: "none", tripStartDate: "2026-09-19" });
 
   assert.equal(plan.scheduledStopCount, 4);
-  assert.equal(plan.mealBreakCount, 2);
-  assert.deepEqual(meals.map((stop) => stop.mealKind), ["lunch", "dinner"]);
-  assert.ok(meals.every((stop) => /Lunch|Dinner/.test(stop.stop.name)));
-  assert.ok(plan.days[0].totalMinutes >= 135);
+  assert.equal(plan.mealBreakCount, 0);
+  assert.equal(plan.days[0].stops.some((stop) => stop.kind === "meal"), false);
+  assert.equal(plan.days[0].totalMinutes, baseline.days[0].totalMinutes);
+  assert.deepEqual(plan.foodRecommendationSlots.map((slot) => slot.kind), ["lunch", "dinner"]);
+  assert.ok(plan.foodRecommendationSlots.every((slot) => slot.queryIdeas.length === 3));
 });
 
-test("can protect dinner without adding lunch", () => {
+test("can show dinner ideas without suggesting lunch", () => {
   const plan = buildTripFromWishlist(`Senso-ji
 Tokyo Skytree
 Akihabara
 Shibuya Sky`, 1, "fast", "en", { mealPlan: "dinner" });
 
-  assert.deepEqual(plan.days[0].stops.filter((stop) => stop.kind === "meal").map((stop) => stop.mealKind), ["dinner"]);
+  assert.deepEqual(plan.foodRecommendationSlots.map((slot) => slot.kind), ["dinner"]);
+  assert.equal(plan.days[0].stops.some((stop) => stop.kind === "meal"), false);
 });
 
 test("keeps a user-entered restaurant reservation when its area is known", () => {

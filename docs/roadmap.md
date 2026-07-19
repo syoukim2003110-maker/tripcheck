@@ -67,10 +67,11 @@ Deliver:
 - verified source metadata for a narrow set of high-demand attractions;
 - explicit explanation of the smallest repair;
 - fixtures for missed-entry, last-entry, overpacked-day and station-walk cases.
-- automatic lunch/dinner protection that consumes real schedule time without
-  inventing a restaurant — **active**;
-- one trip brief for reservations, meal decisions and unresolved choices —
+- route-aware food recommendation areas that never lock the itinerary —
   **active**;
+- optional Google Places candidates with Tabelog and social cross-check exits,
+  plus an honest no-provider fallback — **active**;
+- one trip brief for reservations and unresolved choices — **active**;
 - transparent date-aware crowd heuristics with a visible weekend driver —
   **active**.
 

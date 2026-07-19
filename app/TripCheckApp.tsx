@@ -3,13 +3,21 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import CinematicJourney from "./CinematicJourney";
 import { copy, localeLabels, type Locale } from "../lib/i18n";
+import { FoodRecommendationsError, foodSearchLinks, requestFoodRecommendations } from "../lib/food-recommendations-client";
+import type { FoodCandidate } from "../lib/google-food";
 import { fullTripDemo, getMockHotels } from "../lib/mock-trip";
 import { LiveRoutesError, requestLiveTransit } from "../lib/live-routes-client";
 import { analyzeTrip, type Pace, type Severity } from "../lib/trip-analysis";
-import type { AirportCode, CrowdOutlook, FlightKind, MealPlan } from "../lib/trip-builder";
+import type { AirportCode, CrowdOutlook, FlightKind, FoodRecommendationSlot, MealPlan } from "../lib/trip-builder";
 
-const localeOrder: Locale[] = ["en", "ja", "ko", "zh"];
+const localeOrder: Locale[] = ["en", "ja"];
 type LiveRouteStatus = "idle" | "loading" | "ready" | "missingDate" | "notConfigured" | "outOfRange" | "unavailable";
+type FoodSearchState = {
+  status: "idle" | "loading" | "ready" | "notConfigured" | "unavailable";
+  query: string;
+  fetchedAt: string;
+  candidates: FoodCandidate[];
+};
 const emptyLiveTransitMinutes: Record<string, number> = {};
 
 const answerCopy: Record<Locale, {
@@ -29,7 +37,7 @@ const answerCopy: Record<Locale, {
       { question: "How is it different from ChatGPT or Google Maps?", answer: "TripCheck makes the multi-day grouping and ordering decision immediately with reproducible algorithms. Google Maps remains the final source for live directions; AI is reserved for messy language and explanations, not travel facts." },
       { question: "Can it still check a finished itinerary?", answer: "Yes. If the input contains Day headings and times, TripCheck switches to checker mode, keeps reservations as anchors and looks for route or timing conflicts." },
       { question: "Are the transport comparisons live?", answer: "Public-transport minutes can be refreshed from Google Maps for a trip within its supported schedule window. Walking and taxi remain clearly labelled planning estimates; opening hours, ticket availability, weather and road traffic are not live yet." },
-      { question: "Who can see the itinerary I paste?", answer: "The itinerary is analysed inside your browser and is not stored or reviewed by a person. If you choose live transit, only coordinate pairs and planned departure times—not your pasted notes—are sent to Google Maps through TripCheck." },
+      { question: "Who can see the itinerary I paste?", answer: "The itinerary is analysed inside your browser and is not stored or reviewed by a person. Live transit sends only coordinate pairs and departure times; food search sends only one area's coordinates, meal type, language and selected phrase. Your pasted notes are never included." },
     ],
   },
   ja: {
@@ -43,7 +51,7 @@ const answerCopy: Record<Locale, {
       { question: "ChatGPTやGoogle Mapsとの違いは？", answer: "日ごとの分類と順番は再現可能なアルゴリズムで即時計算します。最新経路の最終確認はGoogle Mapsに任せ、AIは曖昧な文章理解と説明だけに使います。" },
       { question: "完成済みの旅程も検査できますか？", answer: "できます。入力に「1日目」などの日付見出しと時刻があれば自動で診断モードへ切り替わり、予約を軸にして経路と時間の衝突を探します。" },
       { question: "移動手段の比較はリアルタイムですか？", answer: "対応期間内の旅行なら、公共交通の時間をGoogle Mapsから更新できます。徒歩とタクシーは明示された計画用概算のままで、営業時間、チケット在庫、天候、道路交通はまだライブではありません。" },
-      { question: "貼り付けた旅程は誰に見られますか？", answer: "旅程本文はブラウザ内で解析し、保存も人による閲覧も行いません。ライブ交通を選んだ場合だけ、貼り付けた文章ではなく地点間の座標と出発予定時刻をTripCheck経由でGoogle Mapsへ送ります。" },
+      { question: "貼り付けた旅程は誰に見られますか？", answer: "旅程本文はブラウザ内で処理し、保存もしません。ライブ交通では地点間の座標と出発時刻、食事検索ではエリアの座標・昼夜・言語・選んだ検索語だけを送ります。貼り付けた文章は送りません。" },
     ],
   },
   ko: {
@@ -752,14 +760,14 @@ const mealCopy: Record<Locale, {
   crowdBasis: string;
 }> = {
   en: {
-    input: "Meals in the route",
-    inputHint: "Protect the time now; choose the restaurant later.",
-    all: "Lunch + dinner",
-    dinner: "Dinner only",
-    none: "Do not add meals",
+    input: "Food suggestions",
+    inputHint: "Suggestions stay flexible and never change the itinerary time.",
+    all: "Suggest around the route",
+    dinner: "Dinner ideas only",
+    none: "Hide food ideas",
     briefEyebrow: "Trip brief",
-    briefTitle: "Decided, protected and still open.",
-    briefBody: "Reservations, meal windows and unresolved places stay together before the detailed route.",
+    briefTitle: "What is fixed—and what is still open.",
+    briefBody: "See the commitments that shape the route. Food ideas remain separate so you can decide on the day.",
     reservations: "Fixed reservations",
     mealBreaks: "Meal windows",
     toDecide: "Still to decide",
@@ -782,14 +790,14 @@ const mealCopy: Record<Locale, {
     crowdBasis: "Crowd outlook is a transparent planning heuristic, not a live queue. Weekends are shown one level busier than the same time on a weekday.",
   },
   ja: {
-    input: "食事の入れ方",
-    inputHint: "店はあとで。まず食事時間を旅程に確保します。",
-    all: "昼食＋夕食",
-    dinner: "夕食だけ",
-    none: "自動で入れない",
+    input: "食事の提案",
+    inputHint: "食事は旅程に固定せず、立ち寄りやすい候補だけを出します。",
+    all: "旅程に合わせて提案",
+    dinner: "夕食だけ提案",
+    none: "食事の提案は表示しない",
     briefEyebrow: "旅のまとめ",
-    briefTitle: "決まったことと、まだ決めること。",
-    briefBody: "予約、食事枠、場所を特定できない候補を、詳しい旅程の前に一元化します。",
+    briefTitle: "先に押さえる予定だけ、ひと目で。",
+    briefBody: "旅程を左右する予約と、場所を特定できなかった候補をまとめました。食事は当日の気分で選べるよう、別に提案します。",
     reservations: "固定した予約",
     mealBreaks: "確保した食事枠",
     toDecide: "あとで決めること",
@@ -873,6 +881,57 @@ const mealCopy: Record<Locale, {
   },
 };
 
+const foodCopy = {
+  en: {
+    eyebrow: "Food along the way",
+    title: "Good options, without locking the day.",
+    body: "Each suggestion is tied to an area already on the route. Pick a style, fetch nearby places and cross-check the ones you like on Tabelog or X.",
+    lunch: "Lunch idea",
+    dinner: "Dinner idea",
+    near: "Easy area",
+    window: "Flexible window",
+    routeFit: "Why here",
+    search: "Find nearby places",
+    loading: "Looking nearby…",
+    ready: "Nearby options from Google Maps",
+    notConfigured: "Live place search is not connected yet. You can still open the same search in Google Maps, Tabelog or X.",
+    unavailable: "The live search did not respond. Use the search links below instead.",
+    noResults: "No exact matches came back. Try another food style or open the broader searches.",
+    chooseStyle: "What sounds good?",
+    routeLabel: "That day's route",
+    google: "Open in Google Maps",
+    tabelog: "Check on Tabelog",
+    x: "See posts on X",
+    fallback: "Search outside TripCheck",
+    sourceNote: "Restaurant names come from a fresh Google Maps search. Tabelog and X are outbound cross-check links; TripCheck does not scrape or combine their rankings.",
+    privacy: "Only this area's coordinates, meal type, language and selected search phrase are sent—never the itinerary text.",
+  },
+  ja: {
+    eyebrow: "旅程のついでに、ごはん探し",
+    title: "店を決めすぎない食事提案。",
+    body: "その日のルートから外れにくいエリアを選び、気分に合う店を数件だけ探します。気になる店は食べログやXも開いて、自分で確かめられます。",
+    lunch: "昼ごはん候補",
+    dinner: "夜ごはん候補",
+    near: "寄りやすいエリア",
+    window: "探しやすい時間帯",
+    routeFit: "ここを勧める理由",
+    search: "この近くのお店を見る",
+    loading: "近くのお店を探しています…",
+    ready: "Google Mapsで見つかった候補",
+    notConfigured: "現在、店名の自動取得は準備中です。同じ条件でGoogle Maps・食べログ・Xを開けます。",
+    unavailable: "店名を取得できませんでした。下のリンクから同じ条件で探せます。",
+    noResults: "ぴったりの店が見つかりませんでした。食べたいものを変えるか、検索先を直接開いてみてください。",
+    chooseStyle: "今の気分に近いもの",
+    routeLabel: "この日の流れ",
+    google: "Google Mapsで見る",
+    tabelog: "食べログで評判を見る",
+    x: "Xで最近の投稿を見る",
+    fallback: "ほかのサービスでも探す",
+    sourceNote: "店名はGoogle Mapsでその都度検索します。食べログとXは確認用リンクで、TripCheckが口コミや順位を取得・合算しているわけではありません。",
+    privacy: "送るのはエリアの座標、昼夜の区分、言語、選んだ検索語だけ。旅程本文は送りません。",
+  },
+} as const;
+
 const liveRouteCopy: Record<Locale, {
   eyebrow: string;
   title: string;
@@ -904,14 +963,14 @@ const liveRouteCopy: Record<Locale, {
     privacy: "Only the coordinate pairs and planned departure times are sent when you choose this update—never the pasted notes.",
   },
   ja: {
-    eyebrow: "ライブ交通",
-    title: "一番大きな推測を、実データへ。",
-    body: "現在の旅程日時に合わせて、公共交通の所要時間を取得します。徒歩とタクシーは引き続き計画用の概算です。",
+    eyebrow: "電車の時間を最新情報に",
+    title: "旅程の日付に合わせて、乗車時間を確認。",
+    body: "表示中の日付と出発時刻で、公共交通の所要時間を調べ直します。徒歩とタクシーは計画用の目安です。",
     button: "電車時間を更新",
     loading: "現在の経路を確認中…",
     ready: "電車時間を更新しました",
     missingDate: "時刻表に合わせるには、東京旅行の初日を入力してください。",
-    notConfigured: "Google Routesとの接続機能は完成していますが、非公開のサービスキー設定がまだ必要です。",
+    notConfigured: "電車時間の自動取得は現在準備中です。表示中のGoogle Mapsリンクから経路を確認できます。",
     outOfRange: "Googleの交通日時指定は7日前から100日先までです。この範囲内の日付を選んでください。",
     unavailable: "ライブ交通へ接続できませんでした。旅程は表示中の概算をそのまま使っています。",
     live: "ライブ経路",
@@ -1021,6 +1080,8 @@ export default function TripCheckApp({ initialLocale = "en" }: { initialLocale?:
   const [liveRouteSignature, setLiveRouteSignature] = useState("");
   const [liveRouteStatus, setLiveRouteStatus] = useState<LiveRouteStatus>("idle");
   const [liveFetchedAt, setLiveFetchedAt] = useState("");
+  const [foodSearches, setFoodSearches] = useState<Record<string, FoodSearchState>>({});
+  const [foodSearchSignature, setFoodSearchSignature] = useState("");
   const [hasChecked, setHasChecked] = useState(false);
   const [navCompact, setNavCompact] = useState(false);
   const t = copy[locale];
@@ -1033,6 +1094,7 @@ export default function TripCheckApp({ initialLocale = "en" }: { initialLocale?:
   const constraints = constraintCopy[locale];
   const editing = editingCopy[locale];
   const meals = mealCopy[locale];
+  const food = foodCopy[locale === "ja" ? "ja" : "en"];
   const liveRoute = liveRouteCopy[locale];
   const planningSignature = useMemo(() => JSON.stringify({
     itinerary,
@@ -1083,8 +1145,8 @@ export default function TripCheckApp({ initialLocale = "en" }: { initialLocale?:
   const fixedReservations = analysis?.inputMode === "wishlist"
     ? analysis.plan.days.flatMap((day) => day.stops.flatMap((stop) => stop.fixedTime ? [{ day: day.label, stop }] : []))
     : [];
-  const plannedMeals = analysis?.inputMode === "wishlist"
-    ? analysis.plan.days.flatMap((day) => day.stops.flatMap((stop) => stop.kind === "meal" ? [{ day: day.label, stop }] : []))
+  const foodSlots = analysis?.inputMode === "wishlist"
+    ? analysis.plan.foodRecommendationSlots
     : [];
 
   const characterCount = itinerary.length;
@@ -1278,6 +1340,37 @@ export default function TripCheckApp({ initialLocale = "en" }: { initialLocale?:
       } else {
         setLiveRouteStatus("unavailable");
       }
+    }
+  }
+
+  async function searchFood(slot: FoodRecommendationSlot, query: string) {
+    if (foodSearchSignature !== planningSignature) {
+      setFoodSearches({});
+      setFoodSearchSignature(planningSignature);
+    }
+    setFoodSearches((current) => ({
+      ...current,
+      [slot.id]: { status: "loading", query, fetchedAt: "", candidates: [] },
+    }));
+    try {
+      const response = await requestFoodRecommendations(slot, query, locale);
+      setFoodSearches((current) => ({
+        ...current,
+        [slot.id]: {
+          status: "ready",
+          query,
+          fetchedAt: response.fetchedAt,
+          candidates: response.candidates,
+        },
+      }));
+    } catch (error) {
+      const status = error instanceof FoodRecommendationsError && error.code === "not_configured"
+        ? "notConfigured"
+        : "unavailable";
+      setFoodSearches((current) => ({
+        ...current,
+        [slot.id]: { status, query, fetchedAt: "", candidates: [] },
+      }));
     }
   }
 
@@ -1477,18 +1570,103 @@ export default function TripCheckApp({ initialLocale = "en" }: { initialLocale?:
                     ))}</ul> : <p>{meals.noReservations}</p>}
                   </article>
                   <article>
-                    <h5><span>{String(plannedMeals.length).padStart(2, "0")}</span>{meals.mealBreaks}</h5>
-                    {plannedMeals.length > 0 ? <ul>{plannedMeals.map(({ day, stop }) => (
-                      <li key={`${day}-${stop.stop.id}`}><b>{day} · {stop.arrival}</b><span>{stop.mealKind === "lunch" ? meals.lunch : meals.dinnerLabel} · {stop.stop.area}</span><small>{meals.chooseRestaurantLater}</small></li>
-                    ))}</ul> : <p>{meals.noMeals}</p>}
-                  </article>
-                  <article>
                     <h5><span>{String(analysis.plan.unknownEntries.length).padStart(2, "0")}</span>{meals.toDecide}</h5>
                     {analysis.plan.unknownEntries.length > 0 ? <ul>{analysis.plan.unknownEntries.map((entry) => <li key={entry}><span>{entry}</span></li>)}</ul> : <p>{meals.nothingOpen}</p>}
                   </article>
                 </div>
                 {tripStartDate ? <p className="crowd-basis"><span aria-hidden="true">◌</span>{meals.crowdBasis}</p> : null}
               </section>
+              {foodSlots.length > 0 ? (
+                <section className="food-recommendations" id="food-recommendations" aria-labelledby="food-recommendations-title">
+                  <header>
+                    <p className="section-eyebrow">FOOD / {food.eyebrow}</p>
+                    <div>
+                      <h4 id="food-recommendations-title">{food.title}</h4>
+                      <p>{food.body}</p>
+                    </div>
+                  </header>
+                  <div className="food-slot-list">
+                    {foodSlots.map((slot) => {
+                      const search: FoodSearchState = (foodSearchSignature === planningSignature ? foodSearches[slot.id] : undefined)
+                        ?? { status: "idle", query: slot.queryIdeas[0], fetchedAt: "", candidates: [] };
+                      const day = analysis.plan.days[slot.dayIndex];
+                      const broadLinks = foodSearchLinks(search.query || slot.queryIdeas[0], slot.area, locale);
+                      return (
+                        <article className="food-slot" key={slot.id}>
+                          <header>
+                            <div className="food-slot-number"><span>{String(slot.dayIndex + 1).padStart(2, "0")}</span><small>{slot.dayLabel}</small></div>
+                            <div>
+                              <p>{slot.kind === "lunch" ? food.lunch : food.dinner}</p>
+                              <h5>{slot.area}</h5>
+                              <span>{food.window} · {slot.window}</span>
+                            </div>
+                          </header>
+                          <div className="food-route-context">
+                            <p>{food.routeLabel}</p>
+                            <div className="food-route-strip" aria-label={`${slot.dayLabel} · ${food.routeLabel}`}>
+                              <span><i aria-hidden="true" />{day.stops[0]?.stop.name}</span>
+                              <strong><i aria-hidden="true">●</i>{slot.area}<small>{slot.kind === "lunch" ? food.lunch : food.dinner}</small></strong>
+                              <span><i aria-hidden="true" />{day.stops.at(-1)?.stop.name}</span>
+                            </div>
+                            <dl>
+                              <div><dt>{food.near}</dt><dd>{slot.area}</dd></div>
+                              <div><dt>{food.routeFit}</dt><dd>{slot.rationale}</dd></div>
+                            </dl>
+                          </div>
+                          <div className="food-query-panel">
+                            <p>{food.chooseStyle}</p>
+                            <div className="food-query-chips">
+                              {slot.queryIdeas.map((query) => (
+                                <button
+                                  className={search.query === query ? "is-selected" : ""}
+                                  disabled={search.status === "loading"}
+                                  key={query}
+                                  onClick={() => searchFood(slot, query)}
+                                  type="button"
+                                >{query}</button>
+                              ))}
+                            </div>
+                            <button className="food-search-button" disabled={search.status === "loading"} onClick={() => searchFood(slot, search.query || slot.queryIdeas[0])} type="button">
+                              {search.status === "loading" ? food.loading : food.search}<span aria-hidden="true">↗</span>
+                            </button>
+                            <small>{food.privacy}</small>
+                          </div>
+                          {search.status === "ready" ? (
+                            <div className="food-candidates" aria-live="polite">
+                              <header><p>{food.ready}</p><span className="google-maps-attribution" translate="no">Google Maps</span></header>
+                              {search.candidates.length > 0 ? <ol>{search.candidates.map((candidate, index) => {
+                                const links = foodSearchLinks(candidate.name, slot.area, locale);
+                                return (
+                                  <li key={candidate.id}>
+                                    <span>{String(index + 1).padStart(2, "0")}</span>
+                                    <div><p>{candidate.type}</p><h6>{candidate.name}</h6><small>{candidate.address}</small></div>
+                                    <nav aria-label={candidate.name}>
+                                      <a href={candidate.googleMapsUrl} rel="noreferrer" target="_blank">{food.google} ↗</a>
+                                      <a href={links.tabelog} rel="noreferrer" target="_blank">{food.tabelog} ↗</a>
+                                      <a href={links.x} rel="noreferrer" target="_blank">{food.x} ↗</a>
+                                    </nav>
+                                  </li>
+                                );
+                              })}</ol> : <p className="food-search-message">{food.noResults}</p>}
+                            </div>
+                          ) : search.status === "notConfigured" || search.status === "unavailable" ? (
+                            <p className="food-search-message" role="status">{search.status === "notConfigured" ? food.notConfigured : food.unavailable}</p>
+                          ) : null}
+                          <footer>
+                            <p>{food.fallback}</p>
+                            <nav>
+                              <a href={broadLinks.googleMaps} rel="noreferrer" target="_blank">Google Maps ↗</a>
+                              <a href={broadLinks.tabelog} rel="noreferrer" target="_blank">Tabelog ↗</a>
+                              <a href={broadLinks.x} rel="noreferrer" target="_blank">X ↗</a>
+                            </nav>
+                            <small>{food.sourceNote}</small>
+                          </footer>
+                        </article>
+                      );
+                    })}
+                  </div>
+                </section>
+              ) : null}
               <section className="base-result" aria-labelledby="base-result-title">
                 <header>
                   <div><p className="section-eyebrow">{details.baseEyebrow}</p><h4 id="base-result-title">{details.baseTitle}</h4></div>

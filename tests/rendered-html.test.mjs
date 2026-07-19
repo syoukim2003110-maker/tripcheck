@@ -40,12 +40,12 @@ test("server-renders the TripCheck landing experience", async () => {
   assert.match(html, /SoftwareApplication/);
   assert.match(html, /How is it different from ChatGPT or Google Maps\?/);
   assert.match(html, /Who can see the itinerary I paste\?/);
-  assert.match(html, /only coordinate pairs and planned departure times are sent to Google Maps/i);
+  assert.match(html, /Live transit sends only coordinate pairs and departure times/i);
   assert.match(html, /Optional live Google Maps public-transit times/i);
   assert.doesNotMatch(html, /founding-review|human-assisted itinerary|Checkout opening soon/i);
   assert.match(html, /English/);
   assert.match(html, /日本語/);
-  assert.match(html, /한국어/);
-  assert.match(html, /简体中文/);
+  assert.doesNotMatch(html, /<option[^>]*value="ko"/i);
+  assert.doesNotMatch(html, /<option[^>]*value="zh"/i);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Your site is taking shape/i);
 });

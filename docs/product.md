@@ -91,13 +91,13 @@ and the engine looks for route and timing conflicts.
     replace estimated public-transport minutes with fresh Google Maps Routes
     results for each planned leg. Send coordinates and departure timestamps,
     never the pasted itinerary text, and keep walking/taxi visibly estimated.
-20. Let the traveller choose whether TripCheck should protect lunch and dinner,
-    dinner only, or no meal breaks. Insert area-specific meal windows into the
-    deterministic schedule so they consume time and can expose a reservation or
-    airport conflict; do not invent a restaurant when none was supplied.
-21. Put fixed reservations, meal decisions and unresolved entries in one trip
-    brief above the daily route so the traveller can see what is decided and
-    what still needs a choice.
+20. Let the traveller choose whether TripCheck should suggest food around the
+    whole route, dinner only, or no food recommendations. Recommendations remain
+    outside the fixed schedule: they identify a useful area and broad time
+    window without locking an exact restaurant or start time.
+21. Put fixed reservations and unresolved entries in one trip brief, then show
+    food recommendations as a separate, visually connected layer beside each
+    day's route.
 22. When a calendar date is available, show a date-aware crowd outlook beside
     each scheduled item. The first version is an explicitly labelled planning
     heuristic with a visible weekend driver, never a live queue claim.
@@ -107,23 +107,31 @@ distance and formula-based travel minutes are planning estimates, not claims
 about live travel time. Venue stay values are editable product assumptions,
 not official duration requirements.
 
-## Meal-and-constraint vertical slice acceptance criteria
+## Food-recommendation vertical slice acceptance criteria
 
-- The input asks for one low-effort meal preference: lunch and dinner, dinner
-  only, or no automatic meal breaks.
-- Meal breaks appear inside the day timeline near their target windows, use the
-  current route area, add their duration to the day and move later arrivals.
-- A meal break can make an existing reservation late or exceed the airport
-  deadline; those conflicts remain visible rather than being hidden.
-- A traveller-supplied restaurant with a fixed day and time continues to be
-  treated as the hard reservation. Automatic meal breaks never claim to be a
-  specific venue or to have availability.
-- The trip brief centralises protected reservations, placed meal breaks and
-  unresolved entries before the detailed route.
+- The input asks for one low-effort preference: suggest food around the route,
+  suggest dinner only, or hide food recommendations.
+- Suggested food never changes a day's calculated arrival times, reservation
+  feasibility or airport deadline.
+- Every suggestion explains why that area fits the route and uses a flexible
+  time window rather than a fixed booking time.
+- A traveller-supplied restaurant with a fixed day and time remains a real
+  reservation constraint; automatic recommendations remain optional.
+- A user can request current nearby restaurant candidates from Google Places.
+  Only the recommendation area's coordinates, meal type, language and search
+  intent leave the browser; itinerary prose is not sent.
+- Candidate cards show Google Maps attribution and provide separate outbound
+  checks for Tabelog and social search. TripCheck does not scrape, copy or imply
+  live ranking signals from Tabelog or social networks.
+- If Places is unavailable, the product keeps useful Google Maps, Tabelog and
+  social search exits instead of inventing restaurant names.
+- The trip brief centralises protected reservations and unresolved entries;
+  food remains a clearly separate recommendation layer.
 - Crowd outlooks are calculated only when a trip date exists, identify weekend
   uplift as a driver and are labelled as planning estimates with low or medium
   confidence.
-- All behaviour works without an account, AI call or live provider.
+- The route and recommendation-area logic work without an account or AI call;
+  live restaurant names gracefully fall back when the provider is unavailable.
 
 ## AI and non-AI boundary
 
