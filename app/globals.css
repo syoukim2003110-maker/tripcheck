@@ -23,6 +23,46 @@
   src: url("/fonts/satoshi-700.woff2") format("woff2");
 }
 
+@font-face {
+  font-display: swap;
+  font-family: "Dela Gothic One";
+  font-style: normal;
+  font-weight: 400;
+  src: url("/fonts/dela-gothic-one-japanese-400.woff2") format("woff2");
+}
+
+@font-face {
+  font-display: swap;
+  font-family: "Noto Sans JP";
+  font-style: normal;
+  font-weight: 400;
+  src: url("/fonts/noto-sans-jp-japanese-400.woff2") format("woff2");
+}
+
+@font-face {
+  font-display: swap;
+  font-family: "Noto Sans JP";
+  font-style: normal;
+  font-weight: 700;
+  src: url("/fonts/noto-sans-jp-japanese-700.woff2") format("woff2");
+}
+
+@font-face {
+  font-display: swap;
+  font-family: "Shippori Mincho";
+  font-style: normal;
+  font-weight: 400;
+  src: url("/fonts/shippori-mincho-japanese-400.woff2") format("woff2");
+}
+
+@font-face {
+  font-display: swap;
+  font-family: "Shippori Mincho";
+  font-style: normal;
+  font-weight: 600;
+  src: url("/fonts/shippori-mincho-japanese-600.woff2") format("woff2");
+}
+
 :root {
   /* Core colour system */
   --paper: #f1ebde;
