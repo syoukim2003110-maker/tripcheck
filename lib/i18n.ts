@@ -48,7 +48,7 @@ export type AppCopy = {
     soon: string;
     inputLabel: string;
     placeholder: string;
-    travelMonth: string;
+    tripDays: string;
     pace: string;
     checking: string;
     button: string;
@@ -95,11 +95,11 @@ export const copy: Record<Locale, AppCopy> = {
     languageLabel: "Language",
     nav: { method: "How it works", trust: "Why TripCheck", beta: "Tokyo beta" },
     hero: {
-      eyebrow: "AI itinerary reality check",
-      line1: "Your itinerary is beautiful.",
-      line2: "Reality may disagree.",
-      body: "Paste the trip you made with AI or your own notes. TripCheck finds the impossible joins, fragile reservations, and days that look shorter on a screen than they feel in Tokyo.",
-      cta: "Check my itinerary",
+      eyebrow: "Less planning work. More Japan.",
+      line1: "Drop every place.",
+      line2: "Get the whole trip.",
+      body: "Add the places you want, your hotel and your flights. Get a day-by-day Tokyo plan that already knows where you start, when you must stop and how to move in between.",
+      cta: "Build my Tokyo trip",
       scroll: "Scroll to enter the trip",
     },
     visual: {
@@ -113,39 +113,39 @@ export const copy: Record<Locale, AppCopy> = {
       eyebrow: "The hidden layer",
       title: "Plans look flat.",
       accent: "Tokyo isn’t.",
-      body: "A route is more than dots on a map. Station exits, queues, reservation windows, heat, luggage and the energy you still want at dinner all live between those dots.",
+      body: "A good trip begins at the hotel, protects the airport deadline and still leaves energy for dinner. TripCheck fits those invisible hours around the places you care about.",
       metrics: [
         { value: "42 min", label: "one innocent-looking transfer" },
         { value: "850 m", label: "walking inside major stations" },
-        { value: "30–45 min", label: "buffer around timed entry" },
+        { value: "2–3 h", label: "airport time before an international flight" },
       ],
     },
     friction: {
-      eyebrow: "We inspect the joins",
-      title: "The itinerary isn’t wrong. Its assumptions are invisible.",
-      body: "TripCheck separates what must happen from what can move, then shows the trade-off before changing your plan.",
+      eyebrow: "The work you should not have to do",
+      title: "A saved list is not a trip yet.",
+      body: "The useful answer is not another list. It is knowing which day, what order, where to stay and when to leave for the airport.",
       cards: [
-        { number: "01", title: "Geography", body: "Keep nearby experiences together instead of crossing the city for one stop." },
-        { number: "02", title: "Time", body: "Count queues, station walking and recovery—not only attraction duration." },
-        { number: "03", title: "Certainty", body: "Distinguish fixed tickets, volatile opening hours and places we cannot yet verify." },
+        { number: "01", title: "The right day", body: "Nearby experiences belong together; arrival and departure days should carry less." },
+        { number: "02", title: "The right base", body: "See which hotel area removes the most repeated travel from the whole trip." },
+        { number: "03", title: "The real deadline", body: "Flights, airport transfer and check-in time become part of the plan—not a last-minute surprise." },
       ],
     },
     checker: {
-      eyebrow: "Try the prototype",
-      title: "Make your draft face reality.",
-      body: "Any format is fine. Rough notes, an AI answer, or the itinerary your friend sent at 2 a.m.",
-      sample: "Load a deliberately messy example",
-      itinerary: "Itinerary text",
+      eyebrow: "Build from your wishlist",
+      title: "Drop in the places. Get the trip.",
+      body: "One place per line is enough. Add your hotel and flights if you have them; the first and last day will adjust around the real travel window.",
+      sample: "Load an example wishlist",
+      itinerary: "Places",
       saved: "Saved places",
       soon: "Soon",
-      inputLabel: "Paste your itinerary",
-      placeholder: "Day 1\n09:00 Senso-ji\n11:30 teamLab…\n\nPaste any format. Rough notes are fine.",
-      travelMonth: "Travel month",
+      inputLabel: "Places you want to visit",
+      placeholder: "Senso-ji\nShibuya Sky\nteamLab Planets\nGhibli Museum\n\nOne place per line. Any order is fine.",
+      tripDays: "Days in Tokyo",
       pace: "Your pace",
       checking: "Checking every join…",
-      button: "Reality-check my trip",
-      prototype: "Prototype",
-      prototypeBody: "Illustrative rules only. Live opening hours, tickets, weather and train routes are not connected yet.",
+      button: "Build my best route",
+      prototype: "Limited demo",
+      prototypeBody: "The current Tokyo demo recognises a limited place and hotel-area set. Travel minutes and airport transfer are planning estimates; use the Google Maps and official-airport links before relying on them.",
     },
     result: {
       eyebrow: "Reality score",
@@ -166,50 +166,45 @@ export const copy: Record<Locale, AppCopy> = {
       load: { easy: "Easy", balanced: "Balanced", full: "Full" },
     },
     method: {
-      eyebrow: "Not another travel chatbot",
-      title: "Facts decide.",
-      accent: "AI explains.",
+      eyebrow: "From wishlist to travel-ready",
+      title: "One input.",
+      accent: "The whole trip fits around it.",
       cards: [
-        { number: "01", title: "Parse the mess", body: "AI turns rough notes into structured days, times and candidate places." },
-        { number: "02", title: "Check the constraints", body: "Reproducible rules test geography, time, reservations, load and freshness." },
-        { number: "03", title: "Explain every trade-off", body: "You see why something moved, what remains uncertain and how to put it back." },
+        { number: "01", title: "Drop in the places", body: "One per line, in any order. No timetable or spreadsheet needed." },
+        { number: "02", title: "Add the boundaries", body: "Hotel, days and flights tell the plan where it can really begin and end." },
+        { number: "03", title: "Choose the trade-off", body: "Compare the fastest move with the calmer, cheaper or lower-walking option." },
       ],
     },
     trust: {
-      eyebrow: "The itinerary repair layer",
-      title: "We don’t just flag a bad day. We find the smallest change that saves it.",
+      eyebrow: "One plan instead of six tabs",
+      title: "From the hotel door to the airport gate.",
       cards: [
-        { letter: "A", title: "Protect your priorities", body: "Must-do places and confirmed tickets become anchors that the repair cannot casually move." },
-        { letter: "B", title: "Repair the joins", body: "We change the order, day or buffer around a stop—not your entire idea of the trip." },
-        { letter: "C", title: "Explain the alternative", body: "Every move includes its reason, trade-off and the condition under which you can undo it." },
+        { letter: "A", title: "Stay in the right area", body: "Hotel areas are compared against your actual wishlist, not a generic popularity ranking." },
+        { letter: "B", title: "Keep travel days honest", body: "Landing, baggage, city transfer and early airport arrival reduce the first and last day automatically." },
+        { letter: "C", title: "Keep every choice visible", body: "See what gets faster, what costs more and why a different order makes the trip easier." },
       ],
     },
-    footer: "Working prototype · Tokyo only · Live data connection comes next.",
+    footer: "Private browser demo · Tokyo only · Your itinerary is not uploaded or reviewed by a person.",
     pace: { relaxed: "Relaxed", balanced: "Balanced", fast: "Fast" },
     months: ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
-    sample: `Day 1
-08:30 Tsukiji Outer Market
-10:30 teamLab Planets
-13:00 Senso-ji and Asakusa
-15:30 Ghibli Museum
-18:00 Shibuya Sky
-20:00 Golden Gai, Shinjuku
-
-Day 2
-09:00 Meiji Jingu
-11:00 Harajuku
-14:00 Akihabara
-17:00 Tokyo Skytree`,
+    sample: `Ghibli Museum
+Shibuya Sky
+Senso-ji
+Tokyo Skytree
+teamLab Planets
+Tsukiji Outer Market
+Meiji Jingu
+Akihabara`,
   },
   ja: {
     languageLabel: "言語",
     nav: { method: "仕組み", trust: "TripCheckの違い", beta: "東京ベータ" },
     hero: {
-      eyebrow: "AI旅程のリアリティチェック",
-      line1: "その旅程は、美しい。",
-      line2: "現実でも成立する？",
-      body: "AIが作った予定でも、自分のメモでも。そのまま貼り付ければ、無理な移動、崩れやすい予約、画面で見るより長く感じる一日を見つけます。",
-      cta: "旅程をチェックする",
+      eyebrow: "計画の面倒を減らして、もっと日本へ。",
+      line1: "行きたい場所を、全部入れる。",
+      line2: "あとは、旅程になる。",
+      body: "行きたい場所、ホテル、飛行機を入れるだけ。どこから始まり、何時に切り上げ、どう移動するかまで入った東京の旅程ができます。",
+      cta: "東京の旅程を作る",
       scroll: "スクロールして旅程の中へ",
     },
     visual: { draft: "元の旅程", checking: "10か所を確認中", conflict: "東京横断の衝突", reservation: "時間指定予約", rebuild: "現実に合わせて再構成" },
@@ -217,39 +212,39 @@ Day 2
       eyebrow: "見えないレイヤー",
       title: "予定表は平面。",
       accent: "東京は、違う。",
-      body: "旅程は地図上の点だけではありません。駅の出口、行列、予約時間、暑さ、荷物、そして夕食まで残しておきたい体力。そのすべてが点と点の間にあります。",
+      body: "良い旅程はホテルから始まり、空港の締切を守り、夕食を楽しむ体力も残します。見えない時間まで、行きたい場所の周りへ収めます。",
       metrics: [
         { value: "42分", label: "簡単に見える一度の移動" },
         { value: "850m", label: "巨大駅の中だけで歩く距離" },
-        { value: "30〜45分", label: "時間指定予約に必要な余白" },
+        { value: "2〜3時間", label: "国際線の前に空港で確保したい時間" },
       ],
     },
     friction: {
-      eyebrow: "つなぎ目を検査する",
-      title: "旅程が間違っているのではない。前提が見えていない。",
-      body: "絶対に動かせないものと、変更できるものを分け、予定を変える前にトレードオフを説明します。",
+      eyebrow: "本来やらなくていい計画作業",
+      title: "保存リストは、まだ旅程ではない。",
+      body: "必要なのは別の候補リストではなく、どの日に、どの順番で、どこに泊まり、何時に空港へ向かうかという答えです。",
       cards: [
-        { number: "01", title: "位置関係", body: "一か所のために東京を横断せず、近い体験を同じ日にまとめます。" },
-        { number: "02", title: "時間", body: "滞在時間だけでなく、行列、駅構内、休憩まで計算します。" },
-        { number: "03", title: "確実性", body: "確定チケット、変わりやすい営業時間、未検証情報を区別します。" },
+        { number: "01", title: "合う日", body: "近い体験は同じ日に。到着日と出発日は無理を減らします。" },
+        { number: "02", title: "合う拠点", body: "旅全体の繰り返し移動が最も少なくなるホテルエリアを比べます。" },
+        { number: "03", title: "本当の締切", body: "飛行機、空港移動、搭乗前の余裕まで最初から旅程に含めます。" },
       ],
     },
     checker: {
-      eyebrow: "プロトタイプを試す",
-      title: "その旅程を、現実と照合する。",
-      body: "形式は自由です。ラフなメモ、AIの回答、深夜2時に友人から届いた予定でも構いません。",
-      sample: "わざと無理のあるサンプルを読み込む",
-      itinerary: "旅程テキスト",
+      eyebrow: "行きたい場所から自動作成",
+      title: "行きたい場所を、まとめて入れる。",
+      body: "1行に1か所、順番は適当で大丈夫。ホテルと飛行機も分かれば入れてください。初日と最終日を、実際に使える時間へ合わせます。",
+      sample: "行きたい場所の例を読み込む",
+      itinerary: "行きたい場所",
       saved: "保存した場所",
       soon: "準備中",
-      inputLabel: "旅程を貼り付ける",
-      placeholder: "1日目\n09:00 浅草寺\n11:30 チームラボ…\n\nどんな形式でも大丈夫です。",
-      travelMonth: "旅行月",
+      inputLabel: "行きたい場所を入力",
+      placeholder: "浅草寺\n渋谷スカイ\nチームラボプラネッツ\n三鷹の森ジブリ美術館\n\n1行に1か所。順番は適当で大丈夫です。",
+      tripDays: "東京にいる日数",
       pace: "旅行のペース",
       checking: "つなぎ目を確認中…",
-      button: "旅程をリアリティチェック",
-      prototype: "試作版",
-      prototypeBody: "現在は説明用ルールです。最新の営業時間、チケット、天候、経路とはまだ接続していません。",
+      button: "最適な旅程を作る",
+      prototype: "限定デモ",
+      prototypeBody: "現在の東京デモが認識できる場所とホテルエリアは限定的です。移動分数と空港移動は計画用の概算なので、Google Mapsと空港公式案内で最終確認してください。",
     },
     result: {
       eyebrow: "成立度スコア",
@@ -270,50 +265,45 @@ Day 2
       load: { easy: "余裕あり", balanced: "適度", full: "多め" },
     },
     method: {
-      eyebrow: "ただの旅行チャットではない",
-      title: "事実が決める。",
-      accent: "AIが説明する。",
+      eyebrow: "行きたい場所から、出発できる旅程へ",
+      title: "入力は一度。",
+      accent: "旅全体が、その周りに収まる。",
       cards: [
-        { number: "01", title: "ラフな予定を理解", body: "AIがメモを日付、時間、候補地へ構造化します。" },
-        { number: "02", title: "制約を計算", body: "再現可能なルールで位置、時間、予約、負荷、鮮度を検査します。" },
-        { number: "03", title: "変更理由を説明", body: "なぜ動かしたか、何が不確かか、元に戻す条件まで示します。" },
+        { number: "01", title: "場所を入れる", body: "1行に1か所、順番は適当で大丈夫。時刻表も表計算も不要です。" },
+        { number: "02", title: "旅の端を入れる", body: "ホテル、日数、飛行機から、本当に使える時間を決めます。" },
+        { number: "03", title: "移動を選ぶ", body: "最速だけでなく、歩きやすさ、費用、疲れにくさとの違いも比べます。" },
       ],
     },
     trust: {
-      eyebrow: "旅程を修復するレイヤー",
-      title: "無理だと指摘するだけではない。旅を救える最小限の変更を見つける。",
+      eyebrow: "六つのタブを、一つの旅程へ",
+      title: "ホテルの玄関から、空港のゲートまで。",
       cards: [
-        { letter: "A", title: "優先順位を守る", body: "必ず行きたい場所と確定チケットを、簡単には動かさない軸にします。" },
-        { letter: "B", title: "つなぎ目だけを直す", body: "旅全体ではなく、順番、日付、前後の余白を必要な分だけ変えます。" },
-        { letter: "C", title: "代替案を説明する", body: "動かす理由、失うもの、元に戻せる条件をすべて示します。" },
+        { letter: "A", title: "泊まる場所を決めやすく", body: "一般的な人気順ではなく、あなたの行き先から宿泊エリアを比較します。" },
+        { letter: "B", title: "移動日を正直に", body: "到着、荷物、市内移動、早めの空港到着を初日と最終日へ反映します。" },
+        { letter: "C", title: "選択肢を見えるままに", body: "何が速く、何が高く、なぜ順番を変えると楽になるのかを示します。" },
       ],
     },
-    footer: "開発中のプロトタイプ · 東京限定 · 次はライブデータ接続",
+    footer: "ブラウザ内で動く限定デモ · 東京限定 · 旅程を送信せず、人も閲覧しません",
     pace: { relaxed: "ゆったり", balanced: "標準", fast: "速め" },
     months: ["1月", "2月", "3月", "4月", "5月", "6月", "7月", "8月", "9月", "10月", "11月", "12月"],
-    sample: `1日目
-08:30 築地場外市場
-10:30 チームラボプラネッツ
-13:00 浅草寺と浅草
-15:30 三鷹の森ジブリ美術館
-18:00 渋谷スカイ
-20:00 新宿ゴールデン街
-
-2日目
-09:00 明治神宮
-11:00 原宿
-14:00 秋葉原
-17:00 東京スカイツリー`,
+    sample: `三鷹の森ジブリ美術館
+渋谷スカイ
+浅草寺
+東京スカイツリー
+チームラボプラネッツ
+築地場外市場
+明治神宮
+秋葉原`,
   },
   ko: {
     languageLabel: "언어",
     nav: { method: "작동 방식", trust: "TripCheck의 차이", beta: "도쿄 베타" },
     hero: {
-      eyebrow: "AI 여행 일정 현실성 검사",
-      line1: "일정은 아름답습니다.",
-      line2: "현실에서도 가능할까요?",
-      body: "AI가 만든 일정이나 직접 쓴 메모를 붙여 넣으세요. 무리한 이동, 촉박한 예약, 화면보다 훨씬 길게 느껴지는 하루를 찾아냅니다.",
-      cta: "내 일정 확인하기",
+      eyebrow: "계획의 번거로움은 줄이고, 일본은 더 많이.",
+      line1: "가고 싶은 곳을 모두 넣고.",
+      line2: "완성된 여행을 받으세요.",
+      body: "장소, 호텔과 항공편만 넣으세요. 어디서 시작하고 언제 끝내며 어떻게 이동할지까지 포함한 도쿄 일정이 만들어집니다.",
+      cta: "도쿄 일정 만들기",
       scroll: "스크롤하여 여행 속으로",
     },
     visual: { draft: "초안 일정", checking: "10곳 확인 중", conflict: "도쿄 횡단 충돌", reservation: "시간 지정 입장", rebuild: "현실에 맞게 재구성" },
@@ -321,39 +311,39 @@ Day 2
       eyebrow: "보이지 않는 층",
       title: "계획은 평면입니다.",
       accent: "도쿄는 아닙니다.",
-      body: "여정은 지도 위 점만으로 끝나지 않습니다. 역 출구, 대기 줄, 예약 시간, 더위, 짐, 저녁까지 남겨둘 체력이 그 점들 사이에 있습니다.",
+      body: "좋은 일정은 호텔에서 시작해 공항 마감 시간을 지키고 저녁을 즐길 체력도 남깁니다. 보이지 않는 시간까지 일정에 넣습니다.",
       metrics: [
         { value: "42분", label: "간단해 보이는 한 번의 이동" },
         { value: "850m", label: "대형 역 내부 도보 거리" },
-        { value: "30–45분", label: "시간 지정 입장 전후 여유" },
+        { value: "2–3시간", label: "국제선 출발 전 공항 여유" },
       ],
     },
     friction: {
-      eyebrow: "연결 구간을 검사합니다",
-      title: "일정이 틀린 것이 아닙니다. 전제가 보이지 않을 뿐입니다.",
-      body: "반드시 지켜야 할 것과 옮길 수 있는 것을 구분하고, 일정을 바꾸기 전에 선택의 대가를 설명합니다.",
+      eyebrow: "직접 하지 않아도 될 계획 작업",
+      title: "저장 목록은 아직 여행이 아닙니다.",
+      body: "필요한 것은 또 다른 목록이 아니라 어느 날, 어떤 순서, 어디에 머물고 언제 공항으로 갈지에 대한 답입니다.",
       cards: [
-        { number: "01", title: "지리", body: "한 곳 때문에 도시를 가로지르지 않도록 가까운 경험을 묶습니다." },
-        { number: "02", title: "시간", body: "관람 시간뿐 아니라 줄, 역 내부 이동, 회복 시간까지 셉니다." },
-        { number: "03", title: "확실성", body: "확정 티켓, 변동 영업시간, 아직 검증 못 한 장소를 구분합니다." },
+        { number: "01", title: "맞는 날짜", body: "가까운 장소는 같은 날에, 도착일과 출발일은 가볍게 배치합니다." },
+        { number: "02", title: "맞는 거점", body: "전체 여행의 반복 이동을 가장 줄이는 숙박 지역을 비교합니다." },
+        { number: "03", title: "실제 마감", body: "항공편, 공항 이동과 탑승 전 여유를 처음부터 일정에 넣습니다." },
       ],
     },
     checker: {
-      eyebrow: "프로토타입 체험",
-      title: "초안을 현실과 대조해 보세요.",
-      body: "형식은 무엇이든 괜찮습니다. 메모, AI 답변, 새벽 2시에 친구가 보낸 일정도 됩니다.",
-      sample: "일부러 엉킨 예시 불러오기",
-      itinerary: "일정 텍스트",
+      eyebrow: "가고 싶은 곳으로 자동 생성",
+      title: "장소만 넣으면 여행이 됩니다.",
+      body: "한 줄에 한 장소, 순서는 상관없습니다. 호텔과 항공편을 알고 있다면 추가하세요. 첫날과 마지막 날을 실제 여행 가능 시간에 맞춥니다.",
+      sample: "예시 위시리스트 불러오기",
+      itinerary: "가고 싶은 장소",
       saved: "저장한 장소",
       soon: "준비 중",
-      inputLabel: "일정을 붙여 넣으세요",
-      placeholder: "1일차\n09:00 센소지\n11:30 팀랩…\n\n어떤 형식도 괜찮습니다.",
-      travelMonth: "여행 월",
+      inputLabel: "가고 싶은 장소 입력",
+      placeholder: "센소지\n시부야 스카이\n팀랩 플래닛\n지브리 미술관\n\n한 줄에 한 장소. 순서는 상관없습니다.",
+      tripDays: "도쿄 여행 일수",
       pace: "여행 속도",
       checking: "모든 연결 구간 확인 중…",
-      button: "일정 현실성 확인",
-      prototype: "프로토타입",
-      prototypeBody: "현재는 설명용 규칙입니다. 실시간 영업시간, 티켓, 날씨, 열차 경로는 아직 연결되지 않았습니다.",
+      button: "최적 일정 만들기",
+      prototype: "제한 데모",
+      prototypeBody: "현재 도쿄 데모가 인식하는 장소와 호텔 지역은 제한적입니다. 이동 시간과 공항 이동은 계획 추정치이므로 Google Maps와 공항 공식 안내에서 확인하세요.",
     },
     result: {
       eyebrow: "현실성 점수",
@@ -374,50 +364,45 @@ Day 2
       load: { easy: "여유", balanced: "적당", full: "빡빡함" },
     },
     method: {
-      eyebrow: "또 하나의 여행 챗봇이 아닙니다",
-      title: "사실이 결정하고.",
-      accent: "AI가 설명합니다.",
+      eyebrow: "위시리스트에서 출발 가능한 일정으로",
+      title: "입력은 한 번.",
+      accent: "여행 전체가 그 안에 맞춰집니다.",
       cards: [
-        { number: "01", title: "흩어진 메모 이해", body: "AI가 메모를 날짜, 시간, 후보 장소로 구조화합니다." },
-        { number: "02", title: "제약 계산", body: "재현 가능한 규칙으로 지리, 시간, 예약, 피로, 최신성을 검사합니다." },
-        { number: "03", title: "모든 변경 설명", body: "왜 옮겼는지, 무엇이 불확실한지, 되돌릴 조건까지 보여 줍니다." },
+        { number: "01", title: "장소 넣기", body: "한 줄에 한 곳, 순서는 상관없습니다. 시간표나 스프레드시트가 필요 없습니다." },
+        { number: "02", title: "경계 넣기", body: "호텔, 날짜와 항공편이 실제로 쓸 수 있는 시간을 정합니다." },
+        { number: "03", title: "이동 선택하기", body: "가장 빠른 방법과 덜 걷고 덜 지치는 선택을 비교합니다." },
       ],
     },
     trust: {
-      eyebrow: "일정을 복구하는 레이어",
-      title: "문제를 지적하는 데서 끝나지 않고, 여행을 살리는 가장 작은 수정을 찾습니다.",
+      eyebrow: "여섯 개의 탭을 하나의 일정으로",
+      title: "호텔 문에서 공항 게이트까지.",
       cards: [
-        { letter: "A", title: "우선순위 보호", body: "꼭 가고 싶은 장소와 확정 티켓을 함부로 움직이지 않는 기준점으로 둡니다." },
-        { letter: "B", title: "연결만 복구", body: "여행 전체가 아니라 순서, 날짜 또는 여유 시간만 필요한 만큼 바꿉니다." },
-        { letter: "C", title: "대안 설명", body: "이동 이유, 감수할 점, 되돌릴 수 있는 조건을 모두 보여 줍니다." },
+        { letter: "A", title: "맞는 숙박 지역", body: "일반 인기순이 아니라 실제 위시리스트를 기준으로 숙박 지역을 비교합니다." },
+        { letter: "B", title: "정직한 이동일", body: "도착, 수하물, 도심 이동과 이른 공항 도착을 첫날과 마지막 날에 반영합니다." },
+        { letter: "C", title: "보이는 선택", body: "무엇이 빠르고 비싸며 왜 순서를 바꾸면 편해지는지 보여 줍니다." },
       ],
     },
-    footer: "개발 중 프로토타입 · 도쿄 전용 · 다음은 실시간 데이터 연결",
+    footer: "브라우저 안에서 실행되는 제한 데모 · 도쿄 전용 · 일정은 업로드되거나 사람에게 공개되지 않습니다",
     pace: { relaxed: "여유롭게", balanced: "보통", fast: "빠르게" },
     months: ["1월", "2월", "3월", "4월", "5월", "6월", "7월", "8월", "9월", "10월", "11월", "12월"],
-    sample: `1일차
-08:30 쓰키지 장외시장
-10:30 팀랩 플래닛
-13:00 센소지와 아사쿠사
-15:30 지브리 미술관
-18:00 시부야 스카이
-20:00 신주쿠 골든가이
-
-2일차
-09:00 메이지 신궁
-11:00 하라주쿠
-14:00 아키하바라
-17:00 도쿄 스카이트리`,
+    sample: `지브리 미술관
+시부야 스카이
+센소지
+도쿄 스카이트리
+팀랩 플래닛
+쓰키지 장외시장
+메이지 신궁
+아키하바라`,
   },
   zh: {
     languageLabel: "语言",
     nav: { method: "工作方式", trust: "TripCheck的不同", beta: "东京测试版" },
     hero: {
-      eyebrow: "AI行程现实性检查",
-      line1: "你的行程很漂亮。",
-      line2: "现实中也走得通吗？",
-      body: "粘贴AI生成的行程或自己的笔记。TripCheck会找出不现实的移动、脆弱的预约，以及在屏幕上看起来比东京现实中更短的一天。",
-      cta: "检查我的行程",
+      eyebrow: "少一点规划负担，多一点日本旅行。",
+      line1: "把想去的地方全部放进去。",
+      line2: "直接得到完整旅程。",
+      body: "输入地点、酒店和航班，即可得到一份知道从哪里开始、何时结束以及每段如何移动的东京行程。",
+      cta: "生成东京行程",
       scroll: "向下滚动，进入旅程",
     },
     visual: { draft: "原始行程", checking: "正在检查10个地点", conflict: "跨城冲突", reservation: "定时入场", rebuild: "按现实重新安排" },
@@ -425,39 +410,39 @@ Day 2
       eyebrow: "隐藏的一层",
       title: "计划是平面的。",
       accent: "东京不是。",
-      body: "路线不只是地图上的点。车站出口、排队、预约时段、炎热、行李，以及你想留到晚餐的体力，都藏在这些点之间。",
+      body: "好的行程从酒店开始，守住机场截止时间，也为晚餐留下体力。那些看不见的时间也应该被安排进去。",
       metrics: [
         { value: "42分钟", label: "一次看似简单的移动" },
         { value: "850米", label: "大型车站内部步行距离" },
-        { value: "30–45分钟", label: "定时入场前后的缓冲" },
+        { value: "2–3小时", label: "国际航班起飞前的机场预留" },
       ],
     },
     friction: {
-      eyebrow: "检查每一个连接",
-      title: "行程并没有错。只是它的前提看不见。",
-      body: "我们区分不可移动与可以调整的项目，并在改变计划前说明取舍。",
+      eyebrow: "你本不必亲自完成的规划工作",
+      title: "收藏清单还不是一趟旅行。",
+      body: "真正需要的不是另一份清单，而是哪一天、什么顺序、住在哪里以及何时前往机场。",
       cards: [
-        { number: "01", title: "地理", body: "把相近体验放在一起，避免只为一个地点横穿东京。" },
-        { number: "02", title: "时间", body: "不只计算参观，还包括排队、站内步行和恢复时间。" },
-        { number: "03", title: "确定性", body: "区分固定门票、易变营业时间和尚未验证的地点。" },
+        { number: "01", title: "合适的日期", body: "附近地点放在同一天，到达日和出发日安排得更轻。" },
+        { number: "02", title: "合适的据点", body: "比较能减少整趟旅行重复移动的住宿区域。" },
+        { number: "03", title: "真正的截止时间", body: "航班、机场交通和登机前预留从一开始就属于行程。" },
       ],
     },
     checker: {
-      eyebrow: "试用原型",
-      title: "让你的草稿面对现实。",
-      body: "任何格式都可以。随手笔记、AI回答，或朋友凌晨两点发来的计划。",
-      sample: "载入一个故意混乱的示例",
-      itinerary: "行程文本",
+      eyebrow: "根据想去地点自动生成",
+      title: "放入地点，直接得到行程。",
+      body: "每行一个地点，顺序随意。如果知道酒店和航班，也可以加入；第一天和最后一天会按真正可用的时间调整。",
+      sample: "载入示例愿望清单",
+      itinerary: "想去的地点",
       saved: "收藏地点",
       soon: "即将推出",
-      inputLabel: "粘贴你的行程",
-      placeholder: "第1天\n09:00 浅草寺\n11:30 teamLab…\n\n任何格式都可以。",
-      travelMonth: "旅行月份",
+      inputLabel: "输入想去的地点",
+      placeholder: "浅草寺\n涩谷SKY\nteamLab Planets\n三鹰之森吉卜力美术馆\n\n每行一个地点，顺序随意。",
+      tripDays: "东京旅行天数",
       pace: "旅行节奏",
       checking: "正在检查每个连接…",
-      button: "检查行程现实性",
-      prototype: "原型",
-      prototypeBody: "目前仅使用示例规则，尚未连接实时营业时间、门票、天气和列车路线。",
+      button: "生成最优行程",
+      prototype: "限定演示",
+      prototypeBody: "当前东京演示可识别的地点和酒店区域有限。移动分钟与机场交通是规划估算，请通过Google Maps和机场官方指南最终确认。",
     },
     result: {
       eyebrow: "现实性评分",
@@ -478,39 +463,34 @@ Day 2
       load: { easy: "轻松", balanced: "适中", full: "较满" },
     },
     method: {
-      eyebrow: "不只是另一个旅行聊天机器人",
-      title: "事实做决定。",
-      accent: "AI来解释。",
+      eyebrow: "从愿望清单到可出发的行程",
+      title: "只输入一次。",
+      accent: "整趟旅行都围绕它安排。",
       cards: [
-        { number: "01", title: "理解混乱输入", body: "AI把随手笔记整理成日期、时间和候选地点。" },
-        { number: "02", title: "检查约束", body: "可复现规则检查地理、时间、预约、负荷和信息新鲜度。" },
-        { number: "03", title: "解释每个取舍", body: "你会看到为何移动、哪里不确定，以及如何放回原处。" },
+        { number: "01", title: "放入地点", body: "每行一个，顺序随意，不需要先做时间表或表格。" },
+        { number: "02", title: "加入旅行边界", body: "酒店、天数和航班决定真正可用的时间。" },
+        { number: "03", title: "选择移动取舍", body: "比较最快方式与少走路、少疲劳的选择。" },
       ],
     },
     trust: {
-      eyebrow: "行程修复层",
-      title: "不只指出糟糕的一天，而是找到能挽救行程的最小修改。",
+      eyebrow: "把六个标签页合成一份行程",
+      title: "从酒店门口到机场登机口。",
       cards: [
-        { letter: "A", title: "保护你的优先级", body: "必去地点和已确认门票会成为不能随意移动的锚点。" },
-        { letter: "B", title: "只修复衔接", body: "我们只调整顺序、日期或缓冲时间，而不是改写整趟旅行。" },
-        { letter: "C", title: "解释替代方案", body: "每次移动都会说明原因、取舍以及可以撤销的条件。" },
+        { letter: "A", title: "住在合适的区域", body: "不是通用人气榜，而是按你的实际地点比较住宿区域。" },
+        { letter: "B", title: "诚实安排移动日", body: "到达、行李、市区交通和提前到机场都会减少第一天和最后一天的可用时间。" },
+        { letter: "C", title: "所有取舍都可见", body: "看清什么更快、什么更贵，以及为什么改变顺序会更轻松。" },
       ],
     },
-    footer: "开发中原型 · 仅限东京 · 下一步连接实时数据",
+    footer: "浏览器内运行的限定演示 · 仅限东京 · 行程不会上传或由人工查看",
     pace: { relaxed: "轻松", balanced: "适中", fast: "快速" },
     months: ["1月", "2月", "3月", "4月", "5月", "6月", "7月", "8月", "9月", "10月", "11月", "12月"],
-    sample: `第1天
-08:30 筑地场外市场
-10:30 teamLab Planets
-13:00 浅草寺和浅草
-15:30 三鹰之森吉卜力美术馆
-18:00 涩谷SKY
-20:00 新宿黄金街
-
-第2天
-09:00 明治神宫
-11:00 原宿
-14:00 秋叶原
-17:00 东京晴空塔`,
+    sample: `三鹰之森吉卜力美术馆
+涩谷SKY
+浅草寺
+东京晴空塔
+teamLab Planets
+筑地场外市场
+明治神宫
+秋叶原`,
   },
 };

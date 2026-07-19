@@ -3,9 +3,9 @@ import StructuredData from "./StructuredData";
 import TripCheckApp from "./TripCheckApp";
 
 export const metadata: Metadata = {
-  title: "Tokyo Itinerary Checker | TripCheck Japan",
+  title: "Tokyo Trip Builder & Route Optimizer | TripCheck Japan",
   description:
-    "Check whether your Tokyo itinerary works in reality. Find impossible travel, fragile reservations and exhausting days, then get an explainable revision.",
+    "Add the Tokyo places you want, your hotel and flights. Get a day-by-day route with hotel-area recommendations, transport choices and airport deadlines.",
   alternates: { canonical: "/" },
 };
 

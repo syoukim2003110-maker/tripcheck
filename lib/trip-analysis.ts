@@ -1,4 +1,7 @@
 import { copy, type Locale } from "./i18n.ts";
+import { optimizeItineraryRoute, type RouteOptimization } from "./route-optimizer.ts";
+import { analyzeTimeFeasibility, type TimeFeasibility } from "./time-feasibility.ts";
+import { buildTripFromWishlist, type BuiltTripPlan, type TripPlannerContext } from "./trip-builder.ts";
 
 export type Pace = "relaxed" | "balanced" | "fast";
 export type Severity = "critical" | "warning" | "note";
@@ -30,6 +33,10 @@ export type TripAnalysis = {
   hiddenTransit: string;
   issues: TripIssue[];
   revisedDays: RevisedDay[];
+  geography: RouteOptimization;
+  timing: TimeFeasibility;
+  inputMode: "wishlist" | "itinerary";
+  plan: BuiltTripPlan;
 };
 
 type ParsedStop = { time: string; name: string };
@@ -337,19 +344,29 @@ const language: Record<Locale, AnalysisLanguage> = {
   },
 };
 
-export function analyzeTrip(raw: string, pace: Pace, locale: Locale = "en"): TripAnalysis {
+export function analyzeTrip(
+  raw: string,
+  pace: Pace,
+  locale: Locale = "en",
+  requestedDays = 2,
+  context: TripPlannerContext = {},
+): TripAnalysis {
   const t = language[locale];
   const days = parseItinerary(raw, locale);
+  const inputMode = raw.split("\n").some((line) => Boolean(matchDay(line.trim()))) ? "itinerary" : "wishlist";
   const stopCount = days.reduce((sum, day) => sum + day.stops.length, 0);
   const busiestDay = Math.max(...days.map((day) => day.stops.length));
   const paceLimit = pace === "relaxed" ? 4 : pace === "fast" ? 7 : 5;
   const issues: TripIssue[] = [];
-  const crossesTokyo = eastTokyoPattern.test(raw) && farWestPattern.test(raw);
+  const crossesTokyo = inputMode === "itinerary" && days.some((day) => {
+    const text = day.stops.map((stop) => stop.name).join(" ");
+    return eastTokyoPattern.test(text) && farWestPattern.test(text);
+  });
 
   if (crossesTokyo) issues.push({ severity: "critical", ...t.cross, confidence: "high" });
   if (farWestPattern.test(raw)) issues.push({ severity: "critical", ...t.ghibli, confidence: "high" });
   if (fixedEntryPattern.test(raw)) issues.push({ severity: "warning", ...t.timed, confidence: "medium" });
-  if (busiestDay > paceLimit || stopCount >= 8) {
+  if (inputMode === "itinerary" && (busiestDay > paceLimit || stopCount >= 8)) {
     issues.push({
       severity: "warning",
       eyebrow: t.density.eyebrow,
@@ -386,5 +403,9 @@ export function analyzeTrip(raw: string, pace: Pace, locale: Locale = "en"): Tri
     hiddenTransit: crossesTokyo ? (locale === "en" ? "~2h 40m" : locale === "ja" ? "約2時間40分" : locale === "ko" ? "약 2시간 40분" : "约2小时40分") : t.notVerified,
     issues,
     revisedDays,
+    geography: optimizeItineraryRoute(raw, locale),
+    timing: analyzeTimeFeasibility(raw, locale),
+    inputMode,
+    plan: buildTripFromWishlist(raw, requestedDays, pace, locale, context),
   };
 }

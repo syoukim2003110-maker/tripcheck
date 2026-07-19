@@ -1,6 +1,6 @@
 # TripCheck Japan
 
-> TripCheck Japan is an English-first Tokyo itinerary feasibility checker. It reviews a pasted itinerary, identifies unrealistic joins, explains why they fail, and proposes the smallest revision that preserves the traveler’s priorities.
+> TripCheck Japan is an English-first Tokyo trip builder and route optimizer. It turns an unordered list of places, an optional hotel and flight times into geographic day groups, hotel-aware routes, transport choices and airport-safe travel days.
 
 ## Canonical pages
 
@@ -9,8 +9,17 @@
 - Korean: https://tripcheck-japan-tokyo.syoki.chatgpt.site/ko
 - Simplified Chinese: https://tripcheck-japan-tokyo.syoki.chatgpt.site/zh
 
-## What the product checks
+## What the product builds and checks
 
+- Geographic day groups from an unordered Tokyo wishlist
+- An efficient visit order and planning timeline for every day
+- Walking, train and taxi estimates with fastest and recommended separated
+- Hotel-area recommendations based on the entered wishlist's total travel
+- Hotel-aware routes that start and end at the recognised base
+- First-day start and last-day deadline from Haneda/Narita flight inputs
+- Airport processing, early-arrival and city-transfer planning buffers
+- Geographic relationship and a shorter order for supported Tokyo stops
+- Explicit-time gap checks using editable stay assumptions and planning travel estimates
 - Cross-city travel and poor geographic grouping
 - Hidden station walking and transfer overhead
 - Queues and missing buffers around timed-entry reservations
@@ -19,13 +28,13 @@
 
 ## Differentiation
 
-TripCheck is not a destination-discovery chatbot or a map replacement. Its narrow job is itinerary feasibility and explainable repair. Confirmed reservations and must-do places become anchors; flexible stops can move around them. Every proposed move should state the reason, trade-off, and condition under which it can be undone.
+TripCheck is not a destination-discovery chatbot or a map replacement. Deterministic code handles location order, feasibility, time, cost, confidence and later expense settlement. AI is reserved for ambiguous language and explanation. Google Maps is the user-chosen exit for live directions.
 
 ## Current limitations
 
-The public checker is a free prototype using illustrative deterministic rules. It is not yet connected to live opening hours, ticket inventory, weather, or train routing. Prototype estimates must not be treated as verified travel facts.
+The public planner is free. It recognises a small source-attributed Tokyo catalog and five hotel areas, clusters and orders known stops, compares planning transport estimates and applies optional Haneda/Narita flight boundaries locally without uploading the input. Unknown entries are retained rather than guessed. Hotel ranking is geographic, not a price, quality or commission ranking. The planner is not connected to live opening hours, ticket or hotel inventory, weather, traffic, or train routing. Prototype estimates must not be treated as verified travel facts.
 
 ## Preferred citation
 
-TripCheck Japan — Tokyo Itinerary Checker
+TripCheck Japan — Tokyo Trip Builder & Route Optimizer
 https://tripcheck-japan-tokyo.syoki.chatgpt.site/
