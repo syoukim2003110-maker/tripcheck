@@ -1,14 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import CinematicJourney from "./CinematicJourney";
 import { copy, localeLabels, type Locale } from "../lib/i18n";
 import { FoodRecommendationsError, foodSearchLinks, requestFoodRecommendations } from "../lib/food-recommendations-client";
 import type { FoodCandidate } from "../lib/google-food";
 import { fullTripDemo, getMockHotels } from "../lib/mock-trip";
 import { LiveRoutesError, requestLiveTransit } from "../lib/live-routes-client";
+import { buildRouteSketchPoints, routeSketchLine } from "../lib/route-sketch";
 import { analyzeTrip, type Pace, type Severity } from "../lib/trip-analysis";
-import type { AirportCode, CrowdOutlook, FlightKind, FoodRecommendationSlot, MealPlan } from "../lib/trip-builder";
+import type { AirportCode, BuiltPlanDay, CrowdOutlook, FlightKind, FoodRecommendationSlot, MealPlan } from "../lib/trip-builder";
 
 const localeOrder: Locale[] = ["en", "ja"];
 type LiveRouteStatus = "idle" | "loading" | "ready" | "missingDate" | "notConfigured" | "outOfRange" | "unavailable";
@@ -884,8 +885,8 @@ const mealCopy: Record<Locale, {
 const foodCopy = {
   en: {
     eyebrow: "Food along the way",
-    title: "Good options, without locking the day.",
-    body: "Each suggestion is tied to an area already on the route. Pick a style, fetch nearby places and cross-check the ones you like on Tabelog or X.",
+    title: "What do you feel like eating?",
+    body: "Tap a food mood. We will show a few places near the route—not lock one into your day.",
     lunch: "Lunch idea",
     dinner: "Dinner idea",
     near: "Easy area",
@@ -897,19 +898,19 @@ const foodCopy = {
     notConfigured: "Live place search is not connected yet. You can still open the same search in Google Maps, Tabelog or X.",
     unavailable: "The live search did not respond. Use the search links below instead.",
     noResults: "No exact matches came back. Try another food style or open the broader searches.",
-    chooseStyle: "What sounds good?",
+    chooseStyle: "Tap what looks good",
     routeLabel: "That day's route",
-    google: "Open in Google Maps",
-    tabelog: "Check on Tabelog",
-    x: "See posts on X",
+    google: "Maps",
+    tabelog: "Tabelog",
+    x: "X posts",
     fallback: "Search outside TripCheck",
     sourceNote: "Restaurant names come from a fresh Google Maps search. Tabelog and X are outbound cross-check links; TripCheck does not scrape or combine their rankings.",
     privacy: "Only this area's coordinates, meal type, language and selected search phrase are sent—never the itinerary text.",
   },
   ja: {
     eyebrow: "旅程のついでに、ごはん探し",
-    title: "店を決めすぎない食事提案。",
-    body: "その日のルートから外れにくいエリアを選び、気分に合う店を数件だけ探します。気になる店は食べログやXも開いて、自分で確かめられます。",
+    title: "今日は、何食べる？",
+    body: "写真で気分を選ぶだけ。旅のルート近くにある店を、数件だけ見つけます。",
     lunch: "昼ごはん候補",
     dinner: "夜ごはん候補",
     near: "寄りやすいエリア",
@@ -921,14 +922,35 @@ const foodCopy = {
     notConfigured: "現在、店名の自動取得は準備中です。同じ条件でGoogle Maps・食べログ・Xを開けます。",
     unavailable: "店名を取得できませんでした。下のリンクから同じ条件で探せます。",
     noResults: "ぴったりの店が見つかりませんでした。食べたいものを変えるか、検索先を直接開いてみてください。",
-    chooseStyle: "今の気分に近いもの",
+    chooseStyle: "おいしそう、をタップ",
     routeLabel: "この日の流れ",
-    google: "Google Mapsで見る",
-    tabelog: "食べログで評判を見る",
-    x: "Xで最近の投稿を見る",
+    google: "地図",
+    tabelog: "食べログ",
+    x: "Xの投稿",
     fallback: "ほかのサービスでも探す",
     sourceNote: "店名はGoogle Mapsでその都度検索します。食べログとXは確認用リンクで、TripCheckが口コミや順位を取得・合算しているわけではありません。",
     privacy: "送るのはエリアの座標、昼夜の区分、言語、選んだ検索語だけ。旅程本文は送りません。",
+  },
+} as const;
+
+const visualCopy = {
+  en: {
+    routeMap: "Route map",
+    routeHint: "Follow the numbers",
+    stops: "stops",
+    foodImage: "Food mood image",
+    foodImageNote: "Images show the food mood, not a photo of the restaurant.",
+    recommended: "Best balance",
+    openRoute: "Open the full route",
+  },
+  ja: {
+    routeMap: "旅程マップ",
+    routeHint: "数字の順に進むだけ",
+    stops: "スポット",
+    foodImage: "料理イメージ",
+    foodImageNote: "料理写真は気分選び用のイメージです。各店舗の写真ではありません。",
+    recommended: "おすすめ",
+    openRoute: "大きな地図で見る",
   },
 } as const;
 
@@ -1046,6 +1068,83 @@ function CrowdBadge({ outlook, text }: { outlook: CrowdOutlook; text: (typeof me
   );
 }
 
+function modeGlyph(mode: string) {
+  if (mode === "walk") return "🚶";
+  if (mode === "taxi") return "🚕";
+  return "🚆";
+}
+
+function foodMoodPosition(query: string, fallbackIndex = 0) {
+  const normalized = query.toLowerCase();
+  if (/sushi|seafood|market|寿司|海鮮|市場/.test(normalized)) return "14% 24%";
+  if (/ramen|ラーメン|라멘|拉面/.test(normalized)) return "50% 20%";
+  if (/yakitori|izakaya|焼き鳥|居酒屋|이자카야|烤鸡串/.test(normalized)) return "84% 23%";
+  if (/tempura|soba|天ぷら|そば|덴푸라|소바|天妇罗|荞麦/.test(normalized)) return "15% 82%";
+  if (/café|cafe|kissaten|coffee|カフェ|喫茶|甘味|咖啡/.test(normalized)) return "84% 82%";
+  if (/set meal|teishoku|定食|和食|일식|日料|tonkatsu|とんかつ/.test(normalized)) return "52% 82%";
+  return ["14% 24%", "50% 20%", "84% 23%", "52% 82%", "84% 82%"][fallbackIndex % 5];
+}
+
+function DayRouteMap({ day, locale }: { day: BuiltPlanDay; locale: Locale }) {
+  const text = visualCopy[locale === "ja" ? "ja" : "en"];
+  const points = buildRouteSketchPoints(day.stops.map(({ stop }) => stop));
+
+  return (
+    <section className="day-route-map" aria-label={`${day.label} · ${text.routeMap}`}>
+      <header>
+        <div><span>{text.routeMap}</span><b>{text.routeHint}</b></div>
+        <p><strong>{String(points.length).padStart(2, "0")}</strong>{text.stops}</p>
+      </header>
+      <p className="sr-only">{day.stops.map(({ stop }, index) => `${index + 1}. ${stop.name}`).join(" → ")}</p>
+      <div className="route-map-canvas" aria-hidden="true">
+        {points.slice(0, -1).map((point, index) => {
+          const line = routeSketchLine(point, points[index + 1]);
+          const leg = day.legs[index];
+          const recommended = leg?.comparison.recommended;
+          return (
+            <span className="route-map-connection" key={`${point.id}-${points[index + 1].id}`}>
+              <i
+                className="route-map-line"
+                style={{
+                  left: `${line.left}%`,
+                  top: `${line.top}%`,
+                  width: `${line.width}%`,
+                  transform: `rotate(${line.angle}deg)`,
+                }}
+              />
+              {recommended ? (
+                <em className="route-map-travel" style={{ left: `${line.labelX}%`, top: `${line.labelY}%` }}>
+                  <span>{leg.isLocalMealPause ? "🍽️" : modeGlyph(recommended.mode)}</span>
+                  <b>{formatDuration(recommended.minutes, locale)}</b>
+                </em>
+              ) : null}
+            </span>
+          );
+        })}
+        {points.map((point, index) => {
+          const scheduled = day.stops[index];
+          return (
+            <span
+              className={`route-map-node ${scheduled.kind === "meal" ? "is-meal" : ""}`}
+              key={point.id}
+              style={{ left: `${point.x}%`, top: `${point.y}%` }}
+            >
+              <i>{scheduled.kind === "meal" ? "🍽" : index + 1}</i>
+              <b>{point.name}</b>
+              <small>{point.area}</small>
+            </span>
+          );
+        })}
+      </div>
+      {day.googleMapsUrl ? (
+        <a className="route-map-open" href={day.googleMapsUrl} target="_blank" rel="noreferrer">
+          <span aria-hidden="true">⌖</span>{text.openRoute}<b aria-hidden="true">↗</b>
+        </a>
+      ) : null}
+    </section>
+  );
+}
+
 function Brand() {
   return (
     <span className="brand-lockup">
@@ -1095,6 +1194,7 @@ export default function TripCheckApp({ initialLocale = "en" }: { initialLocale?:
   const editing = editingCopy[locale];
   const meals = mealCopy[locale];
   const food = foodCopy[locale === "ja" ? "ja" : "en"];
+  const visual = visualCopy[locale === "ja" ? "ja" : "en"];
   const liveRoute = liveRouteCopy[locale];
   const planningSignature = useMemo(() => JSON.stringify({
     itinerary,
@@ -1579,10 +1679,13 @@ export default function TripCheckApp({ initialLocale = "en" }: { initialLocale?:
               {foodSlots.length > 0 ? (
                 <section className="food-recommendations" id="food-recommendations" aria-labelledby="food-recommendations-title">
                   <header>
-                    <p className="section-eyebrow">FOOD / {food.eyebrow}</p>
-                    <div>
+                    <div className="food-hero-copy">
+                      <p className="section-eyebrow">FOOD / {food.eyebrow}</p>
                       <h4 id="food-recommendations-title">{food.title}</h4>
                       <p>{food.body}</p>
+                    </div>
+                    <div className="food-hero-image" role="img" aria-label={visual.foodImage}>
+                      <span>{visual.foodImage}</span>
                     </div>
                   </header>
                   <div className="food-slot-list">
@@ -1593,7 +1696,7 @@ export default function TripCheckApp({ initialLocale = "en" }: { initialLocale?:
                       const broadLinks = foodSearchLinks(search.query || slot.queryIdeas[0], slot.area, locale);
                       return (
                         <article className="food-slot" key={slot.id}>
-                          <header>
+                          <header style={{ backgroundPosition: slot.kind === "lunch" ? "17% 76%" : "82% 22%" }}>
                             <div className="food-slot-number"><span>{String(slot.dayIndex + 1).padStart(2, "0")}</span><small>{slot.dayLabel}</small></div>
                             <div>
                               <p>{slot.kind === "lunch" ? food.lunch : food.dinner}</p>
@@ -1605,30 +1708,30 @@ export default function TripCheckApp({ initialLocale = "en" }: { initialLocale?:
                             <p>{food.routeLabel}</p>
                             <div className="food-route-strip" aria-label={`${slot.dayLabel} · ${food.routeLabel}`}>
                               <span><i aria-hidden="true" />{day.stops[0]?.stop.name}</span>
-                              <strong><i aria-hidden="true">●</i>{slot.area}<small>{slot.kind === "lunch" ? food.lunch : food.dinner}</small></strong>
+                              <strong><i aria-hidden="true">🍽</i>{slot.area}<small>{slot.kind === "lunch" ? food.lunch : food.dinner}</small></strong>
                               <span><i aria-hidden="true" />{day.stops.at(-1)?.stop.name}</span>
                             </div>
-                            <dl>
-                              <div><dt>{food.near}</dt><dd>{slot.area}</dd></div>
-                              <div><dt>{food.routeFit}</dt><dd>{slot.rationale}</dd></div>
-                            </dl>
+                            <p className="food-route-reason"><span aria-hidden="true">↳</span>{slot.rationale}</p>
                           </div>
                           <div className="food-query-panel">
                             <p>{food.chooseStyle}</p>
                             <div className="food-query-chips">
-                              {slot.queryIdeas.map((query) => (
+                              {slot.queryIdeas.map((query, index) => (
                                 <button
                                   className={search.query === query ? "is-selected" : ""}
                                   disabled={search.status === "loading"}
                                   key={query}
                                   onClick={() => searchFood(slot, query)}
+                                  aria-pressed={search.query === query}
                                   type="button"
-                                >{query}</button>
+                                >
+                                  <span className="food-query-art" style={{ backgroundPosition: foodMoodPosition(query, index) }}><small>{visual.foodImage}</small></span>
+                                  <b>{query}</b>
+                                  <i aria-hidden="true">→</i>
+                                </button>
                               ))}
                             </div>
-                            <button className="food-search-button" disabled={search.status === "loading"} onClick={() => searchFood(slot, search.query || slot.queryIdeas[0])} type="button">
-                              {search.status === "loading" ? food.loading : food.search}<span aria-hidden="true">↗</span>
-                            </button>
+                            {search.status === "loading" ? <p className="food-inline-status" role="status">{food.loading}</p> : null}
                             <small>{food.privacy}</small>
                           </div>
                           {search.status === "ready" ? (
@@ -1638,12 +1741,14 @@ export default function TripCheckApp({ initialLocale = "en" }: { initialLocale?:
                                 const links = foodSearchLinks(candidate.name, slot.area, locale);
                                 return (
                                   <li key={candidate.id}>
-                                    <span>{String(index + 1).padStart(2, "0")}</span>
-                                    <div><p>{candidate.type}</p><h6>{candidate.name}</h6><small>{candidate.address}</small></div>
+                                    <div className="food-candidate-image" style={{ backgroundPosition: foodMoodPosition(`${search.query} ${candidate.type}`, index) }}>
+                                      <span>{visual.foodImage}</span><b>{String(index + 1).padStart(2, "0")}</b>
+                                    </div>
+                                    <div className="food-candidate-copy"><p>{candidate.type}</p><h6>{candidate.name}</h6><small>{candidate.address}</small></div>
                                     <nav aria-label={candidate.name}>
-                                      <a href={candidate.googleMapsUrl} rel="noreferrer" target="_blank">{food.google} ↗</a>
-                                      <a href={links.tabelog} rel="noreferrer" target="_blank">{food.tabelog} ↗</a>
-                                      <a href={links.x} rel="noreferrer" target="_blank">{food.x} ↗</a>
+                                      <a className="is-primary" href={candidate.googleMapsUrl} rel="noreferrer" target="_blank"><span aria-hidden="true">⌖</span>{food.google}</a>
+                                      <a href={links.tabelog} rel="noreferrer" target="_blank"><span aria-hidden="true">◎</span>{food.tabelog}</a>
+                                      <a href={links.x} rel="noreferrer" target="_blank"><span aria-hidden="true">𝕏</span>{food.x}</a>
                                     </nav>
                                   </li>
                                 );
@@ -1659,7 +1764,7 @@ export default function TripCheckApp({ initialLocale = "en" }: { initialLocale?:
                               <a href={broadLinks.tabelog} rel="noreferrer" target="_blank">Tabelog ↗</a>
                               <a href={broadLinks.x} rel="noreferrer" target="_blank">X ↗</a>
                             </nav>
-                            <small>{food.sourceNote}</small>
+                            <small>{visual.foodImageNote} {food.sourceNote}</small>
                           </footer>
                         </article>
                       );
@@ -1774,9 +1879,11 @@ export default function TripCheckApp({ initialLocale = "en" }: { initialLocale?:
                       {day.hotelTravelMinutes !== null ? <span>{details.hotelTravel} <b>{formatDuration(day.hotelTravelMinutes, locale)}</b></span> : null}
                       {day.deadline ? <span className={day.deadlineOverrunMinutes > 0 ? "is-danger" : ""}>{details.departureDeadline} <b>{day.deadline}</b>{day.deadlineOverrunMinutes > 0 ? ` · ${details.overrun} ${formatDuration(day.deadlineOverrunMinutes, locale)}` : ""}</span> : null}
                     </div>
+                    <DayRouteMap day={day} locale={locale} />
                     <ol>
                       {day.stops.map((scheduled, index) => {
                         const leg = day.legs[index];
+                        const longestOption = leg ? Math.max(...leg.comparison.options.map((option) => option.minutes), 1) : 1;
                         return (
                           <li className={scheduled.kind === "meal" ? "is-meal-stop" : ""} key={scheduled.stop.id}>
                             <div className="built-stop">
@@ -1816,10 +1923,6 @@ export default function TripCheckApp({ initialLocale = "en" }: { initialLocale?:
                               <div className="meal-local-connector"><span aria-hidden="true">↓</span><b>{meals.localPause}</b></div>
                             ) : leg ? (
                               <div className="built-leg">
-                                <div className="leg-summary">
-                                  <span>{planText.recommended}: <b>{planText.modes[leg.comparison.recommended.mode]} {formatDuration(leg.comparison.recommended.minutes, locale)}</b></span>
-                                  <span>{planText.fastest}: <b>{planText.modes[leg.comparison.fastest.mode]} {formatDuration(leg.comparison.fastest.minutes, locale)}</b></span>
-                                </div>
                                 <div className="mode-options">
                                   {leg.comparison.options.map((option) => (
                                     <a
@@ -1827,11 +1930,14 @@ export default function TripCheckApp({ initialLocale = "en" }: { initialLocale?:
                                       href={leg.googleMapsUrls[option.mode]}
                                       key={option.mode}
                                       rel="noreferrer"
+                                      style={{ "--mode-width": `${Math.max(18, (option.minutes / longestOption) * 100)}%` } as CSSProperties}
                                       target="_blank"
                                     >
-                                      {planText.modes[option.mode]} <b>{formatDuration(option.minutes, locale)}</b>
-                                      {option.source === "live" ? <i>{liveRoute.live}</i> : null}
-                                      <span aria-hidden="true">↗</span>
+                                      <span className="mode-icon" aria-hidden="true">{modeGlyph(option.mode)}</span>
+                                      <span className="mode-name">{planText.modes[option.mode]}</span>
+                                      <b>{formatDuration(option.minutes, locale)}</b>
+                                      {option.mode === leg.comparison.recommended.mode ? <i>{visual.recommended}</i> : option.source === "live" ? <i>{liveRoute.live}</i> : null}
+                                      <span className="mode-bar" aria-hidden="true"><i /></span>
                                     </a>
                                   ))}
                                 </div>
@@ -1841,9 +1947,6 @@ export default function TripCheckApp({ initialLocale = "en" }: { initialLocale?:
                         );
                       })}
                     </ol>
-                    {day.googleMapsUrl ? <a className="maps-button" href={day.googleMapsUrl} target="_blank" rel="noreferrer">
-                      {planText.openMaps}<span aria-hidden="true">↗</span>
-                    </a> : null}
                     {day.legs.some((leg) => leg.comparison.options.some((option) => option.source === "live")) ? (
                       <span className="google-maps-attribution day-attribution" translate="no">Google Maps</span>
                     ) : null}
