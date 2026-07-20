@@ -254,7 +254,10 @@ body:has(.trip-planner-app) {
 .planner-unknown ul { margin: 8px 0 0; padding-left: 18px; }
 
 .planner-map-pane { background: #e5e5df; min-height: 0; overflow: hidden; position: relative; }
-.planner-google-map { height: 100%; width: 100%; }
+.planner-map-layers { height: 100%; position: relative; width: 100%; }
+.planner-map-embed { border: 0; height: 100%; inset: 0; position: absolute; width: 100%; }
+.planner-google-map { height: 100%; inset: 0; opacity: 0; pointer-events: none; position: absolute; transition: opacity 180ms ease; width: 100%; }
+.planner-google-map.is-visible { opacity: 1; pointer-events: auto; }
 .planner-route-status { align-items: center; backdrop-filter: blur(14px); background: rgb(255 255 255 / 91%); border: 1px solid rgb(0 0 0 / 9%); border-radius: 8px; box-shadow: 0 4px 16px rgb(0 0 0 / 12%); color: var(--planner-muted); display: flex; font-size: 9px; font-weight: 700; gap: 7px; min-height: 38px; padding: 0 12px; position: absolute; right: 16px; top: 16px; }
 .planner-route-status i { background: #8a93a3; border-radius: 50%; height: 8px; width: 8px; }
 .planner-route-status.is-loading i { animation: planner-pulse 900ms infinite alternate; background: #f0a12b; }

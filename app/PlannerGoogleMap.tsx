@@ -50,6 +50,16 @@ export default function PlannerGoogleMap({ apiKey, dayKey, departureTimes, local
   const mapElement = useRef<HTMLDivElement>(null);
   const [routeState, setRouteState] = useState<RouteState>("idle");
 
+  const embedPoints = stops.length > 0
+    ? stops
+    : [{ latitude: 36.2048, longitude: 138.2529, name: locale === "ja" ? "日本" : "Japan" }];
+  const embedParams = new URLSearchParams({
+    language: locale,
+    points: embedPoints.map((stop) => `${stop.latitude},${stop.longitude}`).join("|"),
+    labels: embedPoints.map((stop) => stop.name).join("|"),
+    ...(stops.length === 0 ? { overview: "1", zoom: "5" } : {}),
+  });
+
   useEffect(() => {
     let cancelled = false;
     const overlays: any[] = [];
@@ -164,12 +174,21 @@ export default function PlannerGoogleMap({ apiKey, dayKey, departureTimes, local
   }, [apiKey, dayKey, departureTimes, locale, stops]);
 
   const statusText = locale === "ja"
-    ? { idle: "Googleマップ", loading: "実経路を取得中", live: "Google実経路", fallback: "位置関係を表示" }[routeState]
-    : { idle: "Google Maps", loading: "Loading real route", live: "Google route", fallback: "Location overview" }[routeState];
+    ? { idle: "Googleマップ", loading: "実経路を取得中", live: "Google実経路", fallback: "Googleルート" }[routeState]
+    : { idle: "Google Maps", loading: "Loading real route", live: "Google route", fallback: "Google route" }[routeState];
 
   return (
     <>
-      <div className="planner-google-map" ref={mapElement} />
+      <div className="planner-map-layers">
+        <iframe
+          className="planner-map-embed"
+          loading="eager"
+          referrerPolicy="no-referrer-when-downgrade"
+          src={`/api/map-embed?${embedParams.toString()}`}
+          title={locale === "ja" ? "旅程のGoogleマップ" : "Itinerary on Google Maps"}
+        />
+        <div className={`planner-google-map${routeState === "live" ? " is-visible" : ""}`} ref={mapElement} />
+      </div>
       <span className={`planner-route-status is-${routeState}`}><i aria-hidden="true" />{statusText}</span>
     </>
   );
