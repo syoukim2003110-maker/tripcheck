@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import CinematicJourney from "./CinematicJourney";
 import { copy, localeLabels, type Locale } from "../lib/i18n";
-import { FoodRecommendationsError, foodSearchLinks, requestFoodRecommendations } from "../lib/food-recommendations-client";
+import { FoodRecommendationsError, foodSearchLinks, requestFoodRanking, requestFoodRecommendations } from "../lib/food-recommendations-client";
+import type { FoodRankingItem } from "../lib/ai-food-ranking";
 import type { FoodCandidate } from "../lib/google-food";
 import type { LinkPreview } from "../lib/link-preview";
 import { LinkPreviewError, requestLinkPreview } from "../lib/link-preview-client";
@@ -30,9 +31,11 @@ type PlaceResolutionStatus = "idle" | "loading" | "ready" | "notConfigured" | "u
 type FoodPreviewStatus = "idle" | "loading" | "ready" | "invalid" | "unavailable";
 type FoodSearchState = {
   status: "idle" | "loading" | "ready" | "notConfigured" | "unavailable";
+  aiStatus: "idle" | "loading" | "ready" | "unavailable";
   query: string;
   fetchedAt: string;
   candidates: FoodCandidate[];
+  ranking: FoodRankingItem[];
 };
 const emptyLiveTransitMinutes: Record<string, number> = {};
 
@@ -50,7 +53,7 @@ const answerCopy: Record<Locale, {
       { question: "What does TripCheck Japan build?", answer: "Add places in any order and choose the number of days. It groups nearby stops, orders each day, protects booked and must-do places, keeps optional stops as backups and compares walking, trains and taxis." },
       { question: "Can it recommend where to stay?", answer: "Yes—at area level. TripCheck ranks hotel areas by the total travel required for your own wishlist. It does not rank individual hotels by commission, price or generic popularity." },
       { question: "Does it account for flights and airports?", answer: "Yes. Arrival processing and the city transfer delay the first usable hour; the return trip and airport arrival buffer create a hard deadline on the last day." },
-      { question: "How is it different from ChatGPT or Google Maps?", answer: "TripCheck makes the multi-day grouping and ordering decision immediately with reproducible algorithms. Google Maps remains the final source for live directions; AI is reserved for messy language and explanations, not travel facts." },
+      { question: "How is it different from ChatGPT or Google Maps?", answer: "TripCheck groups days and orders stops immediately with reproducible algorithms, while Google Maps supplies places and directions. AI is used only where judgment helps—such as comparing a small set of restaurant candidates—not for route math or travel facts." },
       { question: "Can it still check a finished itinerary?", answer: "Yes. If the input contains Day headings and times, TripCheck switches to checker mode, keeps reservations as anchors and looks for route or timing conflicts." },
       { question: "Are the transport comparisons live?", answer: "Public-transport minutes can be refreshed from Google Maps for a trip within its supported schedule window. Walking and taxi remain clearly labelled planning estimates; opening hours, ticket availability, weather and road traffic are not live yet." },
       { question: "Who can see the itinerary I paste?", answer: "The itinerary is not stored or reviewed by a person. Unknown place names are sent to Google Maps only when needed to locate them. Timing notes and the completed plan are not stored." },
@@ -64,7 +67,7 @@ const answerCopy: Record<Locale, {
       { question: "TripCheck Japanは何を作りますか？", answer: "行きたい場所を順不同で入れ、日数を選ぶだけです。近い場所を同じ日にまとめ、予約と必須予定を守り、任意候補は予備に残して、各区間の徒歩・電車・タクシーも比較します。" },
       { question: "泊まる場所もおすすめできますか？", answer: "現在は宿泊エリア単位で比較できます。入力した行き先への総移動量で順位を付け、広告報酬、価格、一般的な人気では個別ホテルを順位付けしません。" },
       { question: "飛行機と空港の時間も入りますか？", answer: "入ります。到着後の手続きと市内移動から初日の開始時刻を遅らせ、空港までの移動と搭乗前の余裕から最終日の締切を作ります。" },
-      { question: "ChatGPTやGoogle Mapsとの違いは？", answer: "日ごとの分類と順番は再現可能なアルゴリズムで即時計算します。最新経路の最終確認はGoogle Mapsに任せ、AIは曖昧な文章理解と説明だけに使います。" },
+      { question: "ChatGPTやGoogle Mapsとの違いは？", answer: "日ごとの分類と訪問順は、再現可能なアルゴリズムで即時計算します。場所と経路はGoogle Mapsを使い、AIは少数の飲食店候補の比較など、判断が効く部分だけに使います。" },
       { question: "完成済みの旅程も検査できますか？", answer: "できます。入力に「1日目」などの日付見出しと時刻があれば自動で診断モードへ切り替わり、予約を軸にして経路と時間の衝突を探します。" },
       { question: "移動手段の比較はリアルタイムですか？", answer: "対応期間内の旅行なら、公共交通の時間をGoogle Mapsから更新できます。徒歩とタクシーは明示された計画用概算のままで、営業時間、チケット在庫、天候、道路交通はまだライブではありません。" },
       { question: "貼り付けた旅程は誰に見られますか？", answer: "旅程は保存せず、人が閲覧することもありません。場所を特定するときだけ未登録の地名をGoogle Mapsへ送り、時刻のメモや完成した旅程は保存しません。" },
@@ -910,6 +913,9 @@ const foodCopy = {
     search: "Find nearby places",
     loading: "Looking nearby…",
     ready: "Nearby options from Google Maps",
+    aiThinking: "Places are ready. AI is comparing only these candidates now…",
+    aiReady: "AI compared these candidates",
+    aiPick: "AI pick",
     notConfigured: "Live place search is not connected yet. You can still open the same search in Google Maps, Tabelog or X.",
     unavailable: "The live search did not respond. Use the search links below instead.",
     noResults: "No exact matches came back. Try another food style or open the broader searches.",
@@ -919,8 +925,8 @@ const foodCopy = {
     tabelog: "Tabelog",
     x: "X posts",
     fallback: "Search outside TripCheck",
-    sourceNote: "Restaurant names come from a fresh Google Maps search. Tabelog and X are outbound cross-check links; TripCheck does not scrape or combine their rankings.",
-    privacy: "Only this area's coordinates, meal type, language and selected search phrase are sent—never the itinerary text.",
+    sourceNote: "Google Maps supplies the nearby candidates. AI only compares the names and basic place details shown here. Tabelog and X remain outbound cross-check links.",
+    privacy: "Only this area's coordinates, meal type, language and selected phrase go to Google. AI then receives only the shown candidate names and basic place details—never the itinerary.",
   },
   ja: {
     eyebrow: "旅程のついでに、ごはん探し",
@@ -934,6 +940,9 @@ const foodCopy = {
     search: "この近くのお店を見る",
     loading: "近くのお店を探しています…",
     ready: "Google Mapsで見つかった候補",
+    aiThinking: "候補は表示済み。AIが表示中の店だけを比較中…",
+    aiReady: "AIが候補を比較しました",
+    aiPick: "AIの推し",
     notConfigured: "現在、店名の自動取得は準備中です。同じ条件でGoogle Maps・食べログ・Xを開けます。",
     unavailable: "店名を取得できませんでした。下のリンクから同じ条件で探せます。",
     noResults: "ぴったりの店が見つかりませんでした。食べたいものを変えるか、検索先を直接開いてみてください。",
@@ -943,8 +952,8 @@ const foodCopy = {
     tabelog: "食べログ",
     x: "Xの投稿",
     fallback: "ほかのサービスでも探す",
-    sourceNote: "店名はGoogle Mapsでその都度検索します。食べログとXは確認用リンクで、TripCheckが口コミや順位を取得・合算しているわけではありません。",
-    privacy: "送るのはエリアの座標、昼夜の区分、言語、選んだ検索語だけ。旅程本文は送りません。",
+    sourceNote: "近くの候補はGoogle Mapsから取得し、AIは画面に出た店名と基本情報だけを比較します。食べログとXは確認用リンクです。",
+    privacy: "Googleへ送るのは座標・昼夜・言語・検索語だけ。AIへは表示中の店名と基本情報だけを送り、旅程本文は送りません。",
   },
 } as const;
 
@@ -1145,10 +1154,14 @@ function TripMapHub({
   const day = days[activeDay] ?? days[0];
   if (!day) return null;
   const routeStops = day.stops.map(({ stop }) => stop);
-  const points = base && routeStops.length <= 8 ? [base, ...routeStops, base] : routeStops;
+  const points = (base && routeStops.length <= 9 ? [base, ...routeStops] : routeStops)
+    .filter((stop, index, all) => index === 0 || stop.id !== all[index - 1].id)
+    .filter((stop, index, all) => index === 0 || index !== all.length - 1 || stop.id !== all[0].id)
+    .slice(0, 10);
   const mapParams = new URLSearchParams({
     language: locale === "ja" ? "ja" : "en",
-    points: points.slice(0, 10).map((stop) => `${stop.latitude},${stop.longitude}`).join("|"),
+    points: points.map((stop) => `${stop.latitude},${stop.longitude}`).join("|"),
+    labels: points.map((stop) => stop.name).join("|"),
   });
   const meals = foodSlots.filter((slot) => slot.dayIndex === activeDay);
 
@@ -1183,7 +1196,7 @@ function TripMapHub({
             allowFullScreen
             key={`${day.label}-${points.map((stop) => stop.id).join("-")}`}
             loading="lazy"
-            referrerPolicy="no-referrer-when-downgrade"
+            referrerPolicy="strict-origin-when-cross-origin"
             src={`/api/map-embed?${mapParams.toString()}`}
             title={`${day.label} · Google Maps`}
           />
@@ -1538,7 +1551,7 @@ export default function TripCheckApp({ initialLocale = "en" }: { initialLocale?:
     }
     setFoodSearches((current) => ({
       ...current,
-      [slot.id]: { status: "loading", query, fetchedAt: "", candidates: [] },
+      [slot.id]: { status: "loading", aiStatus: "idle", query, fetchedAt: "", candidates: [], ranking: [] },
     }));
     try {
       const response = await requestFoodRecommendations(slot, query, locale);
@@ -1546,18 +1559,47 @@ export default function TripCheckApp({ initialLocale = "en" }: { initialLocale?:
         ...current,
         [slot.id]: {
           status: "ready",
+          aiStatus: response.candidates.length > 0 ? "loading" : "idle",
           query,
           fetchedAt: response.fetchedAt,
           candidates: response.candidates,
+          ranking: [],
         },
       }));
+      if (response.candidates.length === 0) return;
+      try {
+        const aiResponse = await requestFoodRanking(slot, query, response.candidates, locale);
+        const rankingOrder = new Map(aiResponse.ranked.map((item, index) => [item.id, index]));
+        const candidates = [...response.candidates].sort((left, right) => (
+          (rankingOrder.get(left.id) ?? Number.MAX_SAFE_INTEGER) - (rankingOrder.get(right.id) ?? Number.MAX_SAFE_INTEGER)
+        ));
+        setFoodSearches((current) => {
+          const previous = current[slot.id];
+          if (!previous || previous.query !== query) return current;
+          return {
+            ...current,
+            [slot.id]: {
+              ...previous,
+              aiStatus: aiResponse.ranked.length > 0 ? "ready" : "unavailable",
+              candidates,
+              ranking: aiResponse.ranked,
+            },
+          };
+        });
+      } catch {
+        setFoodSearches((current) => {
+          const previous = current[slot.id];
+          if (!previous || previous.query !== query) return current;
+          return { ...current, [slot.id]: { ...previous, aiStatus: "unavailable" } };
+        });
+      }
     } catch (error) {
       const status = error instanceof FoodRecommendationsError && error.code === "not_configured"
         ? "notConfigured"
         : "unavailable";
       setFoodSearches((current) => ({
         ...current,
-        [slot.id]: { status, query, fetchedAt: "", candidates: [] },
+        [slot.id]: { status, aiStatus: "idle", query, fetchedAt: "", candidates: [], ranking: [] },
       }));
     }
   }
@@ -1808,7 +1850,7 @@ export default function TripCheckApp({ initialLocale = "en" }: { initialLocale?:
                   <div className="food-slot-list">
                     {foodSlots.filter((slot) => slot.dayIndex === activePlanDay).map((slot) => {
                       const search: FoodSearchState = (foodSearchSignature === planningSignature ? foodSearches[slot.id] : undefined)
-                        ?? { status: "idle", query: slot.queryIdeas[0], fetchedAt: "", candidates: [] };
+                        ?? { status: "idle", aiStatus: "idle", query: slot.queryIdeas[0], fetchedAt: "", candidates: [], ranking: [] };
                       const day = analysis.plan.days[slot.dayIndex];
                       const broadLinks = foodSearchLinks(search.query || slot.queryIdeas[0], slot.area, locale);
                       return (
@@ -1853,15 +1895,22 @@ export default function TripCheckApp({ initialLocale = "en" }: { initialLocale?:
                           </div>
                           {search.status === "ready" ? (
                             <div className="food-candidates" aria-live="polite">
-                              <header><p>{food.ready}</p><span className="google-maps-attribution" translate="no">Google Maps</span></header>
+                              <header>
+                                <p>{search.aiStatus === "loading" ? food.aiThinking : search.aiStatus === "ready" ? food.aiReady : food.ready}</p>
+                                <span className="google-maps-attribution" translate="no">Google Maps</span>
+                              </header>
                               {search.candidates.length > 0 ? <ol>{search.candidates.map((candidate, index) => {
                                 const links = foodSearchLinks(candidate.name, slot.area, locale);
+                                const aiNote = search.ranking.find((item) => item.id === candidate.id);
                                 return (
-                                  <li key={candidate.id}>
+                                  <li className={index === 0 && search.aiStatus === "ready" ? "is-ai-pick" : ""} key={candidate.id}>
                                     <div className="food-candidate-image" style={{ backgroundPosition: foodMoodPosition(`${search.query} ${candidate.type}`, index) }}>
-                                      <span>{visual.foodImage}</span><b>{String(index + 1).padStart(2, "0")}</b>
+                                      <span>{visual.foodImage}</span><b>{index === 0 && search.aiStatus === "ready" ? "AI" : String(index + 1).padStart(2, "0")}</b>
                                     </div>
-                                    <div className="food-candidate-copy"><p>{candidate.type}</p><h6>{candidate.name}</h6><small>{candidate.address}</small></div>
+                                    <div className="food-candidate-copy">
+                                      <p>{candidate.type}</p><h6>{candidate.name}</h6><small>{candidate.address}</small>
+                                      {aiNote ? <div className="food-ai-note"><b>{index === 0 ? food.aiPick : aiNote.tag}</b><span>{aiNote.reason}</span></div> : null}
+                                    </div>
                                     <nav aria-label={candidate.name}>
                                       <a className="is-primary" href={candidate.googleMapsUrl} rel="noreferrer" target="_blank"><span aria-hidden="true">⌖</span>{food.google}</a>
                                       <a href={links.tabelog} rel="noreferrer" target="_blank"><span aria-hidden="true">◎</span>{food.tabelog}</a>

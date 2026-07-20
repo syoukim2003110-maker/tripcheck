@@ -1,5 +1,5 @@
 export type MapEmbedRequest = {
-  points: Array<{ latitude: number; longitude: number }>;
+  points: Array<{ latitude: number; longitude: number; label?: string }>;
   language: "en" | "ja";
 };
 
@@ -8,6 +8,8 @@ export function parseMapEmbedRequest(url: string): MapEmbedRequest | null {
   const language = parsed.searchParams.get("language") === "ja" ? "ja" : "en";
   const rawPoints = parsed.searchParams.get("points")?.split("|").filter(Boolean) ?? [];
   if (rawPoints.length === 0 || rawPoints.length > 10) return null;
+  const rawLabels = parsed.searchParams.get("labels")?.split("|") ?? [];
+  if (rawLabels.length > 0 && rawLabels.length !== rawPoints.length) return null;
   const points = rawPoints.map((rawPoint) => {
     const [latitudeText, longitudeText] = rawPoint.split(",");
     const latitude = Number(latitudeText);
@@ -18,7 +20,12 @@ export function parseMapEmbedRequest(url: string): MapEmbedRequest | null {
     !Number.isFinite(latitude) || !Number.isFinite(longitude)
     || latitude < 20 || latitude > 46 || longitude < 122 || longitude > 154
   ))) return null;
-  return { points, language };
+  const labels = rawLabels.map((label) => label.trim());
+  if (labels.some((label) => label.length === 0 || label.length > 120)) return null;
+  return {
+    points: points.map((point, index) => ({ ...point, ...(labels[index] ? { label: labels[index] } : {}) })),
+    language,
+  };
 }
 
 export function buildGoogleMapEmbedUrl(request: MapEmbedRequest, apiKey: string) {
@@ -42,7 +49,9 @@ export function buildGoogleMapEmbedUrl(request: MapEmbedRequest, apiKey: string)
     region: "JP",
   });
   if (request.points.length > 2) {
-    params.set("waypoints", request.points.slice(1, -1).map(coordinate).join("|"));
+    params.set("waypoints", request.points.slice(1, -1).map((point) => (
+      point.label ? `${point.label}, Japan` : coordinate(point)
+    )).join("|"));
   }
   return `https://www.google.com/maps/embed/v1/directions?${params.toString()}`;
 }
