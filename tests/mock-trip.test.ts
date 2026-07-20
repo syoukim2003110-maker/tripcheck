@@ -7,7 +7,7 @@ test("provides a complete hotel and flight scenario for the one-click demo", () 
   assert.equal(fullTripDemo.tripStartDate, "2026-09-14");
   assert.equal(fullTripDemo.arrivalAirport, "HND");
   assert.equal(fullTripDemo.departureAirport, "NRT");
-  assert.match(fullTripDemo.hotelQuery.en, /mock/i);
+  assert.equal(fullTripDemo.hotelQuery.en, "Shinjuku Station");
   assert.match(fullTripDemo.places.en, /Day 2 10:00 booked/);
   assert.match(fullTripDemo.places.ja, /2日目 10:00 予約/);
 });
