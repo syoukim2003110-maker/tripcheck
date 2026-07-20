@@ -9,10 +9,11 @@ const engineSourceUrls = [
   new URL("../lib/trip-builder.ts", import.meta.url),
 ];
 
-test("keeps itinerary content inside the browser-only demo boundary", async () => {
+test("keeps the completed itinerary out of storage and direct network calls", async () => {
   const source = await readFile(appSourceUrl, "utf8");
 
   assert.match(source, /analyzeTrip\(itinerary, pace, locale, tripDays, \{/);
+  assert.match(source, /requestPlaceResolution\(itinerary, hotelQuery, locale\)/);
   assert.doesNotMatch(source, /fetch\s*\(/);
   assert.doesNotMatch(source, /sendBeacon\s*\(/);
   assert.doesNotMatch(source, /localStorage\.setItem\([^\n]*itinerary/i);

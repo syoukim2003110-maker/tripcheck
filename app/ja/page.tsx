@@ -3,8 +3,8 @@ import StructuredData from "../StructuredData";
 import TripCheckApp from "../TripCheckApp";
 
 export const metadata: Metadata = {
-  title: "東京旅行の自動プラン作成・ルート最適化 | TripCheck Japan",
-  description: "東京で行きたい場所、ホテル、飛行機を入力。日別ルート、宿泊エリア比較、移動手段、空港へ向かう締切までまとめて作ります。",
+  title: "日本旅行の自動プラン作成・Googleマップ旅程 | TripCheck Japan",
+  description: "日本全国の行きたい場所を入力。日別ルート、ホテル、食事エリア、空港までを一つのGoogleマップにまとめます。",
   alternates: { canonical: "/ja" },
 };
 

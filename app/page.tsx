@@ -3,9 +3,9 @@ import StructuredData from "./StructuredData";
 import TripCheckApp from "./TripCheckApp";
 
 export const metadata: Metadata = {
-  title: "Tokyo Trip Builder & Route Optimizer | TripCheck Japan",
+  title: "Japan Trip Planner & Google Maps Itinerary | TripCheck Japan",
   description:
-    "Add the Tokyo places you want, your hotel and flights. Get a day-by-day route with hotel-area recommendations, transport choices and airport deadlines.",
+    "Add places anywhere in Japan. See each day's route, hotel base and meal areas together on one Google map.",
   alternates: { canonical: "/" },
 };
 

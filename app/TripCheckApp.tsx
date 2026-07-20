@@ -5,14 +5,29 @@ import CinematicJourney from "./CinematicJourney";
 import { copy, localeLabels, type Locale } from "../lib/i18n";
 import { FoodRecommendationsError, foodSearchLinks, requestFoodRecommendations } from "../lib/food-recommendations-client";
 import type { FoodCandidate } from "../lib/google-food";
+import type { LinkPreview } from "../lib/link-preview";
+import { LinkPreviewError, requestLinkPreview } from "../lib/link-preview-client";
 import { fullTripDemo, getMockHotels } from "../lib/mock-trip";
 import { LiveRoutesError, requestLiveTransit } from "../lib/live-routes-client";
-import { buildRouteSketchPoints, routeSketchLine } from "../lib/route-sketch";
+import { PlaceResolutionError, requestPlaceResolution } from "../lib/place-resolution-client";
+import type { ResolvedInputStop } from "../lib/route-optimizer";
 import { analyzeTrip, type Pace, type Severity } from "../lib/trip-analysis";
-import type { AirportCode, BuiltPlanDay, CrowdOutlook, FlightKind, FoodRecommendationSlot, MealPlan } from "../lib/trip-builder";
+import type { AirportCode, BuiltPlanDay, CrowdOutlook, FlightKind, FoodRecommendationSlot, MealPlan, TripBase } from "../lib/trip-builder";
 
 const localeOrder: Locale[] = ["en", "ja"];
+const airportOptions: Array<{ code: Exclude<AirportCode, "none">; label: string }> = [
+  { code: "HND", label: "Haneda" },
+  { code: "NRT", label: "Narita" },
+  { code: "KIX", label: "Kansai" },
+  { code: "ITM", label: "Itami" },
+  { code: "NGO", label: "Chubu" },
+  { code: "FUK", label: "Fukuoka" },
+  { code: "CTS", label: "New Chitose" },
+  { code: "OKA", label: "Naha" },
+];
 type LiveRouteStatus = "idle" | "loading" | "ready" | "missingDate" | "notConfigured" | "outOfRange" | "unavailable";
+type PlaceResolutionStatus = "idle" | "loading" | "ready" | "notConfigured" | "unavailable";
+type FoodPreviewStatus = "idle" | "loading" | "ready" | "invalid" | "unavailable";
 type FoodSearchState = {
   status: "idle" | "loading" | "ready" | "notConfigured" | "unavailable";
   query: string;
@@ -30,7 +45,7 @@ const answerCopy: Record<Locale, {
   en: {
     eyebrow: "Direct answers",
     title: "Before you trust the plan.",
-    intro: "TripCheck turns an unordered Tokyo wishlist into a day-by-day route, then checks an existing timed itinerary when you already have one.",
+    intro: "TripCheck turns an unordered Japan wishlist into a day-by-day route, then puts every day on one Google map.",
     items: [
       { question: "What does TripCheck Japan build?", answer: "Add places in any order and choose the number of days. It groups nearby stops, orders each day, protects booked and must-do places, keeps optional stops as backups and compares walking, trains and taxis." },
       { question: "Can it recommend where to stay?", answer: "Yes—at area level. TripCheck ranks hotel areas by the total travel required for your own wishlist. It does not rank individual hotels by commission, price or generic popularity." },
@@ -38,13 +53,13 @@ const answerCopy: Record<Locale, {
       { question: "How is it different from ChatGPT or Google Maps?", answer: "TripCheck makes the multi-day grouping and ordering decision immediately with reproducible algorithms. Google Maps remains the final source for live directions; AI is reserved for messy language and explanations, not travel facts." },
       { question: "Can it still check a finished itinerary?", answer: "Yes. If the input contains Day headings and times, TripCheck switches to checker mode, keeps reservations as anchors and looks for route or timing conflicts." },
       { question: "Are the transport comparisons live?", answer: "Public-transport minutes can be refreshed from Google Maps for a trip within its supported schedule window. Walking and taxi remain clearly labelled planning estimates; opening hours, ticket availability, weather and road traffic are not live yet." },
-      { question: "Who can see the itinerary I paste?", answer: "The itinerary is analysed inside your browser and is not stored or reviewed by a person. Live transit sends only coordinate pairs and departure times; food search sends only one area's coordinates, meal type, language and selected phrase. Your pasted notes are never included." },
+      { question: "Who can see the itinerary I paste?", answer: "The itinerary is not stored or reviewed by a person. Unknown place names are sent to Google Maps only when needed to locate them. Timing notes and the completed plan are not stored." },
     ],
   },
   ja: {
     eyebrow: "端的な答え",
     title: "その旅程を信じる前に。",
-    intro: "TripCheckは、順番のない東京の行きたい場所リストから日別旅程を作り、すでに時刻付き旅程があれば成立性も検査します。",
+    intro: "TripCheckは、日本全国の行きたい場所を日別旅程にまとめ、すべての移動を一つのGoogleマップで見せます。",
     items: [
       { question: "TripCheck Japanは何を作りますか？", answer: "行きたい場所を順不同で入れ、日数を選ぶだけです。近い場所を同じ日にまとめ、予約と必須予定を守り、任意候補は予備に残して、各区間の徒歩・電車・タクシーも比較します。" },
       { question: "泊まる場所もおすすめできますか？", answer: "現在は宿泊エリア単位で比較できます。入力した行き先への総移動量で順位を付け、広告報酬、価格、一般的な人気では個別ホテルを順位付けしません。" },
@@ -52,7 +67,7 @@ const answerCopy: Record<Locale, {
       { question: "ChatGPTやGoogle Mapsとの違いは？", answer: "日ごとの分類と順番は再現可能なアルゴリズムで即時計算します。最新経路の最終確認はGoogle Mapsに任せ、AIは曖昧な文章理解と説明だけに使います。" },
       { question: "完成済みの旅程も検査できますか？", answer: "できます。入力に「1日目」などの日付見出しと時刻があれば自動で診断モードへ切り替わり、予約を軸にして経路と時間の衝突を探します。" },
       { question: "移動手段の比較はリアルタイムですか？", answer: "対応期間内の旅行なら、公共交通の時間をGoogle Mapsから更新できます。徒歩とタクシーは明示された計画用概算のままで、営業時間、チケット在庫、天候、道路交通はまだライブではありません。" },
-      { question: "貼り付けた旅程は誰に見られますか？", answer: "旅程本文はブラウザ内で処理し、保存もしません。ライブ交通では地点間の座標と出発時刻、食事検索ではエリアの座標・昼夜・言語・選んだ検索語だけを送ります。貼り付けた文章は送りません。" },
+      { question: "貼り付けた旅程は誰に見られますか？", answer: "旅程は保存せず、人が閲覧することもありません。場所を特定するときだけ未登録の地名をGoogle Mapsへ送り、時刻のメモや完成した旅程は保存しません。" },
     ],
   },
   ko: {
@@ -110,7 +125,7 @@ const routeCopy: Record<Locale, {
     eyebrow: "Instant geography",
     engine: "INSTANT · ON-DEVICE",
     title: "Remove the backtracking first.",
-    body: "Known Tokyo stops are ordered by geographic distance in your browser. Your first stop stays fixed; days and reservations are never merged automatically.",
+    body: "Resolved places in Japan are ordered by geographic distance in your browser. Your first stop stays fixed; days and reservations are never merged automatically.",
     recognized: "known stops",
     before: "draft path",
     after: "shorter path",
@@ -129,7 +144,7 @@ const routeCopy: Record<Locale, {
     eyebrow: "即時の位置関係チェック",
     engine: "即時計算 · 端末内処理",
     title: "まず、無駄な往復をなくす。",
-    body: "既知の東京スポットを、ブラウザ内で地理的に短い順へ並べます。最初の場所は固定し、日付や予約を勝手にまたいで動かしません。",
+    body: "日本全国から確認できた場所を、ブラウザ内で地理的に短い順へ並べます。最初の場所は固定し、日付や予約を勝手にまたいで動かしません。",
     recognized: "認識できた場所",
     before: "元の順番",
     after: "短い順番",
@@ -437,7 +452,7 @@ const contextCopy: Record<Locale, {
     body: "Optional, but useful. A hotel base and flight times change the route, the first usable hour and when the last day must stop.",
     hotel: "Hotel or nearest station",
     hotelPlaceholder: "e.g. hotel near Shinjuku Station",
-    tripStart: "First day in Tokyo",
+    tripStart: "First day in Japan",
     arrival: "Arrival airport",
     departure: "Departure airport",
     flightTime: "Flight time",
@@ -453,7 +468,7 @@ const contextCopy: Record<Locale, {
     recommended: "Best base areas for this wishlist",
     routeDistance: "estimated total day-route distance",
     airportTitle: "Airport time is part of the trip.",
-    arrivalReady: "Ready to start in Tokyo",
+    arrivalReady: "Ready to start the trip",
     departureLeave: "Leave the hotel by",
     airportTime: "airport buffer",
     cityTransfer: "city transfer",
@@ -471,7 +486,7 @@ const contextCopy: Record<Locale, {
     body: "任意ですが、ホテルと便の時刻を入れると、回る順番、初日に動ける時刻、最終日に切り上げる時刻まで変わります。",
     hotel: "ホテル名または最寄り駅",
     hotelPlaceholder: "例：新宿駅近くのホテル",
-    tripStart: "東京旅行の初日",
+    tripStart: "日本旅行の初日",
     arrival: "到着空港",
     departure: "出発空港",
     flightTime: "便の時刻",
@@ -487,7 +502,7 @@ const contextCopy: Record<Locale, {
     recommended: "この行き先に合う宿泊エリア",
     routeDistance: "日別ルートの推定総距離",
     airportTitle: "空港までが、旅行の時間です。",
-    arrivalReady: "東京で動き始められる目安",
+    arrivalReady: "旅行を始められる目安",
     departureLeave: "ホテルを出る目安",
     airportTime: "空港で確保する時間",
     cityTransfer: "市内との移動",
@@ -938,19 +953,45 @@ const visualCopy = {
     routeMap: "Route map",
     routeHint: "Follow the numbers",
     stops: "stops",
+    mapTitle: "Everything, on one map.",
+    mapBody: "Switch days to see the real Google map, route order, hotel base and meal area together.",
+    chooseDay: "Choose a day",
     foodImage: "Food mood image",
     foodImageNote: "Images show the food mood, not a photo of the restaurant.",
     recommended: "Best balance",
     openRoute: "Open the full route",
+    pasteUrl: "Already found somewhere good?",
+    pasteUrlHint: "Paste the restaurant's official website URL",
+    addPreview: "Add card",
+    previewLoading: "Making a preview…",
+    previewInvalid: "Use a public https:// website URL.",
+    previewUnavailable: "This site did not provide a preview. You can still open the URL directly.",
+    removePreview: "Remove",
+    resolvingPlaces: "Finding these places across Japan…",
+    placeFallback: "Some places could not be resolved. The rest of the plan is still available.",
+    emptyDay: "Nothing is fixed here yet. Keep this day as breathing room or move a backup place into it.",
   },
   ja: {
     routeMap: "旅程マップ",
     routeHint: "数字の順に進むだけ",
     stops: "スポット",
+    mapTitle: "全部、ひとつの地図に。",
+    mapBody: "1日目・2日目を選ぶと、実際のGoogleマップ、回る順番、ホテル、食事エリアが一緒に切り替わります。",
+    chooseDay: "日を選ぶ",
     foodImage: "料理イメージ",
     foodImageNote: "料理写真は気分選び用のイメージです。各店舗の写真ではありません。",
     recommended: "おすすめ",
     openRoute: "大きな地図で見る",
+    pasteUrl: "気になる店を見つけている？",
+    pasteUrlHint: "お店の公式サイトURLを貼る",
+    addPreview: "カードにする",
+    previewLoading: "サムネイルを作成中…",
+    previewInvalid: "公開されている https:// のURLを貼ってください。",
+    previewUnavailable: "このサイトから画像を取得できませんでした。URLはそのまま開けます。",
+    removePreview: "削除",
+    resolvingPlaces: "日本全国から場所を確認中…",
+    placeFallback: "一部の場所を確認できませんでした。確認できた場所だけで旅程を表示します。",
+    emptyDay: "この日はまだ空いています。休む日にするか、予備候補を移せます。",
   },
 } as const;
 
@@ -976,7 +1017,7 @@ const liveRouteCopy: Record<Locale, {
     button: "Update train times",
     loading: "Checking current routes…",
     ready: "Train times updated",
-    missingDate: "Add the first day of your Tokyo trip to check scheduled transit.",
+    missingDate: "Add the first day of your Japan trip to check scheduled transit.",
     notConfigured: "The live Google Routes connection is ready in the product but still needs its private service key.",
     outOfRange: "Google provides scheduled transit from 7 days ago through 100 days ahead. Choose a date inside that window.",
     unavailable: "Live transit could not be reached. The plan is still using its visible estimates.",
@@ -991,7 +1032,7 @@ const liveRouteCopy: Record<Locale, {
     button: "電車時間を更新",
     loading: "現在の経路を確認中…",
     ready: "電車時間を更新しました",
-    missingDate: "時刻表に合わせるには、東京旅行の初日を入力してください。",
+    missingDate: "時刻表に合わせるには、日本旅行の初日を入力してください。",
     notConfigured: "電車時間の自動取得は現在準備中です。表示中のGoogle Mapsリンクから経路を確認できます。",
     outOfRange: "Googleの交通日時指定は7日前から100日先までです。この範囲内の日付を選んでください。",
     unavailable: "ライブ交通へ接続できませんでした。旅程は表示中の概算をそのまま使っています。",
@@ -1085,62 +1126,78 @@ function foodMoodPosition(query: string, fallbackIndex = 0) {
   return ["14% 24%", "50% 20%", "84% 23%", "52% 82%", "84% 82%"][fallbackIndex % 5];
 }
 
-function DayRouteMap({ day, locale }: { day: BuiltPlanDay; locale: Locale }) {
+function TripMapHub({
+  days,
+  base,
+  foodSlots,
+  activeDay,
+  locale,
+  onChange,
+}: {
+  days: BuiltPlanDay[];
+  base: TripBase | null;
+  foodSlots: FoodRecommendationSlot[];
+  activeDay: number;
+  locale: Locale;
+  onChange: (day: number) => void;
+}) {
   const text = visualCopy[locale === "ja" ? "ja" : "en"];
-  const points = buildRouteSketchPoints(day.stops.map(({ stop }) => stop));
+  const day = days[activeDay] ?? days[0];
+  if (!day) return null;
+  const routeStops = day.stops.map(({ stop }) => stop);
+  const points = base && routeStops.length <= 8 ? [base, ...routeStops, base] : routeStops;
+  const mapParams = new URLSearchParams({
+    language: locale === "ja" ? "ja" : "en",
+    points: points.slice(0, 10).map((stop) => `${stop.latitude},${stop.longitude}`).join("|"),
+  });
+  const meals = foodSlots.filter((slot) => slot.dayIndex === activeDay);
 
   return (
-    <section className="day-route-map" aria-label={`${day.label} · ${text.routeMap}`}>
+    <section className="trip-map-hub" aria-labelledby="trip-map-title">
       <header>
-        <div><span>{text.routeMap}</span><b>{text.routeHint}</b></div>
-        <p><strong>{String(points.length).padStart(2, "0")}</strong>{text.stops}</p>
+        <div>
+          <p className="section-eyebrow">GOOGLE MAPS / {text.routeMap}</p>
+          <h4 id="trip-map-title">{text.mapTitle}</h4>
+        </div>
+        <p>{text.mapBody}</p>
       </header>
-      <p className="sr-only">{day.stops.map(({ stop }, index) => `${index + 1}. ${stop.name}`).join(" → ")}</p>
-      <div className="route-map-canvas" aria-hidden="true">
-        {points.slice(0, -1).map((point, index) => {
-          const line = routeSketchLine(point, points[index + 1]);
-          const leg = day.legs[index];
-          const recommended = leg?.comparison.recommended;
-          return (
-            <span className="route-map-connection" key={`${point.id}-${points[index + 1].id}`}>
-              <i
-                className="route-map-line"
-                style={{
-                  left: `${line.left}%`,
-                  top: `${line.top}%`,
-                  width: `${line.width}%`,
-                  transform: `rotate(${line.angle}deg)`,
-                }}
-              />
-              {recommended ? (
-                <em className="route-map-travel" style={{ left: `${line.labelX}%`, top: `${line.labelY}%` }}>
-                  <span>{leg.isLocalMealPause ? "🍽️" : modeGlyph(recommended.mode)}</span>
-                  <b>{formatDuration(recommended.minutes, locale)}</b>
-                </em>
-              ) : null}
-            </span>
-          );
-        })}
-        {points.map((point, index) => {
-          const scheduled = day.stops[index];
-          return (
-            <span
-              className={`route-map-node ${scheduled.kind === "meal" ? "is-meal" : ""}`}
-              key={point.id}
-              style={{ left: `${point.x}%`, top: `${point.y}%` }}
-            >
-              <i>{scheduled.kind === "meal" ? "🍽" : index + 1}</i>
-              <b>{point.name}</b>
-              <small>{point.area}</small>
-            </span>
-          );
-        })}
+      <div className="map-day-tabs" role="tablist" aria-label={text.chooseDay}>
+        {days.map((candidate, index) => (
+          <button
+            aria-selected={index === activeDay}
+            className={index === activeDay ? "is-active" : ""}
+            key={candidate.label}
+            onClick={() => onChange(index)}
+            role="tab"
+            type="button"
+          >
+            <span>{String(index + 1).padStart(2, "0")}</span>
+            <b>{candidate.label}</b>
+            <small>{candidate.theme}</small>
+          </button>
+        ))}
       </div>
-      {day.googleMapsUrl ? (
-        <a className="route-map-open" href={day.googleMapsUrl} target="_blank" rel="noreferrer">
-          <span aria-hidden="true">⌖</span>{text.openRoute}<b aria-hidden="true">↗</b>
-        </a>
-      ) : null}
+      <div className="google-map-frame">
+        {points.length > 0 ? <>
+          <iframe
+            allowFullScreen
+            key={`${day.label}-${points.map((stop) => stop.id).join("-")}`}
+            loading="lazy"
+            referrerPolicy="no-referrer-when-downgrade"
+            src={`/api/map-embed?${mapParams.toString()}`}
+            title={`${day.label} · Google Maps`}
+          />
+          <div className="map-route-badge"><span>{day.startTime}</span><b>→</b><span>{day.finishTime}</span></div>
+          {meals.length > 0 ? <div className="map-food-badges">{meals.map((slot) => <span key={slot.id}>🍽 {slot.area} · {slot.window}</span>)}</div> : null}
+        </> : <div className="map-empty-day"><span aria-hidden="true">○</span><p>{text.emptyDay}</p></div>}
+      </div>
+      <ol className="map-stop-ribbon">
+        {day.stops.map(({ stop }, index) => <li key={stop.id}><span>{index + 1}</span><b>{stop.name}</b><small>{stop.area}</small></li>)}
+      </ol>
+      <footer>
+        <span className="google-maps-attribution" translate="no">Google Maps</span>
+        {day.googleMapsUrl ? <a href={day.googleMapsUrl} target="_blank" rel="noreferrer">{text.openRoute}<b aria-hidden="true">↗</b></a> : null}
+      </footer>
     </section>
   );
 }
@@ -1181,6 +1238,13 @@ export default function TripCheckApp({ initialLocale = "en" }: { initialLocale?:
   const [liveFetchedAt, setLiveFetchedAt] = useState("");
   const [foodSearches, setFoodSearches] = useState<Record<string, FoodSearchState>>({});
   const [foodSearchSignature, setFoodSearchSignature] = useState("");
+  const [resolvedStops, setResolvedStops] = useState<ResolvedInputStop[]>([]);
+  const [resolvedBase, setResolvedBase] = useState<ResolvedInputStop | null>(null);
+  const [placeResolutionStatus, setPlaceResolutionStatus] = useState<PlaceResolutionStatus>("idle");
+  const [activePlanDay, setActivePlanDay] = useState(0);
+  const [foodUrlInputs, setFoodUrlInputs] = useState<Record<string, string>>({});
+  const [foodLinkPreviews, setFoodLinkPreviews] = useState<Record<string, LinkPreview[]>>({});
+  const [foodPreviewStatuses, setFoodPreviewStatuses] = useState<Record<string, FoodPreviewStatus>>({});
   const [hasChecked, setHasChecked] = useState(false);
   const [navCompact, setNavCompact] = useState(false);
   const t = copy[locale];
@@ -1210,8 +1274,10 @@ export default function TripCheckApp({ initialLocale = "en" }: { initialLocale?:
     mealPlan,
     dayStartTimes,
     durationOverrides,
+    resolvedStops: resolvedStops.map((stop) => stop.id),
+    resolvedBase: resolvedBase?.id ?? null,
     locale,
-  }), [arrivalAirport, arrivalTime, dayStartTimes, departureAirport, departureTime, durationOverrides, flightKind, hotelQuery, itinerary, locale, mealPlan, pace, tripDays, tripStartDate]);
+  }), [arrivalAirport, arrivalTime, dayStartTimes, departureAirport, departureTime, durationOverrides, flightKind, hotelQuery, itinerary, locale, mealPlan, pace, resolvedBase?.id, resolvedStops, tripDays, tripStartDate]);
   const activeLiveTransitMinutes = liveRouteSignature === planningSignature ? liveTransitMinutes : emptyLiveTransitMinutes;
   const activeLiveRouteStatus = liveRouteSignature === planningSignature ? liveRouteStatus : "idle";
 
@@ -1228,8 +1294,10 @@ export default function TripCheckApp({ initialLocale = "en" }: { initialLocale?:
       dayStartTimes,
       durationOverrides,
       liveTransitMinutes: activeLiveTransitMinutes,
+      resolvedStops,
+      resolvedBase,
     }) : null),
-    [activeLiveTransitMinutes, arrivalAirport, arrivalTime, dayStartTimes, departureAirport, departureTime, durationOverrides, flightKind, hasChecked, hotelQuery, itinerary, locale, mealPlan, pace, tripDays, tripStartDate],
+    [activeLiveTransitMinutes, arrivalAirport, arrivalTime, dayStartTimes, departureAirport, departureTime, durationOverrides, flightKind, hasChecked, hotelQuery, itinerary, locale, mealPlan, pace, resolvedBase, resolvedStops, tripDays, tripStartDate],
   );
   const mockHotels = useMemo(
     () => {
@@ -1359,6 +1427,10 @@ export default function TripCheckApp({ initialLocale = "en" }: { initialLocale?:
     setDayStartTimes({});
     setDurationOverrides({});
     setMockMode(false);
+    setResolvedStops([]);
+    setResolvedBase(null);
+    setPlaceResolutionStatus("idle");
+    setActivePlanDay(0);
     setHasChecked(false);
     window.setTimeout(() => document.getElementById("trip-input")?.focus(), 30);
   }
@@ -1386,12 +1458,28 @@ export default function TripCheckApp({ initialLocale = "en" }: { initialLocale?:
     setDayStartTimes({});
     setDurationOverrides({});
     setMockMode(true);
+    setResolvedStops([]);
+    setResolvedBase(null);
+    setPlaceResolutionStatus("idle");
+    setActivePlanDay(0);
     setHasChecked(true);
     window.setTimeout(scrollToResult, 30);
   }
 
-  function runCheck() {
+  async function runCheck() {
     if (!canCheck) return;
+    setPlaceResolutionStatus("loading");
+    setResolvedStops([]);
+    setResolvedBase(null);
+    setActivePlanDay(0);
+    try {
+      const response = await requestPlaceResolution(itinerary, hotelQuery, locale);
+      setResolvedStops(response.places);
+      setResolvedBase(response.hotel);
+      setPlaceResolutionStatus("ready");
+    } catch (error) {
+      setPlaceResolutionStatus(error instanceof PlaceResolutionError && error.code === "not_configured" ? "notConfigured" : "unavailable");
+    }
     setHasChecked(true);
     scrollToResult();
   }
@@ -1474,6 +1562,28 @@ export default function TripCheckApp({ initialLocale = "en" }: { initialLocale?:
     }
   }
 
+  async function addFoodLinkPreview(slotId: string) {
+    const url = foodUrlInputs[slotId]?.trim();
+    if (!url) return;
+    setFoodPreviewStatuses((current) => ({ ...current, [slotId]: "loading" }));
+    try {
+      const preview = await requestLinkPreview(url);
+      setFoodLinkPreviews((current) => ({
+        ...current,
+        [slotId]: [...(current[slotId] ?? []).filter((item) => item.url !== preview.url), preview],
+      }));
+      setFoodUrlInputs((current) => ({ ...current, [slotId]: "" }));
+      setFoodPreviewStatuses((current) => ({ ...current, [slotId]: "ready" }));
+    } catch (error) {
+      const status: FoodPreviewStatus = error instanceof LinkPreviewError && error.message === "invalid_url" ? "invalid" : "unavailable";
+      setFoodPreviewStatuses((current) => ({ ...current, [slotId]: status }));
+    }
+  }
+
+  function removeFoodLinkPreview(slotId: string, url: string) {
+    setFoodLinkPreviews((current) => ({ ...current, [slotId]: (current[slotId] ?? []).filter((item) => item.url !== url) }));
+  }
+
   return (
     <main className="experience" data-locale={locale} lang={locale === "zh" ? "zh-CN" : locale} ref={appRef}>
       <header className={`global-nav ${navCompact ? "is-compact" : ""}`}>
@@ -1501,7 +1611,7 @@ export default function TripCheckApp({ initialLocale = "en" }: { initialLocale?:
 
         <div className="checker-workbench reveal">
           <div className="workbench-bar">
-            <span>TRIPCHECK / TOKYO / 001</span>
+            <span>TRIPCHECK / JAPAN / 001</span>
             <div className="workbench-demo-actions">
               <button onClick={loadSample} type="button">{t.checker.sample}<b aria-hidden="true">↗</b></button>
               <button className="full-demo-button" onClick={loadFullDemo} type="button">{demo.fullDemo}<b aria-hidden="true">→</b></button>
@@ -1573,8 +1683,7 @@ export default function TripCheckApp({ initialLocale = "en" }: { initialLocale?:
                 <span>{details.arrival}</span>
                 <select value={arrivalAirport} onChange={(event) => { setArrivalAirport(event.target.value as AirportCode); setHasChecked(false); }}>
                   <option value="none">{details.none}</option>
-                  <option value="HND">HND · Haneda</option>
-                  <option value="NRT">NRT · Narita</option>
+                  {airportOptions.map((airport) => <option key={airport.code} value={airport.code}>{airport.code} · {airport.label}</option>)}
                 </select>
               </label>
               <label>
@@ -1585,8 +1694,7 @@ export default function TripCheckApp({ initialLocale = "en" }: { initialLocale?:
                 <span>{details.departure}</span>
                 <select value={departureAirport} onChange={(event) => { setDepartureAirport(event.target.value as AirportCode); setHasChecked(false); }}>
                   <option value="none">{details.none}</option>
-                  <option value="HND">HND · Haneda</option>
-                  <option value="NRT">NRT · Narita</option>
+                  {airportOptions.map((airport) => <option key={airport.code} value={airport.code}>{airport.code} · {airport.label}</option>)}
                 </select>
               </label>
               <label>
@@ -1610,10 +1718,11 @@ export default function TripCheckApp({ initialLocale = "en" }: { initialLocale?:
                 ))}
               </div>
             </fieldset>
-            <button className="check-button" disabled={!canCheck} onClick={runCheck} type="button">
-              <span>{t.checker.button}</span><b aria-hidden="true">→</b>
+            <button className="check-button" disabled={!canCheck || placeResolutionStatus === "loading"} onClick={runCheck} type="button">
+              <span>{placeResolutionStatus === "loading" ? visual.resolvingPlaces : t.checker.button}</span><b aria-hidden="true">→</b>
             </button>
           </div>
+          {placeResolutionStatus === "notConfigured" || placeResolutionStatus === "unavailable" ? <p className="place-resolution-note" role="status">{visual.placeFallback}</p> : null}
           <p className="prototype-note"><b>{t.checker.prototype}</b>{t.checker.prototypeBody}</p>
         </div>
       </section>
@@ -1676,7 +1785,15 @@ export default function TripCheckApp({ initialLocale = "en" }: { initialLocale?:
                 </div>
                 {tripStartDate ? <p className="crowd-basis"><span aria-hidden="true">◌</span>{meals.crowdBasis}</p> : null}
               </section>
-              {foodSlots.length > 0 ? (
+              <TripMapHub
+                activeDay={activePlanDay}
+                base={analysis.plan.selectedBase}
+                days={analysis.plan.days}
+                foodSlots={foodSlots}
+                locale={locale}
+                onChange={setActivePlanDay}
+              />
+              {foodSlots.some((slot) => slot.dayIndex === activePlanDay) ? (
                 <section className="food-recommendations" id="food-recommendations" aria-labelledby="food-recommendations-title">
                   <header>
                     <div className="food-hero-copy">
@@ -1689,7 +1806,7 @@ export default function TripCheckApp({ initialLocale = "en" }: { initialLocale?:
                     </div>
                   </header>
                   <div className="food-slot-list">
-                    {foodSlots.map((slot) => {
+                    {foodSlots.filter((slot) => slot.dayIndex === activePlanDay).map((slot) => {
                       const search: FoodSearchState = (foodSearchSignature === planningSignature ? foodSearches[slot.id] : undefined)
                         ?? { status: "idle", query: slot.queryIdeas[0], fetchedAt: "", candidates: [] };
                       const day = analysis.plan.days[slot.dayIndex];
@@ -1757,6 +1874,43 @@ export default function TripCheckApp({ initialLocale = "en" }: { initialLocale?:
                           ) : search.status === "notConfigured" || search.status === "unavailable" ? (
                             <p className="food-search-message" role="status">{search.status === "notConfigured" ? food.notConfigured : food.unavailable}</p>
                           ) : null}
+                          <section className="food-link-import" aria-labelledby={`${slot.id}-link-title`}>
+                            <div>
+                              <p>URL → CARD</p>
+                              <h6 id={`${slot.id}-link-title`}>{visual.pasteUrl}</h6>
+                            </div>
+                            <form onSubmit={(event) => { event.preventDefault(); void addFoodLinkPreview(slot.id); }}>
+                              <input
+                                aria-label={visual.pasteUrlHint}
+                                onChange={(event) => setFoodUrlInputs((current) => ({ ...current, [slot.id]: event.target.value }))}
+                                placeholder="https://…"
+                                type="url"
+                                value={foodUrlInputs[slot.id] ?? ""}
+                              />
+                              <button disabled={foodPreviewStatuses[slot.id] === "loading"} type="submit">{visual.addPreview}<span aria-hidden="true">→</span></button>
+                            </form>
+                            <small>{visual.pasteUrlHint}</small>
+                            {foodPreviewStatuses[slot.id] === "loading" ? <p role="status">{visual.previewLoading}</p> : null}
+                            {foodPreviewStatuses[slot.id] === "invalid" ? <p role="status">{visual.previewInvalid}</p> : null}
+                            {foodPreviewStatuses[slot.id] === "unavailable" ? <p role="status">{visual.previewUnavailable}</p> : null}
+                            {(foodLinkPreviews[slot.id]?.length ?? 0) > 0 ? (
+                              <div className="food-link-preview-grid">
+                                {foodLinkPreviews[slot.id].map((preview) => (
+                                  <article key={preview.url}>
+                                    <a href={preview.url} rel="noreferrer" target="_blank">
+                                      {preview.imageUrl ? <>
+                                        {/* Remote restaurant sites are user-selected and cannot use a fixed Next image allowlist. */}
+                                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                                        <img alt="" loading="lazy" referrerPolicy="no-referrer" src={preview.imageUrl} />
+                                      </> : <span className="link-preview-fallback" aria-hidden="true">↗</span>}
+                                      <div><small>{preview.siteName}</small><b>{preview.title}</b>{preview.description ? <p>{preview.description}</p> : null}</div>
+                                    </a>
+                                    <button aria-label={`${visual.removePreview}: ${preview.title}`} onClick={() => removeFoodLinkPreview(slot.id, preview.url)} type="button">×</button>
+                                  </article>
+                                ))}
+                              </div>
+                            ) : null}
+                          </section>
                           <footer>
                             <p>{food.fallback}</p>
                             <nav>
@@ -1856,7 +2010,7 @@ export default function TripCheckApp({ initialLocale = "en" }: { initialLocale?:
               </section>
               {analysis.plan.overCapacityCount + analysis.plan.scheduleConflictCount > 0 ? <p className="pace-warning">{planText.crowded}</p> : null}
               <div className="built-days">
-                {analysis.plan.days.map((day, dayIndex) => (
+                {analysis.plan.days.map((day, dayIndex) => ({ day, dayIndex })).filter(({ dayIndex }) => dayIndex === activePlanDay).map(({ day, dayIndex }) => (
                   <article className="built-day" key={day.label}>
                     <header>
                       <div><span>{day.label}</span><h4>{day.theme}</h4></div>
@@ -1879,7 +2033,6 @@ export default function TripCheckApp({ initialLocale = "en" }: { initialLocale?:
                       {day.hotelTravelMinutes !== null ? <span>{details.hotelTravel} <b>{formatDuration(day.hotelTravelMinutes, locale)}</b></span> : null}
                       {day.deadline ? <span className={day.deadlineOverrunMinutes > 0 ? "is-danger" : ""}>{details.departureDeadline} <b>{day.deadline}</b>{day.deadlineOverrunMinutes > 0 ? ` · ${details.overrun} ${formatDuration(day.deadlineOverrunMinutes, locale)}` : ""}</span> : null}
                     </div>
-                    <DayRouteMap day={day} locale={locale} />
                     <ol>
                       {day.stops.map((scheduled, index) => {
                         const leg = day.legs[index];

@@ -28,7 +28,7 @@ test("server-renders the TripCheck landing experience", async () => {
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
-  assert.match(html, /<title>Tokyo Trip Builder &amp; Route Optimizer \| TripCheck Japan<\/title>/i);
+  assert.match(html, /<title>Japan Trip Planner &amp; Google Maps Itinerary \| TripCheck Japan<\/title>/i);
   assert.match(html, /Get the whole trip\./);
   assert.match(html, /Build my best route/);
   assert.match(html, /Run the full trip demo/);
@@ -40,7 +40,7 @@ test("server-renders the TripCheck landing experience", async () => {
   assert.match(html, /SoftwareApplication/);
   assert.match(html, /How is it different from ChatGPT or Google Maps\?/);
   assert.match(html, /Who can see the itinerary I paste\?/);
-  assert.match(html, /Live transit sends only coordinate pairs and departure times/i);
+  assert.match(html, /Unknown place names are sent to Google Maps only when needed/i);
   assert.match(html, /Optional live Google Maps public-transit times/i);
   assert.doesNotMatch(html, /founding-review|human-assisted itinerary|Checkout opening soon/i);
   assert.match(html, /English/);

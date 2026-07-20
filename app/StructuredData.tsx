@@ -2,22 +2,22 @@ import type { Locale } from "../lib/i18n";
 
 const faqByLocale: Record<Locale, Array<{ question: string; answer: string }>> = {
   en: [
-    { question: "What does TripCheck Japan build?", answer: "Add Tokyo places in any order and choose the number of days. TripCheck groups nearby stops, orders each day, protects booked and must-do places, keeps optional stops as backups, and compares walking, trains and taxis." },
+    { question: "What does TripCheck Japan build?", answer: "Add places anywhere in Japan and choose the number of days. TripCheck groups nearby stops, orders each day, protects bookings, and shows the route on Google Maps." },
     { question: "Can TripCheck recommend where to stay?", answer: "Yes, at area level. Hotel areas are ranked by the total travel needed for the traveller's own wishlist, not by commission, price or generic popularity." },
     { question: "Does TripCheck account for flights and airports?", answer: "Yes. Arrival processing and city transfer delay the first usable hour, while the airport journey and pre-flight buffer create a hard deadline on the last day." },
     { question: "How is TripCheck different from ChatGPT or Google Maps?", answer: "TripCheck makes multi-day grouping and ordering decisions immediately with reproducible algorithms. Google Maps remains the final source for live directions; AI is limited to ambiguous language and explanation." },
     { question: "Can TripCheck check a finished itinerary?", answer: "Yes. Input with day headings and times switches to checker mode, where reservations remain anchors and route or timing conflicts are identified." },
     { question: "Are the transport comparisons live?", answer: "Public-transport minutes can be refreshed from Google Maps within its supported schedule window. Walking and taxi remain planning estimates; opening hours, tickets, weather and road traffic are not live yet." },
-    { question: "Who can see the itinerary I paste?", answer: "Itinerary text is analysed inside the browser and is not stored or reviewed by a person. If live transit is selected, only coordinate pairs and planned departure times are sent to Google Maps through TripCheck." },
+    { question: "Who can see the itinerary I paste?", answer: "The itinerary is not stored or reviewed by a person. Unknown place names are sent to Google Maps only when needed to locate them; planning notes and the completed plan are not stored." },
   ],
   ja: [
-    { question: "TripCheck Japanは何を作りますか？", answer: "行きたい東京の場所を順不同で入れ、日数を選ぶだけで、近い場所の日別分類と訪問順を作ります。予約と必須予定を守り、任意候補は予備に残し、徒歩・電車・タクシーも比較します。" },
+    { question: "TripCheck Japanは何を作りますか？", answer: "日本全国の行きたい場所を順不同で入れ、日数を選ぶだけで、近い場所の日別分類と訪問順を作り、Googleマップ上にまとめます。" },
     { question: "泊まる場所もおすすめできますか？", answer: "現在は宿泊エリア単位で、入力した行き先への総移動量から比較します。広告報酬、価格、一般的な人気で個別ホテルを順位付けしません。" },
     { question: "飛行機と空港の時間も反映しますか？", answer: "到着手続きと市内移動から初日の開始時刻を、空港移動と搭乗前の余裕から最終日の締切を計算します。" },
     { question: "ChatGPTやGoogle Mapsとの違いは？", answer: "日ごとの分類と順番は再現可能なアルゴリズムで即時計算します。最新経路はGoogle Mapsで確認し、AIは曖昧な文章理解と説明に限定します。" },
     { question: "完成済みの旅程も検査できますか？", answer: "できます。日付見出しと時刻を含む入力は診断モードになり、予約を軸に経路と時間の衝突を探します。" },
     { question: "移動手段の比較はリアルタイムですか？", answer: "対応期間内なら公共交通の時間をGoogle Mapsから更新できます。徒歩とタクシーは計画用概算で、営業時間、チケット、天候、道路交通はまだライブではありません。" },
-    { question: "貼り付けた旅程は誰に見られますか？", answer: "旅程本文はブラウザ内で解析し、保存も人による閲覧も行いません。ライブ交通を選んだ場合だけ、地点間の座標と出発予定時刻をGoogle Mapsへ送ります。" },
+    { question: "貼り付けた旅程は誰に見られますか？", answer: "旅程は保存せず、人が閲覧することもありません。場所を特定するときだけ未登録の地名をGoogle Mapsへ送り、メモや完成した旅程は保存しません。" },
   ],
   ko: [
     { question: "TripCheck Japan은 무엇을 만드나요?", answer: "도쿄 장소를 아무 순서로 넣고 날짜 수를 고르면 가까운 곳을 묶어 방문 순서를 만듭니다. 예약과 필수 장소를 지키고 선택 장소는 예비로 남기며 도보·전철·택시를 비교합니다." },
@@ -52,7 +52,7 @@ export default function StructuredData({ locale }: { locale: Locale }) {
         name: "TripCheck Japan",
         url: `${origin}/`,
         inLanguage: ["en", "ja", "ko", "zh-CN"],
-        description: "A private Tokyo trip builder that groups an unordered wishlist by day, plans around a hotel base and protects flight and airport time.",
+        description: "A Japan-wide trip builder that groups an unordered wishlist by day and shows each route, hotel base and meal area on Google Maps.",
       },
       {
         "@type": "SoftwareApplication",
@@ -66,7 +66,7 @@ export default function StructuredData({ locale }: { locale: Locale }) {
         featureList: [
           "Wishlist-to-itinerary planning",
           "Multi-day geographic clustering",
-          "On-device Tokyo stop ordering",
+          "Japan-wide Google Places resolution",
           "Deterministic shortest-path calculation",
           "Walking, train and taxi comparison",
           "Hotel-area location recommendation",
@@ -80,8 +80,8 @@ export default function StructuredData({ locale }: { locale: Locale }) {
           "Instant schedule recalculation",
           "Optional live Google Maps public-transit times",
           "Google Maps transit handoff",
-          "Tokyo itinerary feasibility checking",
-          "Cross-city conflict detection",
+          "Google Maps day-by-day route display",
+          "Cross-region conflict detection",
           "Timed-entry buffer review",
           "Explainable itinerary repair",
         ],

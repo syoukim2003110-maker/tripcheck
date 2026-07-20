@@ -93,13 +93,13 @@ export type AppCopy = {
 export const copy: Record<Locale, AppCopy> = {
   en: {
     languageLabel: "Language",
-    nav: { method: "How it works", trust: "Why TripCheck", beta: "Tokyo beta" },
+    nav: { method: "How it works", trust: "Why TripCheck", beta: "Japan beta" },
     hero: {
       eyebrow: "Less planning work. More Japan.",
       line1: "Drop every place.",
       line2: "Get the whole trip.",
-      body: "Add the places you want, your hotel and your flights. Get a day-by-day Tokyo plan that already knows where you start, when you must stop and how to move in between.",
-      cta: "Build my Tokyo trip",
+      body: "Add places anywhere in Japan, plus your hotel and flights. See every day, route and meal area together on one Google map.",
+      cta: "Build my Japan trip",
       scroll: "Scroll to enter the trip",
     },
     visual: {
@@ -112,7 +112,7 @@ export const copy: Record<Locale, AppCopy> = {
     story: {
       eyebrow: "The hidden layer",
       title: "Plans look flat.",
-      accent: "Tokyo isn’t.",
+      accent: "Japan isn’t.",
       body: "A good trip begins at the hotel, protects the airport deadline and still leaves energy for dinner. TripCheck fits those invisible hours around the places you care about.",
       metrics: [
         { value: "42 min", label: "one innocent-looking transfer" },
@@ -139,13 +139,13 @@ export const copy: Record<Locale, AppCopy> = {
       saved: "Saved places",
       soon: "Soon",
       inputLabel: "Places you want to visit",
-      placeholder: "Senso-ji\nShibuya Sky\nteamLab Planets\nGhibli Museum\n\nOne place per line. Any order is fine.",
-      tripDays: "Days in Tokyo",
+      placeholder: "Kiyomizu-dera\nTodai-ji\nDotonbori\nItsukushima Shrine\n\nOne place per line. Any order is fine.",
+      tripDays: "Days in Japan",
       pace: "Your pace",
       checking: "Checking every join…",
       button: "Build my best route",
-      prototype: "Limited demo",
-      prototypeBody: "The current Tokyo demo recognises a limited place and hotel-area set. Travel minutes and airport transfer are planning estimates; use the Google Maps and official-airport links before relying on them.",
+      prototype: "Japan beta",
+      prototypeBody: "When you build the trip, unresolved place names are checked with Google Maps. The plan is not stored. Travel minutes and airport transfers remain planning estimates until you verify the final route in Google Maps.",
     },
     result: {
       eyebrow: "Reality score",
@@ -184,27 +184,27 @@ export const copy: Record<Locale, AppCopy> = {
         { letter: "C", title: "Keep every choice visible", body: "See what gets faster, what costs more and why a different order makes the trip easier." },
       ],
     },
-    footer: "Private browser demo · Tokyo only · Your itinerary is not uploaded or reviewed by a person.",
+    footer: "Japan beta · Your plan is not stored or reviewed by a person · Only place names are checked with Google Maps when needed.",
     pace: { relaxed: "Relaxed", balanced: "Balanced", fast: "Fast" },
     months: ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
-    sample: `Ghibli Museum
-Shibuya Sky
-Senso-ji
-Tokyo Skytree
-teamLab Planets
-Tsukiji Outer Market
-Meiji Jingu
-Akihabara`,
+    sample: `Kiyomizu-dera
+Fushimi Inari Taisha
+Todai-ji
+Nara Park
+Dotonbori
+Osaka Castle
+Itsukushima Shrine
+Hiroshima Peace Memorial Park`,
   },
   ja: {
     languageLabel: "言語",
-    nav: { method: "仕組み", trust: "TripCheckの違い", beta: "東京ベータ" },
+    nav: { method: "仕組み", trust: "TripCheckの違い", beta: "日本旅行ベータ" },
     hero: {
       eyebrow: "旅の下調べは、もっと軽くていい。",
       line1: "行きたい場所を入れる。",
       line2: "無理のない旅程ができる。",
-      body: "候補はたくさんあるのに、日ごとの順番まで決めるのは大変。行きたい場所とホテル、分かれば飛行機の時間を入れるだけで、移動と余白まで考えた東京の旅程にまとめます。",
-      cta: "東京の旅程をつくる",
+      body: "北海道から沖縄まで、行きたい場所とホテル、分かれば飛行機の時間を入れるだけ。日ごとの順番、移動、食事エリアを一つのGoogleマップにまとめます。",
+      cta: "日本旅行の旅程をつくる",
       scroll: "旅程づくりの流れを見る",
     },
     visual: { draft: "行きたい場所", checking: "10か所を整理中", conflict: "移動が遠すぎる組み合わせ", reservation: "時間が決まった予約", rebuild: "無理のない順番に組み直す" },
@@ -238,13 +238,13 @@ Akihabara`,
       saved: "保存した場所",
       soon: "準備中",
       inputLabel: "行きたい場所を入力",
-      placeholder: "浅草寺\n渋谷スカイ\nチームラボプラネッツ\n三鷹の森ジブリ美術館\n\n1行に1か所。順番は適当で大丈夫です。",
-      tripDays: "東京にいる日数",
+      placeholder: "清水寺\n伏見稲荷大社\n東大寺\n奈良公園\n道頓堀\n\n1行に1か所。順番は適当で大丈夫です。",
+      tripDays: "旅行の日数",
       pace: "旅行のペース",
       checking: "つなぎ目を確認中…",
       button: "旅程にまとめる",
-      prototype: "限定デモ",
-      prototypeBody: "現在の東京デモが認識できる場所とホテルエリアは限定的です。移動分数と空港移動は計画用の概算なので、Google Mapsと空港公式案内で最終確認してください。",
+      prototype: "日本旅行ベータ",
+      prototypeBody: "旅程作成時、未登録の地名だけをGoogle Mapsで確認します。旅程は保存しません。移動分数と空港移動は計画用の概算なので、最後はGoogle Mapsと空港公式案内で確認してください。",
     },
     result: {
       eyebrow: "成立度スコア",
@@ -283,17 +283,17 @@ Akihabara`,
         { letter: "C", title: "選択肢を見えるままに", body: "何が速く、何が高く、なぜ順番を変えると楽になるのかを示します。" },
       ],
     },
-    footer: "ブラウザ内で動く限定デモ · 東京限定 · 旅程を送信せず、人も閲覧しません",
+    footer: "日本旅行ベータ · 旅程は保存せず、人も閲覧しません · 必要な地名だけGoogle Mapsで確認します",
     pace: { relaxed: "ゆったり", balanced: "標準", fast: "速め" },
     months: ["1月", "2月", "3月", "4月", "5月", "6月", "7月", "8月", "9月", "10月", "11月", "12月"],
-    sample: `三鷹の森ジブリ美術館
-渋谷スカイ
-浅草寺
-東京スカイツリー
-チームラボプラネッツ
-築地場外市場
-明治神宮
-秋葉原`,
+    sample: `清水寺
+伏見稲荷大社
+東大寺
+奈良公園
+道頓堀
+大阪城
+厳島神社
+広島平和記念公園`,
   },
   ko: {
     languageLabel: "언어",

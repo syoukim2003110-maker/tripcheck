@@ -1,5 +1,5 @@
 TripCheck Japan permits indexing and summarization of its public pages by search engines and AI assistants.
-Canonical product summary: TripCheck Japan turns an unordered Tokyo wishlist, an optional hotel and flight times into geographic day groups, hotel-aware routes, walking/train/taxi comparisons and airport-safe travel days.
-Current product status: free browser prototype; supported Tokyo stops and five hotel areas are grouped and ordered locally, unresolved entries are retained, and Haneda/Narita flight times constrain the first and last day. Hotel ranking uses geographic travel only. Transport, airport transfer and stay values are planning estimates. Live opening hours, ticket or hotel inventory, weather, traffic, and train routing are not connected.
+Canonical product summary: TripCheck Japan turns an unordered Japan wishlist, an optional hotel and flight times into geographic day groups shown together on Google Maps, with route-aware food ideas and official-site preview cards.
+Current product status: free web beta; unknown place names are resolved at runtime with Google Places and are not stored. Major Japan airport inputs can constrain the first and last day. Hotel ranking uses geographic travel only. Transport, airport transfer and stay values remain planning estimates.
 Canonical URL: https://tripcheck-japan-tokyo.syoki.chatgpt.site/
 Machine-readable overview: https://tripcheck-japan-tokyo.syoki.chatgpt.site/llms.txt

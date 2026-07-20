@@ -5290,6 +5290,142 @@ select:focus-visible {
 .food-candidates nav a.is-primary { background: var(--blue); color: white; }
 .food-slot > footer { background: #f5f0e5; }
 
+.food-link-import {
+  background: #13202a;
+  color: var(--paper);
+  grid-column: 1 / -1;
+  padding: var(--s6);
+}
+
+.food-link-import > div:first-child { align-items: end; display: flex; gap: var(--s4); justify-content: space-between; }
+.food-link-import > div:first-child > p,
+.food-link-import > div:first-child > h6 { margin: 0; }
+.food-link-import > div:first-child > p { color: #ff8b73; font-family: var(--font-mono), monospace; font-size: 8px; }
+.food-link-import > div:first-child > h6 { font-size: clamp(22px, 3vw, 38px); letter-spacing: -0.04em; }
+.food-link-import > form { display: grid; grid-template-columns: 1fr auto; margin-top: var(--s4); }
+.food-link-import > form input {
+  background: white;
+  border: 1px solid white;
+  border-radius: 0;
+  color: var(--ink);
+  font-size: 14px;
+  min-height: 52px;
+  padding: 0 var(--s4);
+}
+
+.food-link-import > form button {
+  align-items: center;
+  background: var(--red);
+  border: 1px solid var(--red);
+  color: white;
+  display: flex;
+  font-family: var(--font-mono), monospace;
+  font-size: 9px;
+  gap: var(--s5);
+  justify-content: space-between;
+  min-width: 150px;
+  padding: 0 var(--s4);
+  text-transform: uppercase;
+}
+
+.food-link-import > form button:disabled { opacity: 0.55; }
+.food-link-import > small { color: #a8bac5; display: block; font-size: 9px; margin-top: var(--s2); }
+.food-link-import > p { color: #ffad9c; font-size: 10px; margin: var(--s3) 0 0; }
+.food-link-preview-grid { display: grid; gap: var(--s3); grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: var(--s5); }
+.food-link-preview-grid > article { background: var(--paper); border: 1px solid #fff; color: var(--ink); min-width: 0; position: relative; }
+.food-link-preview-grid > article > a { display: grid; grid-template-columns: minmax(130px, 0.72fr) minmax(0, 1.28fr); min-height: 145px; }
+.food-link-preview-grid img,
+.link-preview-fallback { height: 100%; min-height: 145px; object-fit: cover; width: 100%; }
+.link-preview-fallback { align-items: center; background: var(--red); color: white; display: flex; font-size: 42px; justify-content: center; }
+.food-link-preview-grid article a > div { padding: var(--s4); }
+.food-link-preview-grid article a small { color: var(--red); display: block; font-family: var(--font-mono), monospace; font-size: 7px; margin-bottom: var(--s2); text-transform: uppercase; }
+.food-link-preview-grid article a b { display: block; font-size: 17px; line-height: 1.16; padding-right: var(--s4); }
+.food-link-preview-grid article a p { color: var(--ink-soft); display: -webkit-box; font-size: 10px; line-height: 1.45; margin: var(--s2) 0 0; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.food-link-preview-grid > article > button { align-items: center; background: var(--ink); border: 0; color: white; display: flex; font-size: 17px; height: 32px; justify-content: center; position: absolute; right: 0; top: 0; width: 32px; }
+
+.place-resolution-note {
+  background: color-mix(in srgb, var(--red) 9%, var(--paper));
+  border-top: 1px solid var(--ink);
+  color: var(--red);
+  font-size: 11px;
+  margin: 0;
+  padding: var(--s3) var(--s5);
+}
+
+/* The real Google Maps surface for the whole trip. */
+.trip-map-hub {
+  background: #101b25;
+  border: 1px solid var(--ink);
+  color: var(--paper);
+  margin-top: var(--s7);
+  overflow: hidden;
+}
+
+.trip-map-hub > header {
+  align-items: end;
+  display: grid;
+  gap: var(--s7);
+  grid-template-columns: minmax(0, 1.2fr) minmax(260px, 0.8fr);
+  padding: var(--s6);
+}
+
+.trip-map-hub > header h4 {
+  font-family: var(--font-display-latin), Impact, sans-serif;
+  font-size: clamp(48px, 7vw, 96px);
+  font-weight: 400;
+  letter-spacing: -0.055em;
+  line-height: 0.87;
+  margin: var(--s3) 0 0;
+  text-transform: uppercase;
+}
+
+.experience[data-locale="ja"] .trip-map-hub > header h4 {
+  font-family: var(--font-display-cjk), var(--font-cjk-body), sans-serif;
+  line-height: 1.04;
+  text-transform: none;
+}
+
+.trip-map-hub > header > p { color: #b6c8d2; font-size: 13px; line-height: 1.7; margin: 0; }
+.map-day-tabs { border-bottom: 1px solid rgb(255 255 255 / 28%); border-top: 1px solid rgb(255 255 255 / 28%); display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.map-day-tabs button {
+  background: transparent;
+  border: 0;
+  border-right: 1px solid rgb(255 255 255 / 28%);
+  color: var(--paper);
+  cursor: pointer;
+  display: grid;
+  gap: 3px;
+  grid-template-columns: auto 1fr;
+  min-height: 76px;
+  padding: var(--s3) var(--s4);
+  text-align: left;
+}
+
+.map-day-tabs button:hover { background: rgb(255 255 255 / 7%); }
+.map-day-tabs button.is-active { background: var(--red); }
+.map-day-tabs button > span { align-items: center; border: 1px solid currentColor; border-radius: 50%; display: flex; font-family: var(--font-mono), monospace; font-size: 8px; grid-row: 1 / 3; height: 34px; justify-content: center; margin-right: var(--s2); width: 34px; }
+.map-day-tabs button > b { font-size: 13px; }
+.map-day-tabs button > small { color: color-mix(in srgb, currentColor 68%, transparent); font-size: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.google-map-frame { background: #d9d4c8; height: min(66vh, 640px); min-height: 430px; position: relative; }
+.google-map-frame iframe { border: 0; height: 100%; width: 100%; }
+.map-empty-day { align-items: center; color: var(--ink); display: flex; flex-direction: column; height: 100%; justify-content: center; padding: var(--s6); text-align: center; }
+.map-empty-day > span { color: var(--red); font-size: 72px; line-height: 1; }
+.map-empty-day > p { font-size: 13px; line-height: 1.6; max-width: 420px; }
+.map-route-badge,
+.map-food-badges { position: absolute; z-index: 2; }
+.map-route-badge { align-items: center; background: #101b25; color: white; display: flex; font-family: var(--font-mono), monospace; font-size: 10px; gap: var(--s3); left: var(--s4); padding: var(--s3); top: var(--s4); }
+.map-route-badge > b { color: #ff7358; }
+.map-food-badges { bottom: var(--s4); display: flex; flex-wrap: wrap; gap: var(--s2); left: var(--s4); right: var(--s4); }
+.map-food-badges > span { background: var(--red); color: white; font-family: var(--font-mono), monospace; font-size: 8px; padding: 8px 10px; }
+.map-stop-ribbon { display: flex; list-style: none; margin: 0; overflow-x: auto; padding: 0; scrollbar-color: var(--red) transparent; }
+.map-stop-ribbon li { align-items: center; border-right: 1px solid rgb(255 255 255 / 23%); display: grid; flex: 0 0 min(260px, 72vw); gap: 2px var(--s3); grid-template-columns: auto 1fr; min-height: 72px; padding: var(--s3) var(--s4); }
+.map-stop-ribbon li > span { align-items: center; background: var(--blue); border-radius: 50%; display: flex; font-family: var(--font-mono), monospace; font-size: 8px; grid-row: 1 / 3; height: 32px; justify-content: center; width: 32px; }
+.map-stop-ribbon li b { font-size: 12px; }
+.map-stop-ribbon li small { color: #9fb7c4; font-family: var(--font-mono), monospace; font-size: 7px; text-transform: uppercase; }
+.trip-map-hub > footer { align-items: center; border-top: 1px solid rgb(255 255 255 / 23%); display: flex; justify-content: space-between; padding: var(--s3) var(--s4); }
+.trip-map-hub > footer .google-maps-attribution { color: #d6d6d6; margin: 0; }
+.trip-map-hub > footer a { align-items: center; color: white; display: flex; font-family: var(--font-mono), monospace; font-size: 8px; gap: var(--s5); text-transform: uppercase; }
+
 /* A schematic day map built from the itinerary's own coordinates. */
 .sr-only {
   clip: rect(0, 0, 0, 0);
@@ -5584,6 +5720,15 @@ select:focus-visible {
 }
 
 @media (max-width: 720px) {
+  .trip-map-hub > header { display: block; padding: var(--s5); }
+  .trip-map-hub > header > p { margin-top: var(--s4); }
+  .trip-map-hub > header h4 { font-size: clamp(48px, 13vw, 68px); }
+  .map-day-tabs { display: flex; overflow-x: auto; }
+  .map-day-tabs button { flex: 0 0 160px; }
+  .google-map-frame { height: 56vh; min-height: 430px; }
+  .map-food-badges { bottom: var(--s3); left: var(--s3); right: var(--s3); }
+  .map-food-badges > span { font-size: 7px; }
+  .trip-map-hub > footer { align-items: flex-start; flex-direction: column; gap: var(--s3); }
   .food-recommendations > header { display: flex; flex-direction: column-reverse; gap: var(--s5); }
   .food-hero-image { min-height: 300px; }
   .food-hero-copy { padding: 0; }
@@ -5600,6 +5745,14 @@ select:focus-visible {
   .food-candidates li { display: flex; min-height: 0; }
   .food-candidates li nav { display: grid; grid-column: auto; }
   .food-candidate-image { height: 190px; }
+  .food-link-import { padding: var(--s4); }
+  .food-link-import > div:first-child { align-items: flex-start; flex-direction: column; gap: var(--s2); }
+  .food-link-import > form { grid-template-columns: 1fr; }
+  .food-link-import > form button { min-height: 48px; }
+  .food-link-preview-grid { grid-template-columns: 1fr; }
+  .food-link-preview-grid > article > a { grid-template-columns: 1fr; }
+  .food-link-preview-grid img,
+  .link-preview-fallback { height: 180px; min-height: 180px; }
   .route-map-canvas { aspect-ratio: 1.05 / 1; min-height: 310px; }
   .route-map-node { width: 90px; }
   .route-map-node > b { font-size: 8px; max-width: 90px; }

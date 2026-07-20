@@ -14,6 +14,11 @@ export type RouteStop = {
   isUserEntered?: boolean;
 };
 
+export type ResolvedInputStop = RouteStop & {
+  input: string;
+  address: string;
+};
+
 export type OptimizedRouteDay = {
   label: string;
   originalStops: RouteStop[];

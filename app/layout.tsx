@@ -11,8 +11,8 @@ export async function generateMetadata(): Promise<Metadata> {
   const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host") ?? "tripcheck-japan-tokyo.syoki.chatgpt.site";
   const protocol = requestHeaders.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
   const origin = `${protocol}://${host}`;
-  const title = "Tokyo Trip Builder & Route Optimizer | TripCheck Japan";
-  const description = "Add the Tokyo places you want, your hotel and flights. Get a day-by-day route with hotel-area recommendations, transport choices and airport deadlines.";
+  const title = "Japan Trip Planner & Google Maps Itinerary | TripCheck Japan";
+  const description = "Add places anywhere in Japan. See each day's route, hotel base and meal areas together on one Google map.";
 
   return {
     metadataBase: new URL(origin),
@@ -21,17 +21,17 @@ export async function generateMetadata(): Promise<Metadata> {
     applicationName: "TripCheck Japan",
     category: "travel",
     keywords: [
-      "Tokyo itinerary checker",
-      "Tokyo trip builder",
-      "Tokyo route optimizer",
-      "Tokyo sightseeing route planner",
-      "Tokyo itinerary generator",
-      "best area to stay in Tokyo",
-      "Tokyo hotel location planner",
-      "Tokyo airport itinerary planner",
+      "Japan itinerary planner",
+      "Japan trip builder",
+      "Japan route optimizer",
+      "Japan sightseeing route planner",
+      "Japan itinerary generator",
+      "best area to stay in Japan",
+      "Japan hotel location planner",
+      "Japan airport itinerary planner",
       "Japan trip planner",
-      "Tokyo travel planning",
-      "Tokyo itinerary review",
+      "Japan travel planning",
+      "Google Maps itinerary Japan",
     ],
     alternates: {
       canonical: origin,
@@ -61,13 +61,13 @@ export async function generateMetadata(): Promise<Metadata> {
       url: origin,
       siteName: "TripCheck Japan",
       locale: "en_US",
-      images: [{ url: `${origin}/og-cinema-v1.png`, width: 1536, height: 1024, alt: "TripCheck Japan — turn Tokyo places into a calmer route" }],
+      images: [{ url: `${origin}/og.png`, width: 1536, height: 1024, alt: "TripCheck Japan — 日本を、ひとつの地図で。" }],
     },
     twitter: {
       card: "summary_large_image",
       title,
       description,
-      images: [`${origin}/og-cinema-v1.png`],
+      images: [`${origin}/og.png`],
     },
   };
 }

@@ -5,6 +5,7 @@ import {
   optimizeKnownStopOrder,
   resolveKnownStops,
   straightLineDistanceKm,
+  type ResolvedInputStop,
   type RouteStop,
 } from "./route-optimizer.ts";
 import { applyLiveTransitMinutes, estimateTravelOptions, type ModeComparison, type TransportMode } from "./time-feasibility.ts";
@@ -82,7 +83,7 @@ export type WishlistStopConstraint = {
   isReservation: boolean;
 };
 
-export type AirportCode = "none" | "HND" | "NRT";
+export type AirportCode = "none" | "HND" | "NRT" | "KIX" | "ITM" | "NGO" | "FUK" | "CTS" | "OKA";
 export type FlightKind = "international" | "domestic";
 
 export type TripPlannerContext = {
@@ -97,6 +98,8 @@ export type TripPlannerContext = {
   durationOverrides?: Record<string, number>;
   liveTransitMinutes?: Record<string, number>;
   mealPlan?: MealPlan;
+  resolvedStops?: ResolvedInputStop[];
+  resolvedBase?: ResolvedInputStop | null;
 };
 
 export type TripBase = RouteStop & { query: string };
@@ -145,6 +148,7 @@ const foodVenuePattern = /\b(?:restaurant|cafe|café|lunch|dinner|sushi|ramen|iz
 
 const airportData = {
   HND: {
+    names: { en: "Haneda Airport", ja: "羽田空港", ko: "하네다 공항", zh: "羽田机场" },
     latitude: 35.5494,
     longitude: 139.7798,
     transferMinutes: 60,
@@ -152,11 +156,60 @@ const airportData = {
     sourceUrl: "https://www.tokyo-haneda.com/en/flight/detail/int_departure.html",
   },
   NRT: {
+    names: { en: "Narita Airport", ja: "成田空港", ko: "나리타 공항", zh: "成田机场" },
     latitude: 35.772,
     longitude: 140.3929,
     transferMinutes: 105,
     internationalDepartureMinutes: 120,
     sourceUrl: "https://www.narita-airport.jp/en/airportguide/inter-dep/",
+  },
+  KIX: {
+    names: { en: "Kansai Airport", ja: "関西国際空港", ko: "간사이 공항", zh: "关西机场" },
+    latitude: 34.432,
+    longitude: 135.2304,
+    transferMinutes: 60,
+    internationalDepartureMinutes: 150,
+    sourceUrl: "https://www.kansai-airport.or.jp/en/",
+  },
+  ITM: {
+    names: { en: "Osaka Itami Airport", ja: "大阪国際空港（伊丹）", ko: "오사카 이타미 공항", zh: "大阪伊丹机场" },
+    latitude: 34.7855,
+    longitude: 135.4382,
+    transferMinutes: 40,
+    internationalDepartureMinutes: 120,
+    sourceUrl: "https://www.osaka-airport.co.jp/en/",
+  },
+  NGO: {
+    names: { en: "Chubu Centrair Airport", ja: "中部国際空港", ko: "주부 센트레아 공항", zh: "中部国际机场" },
+    latitude: 34.8584,
+    longitude: 136.8054,
+    transferMinutes: 50,
+    internationalDepartureMinutes: 150,
+    sourceUrl: "https://www.centrair.jp/en/",
+  },
+  FUK: {
+    names: { en: "Fukuoka Airport", ja: "福岡空港", ko: "후쿠오카 공항", zh: "福冈机场" },
+    latitude: 33.5859,
+    longitude: 130.4507,
+    transferMinutes: 20,
+    internationalDepartureMinutes: 150,
+    sourceUrl: "https://www.fukuoka-airport.jp/en/",
+  },
+  CTS: {
+    names: { en: "New Chitose Airport", ja: "新千歳空港", ko: "신치토세 공항", zh: "新千岁机场" },
+    latitude: 42.7752,
+    longitude: 141.6923,
+    transferMinutes: 50,
+    internationalDepartureMinutes: 150,
+    sourceUrl: "https://www.hokkaido-airports.com/en/new-chitose/",
+  },
+  OKA: {
+    names: { en: "Naha Airport", ja: "那覇空港", ko: "나하 공항", zh: "那霸机场" },
+    latitude: 26.1958,
+    longitude: 127.6458,
+    transferMinutes: 25,
+    internationalDepartureMinutes: 150,
+    sourceUrl: "https://www.naha-airport.co.jp/en/",
   },
 } as const;
 
@@ -460,9 +513,18 @@ function buildBase(definition: (typeof baseDefinitions)[number], locale: Locale,
   };
 }
 
-function resolveTripBase(query: string, locale: Locale) {
+function resolveTripBase(query: string, locale: Locale, resolvedBase?: ResolvedInputStop | null) {
   const normalized = query.trim();
   if (!normalized) return null;
+  if (resolvedBase) {
+    return {
+      ...resolvedBase,
+      id: `base-${resolvedBase.id}`,
+      planningDurationMinutes: 0,
+      isAnchor: false,
+      query: normalized,
+    };
+  }
   const match = baseDefinitions.find((definition) => definition.aliases.some((alias) => alias.test(normalized)));
   return match ? buildBase(match, locale, normalized) : null;
 }
@@ -499,11 +561,21 @@ function resolveUserFoodReservation(
   };
 }
 
-function recommendBases(stops: RouteStop[], clusters: RouteStop[][], locale: Locale) {
+function recommendBases(stops: RouteStop[], clusters: RouteStop[][], locale: Locale, nationwide: boolean) {
   if (stops.length === 0) return [];
-  return baseDefinitions
-    .map((definition) => {
-      const base = buildBase(definition, locale, "");
+  const dynamicBases = [...new Map(stops.map((stop) => [stop.area, stop])).values()].map((stop): TripBase => ({
+    ...stop,
+    id: `base-dynamic-${stop.id}`,
+    name: locale === "ja" ? `${stop.area}周辺` : `${stop.area} area`,
+    planningDurationMinutes: 0,
+    isAnchor: false,
+    query: stop.name,
+  }));
+  const bases = nationwide
+    ? dynamicBases
+    : baseDefinitions.map((definition) => buildBase(definition, locale, ""));
+  return bases
+    .map((base) => {
       const routeDistanceKm = clusters.reduce((sum, cluster) => sum + routeDistanceFromBase(optimizeFromBase(cluster, base), base), 0);
       return { base, routeDistanceKm };
     })
@@ -513,12 +585,9 @@ function recommendBases(stops: RouteStop[], clusters: RouteStop[][], locale: Loc
 
 function airportStop(code: Exclude<AirportCode, "none">, locale: Locale): RouteStop {
   const airport = airportData[code];
-  const name = code === "HND"
-    ? { en: "Haneda Airport", ja: "羽田空港", ko: "하네다 공항", zh: "羽田机场" }[locale]
-    : { en: "Narita Airport", ja: "成田空港", ko: "나리타 공항", zh: "成田机场" }[locale];
   return {
     id: `airport-${code.toLowerCase()}`,
-    name,
+    name: airport.names[locale],
     area: code,
     latitude: airport.latitude,
     longitude: airport.longitude,
@@ -837,8 +906,13 @@ export function buildTripFromWishlist(
     const entry = cleanEntry(line);
     if (!entry) continue;
     const parsedConstraint = parseWishlistConstraint(line);
+    const providerStop = context.resolvedStops?.find((candidate) => (
+      candidate.input === entry || entry.startsWith(candidate.input) || candidate.input.startsWith(entry)
+    ));
     const userFoodReservation = resolveUserFoodReservation(entry, parsedConstraint, locale);
-    const resolved = userFoodReservation ? [userFoodReservation] : resolveKnownStops(entry, locale);
+    const resolved = providerStop
+      ? [{ ...providerStop, isAnchor: parsedConstraint.isReservation || parsedConstraint.priority === "must" }]
+      : userFoodReservation ? [userFoodReservation] : resolveKnownStops(entry, locale);
     if (resolved.length === 0) {
       unknownEntries.push(entry);
       continue;
@@ -866,8 +940,8 @@ export function buildTripFromWishlist(
     }
   }
   const hotelQuery = context.hotelQuery?.trim() ?? "";
-  const selectedBase = resolveTripBase(hotelQuery, locale);
-  const baseRecommendations = recommendBases(knownStops, fullClusters, locale);
+  const selectedBase = resolveTripBase(hotelQuery, locale, context.resolvedBase);
+  const baseRecommendations = recommendBases(knownStops, fullClusters, locale, Boolean(context.resolvedStops?.length));
   const airportConstraints = buildAirportConstraints(context, selectedBase, locale);
   const days = clusters.map((cluster, index) => buildDay(
     cluster,
