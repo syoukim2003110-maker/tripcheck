@@ -5,10 +5,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { RouteStop } from "../lib/route-optimizer";
+import type { TransportMode } from "../lib/time-feasibility";
 import { routeLegKey } from "../lib/trip-builder";
 
 type MapLocale = "en" | "ja";
-type RouteState = "idle" | "loading" | "live" | "fallback";
+type RouteState = "idle" | "loading" | "live" | "partial" | "fallback";
 
 export type FoodPin = {
   id: string;
@@ -26,6 +27,7 @@ type Props = {
   locale: MapLocale;
   onLegDurations: (minutes: Record<string, number>) => void;
   onSelectStop: (stopId: string | null) => void;
+  routeModes: TransportMode[];
   selectedStopId: string | null;
   stops: RouteStop[];
 };
@@ -34,6 +36,7 @@ declare global {
   interface Window {
     google?: any;
     __tripcheckMapsPromise?: Promise<any>;
+    __tripcheckMapsReady?: () => void;
   }
 }
 
@@ -63,9 +66,16 @@ async function loadGoogleMaps(apiKey: string) {
     window.__tripcheckMapsPromise = new Promise((resolve, reject) => {
       const script = document.createElement("script");
       script.async = true;
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&v=weekly&loading=async`;
-      script.onload = () => resolve(window.google);
-      script.onerror = () => reject(new Error("maps_unavailable"));
+      window.__tripcheckMapsReady = () => {
+        delete window.__tripcheckMapsReady;
+        resolve(window.google);
+      };
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&v=weekly&loading=async&callback=__tripcheckMapsReady`;
+      script.onerror = () => {
+        delete window.__tripcheckMapsReady;
+        window.__tripcheckMapsPromise = undefined;
+        reject(new Error("maps_unavailable"));
+      };
       document.head.append(script);
     });
   }
@@ -145,6 +155,7 @@ export default function PlannerGoogleMap({
   locale,
   onLegDurations,
   onSelectStop,
+  routeModes,
   selectedStopId,
   stops,
 }: Props) {
@@ -170,10 +181,12 @@ export default function PlannerGoogleMap({
   const displayStops = base ? [base, ...stops] : stops;
   const pathStops = base && stops.length > 0 ? [base, ...stops, base] : stops;
   const stopsSignature = `${locale}|${displayStops.map((stop) => `${stop.id}@${stop.latitude.toFixed(5)},${stop.longitude.toFixed(5)}`).join("|")}`;
+  const routeSignature = `${stopsSignature}|${routeModes.join(",")}|${departureTimes.join(",")}`;
   const foodSignature = foodPins.map((pin) => `${pin.id}@${pin.latitude.toFixed(5)},${pin.longitude.toFixed(5)}`).join("|");
 
   useEffect(() => {
     let cancelled = false;
+    let tilesListener: any = null;
     async function boot() {
       if (!containerRef.current) return;
       try {
@@ -196,7 +209,9 @@ export default function PlannerGoogleMap({
         });
         map.addListener("click", () => onSelectStopRef.current(null));
         engineRef.current = { google, map, maps: { core } };
-        setEngineState("js");
+        tilesListener = google.maps.event.addListenerOnce(map, "tilesloaded", () => {
+          if (!cancelled) setEngineState("js");
+        });
       } catch {
         if (!cancelled) setEngineState("embed");
       }
@@ -207,6 +222,7 @@ export default function PlannerGoogleMap({
       chipsRef.current.forEach((chip) => chip.overlay.setMap(null));
       foodChipsRef.current.forEach((chip) => chip.overlay.setMap(null));
       routeLinesRef.current.forEach((line) => line.setMap(null));
+      if (tilesListener) tilesListener.remove();
       engineRef.current = null;
     };
   }, [apiKey]);
@@ -272,20 +288,27 @@ export default function PlannerGoogleMap({
       if (renderSeqRef.current !== seq) return;
       setRouteState("loading");
       const computeLeg = async (from: RouteStop, to: RouteStop, index: number) => {
-        const cacheKey = `${from.id}->${to.id}@${locale}`;
+        const mode = routeModes[index] ?? "transit";
+        const rawDepartureTime = departureTimesRef.current[index] ?? "";
+        const departureTime = usableDepartureTime(rawDepartureTime);
+        const departureBucket = departureTime
+          ? new Date(Math.floor(departureTime.getTime() / 900_000) * 900_000).toISOString()
+          : rawDepartureTime ? "outside-window" : "now";
+        const cacheKey = `${from.id}->${to.id}@${locale}:${mode}:${departureBucket}`;
         const cached = legCacheRef.current.get(cacheKey);
-        if (cached) return cached;
+        if (cached) return { ...cached, mode, publishMinutes: mode === "transit" && (!rawDepartureTime || Boolean(departureTime)) };
+        const travelMode = { walk: "WALKING", transit: "TRANSIT", taxi: "DRIVING" }[mode];
         const request = (fields: string[]) => Route.computeRoutes({
           origin: { lat: from.latitude, lng: from.longitude },
           destination: { lat: to.latitude, lng: to.longitude },
-          travelMode: "TRANSIT",
-          ...(usableDepartureTime(departureTimesRef.current[index] ?? "")
-            ? { departureTime: usableDepartureTime(departureTimesRef.current[index] ?? "") }
+          travelMode,
+          ...(mode === "transit" && departureTime
+            ? { departureTime }
             : {}),
-          transitPreference: {
+          ...(mode === "transit" ? { transitPreference: {
             allowedTransitModes: ["BUS", "SUBWAY", "TRAIN", "LIGHT_RAIL", "RAIL"],
             routingPreference: "FEWER_TRANSFERS",
-          },
+          } } : {}),
           region: "JP",
           language: locale,
           fields,
@@ -306,14 +329,14 @@ export default function PlannerGoogleMap({
         };
         // First measurement wins for the session so schedule times stay put while the user explores.
         if (path.length >= 2) legCacheRef.current.set(cacheKey, result);
-        return result;
+        return { ...result, mode, publishMinutes: mode === "transit" && (!rawDepartureTime || Boolean(departureTime)) };
       };
 
       const results = await Promise.all(legs.map(async ({ from, to, index }) => {
         try {
           return { from, to, index, ...(await computeLeg(from, to, index)) };
         } catch {
-          return { from, to, index, path: [], minutes: null };
+          return { from, to, index, path: [], minutes: null, mode: routeModes[index] ?? "transit", publishMinutes: false };
         }
       }));
       if (renderSeqRef.current !== seq || !engineRef.current) return;
@@ -322,21 +345,22 @@ export default function PlannerGoogleMap({
       let liveLegCount = 0;
       const routeBounds = new LatLngBounds();
       for (const result of results) {
-        if (result.minutes !== null) durations[routeLegKey(result.from.id, result.to.id)] = result.minutes;
+        if (result.minutes !== null && result.publishMinutes) durations[routeLegKey(result.from.id, result.to.id)] = result.minutes;
         if (result.path.length < 2) continue;
         liveLegCount += 1;
         dashedLegs[result.index]?.setMap(null);
         result.path.forEach((point: any) => routeBounds.extend(point));
+        const routeColor = { walk: "#2f8878", transit: "#e2634e", taxi: "#6f5aa8" }[result.mode];
         routeLinesRef.current.push(
           new google.maps.Polyline({ map, path: result.path, strokeColor: "#ffffff", strokeOpacity: 0.92, strokeWeight: 9, zIndex: 4 }),
-          new google.maps.Polyline({ map, path: result.path, strokeColor: "#e2634e", strokeOpacity: 0.95, strokeWeight: 5, zIndex: 5 }),
+          new google.maps.Polyline({ map, path: result.path, strokeColor: routeColor, strokeOpacity: 0.95, strokeWeight: 5, zIndex: 5 }),
         );
       }
       if (liveLegCount === legs.length) {
         displayStops.forEach((stop) => routeBounds.extend({ lat: stop.latitude, lng: stop.longitude }));
         map.fitBounds(routeBounds, 88);
       }
-      setRouteState(liveLegCount === legs.length ? "live" : "fallback");
+      setRouteState(liveLegCount === legs.length ? "live" : liveLegCount > 0 ? "partial" : "fallback");
       if (Object.keys(durations).length > 0) onLegDurationsRef.current(durations);
     }
 
@@ -345,7 +369,7 @@ export default function PlannerGoogleMap({
     });
     // Redraw only when the day's stops actually change, not on unrelated re-renders.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engineState, stopsSignature]);
+  }, [engineState, routeSignature]);
 
   useEffect(() => {
     chipsRef.current.forEach((chip) => chip.setSelected(chip.stopId === selectedStopId));
@@ -377,7 +401,7 @@ export default function PlannerGoogleMap({
   }, [engineState, foodSignature]);
 
   const embedPoints = pathStops.length > 0
-    ? pathStops.slice(0, 10)
+    ? pathStops.length <= 10 ? pathStops : [...pathStops.slice(0, 9), pathStops.at(-1)!]
     : [{ latitude: JAPAN_CENTER.lat, longitude: JAPAN_CENTER.lng, name: locale === "ja" ? "日本" : "Japan" }];
   const embedParams = new URLSearchParams({
     language: locale,
@@ -387,8 +411,8 @@ export default function PlannerGoogleMap({
   });
 
   const statusText = locale === "ja"
-    ? { idle: "Googleマップ", loading: "実経路を取得中…", live: "Google実経路", fallback: "直線の目安" }[routeState]
-    : { idle: "Google Maps", loading: "Fetching routes…", live: "Live Google routes", fallback: "Straight-line guide" }[routeState];
+    ? { idle: "Googleマップ", loading: "実経路を取得中…", live: "Google実経路", partial: "一部は直線目安", fallback: "直線の目安" }[routeState]
+    : { idle: "Google Maps", loading: "Fetching routes…", live: "Live Google routes", partial: "Some straight-line guides", fallback: "Straight-line guide" }[routeState];
 
   return (
     <>
@@ -401,7 +425,7 @@ export default function PlannerGoogleMap({
       />
       <div className={`planner-google-map${engineState === "js" ? " is-visible" : ""}`} ref={containerRef} />
       {pathStops.length > 1 ? (
-        <span className={`planner-route-status is-${routeState}`}><i aria-hidden="true" />{statusText}</span>
+        <span aria-live="polite" className={`planner-route-status is-${routeState}`}><i aria-hidden="true" />{statusText}</span>
       ) : null}
     </>
   );

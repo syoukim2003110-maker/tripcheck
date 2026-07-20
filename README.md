@@ -1,6 +1,6 @@
 # TripCheck Japan
 
-An English-first Tokyo trip builder and route optimizer. Add places in any
+An English/Japanese Japan trip builder and route optimizer. Add places in any
 order, choose the number of days, and get geographic day groups, an efficient
 visit order, planning times and walking/train/taxi comparisons. A timed
 itinerary remains supported as a secondary checker input.
@@ -10,12 +10,11 @@ areas become the start and end of each day, alternative areas are ranked by the
 wishlist's total route distance, and Haneda/Narita buffers constrain the first
 and last day.
 
-The current build recognises a small source-attributed Tokyo catalog, clusters
-and orders known stops locally, retains unresolved entries and checks explicit
-time gaps without AI. Stay durations, walking and taxi minutes are visibly
-labelled planning estimates. An opt-in Google Routes adapter can replace public
-transport estimates with a fresh scheduled result; opening hours, ticket
-availability, weather and taxi traffic are not yet live.
+The current build resolves places across Japan through Google Places, clusters
+and orders stops locally, retains unresolved entries and checks explicit time
+gaps without AI. Stay durations and schedule constraints remain deterministic.
+Google Maps draws mode-aware routes, and the explicit field check organizes
+listing evidence with rules before optionally searching cited public sources.
 
 ## Run locally
 
@@ -26,10 +25,11 @@ pnpm install
 pnpm dev
 ```
 
-Live transit requires a Google Cloud project with Routes API and billing
-enabled. Copy `.env.example` to `.env.local`, set `GOOGLE_ROUTES_API_KEY`,
-restrict the key to Routes API and set a low daily quota before use. Never put
-the key in a browser-exposed environment variable.
+Copy `.env.example` to `.env.local`. Use a referrer-restricted browser key for
+Maps JavaScript and Maps Embed, and a server-only Places key for place
+resolution. A separate server-only Routes key is optional when the Places key
+is also allowed to call Routes. Set low daily quotas before use. Anthropic is
+used only for optional food comparison and on-demand cited public-web search.
 
 ## Verify
 

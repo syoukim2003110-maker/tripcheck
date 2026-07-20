@@ -32,8 +32,19 @@ user-selected food phrase to the TripCheck food endpoint and then to Google
 Maps Platform. It excludes itinerary text, dates, hotel text, reservation
 details and the other trip stops. Returned place names, addresses, types and
 Google Maps links remain in page memory and are not cached or persisted by
-TripCheck. Tabelog and X are outbound search links only; TripCheck does not
-scrape, copy or merge their reviews, posts or rankings.
+TripCheck.
+
+The optional field-check action first sends only one place name and area to
+Google Maps Platform. Listing fields and attributed Google reviews are reduced
+to practical signals by deterministic rules. After Google identifies the
+place, the same explicit action may send only its resolved public name, address
+and interface language to Anthropic's web-search tool. It may search indexed
+public X, Instagram, local-news and firsthand-blog pages. TripCheck displays
+only URLs cited by the tool, rejects provider-dated sources older than 90 days,
+labels unknown dates, deduplicates results and caps one check at two searches.
+Results stay in page memory; an identical public-web result may stay in server
+memory for up to 30 minutes solely to prevent duplicate paid calls. No raw
+itinerary, dates, hotel text, reservation details or other stops are included.
 
 The browser still requests normal site assets such as JavaScript, fonts and
 sequence images. Those requests must never include itinerary content.

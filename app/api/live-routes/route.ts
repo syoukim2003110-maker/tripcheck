@@ -7,7 +7,7 @@ export async function POST(request: Request) {
   if (origin && new URL(origin).host !== new URL(request.url).host) {
     return Response.json({ code: "forbidden" }, { status: 403, headers: noStoreHeaders });
   }
-  const apiKey = process.env.GOOGLE_ROUTES_API_KEY;
+  const apiKey = process.env.GOOGLE_ROUTES_API_KEY ?? process.env.GOOGLE_PLACES_API_KEY;
   if (!apiKey) {
     return Response.json({ code: "not_configured" }, { status: 503, headers: noStoreHeaders });
   }

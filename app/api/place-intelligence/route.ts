@@ -4,8 +4,14 @@ const noStoreHeaders = { "Cache-Control": "no-store, max-age=0" };
 
 export async function POST(request: Request) {
   const origin = request.headers.get("Origin");
-  if (origin && new URL(origin).host !== new URL(request.url).host) {
-    return Response.json({ code: "forbidden" }, { status: 403, headers: noStoreHeaders });
+  if (origin) {
+    try {
+      if (new URL(origin).origin !== new URL(request.url).origin) {
+        return Response.json({ code: "forbidden" }, { status: 403, headers: noStoreHeaders });
+      }
+    } catch {
+      return Response.json({ code: "forbidden" }, { status: 403, headers: noStoreHeaders });
+    }
   }
   const placesApiKey = process.env.GOOGLE_PLACES_API_KEY;
   if (!placesApiKey) return Response.json({ code: "not_configured" }, { status: 503, headers: noStoreHeaders });
@@ -19,7 +25,9 @@ export async function POST(request: Request) {
   if (!parsed) return Response.json({ code: "invalid_request" }, { status: 400, headers: noStoreHeaders });
 
   try {
-    const result = await fetchPlaceIntelligence(parsed, placesApiKey, process.env.ANTHROPIC_API_KEY ?? null);
+    // Google evidence is organized by deterministic rules. Claude is reserved for the
+    // separate, explicit public-web search so this fast path stays cheap and reproducible.
+    const result = await fetchPlaceIntelligence(parsed, placesApiKey, null);
     return Response.json(result, { headers: noStoreHeaders });
   } catch {
     return Response.json({ code: "unavailable" }, { status: 502, headers: noStoreHeaders });
