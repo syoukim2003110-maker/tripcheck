@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import StructuredData from "./StructuredData";
 import TripPlannerApp from "./TripPlannerApp";
 
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "TripCheck — Japan trip planner",
   description:

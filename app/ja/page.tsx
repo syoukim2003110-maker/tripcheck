@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import StructuredData from "../StructuredData";
 import TripPlannerApp from "../TripPlannerApp";
 
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "TripCheck — 日本旅行プランナー",
   description: "日本全国の行きたい場所を入力。日別ルート、ホテル、食事エリア、空港までを一つのGoogleマップにまとめます。",
