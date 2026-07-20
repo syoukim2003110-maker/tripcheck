@@ -13,6 +13,8 @@ export type FoodCandidate = {
   address: string;
   type: string;
   googleMapsUrl: string;
+  photoName?: string;
+  photoAttribution?: { name: string; uri: string };
 };
 
 const validLanguages = new Set(["en", "ja"]);
@@ -54,7 +56,7 @@ export async function fetchGoogleFoodCandidates(
     headers: {
       "Content-Type": "application/json",
       "X-Goog-Api-Key": apiKey,
-      "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.googleMapsUri,places.primaryTypeDisplayName",
+      "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.googleMapsUri,places.primaryTypeDisplayName,places.photos",
     },
     body: JSON.stringify({
       textQuery: `${request.query} ${request.area}`,
@@ -81,6 +83,10 @@ export async function fetchGoogleFoodCandidates(
       formattedAddress?: string;
       googleMapsUri?: string;
       primaryTypeDisplayName?: { text?: string };
+      photos?: Array<{
+        name?: string;
+        authorAttributions?: Array<{ displayName?: string; uri?: string }>;
+      }>;
     }>;
   };
   return (payload.places ?? []).flatMap((place) => {
@@ -93,6 +99,13 @@ export async function fetchGoogleFoodCandidates(
       address: place.formattedAddress?.trim() ?? "",
       type: place.primaryTypeDisplayName?.text?.trim() ?? "Restaurant",
       googleMapsUrl,
+      ...(place.photos?.[0]?.name ? { photoName: place.photos[0].name } : {}),
+      ...(place.photos?.[0]?.authorAttributions?.[0]?.displayName && place.photos[0].authorAttributions[0].uri ? {
+        photoAttribution: {
+          name: place.photos[0].authorAttributions[0].displayName,
+          uri: place.photos[0].authorAttributions[0].uri,
+        },
+      } : {}),
     }];
   }).slice(0, 4);
 }

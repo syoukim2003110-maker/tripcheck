@@ -1,6 +1,8 @@
 export type MapEmbedRequest = {
   points: Array<{ latitude: number; longitude: number; label?: string }>;
   language: "en" | "ja";
+  zoom?: number;
+  overview?: boolean;
 };
 
 export function parseMapEmbedRequest(url: string): MapEmbedRequest | null {
@@ -22,19 +24,36 @@ export function parseMapEmbedRequest(url: string): MapEmbedRequest | null {
   ))) return null;
   const labels = rawLabels.map((label) => label.trim());
   if (labels.some((label) => label.length === 0 || label.length > 120)) return null;
+  const rawZoom = parsed.searchParams.get("zoom");
+  const zoom = rawZoom ? Number(rawZoom) : undefined;
+  if (zoom !== undefined && (!Number.isInteger(zoom) || zoom < 4 || zoom > 18)) return null;
+  const overview = parsed.searchParams.get("overview") === "1";
   return {
     points: points.map((point, index) => ({ ...point, ...(labels[index] ? { label: labels[index] } : {}) })),
     language,
+    ...(zoom ? { zoom } : {}),
+    ...(overview ? { overview } : {}),
   };
 }
 
 export function buildGoogleMapEmbedUrl(request: MapEmbedRequest, apiKey: string) {
   const coordinate = ({ latitude, longitude }: MapEmbedRequest["points"][number]) => `${latitude},${longitude}`;
+  if (request.overview && request.points.length === 1) {
+    const params = new URLSearchParams({
+      key: apiKey,
+      center: coordinate(request.points[0]),
+      zoom: String(request.zoom ?? 5),
+      maptype: "roadmap",
+      language: request.language,
+      region: "JP",
+    });
+    return `https://www.google.com/maps/embed/v1/view?${params.toString()}`;
+  }
   if (request.points.length === 1) {
     const params = new URLSearchParams({
       key: apiKey,
       q: coordinate(request.points[0]),
-      zoom: "14",
+      zoom: String(request.zoom ?? 14),
       language: request.language,
       region: "JP",
     });

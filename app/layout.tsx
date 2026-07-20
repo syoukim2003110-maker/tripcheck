@@ -5,14 +5,15 @@ import "@fontsource/ibm-plex-mono/latin-400.css";
 import "@fontsource/ibm-plex-mono/latin-500.css";
 import "@fontsource/ibm-plex-mono/latin-600.css";
 import "./globals.css";
+import "./planner.css";
 
 export async function generateMetadata(): Promise<Metadata> {
   const requestHeaders = await headers();
   const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host") ?? "tripcheck-japan-tokyo.syoki.chatgpt.site";
   const protocol = requestHeaders.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
   const origin = `${protocol}://${host}`;
-  const title = "Japan Trip Planner & Google Maps Itinerary | TripCheck Japan";
-  const description = "Add places anywhere in Japan. See each day's route, hotel base and meal areas together on one Google map.";
+  const title = "TripCheck — Japan trip planner";
+  const description = "Add places in any order. TripCheck groups each day, draws the route on Google Maps and keeps nearby food options in one workspace.";
 
   return {
     metadataBase: new URL(origin),
@@ -38,8 +39,6 @@ export async function generateMetadata(): Promise<Metadata> {
       languages: {
         "en": `${origin}/`,
         "ja": `${origin}/ja`,
-        "ko": `${origin}/ko`,
-        "zh-CN": `${origin}/zh`,
         "x-default": `${origin}/`,
       },
     },

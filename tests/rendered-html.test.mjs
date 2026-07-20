@@ -22,28 +22,23 @@ async function render() {
   );
 }
 
-test("server-renders the TripCheck landing experience", async () => {
+test("server-renders the map-first TripCheck planner", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
-  assert.match(html, /<title>Japan Trip Planner &amp; Google Maps Itinerary \| TripCheck Japan<\/title>/i);
-  assert.match(html, /Get the whole trip\./);
-  assert.match(html, /Build my best route/);
-  assert.match(html, /Run the full trip demo/);
-  assert.match(html, /One input\./);
-  assert.match(html, /The whole trip fits around it\./);
-  assert.match(html, /One plan instead of six tabs/);
+  assert.match(html, /<title>TripCheck — Japan trip planner<\/title>/i);
+  assert.match(html, /Turn places into a workable trip/);
+  assert.match(html, /Build my trip/);
+  assert.match(html, /Use demo/);
+  assert.match(html, /Your day-by-day route will appear here/);
+  assert.match(html, /Google Maps/);
   assert.match(html, /Hotel or nearest station/);
   assert.match(html, /FAQPage/);
   assert.match(html, /SoftwareApplication/);
-  assert.match(html, /How is it different from ChatGPT or Google Maps\?/);
-  assert.match(html, /Who can see the itinerary I paste\?/);
-  assert.match(html, /Unknown place names are sent to Google Maps only when needed/i);
-  assert.match(html, /Optional live Google Maps public-transit times/i);
-  assert.doesNotMatch(html, /founding-review|human-assisted itinerary|Checkout opening soon/i);
-  assert.match(html, /English/);
+  assert.doesNotMatch(html, /SCROLL TO PLAY|Get the whole trip\.|One plan instead of six tabs/i);
+  assert.match(html, />EN</);
   assert.match(html, /日本語/);
   assert.doesNotMatch(html, /<option[^>]*value="ko"/i);
   assert.doesNotMatch(html, /<option[^>]*value="zh"/i);

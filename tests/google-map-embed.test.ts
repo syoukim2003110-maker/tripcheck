@@ -27,4 +27,15 @@ test("rejects coordinates outside Japan and excessive waypoints", () => {
   const tooMany = Array.from({ length: 11 }, () => "35,135").join("|");
   assert.equal(parseMapEmbedRequest(`https://example.test/api/map-embed?points=${encodeURIComponent(tooMany)}`), null);
   assert.equal(parseMapEmbedRequest("https://example.test/api/map-embed?points=35,135%7C36,136&labels=Only%20one"), null);
+  assert.equal(parseMapEmbedRequest("https://example.test/api/map-embed?points=35,135&zoom=3"), null);
+});
+
+test("supports a zoomed-out Japan overview before a trip exists", () => {
+  const parsed = parseMapEmbedRequest("https://example.test/api/map-embed?language=ja&points=36.2048,138.2529&labels=Japan&zoom=5&overview=1");
+  assert.ok(parsed);
+  assert.equal(parsed.zoom, 5);
+  const url = buildGoogleMapEmbedUrl(parsed, "test-key");
+  assert.match(url, /\/embed\/v1\/view\?/);
+  assert.match(url, /zoom=5/);
+  assert.match(url, /center=36.2048%2C138.2529/);
 });

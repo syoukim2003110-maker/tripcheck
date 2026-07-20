@@ -1,14 +1,14 @@
 import type { Metadata } from "next";
 import StructuredData from "./StructuredData";
-import TripCheckApp from "./TripCheckApp";
+import TripPlannerApp from "./TripPlannerApp";
 
 export const metadata: Metadata = {
-  title: "Japan Trip Planner & Google Maps Itinerary | TripCheck Japan",
+  title: "TripCheck — Japan trip planner",
   description:
     "Add places anywhere in Japan. See each day's route, hotel base and meal areas together on one Google map.",
   alternates: { canonical: "/" },
 };
 
 export default function Home() {
-  return <><StructuredData locale="en" /><TripCheckApp initialLocale="en" /></>;
+  return <><StructuredData locale="en" /><TripPlannerApp initialLocale="en" /></>;
 }

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const appSourceUrl = new URL("../app/TripCheckApp.tsx", import.meta.url);
+const appSourceUrl = new URL("../app/TripPlannerApp.tsx", import.meta.url);
 const engineSourceUrls = [
   new URL("../lib/route-optimizer.ts", import.meta.url),
   new URL("../lib/time-feasibility.ts", import.meta.url),
