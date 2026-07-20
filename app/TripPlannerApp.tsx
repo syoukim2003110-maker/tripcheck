@@ -1,27 +1,29 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import PlannerGoogleMap from "./PlannerGoogleMap";
-import { foodSearchLinks, requestFoodRecommendations } from "../lib/food-recommendations-client";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import PlannerGoogleMap, { type FoodPin } from "./PlannerGoogleMap";
+import { foodSearchLinks, requestFoodRanking, requestFoodRecommendations } from "../lib/food-recommendations-client";
 import type { FoodCandidate } from "../lib/google-food";
 import { fullTripDemo } from "../lib/mock-trip";
 import { requestPlaceIntelligence } from "../lib/place-intelligence-client";
 import type { PlaceIntelligenceResult } from "../lib/place-intelligence";
 import { PlaceResolutionError, requestPlaceResolution } from "../lib/place-resolution-client";
 import type { ResolvedInputStop, RouteStop } from "../lib/route-optimizer";
-import { analyzeTrip, type Pace } from "../lib/trip-analysis";
-import type { AirportCode, FoodRecommendationSlot, MealPlan } from "../lib/trip-builder";
+import type { Pace } from "../lib/trip-analysis";
+import { buildTripFromWishlist, type AirportCode, type FoodRecommendationSlot, type MealPlan } from "../lib/trip-builder";
 
 type PlannerLocale = "en" | "ja";
 type FoodState = {
   status: "idle" | "loading" | "ready" | "unavailable";
   query: string;
   candidates: FoodCandidate[];
+  notes: Record<string, { reason: string; tag: string }>;
 };
 type IntelligenceState = {
   status: "loading" | "ready" | "unavailable";
   result: PlaceIntelligenceResult | null;
 };
+type Inspector = { kind: "stop"; stopId: string } | { kind: "food"; slotId: string } | null;
 
 const airportOptions: Array<{ value: AirportCode; label: string }> = [
   { value: "none", label: "—" },
@@ -37,23 +39,23 @@ const airportOptions: Array<{ value: AirportCode; label: string }> = [
 
 const ui = {
   ja: {
-    brandNote: "日本旅行プランナー",
-    newTrip: "新しい旅行",
-    headline: "行きたい場所から、旅程をつくる",
-    subhead: "順番は気にせず、場所・予約・食べたいものをそのまま入力してください。",
+    brandNote: "日本の旅プランナー",
+    newTrip: "新しい旅",
+    headline: "どこへ行きたい？",
+    subhead: "行きたい場所を、思いつくまま入れてください。近い場所を同じ日にまとめて、地図に一日の流れを描きます。",
     inputLabel: "行きたい場所",
     placeholder: "例）\n浅草寺\nチームラボプラネッツ — 1日目 15:30 予約\n三鷹の森ジブリ美術館 — 必須\n渋谷スカイ — 時間があれば",
-    sample: "デモを入れる",
+    sample: "サンプルを見る",
     days: "日数",
     date: "初日",
     hotel: "ホテル・最寄り駅",
     hotelPlaceholder: "例：新宿駅近く",
-    details: "ホテル・空港・食事の条件",
+    details: "空港・ペース・食事の設定",
     arrival: "到着空港",
     arrivalTime: "到着時刻",
     departure: "出発空港",
     departureTime: "出発時刻",
-    pace: "旅行のペース",
+    pace: "旅のペース",
     meal: "食事の提案",
     relaxed: "ゆったり",
     balanced: "標準",
@@ -61,61 +63,70 @@ const ui = {
     allMeals: "昼・夜",
     dinner: "夜だけ",
     noMeals: "表示しない",
-    build: "旅程をつくる",
-    building: "場所を確認して、地図を作っています…",
+    build: "地図にする",
+    building: "場所を確認しています…",
     mapReady: "Googleマップ",
-    mapEmpty: "行き先を入れると、日別ルートがここに出ます",
-    japanOverview: "日本全体",
-    edit: "入力を編集",
+    mapEmpty: "行き先を入れると、ここに旅が描かれます",
+    edit: "入力にもどる",
     planSummary: (days: number, stops: number) => `${days}日間 · ${stops}か所`,
     openMaps: "Google Mapsで開く",
-    route: "この日の流れ",
     stay: "滞在",
     move: { walk: "徒歩", transit: "電車", taxi: "タクシー" },
-    unknown: "地図に出せなかった入力",
-    placeFallback: "一部の場所を地図で確認できませんでした。分かる場所だけで旅程を表示しています。",
+    minutes: (value: number) => `${value}分`,
+    legLive: "実測",
+    unknown: "地図に出せなかった場所",
+    placeFallback: "見つからなかった場所があります。確認できた場所だけで組み立てています。",
+    noDays: "地図に置ける場所がまだありません。名前を少し変えると見つかることがあります。",
+    openDay: "この日はまだ予定がありません",
+    selectHint: "ピンや行き先をタップすると、詳しい情報が開きます",
     mealIdeas: "この近くで食べるなら",
-    findFood: "お店を見る",
+    lunchChip: "昼ごはん",
+    dinnerChip: "夜ごはん",
     foodLoading: "近くのお店を探しています…",
-    foodUnavailable: "お店を取得できませんでした。Google Mapsから同じ条件で探せます。",
+    foodUnavailable: "お店を取得できませんでした。Google Mapsで同じ条件を開けます。",
     maps: "地図で見る",
-    foodNote: "店を予定に固定せず、近くの候補だけ表示します。",
+    foodNote: "予定には固定しません。気分で選べる近くの候補です。",
     reservation: "予約",
     must: "必須",
     optional: "任意",
-    estimated: "移動時間は計画用の目安",
+    estimated: "移動時間は目安。Googleの実測が届くと自動でなじみます。",
+    deadlineOver: (time: string) => `空港へ向かう目安 ${time} を超えています`,
     language: "言語",
-    privacy: "旅程は保存しません",
+    privacy: "旅程は保存されません",
     fieldCheck: "現地チェック",
-    fieldChecking: "現地情報を確認中…",
-    fieldUnavailable: "現地情報を取得できませんでした。出発前に公式情報を確認してください。",
-    fieldEvidence: "現地シグナル",
-    openNow: "営業中表示",
-    closedNow: "営業時間外表示",
-    hoursUnknown: "営業時間不明",
+    fieldChecking: "確認中…",
+    fieldUnavailable: "現地情報を取得できませんでした。出発前に公式情報の確認を。",
+    fieldEvidence: "いまの現地シグナル",
+    openNow: "営業中の表示",
+    closedNow: "営業時間外の表示",
+    hoursUnknown: "営業時間は不明",
     cashOnly: "現金のみ",
     cardsAccepted: "カード可",
-    paymentUnknown: "支払い不明",
-    recentVoices: "Googleの口コミ",
+    paymentUnknown: "支払い情報なし",
+    noWebsite: "公式サイト未掲載",
+    recentVoices: "最近の口コミ（生の声）",
     official: "公式サイト",
-    latestX: "Xの最新投稿",
-    instagram: "Instagram",
-    aiAudited: "Claudeが根拠だけを整理",
+    latestX: "Xで最新の声",
+    instagram: "Instagramで探す",
+    aiAudited: "Claudeが根拠だけを要約",
     rulesAudited: "取得情報を自動整理",
+    crowd: { quiet: "静かめ", moderate: "ふつう", busy: "混みやすい", veryBusy: "かなり混む" },
+    crowdWeekend: "・週末",
+    close: "閉じる",
   },
   en: {
     brandNote: "Japan trip planner",
     newTrip: "New trip",
-    headline: "Turn places into a workable trip",
-    subhead: "Add places, bookings and food ideas in any order. We will sort the route.",
+    headline: "Where do you want to go?",
+    subhead: "Drop in places as they come to mind. We group what's near, then draw each day on the map.",
     inputLabel: "Places you want to visit",
     placeholder: "Example\nSenso-ji\nteamLab Planets — Day 1 15:30 booked\nGhibli Museum — must\nShibuya Sky — optional",
-    sample: "Use demo",
+    sample: "Try a sample",
     days: "Days",
     date: "First day",
     hotel: "Hotel or nearest station",
     hotelPlaceholder: "e.g. near Shinjuku Station",
-    details: "Hotel, airport and meal details",
+    details: "Airports, pace and meals",
     arrival: "Arrival airport",
     arrivalTime: "Arrival time",
     departure: "Departure airport",
@@ -128,62 +139,67 @@ const ui = {
     allMeals: "Lunch + dinner",
     dinner: "Dinner only",
     noMeals: "Hide",
-    build: "Build my trip",
-    building: "Checking places and drawing your map…",
+    build: "Put it on the map",
+    building: "Checking your places…",
     mapReady: "Google Maps",
-    mapEmpty: "Your day-by-day route will appear here",
-    japanOverview: "Japan overview",
-    edit: "Edit input",
+    mapEmpty: "Your trip will appear here",
+    edit: "Back to input",
     planSummary: (days: number, stops: number) => `${days} days · ${stops} places`,
     openMaps: "Open in Google Maps",
-    route: "Today’s route",
     stay: "Stay",
     move: { walk: "Walk", transit: "Train", taxi: "Taxi" },
+    minutes: (value: number) => `${value} min`,
+    legLive: "live",
     unknown: "Not shown on the map",
-    placeFallback: "Some places could not be confirmed. The route still uses the places we could locate.",
+    placeFallback: "Some places could not be found. The plan uses only the ones we could confirm.",
+    noDays: "Nothing could be placed on the map yet. A slightly different name often helps.",
+    openDay: "Nothing planned for this day yet",
+    selectHint: "Tap a pin or a stop to open details",
     mealIdeas: "Food near this route",
-    findFood: "Show places",
+    lunchChip: "Lunch",
+    dinnerChip: "Dinner",
     foodLoading: "Finding nearby places…",
     foodUnavailable: "Places did not load. Open the same search in Google Maps instead.",
     maps: "View on map",
-    foodNote: "These are flexible suggestions, not locked bookings.",
+    foodNote: "Nothing gets locked in — just easy options near your route.",
     reservation: "Booked",
     must: "Must",
     optional: "Optional",
-    estimated: "Travel times are planning estimates",
+    estimated: "Times are estimates — live Google routes blend in automatically.",
+    deadlineOver: (time: string) => `Runs past the ${time} airport cutoff`,
     language: "Language",
-    privacy: "Your itinerary is not saved",
-    fieldCheck: "Field check",
-    fieldChecking: "Checking current evidence…",
-    fieldUnavailable: "Live evidence did not load. Check the official source before leaving.",
-    fieldEvidence: "Field signals",
+    privacy: "Nothing is saved",
+    fieldCheck: "Reality check",
+    fieldChecking: "Checking…",
+    fieldUnavailable: "Live info did not load. Recheck the official source before you go.",
+    fieldEvidence: "On-the-ground signals",
     openNow: "Listed open now",
     closedNow: "Listed closed now",
     hoursUnknown: "Hours unknown",
     cashOnly: "Cash only",
     cardsAccepted: "Cards accepted",
     paymentUnknown: "Payment unknown",
-    recentVoices: "Google reviews",
+    noWebsite: "No official site",
+    recentVoices: "Recent reviews — real voices",
     official: "Official site",
     latestX: "Latest on X",
-    instagram: "Instagram",
-    aiAudited: "Evidence organized by Claude",
+    instagram: "Search Instagram",
+    aiAudited: "Evidence summarized by Claude",
     rulesAudited: "Evidence organized automatically",
+    crowd: { quiet: "Quiet", moderate: "Steady", busy: "Busy", veryBusy: "Very busy" },
+    crowdWeekend: " · weekend",
+    close: "Close",
   },
 } as const;
 
-function uniqueMapStops(base: RouteStop | null, routeStops: RouteStop[]) {
-  const candidates = base && routeStops.length <= 9 ? [base, ...routeStops] : routeStops;
-  return candidates
-    .filter((stop, index, all) => index === 0 || stop.id !== all[index - 1].id)
-    .filter((stop, index, all) => index === 0 || index !== all.length - 1 || stop.id !== all[0].id)
-    .slice(0, 10);
+function modeIcon(mode: "walk" | "transit" | "taxi") {
+  if (mode === "walk") return "🚶";
+  if (mode === "taxi") return "🚕";
+  return "🚃";
 }
 
-function modeIcon(mode: "walk" | "transit" | "taxi") {
-  if (mode === "walk") return "↟";
-  if (mode === "taxi") return "◆";
-  return "⇄";
+function googleMapsSearchUrl(stop: RouteStop) {
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${stop.name} ${stop.area}`)}`;
 }
 
 export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }: { initialLocale?: PlannerLocale; mapsApiKey?: string }) {
@@ -204,6 +220,8 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   const [isBuilding, setIsBuilding] = useState(false);
   const [placeWarning, setPlaceWarning] = useState(false);
   const [activeDay, setActiveDay] = useState(0);
+  const [inspector, setInspector] = useState<Inspector>(null);
+  const [liveTransit, setLiveTransit] = useState<Record<string, number>>({});
   const [foodSearches, setFoodSearches] = useState<Record<string, FoodState>>({});
   const [intelligence, setIntelligence] = useState<Record<string, IntelligenceState>>({});
   const text = ui[locale];
@@ -214,7 +232,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     try { window.localStorage.setItem("tripcheck-locale", locale); } catch { /* optional */ }
   }, [locale]);
 
-  const analysis = useMemo(() => hasPlan ? analyzeTrip(itinerary, pace, locale, tripDays, {
+  const plan = useMemo(() => hasPlan ? buildTripFromWishlist(itinerary, tripDays, pace, locale, {
     tripStartDate,
     hotelQuery,
     arrivalAirport,
@@ -225,26 +243,73 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     mealPlan,
     resolvedStops,
     resolvedBase,
-  }) : null, [arrivalAirport, arrivalTime, departureAirport, departureTime, hasPlan, hotelQuery, itinerary, locale, mealPlan, pace, resolvedBase, resolvedStops, tripDays, tripStartDate]);
+    liveTransitMinutes: liveTransit,
+  }) : null, [arrivalAirport, arrivalTime, departureAirport, departureTime, hasPlan, hotelQuery, itinerary, liveTransit, locale, mealPlan, pace, resolvedBase, resolvedStops, tripDays, tripStartDate]);
 
-  const plan = analysis?.inputMode === "wishlist" ? analysis.plan : null;
   const day = plan?.days[activeDay] ?? null;
-  const mapStops = useMemo(
-    () => day ? uniqueMapStops(plan?.selectedBase ?? null, day.stops.map(({ stop }) => stop)) : [],
-    [day, plan?.selectedBase],
-  );
+  const base = day ? plan?.selectedBase ?? null : null;
+  const mapStops = useMemo(() => day ? day.stops.map(({ stop }) => stop) : [], [day]);
   const routeDepartureTimes = useMemo(() => {
-    if (!day?.date || mapStops.length < 2) return [];
-    return mapStops.slice(0, -1).map((_, index) => {
-      const time = index === 0 ? day.startTime : day.stops[index - 1]?.departure ?? day.startTime;
-      return `${day.date}T${time}:00+09:00`;
-    });
-  }, [day, mapStops]);
+    if (!day?.date || mapStops.length === 0) return [];
+    const stopDeparture = (index: number) => day.stops[index]?.departure ?? day.finishTime;
+    const times: string[] = [];
+    if (base) {
+      times.push(day.startTime);
+      for (let index = 0; index < mapStops.length; index += 1) times.push(stopDeparture(index));
+    } else {
+      for (let index = 0; index < mapStops.length - 1; index += 1) times.push(stopDeparture(index));
+    }
+    return times.map((time) => `${day.date}T${time}:00+09:00`);
+  }, [base, day, mapStops]);
+
+  const daySlots = useMemo(
+    () => plan?.foodRecommendationSlots.filter((slot) => slot.dayIndex === activeDay) ?? [],
+    [activeDay, plan],
+  );
+  const selectedBuiltStop = inspector?.kind === "stop" && day
+    ? day.stops.find(({ stop }) => stop.id === inspector.stopId) ?? null
+    : null;
+  const selectedStopIndex = inspector?.kind === "stop" && day
+    ? day.stops.findIndex(({ stop }) => stop.id === inspector.stopId)
+    : -1;
+  const activeFoodSlot = inspector?.kind === "food"
+    ? daySlots.find((slot) => slot.id === inspector.slotId) ?? null
+    : null;
+  const activeFoodState = useMemo<FoodState | null>(() => activeFoodSlot
+    ? foodSearches[activeFoodSlot.id] ?? { status: "idle", query: activeFoodSlot.queryIdeas[0], candidates: [], notes: {} }
+    : null, [activeFoodSlot, foodSearches]);
+  const foodPins = useMemo<FoodPin[]>(() => {
+    if (!activeFoodSlot || !activeFoodState || activeFoodState.status !== "ready") return [];
+    return activeFoodState.candidates.flatMap((candidate, index) => (
+      typeof candidate.latitude === "number" && typeof candidate.longitude === "number"
+        ? [{ id: candidate.id, name: candidate.name, latitude: candidate.latitude, longitude: candidate.longitude, index }]
+        : []
+    ));
+  }, [activeFoodSlot, activeFoodState]);
 
   const canBuild = itinerary.trim().length >= 3 && !isBuilding;
 
+  const handleLegDurations = useCallback((incoming: Record<string, number>) => {
+    setLiveTransit((current) => {
+      let changed = false;
+      const next = { ...current };
+      for (const [key, minutes] of Object.entries(incoming)) {
+        if (key in next) continue;
+        next[key] = minutes;
+        changed = true;
+      }
+      return changed ? next : current;
+    });
+  }, []);
+
+  const handleSelectStop = useCallback((stopId: string | null) => {
+    setInspector(stopId ? { kind: "stop", stopId } : null);
+  }, []);
+
   function changeLocale(next: PlannerLocale) {
     setLocale(next);
+    setFoodSearches({});
+    setIntelligence({});
     window.history.replaceState({}, "", next === "ja" ? "/ja" : "/");
   }
 
@@ -263,6 +328,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     setResolvedBase(null);
     setPlaceWarning(false);
     setActiveDay(0);
+    setInspector(null);
     setIntelligence({});
     setHasPlan(true);
   }
@@ -273,6 +339,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     setPlaceWarning(false);
     setFoodSearches({});
     setIntelligence({});
+    setInspector(null);
     try {
       const response = await requestPlaceResolution(itinerary, hotelQuery, locale);
       setResolvedStops(response.places);
@@ -295,19 +362,54 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     setResolvedBase(null);
     setFoodSearches({});
     setIntelligence({});
+    setLiveTransit({});
+    setInspector(null);
     setHasPlan(false);
     setPlaceWarning(false);
     setActiveDay(0);
   }
 
+  function switchDay(index: number) {
+    setActiveDay(index);
+    setInspector(null);
+  }
+
   async function findFood(slot: FoodRecommendationSlot, query: string) {
-    setFoodSearches((current) => ({ ...current, [slot.id]: { status: "loading", query, candidates: [] } }));
+    setInspector({ kind: "food", slotId: slot.id });
+    setFoodSearches((current) => ({ ...current, [slot.id]: { status: "loading", query, candidates: [], notes: {} } }));
     try {
       const response = await requestFoodRecommendations(slot, query, locale);
-      setFoodSearches((current) => ({ ...current, [slot.id]: { status: "ready", query, candidates: response.candidates } }));
+      setFoodSearches((current) => ({ ...current, [slot.id]: { status: "ready", query, candidates: response.candidates, notes: {} } }));
+      if (response.candidates.length > 1) {
+        void requestFoodRanking(slot, query, response.candidates, locale).then((ranking) => {
+          setFoodSearches((current) => {
+            const entry = current[slot.id];
+            if (!entry || entry.status !== "ready" || entry.query !== query) return current;
+            const order = new Map(ranking.ranked.map((item, index) => [item.id, index]));
+            const candidates = [...entry.candidates].sort(
+              (a, b) => (order.get(a.id) ?? ranking.ranked.length) - (order.get(b.id) ?? ranking.ranked.length),
+            );
+            const notes = Object.fromEntries(ranking.ranked.map((item) => [item.id, { reason: item.reason, tag: item.tag }]));
+            return { ...current, [slot.id]: { ...entry, candidates, notes } };
+          });
+        }).catch(() => { /* ranking is optional garnish */ });
+      }
     } catch {
-      setFoodSearches((current) => ({ ...current, [slot.id]: { status: "unavailable", query, candidates: [] } }));
+      setFoodSearches((current) => ({ ...current, [slot.id]: { status: "unavailable", query, candidates: [], notes: {} } }));
     }
+  }
+
+  function openFoodSlot(slot: FoodRecommendationSlot) {
+    if (inspector?.kind === "food" && inspector.slotId === slot.id) {
+      setInspector(null);
+      return;
+    }
+    const state = foodSearches[slot.id];
+    if (!state || state.status === "idle") {
+      void findFood(slot, slot.queryIdeas[0]);
+      return;
+    }
+    setInspector({ kind: "food", slotId: slot.id });
   }
 
   async function checkPlace(stop: RouteStop) {
@@ -319,6 +421,8 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       setIntelligence((current) => ({ ...current, [stop.id]: { status: "unavailable", result: null } }));
     }
   }
+
+  const selectedIntel = selectedBuiltStop ? intelligence[selectedBuiltStop.stop.id] : undefined;
 
   return (
     <main className="trip-planner-app">
@@ -337,182 +441,337 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
         </div>
       </header>
 
-      <div className="planner-workspace">
-        <section className="planner-panel" aria-label={hasPlan ? text.route : text.headline}>
-          {!hasPlan ? (
-            <div className="planner-form-view">
-              <div className="planner-intro">
-                <span className="planner-step">01</span>
-                <div><h1>{text.headline}</h1><p>{text.subhead}</p></div>
-              </div>
+      <div className="planner-map-canvas" aria-label={text.mapReady}>
+        <PlannerGoogleMap
+          apiKey={mapsApiKey}
+          base={base}
+          departureTimes={routeDepartureTimes}
+          foodPins={foodPins}
+          locale={locale}
+          onLegDurations={handleLegDurations}
+          onSelectStop={handleSelectStop}
+          selectedStopId={inspector?.kind === "stop" ? inspector.stopId : null}
+          stops={mapStops}
+        />
 
-              <label className="planner-composer">
-                <span>{text.inputLabel}</span>
-                <textarea
-                  autoFocus
-                  id="trip-input"
-                  onChange={(event) => setItinerary(event.target.value)}
-                  placeholder={text.placeholder}
-                  value={itinerary}
-                />
-                <button onClick={loadDemo} type="button"><span aria-hidden="true">✦</span>{text.sample}</button>
-              </label>
+        {!day && !hasPlan ? <div className="planner-map-empty"><span aria-hidden="true">⌖</span><p>{text.mapEmpty}</p></div> : null}
 
-              <div className="planner-primary-fields">
-                <label><span>{text.days}</span><select onChange={(event) => setTripDays(Number(event.target.value))} value={tripDays}>{Array.from({ length: 10 }, (_, index) => index + 1).map((value) => <option key={value} value={value}>{locale === "ja" ? `${value}日` : `${value} day${value === 1 ? "" : "s"}`}</option>)}</select></label>
-                <label><span>{text.date}</span><input onChange={(event) => setTripStartDate(event.target.value)} type="date" value={tripStartDate} /></label>
-              </div>
-
-              <label className="planner-hotel-field"><span>{text.hotel}</span><input onChange={(event) => setHotelQuery(event.target.value)} placeholder={text.hotelPlaceholder} value={hotelQuery} /></label>
-
-              <details className="planner-details">
-                <summary>{text.details}<span aria-hidden="true">＋</span></summary>
-                <div className="planner-detail-grid">
-                  <label><span>{text.arrival}</span><select onChange={(event) => setArrivalAirport(event.target.value as AirportCode)} value={arrivalAirport}>{airportOptions.map((airport) => <option key={airport.value} value={airport.value}>{airport.label}</option>)}</select></label>
-                  <label><span>{text.arrivalTime}</span><input disabled={arrivalAirport === "none"} onChange={(event) => setArrivalTime(event.target.value)} type="time" value={arrivalTime} /></label>
-                  <label><span>{text.departure}</span><select onChange={(event) => setDepartureAirport(event.target.value as AirportCode)} value={departureAirport}>{airportOptions.map((airport) => <option key={airport.value} value={airport.value}>{airport.label}</option>)}</select></label>
-                  <label><span>{text.departureTime}</span><input disabled={departureAirport === "none"} onChange={(event) => setDepartureTime(event.target.value)} type="time" value={departureTime} /></label>
-                  <label><span>{text.pace}</span><select onChange={(event) => setPace(event.target.value as Pace)} value={pace}><option value="relaxed">{text.relaxed}</option><option value="balanced">{text.balanced}</option><option value="fast">{text.fast}</option></select></label>
-                  <label><span>{text.meal}</span><select onChange={(event) => setMealPlan(event.target.value as MealPlan)} value={mealPlan}><option value="all">{text.allMeals}</option><option value="dinner">{text.dinner}</option><option value="none">{text.noMeals}</option></select></label>
-                </div>
-              </details>
-
-              <button className="planner-build-button" disabled={!canBuild} onClick={buildPlan} type="button">
-                <span>{isBuilding ? text.building : text.build}</span><b aria-hidden="true">→</b>
+        {day ? (
+          <div className="planner-map-bottom">
+            {daySlots.map((slot) => (
+              <button
+                className={`planner-meal-chip${inspector?.kind === "food" && inspector.slotId === slot.id ? " is-active" : ""}`}
+                key={slot.id}
+                onClick={() => openFoodSlot(slot)}
+                type="button"
+              >
+                <span aria-hidden="true">{slot.kind === "lunch" ? "☀️" : "🌙"}</span>
+                {slot.kind === "lunch" ? text.lunchChip : text.dinnerChip}
               </button>
-            </div>
-          ) : plan && day ? (
-            <div className="planner-result-view">
-              <header className="planner-result-header">
-                <div><span>{text.planSummary(plan.requestedDays, plan.scheduledStopCount)}</span><h1>{day.theme}</h1></div>
-                <button onClick={() => setHasPlan(false)} type="button">{text.edit}</button>
-              </header>
+            ))}
+            {day.googleMapsUrl ? (
+              <a className="planner-open-maps" href={day.googleMapsUrl} rel="noreferrer" target="_blank">
+                {text.openMaps}<span aria-hidden="true">↗</span>
+              </a>
+            ) : null}
+          </div>
+        ) : null}
 
-              <div className="planner-day-tabs" role="tablist">
-                {plan.days.map((candidate, index) => <button aria-selected={activeDay === index} className={activeDay === index ? "is-active" : ""} key={candidate.label} onClick={() => setActiveDay(index)} role="tab" type="button"><b>{index + 1}</b><span>{candidate.label}</span></button>)}
+        {selectedBuiltStop ? (
+          <aside className="planner-inspector" aria-label={selectedBuiltStop.stop.name}>
+            <button className="planner-inspector-close" onClick={() => setInspector(null)} type="button" aria-label={text.close}>✕</button>
+            <header className="planner-inspector-head">
+              <span className="planner-inspector-num">{selectedStopIndex + 1}</span>
+              <div>
+                <h2>{selectedBuiltStop.stop.name}</h2>
+                <p>{selectedBuiltStop.stop.area}</p>
               </div>
+            </header>
+            <div className="planner-inspector-meta">
+              <span>{selectedBuiltStop.arrival}–{selectedBuiltStop.departure}</span>
+              {selectedBuiltStop.fixedTime ? <span className="is-booked">{text.reservation} {selectedBuiltStop.fixedTime}</span> : null}
+              {selectedBuiltStop.priority === "must" ? <span className="is-must">{text.must}</span> : null}
+              {selectedBuiltStop.priority === "optional" ? <span className="is-optional">{text.optional}</span> : null}
+              {selectedBuiltStop.crowd ? (
+                <span className="is-crowd">
+                  {text.crowd[selectedBuiltStop.crowd.level]}{selectedBuiltStop.crowd.isWeekend ? text.crowdWeekend : ""}
+                </span>
+              ) : null}
+            </div>
+            <div className="planner-inspector-actions">
+              <button
+                className="planner-check-button"
+                disabled={selectedIntel?.status === "loading"}
+                onClick={() => checkPlace(selectedBuiltStop.stop)}
+                type="button"
+              >
+                <i aria-hidden="true" />{selectedIntel?.status === "loading" ? text.fieldChecking : text.fieldCheck}
+              </button>
+              <a href={googleMapsSearchUrl(selectedBuiltStop.stop)} rel="noreferrer" target="_blank">Google Maps ↗</a>
+            </div>
 
-              {placeWarning ? <p className="planner-warning" role="status"><span aria-hidden="true">!</span>{text.placeFallback}</p> : null}
+            {selectedIntel?.status === "unavailable" ? <p className="planner-intel-unavailable" role="status">{text.fieldUnavailable}</p> : null}
+            {selectedIntel?.status === "ready" && selectedIntel.result ? (() => {
+              const intel = selectedIntel.result;
+              return (
+                <section className="planner-intel-card" aria-label={`${selectedBuiltStop.stop.name} · ${text.fieldEvidence}`}>
+                  <header>
+                    <h3>{text.fieldEvidence}</h3>
+                    <small>{intel.analyzedBy === "anthropic" ? text.aiAudited : text.rulesAudited}</small>
+                  </header>
+                  <div className="planner-intel-facts">
+                    <span className={intel.place.openNow === false ? "is-warning" : ""}>
+                      {intel.place.openNow === true ? text.openNow : intel.place.openNow === false ? text.closedNow : text.hoursUnknown}
+                    </span>
+                    <span className={intel.place.payment.cashOnly === true ? "is-warning" : ""}>
+                      {intel.place.payment.cashOnly === true ? text.cashOnly : intel.place.payment.creditCards === true ? text.cardsAccepted : text.paymentUnknown}
+                    </span>
+                    {intel.place.websiteUrl === null ? <span className="is-warning">{text.noWebsite}</span> : null}
+                    {intel.place.rating !== null ? (
+                      <span>★ {intel.place.rating.toFixed(1)} · {intel.place.userRatingCount?.toLocaleString(locale === "ja" ? "ja-JP" : "en-US") ?? "—"}</span>
+                    ) : null}
+                  </div>
+                  <p className="planner-intel-summary">{intel.analysis.summary}</p>
+                  {intel.analysis.signals.length > 0 ? (
+                    <ul className="planner-intel-signals">
+                      {intel.analysis.signals.map((signal, signalIndex) => (
+                        <li className={`is-${signal.severity}`} key={`${signal.kind}-${signalIndex}`}>
+                          <i aria-hidden="true" />
+                          <div><b>{signal.title}</b><p>{signal.detail}</p><small>{signal.evidence}</small></div>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {intel.reviews.length > 0 ? (
+                    <div className="planner-intel-reviews">
+                      <h4>{text.recentVoices}</h4>
+                      {intel.reviews.slice(0, 2).map((review, reviewIndex) => (
+                        <blockquote key={`${review.authorName}-${reviewIndex}`}>
+                          <p>{review.text}</p>
+                          <footer>
+                            <span>{review.rating !== null ? `★ ${review.rating}` : ""} {review.relativeTime}</span>
+                            <a href={review.authorUri ?? review.googleMapsUri ?? intel.place.googleMapsUrl} rel="noreferrer" target="_blank">{review.authorName} ↗</a>
+                          </footer>
+                        </blockquote>
+                      ))}
+                    </div>
+                  ) : null}
+                  <div className="planner-intel-links">
+                    <a href={intel.links.x} rel="noreferrer" target="_blank">{text.latestX} ↗</a>
+                    <a href={intel.links.instagram} rel="noreferrer" target="_blank">{text.instagram} ↗</a>
+                    {intel.place.websiteUrl ? <a href={intel.place.websiteUrl} rel="noreferrer" target="_blank">{text.official} ↗</a> : null}
+                    <a href={intel.place.googleMapsUrl} rel="noreferrer" target="_blank">Google Maps ↗</a>
+                  </div>
+                </section>
+              );
+            })() : null}
+          </aside>
+        ) : null}
 
-              <section className="planner-day-summary">
-                <div><span>{day.date || day.label}</span><b>{day.startTime}—{day.finishTime}</b></div>
-                <small>{text.estimated}</small>
-              </section>
+        {activeFoodSlot && activeFoodState ? (
+          <aside className="planner-inspector is-food" aria-label={text.mealIdeas}>
+            <button className="planner-inspector-close" onClick={() => setInspector(null)} type="button" aria-label={text.close}>✕</button>
+            <header className="planner-inspector-head">
+              <span className="planner-inspector-num is-food" aria-hidden="true">{activeFoodSlot.kind === "lunch" ? "☀️" : "🌙"}</span>
+              <div>
+                <h2>{text.mealIdeas}</h2>
+                <p>{activeFoodSlot.area} · {activeFoodSlot.window}</p>
+              </div>
+            </header>
+            <p className="planner-food-rationale">{activeFoodSlot.rationale}</p>
+            <div className="planner-food-chips">
+              {activeFoodSlot.queryIdeas.map((query) => (
+                <button
+                  className={activeFoodState.query === query ? "is-active" : ""}
+                  disabled={activeFoodState.status === "loading"}
+                  key={query}
+                  onClick={() => findFood(activeFoodSlot, query)}
+                  type="button"
+                >
+                  {query}
+                </button>
+              ))}
+            </div>
+            {activeFoodState.status === "loading" ? <p className="planner-food-status" role="status">{text.foodLoading}</p> : null}
+            {activeFoodState.status === "unavailable" ? (
+              <p className="planner-food-status">
+                {text.foodUnavailable}{" "}
+                <a href={foodSearchLinks(activeFoodState.query, activeFoodSlot.area, locale).googleMaps} rel="noreferrer" target="_blank">Google Maps ↗</a>
+              </p>
+            ) : null}
+            {activeFoodState.status === "ready" ? (
+              <div className="planner-food-results">
+                {activeFoodState.candidates.map((candidate, index) => {
+                  const note = activeFoodState.notes[candidate.id];
+                  return (
+                    <article key={candidate.id}>
+                      <a className="planner-food-image" href={candidate.googleMapsUrl} rel="noreferrer" target="_blank">
+                        {candidate.photoName ? <>
+                          {/* Google place photos are short-lived, server-proxied URLs and cannot use a static Next image allowlist. */}
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img alt={candidate.name} loading="lazy" src={`/api/place-photo?name=${encodeURIComponent(candidate.photoName)}`} />
+                        </> : <span aria-hidden="true">🍽</span>}
+                        <i className="planner-food-badge">{index + 1}</i>
+                      </a>
+                      <div>
+                        <small>{note?.tag ?? candidate.type}</small>
+                        <h3>{candidate.name}</h3>
+                        <p>{note?.reason ?? candidate.address}</p>
+                        {candidate.photoAttribution ? (
+                          <a className="planner-photo-credit" href={candidate.photoAttribution.uri} rel="noreferrer" target="_blank">Photo: {candidate.photoAttribution.name}</a>
+                        ) : null}
+                      </div>
+                      <a className="planner-food-map" href={candidate.googleMapsUrl} rel="noreferrer" target="_blank">{text.maps}<span aria-hidden="true">↗</span></a>
+                    </article>
+                  );
+                })}
+                <p className="planner-food-note">{text.foodNote}</p>
+              </div>
+            ) : null}
+          </aside>
+        ) : null}
+      </div>
 
+      <section className="planner-sheet">
+        {!hasPlan ? (
+          <div className="planner-form-view">
+            <div className="planner-intro">
+              <h1>{text.headline}</h1>
+              <p>{text.subhead}</p>
+            </div>
+
+            <label className="planner-composer">
+              <span>{text.inputLabel}</span>
+              <textarea
+                autoFocus
+                id="trip-input"
+                onChange={(event) => setItinerary(event.target.value)}
+                placeholder={text.placeholder}
+                value={itinerary}
+              />
+              <button onClick={loadDemo} type="button"><span aria-hidden="true">✦</span>{text.sample}</button>
+            </label>
+
+            <div className="planner-primary-fields">
+              <label><span>{text.days}</span><select onChange={(event) => setTripDays(Number(event.target.value))} value={tripDays}>{Array.from({ length: 10 }, (_, index) => index + 1).map((value) => <option key={value} value={value}>{locale === "ja" ? `${value}日` : `${value} day${value === 1 ? "" : "s"}`}</option>)}</select></label>
+              <label><span>{text.date}</span><input onChange={(event) => setTripStartDate(event.target.value)} type="date" value={tripStartDate} /></label>
+            </div>
+
+            <label className="planner-hotel-field"><span>{text.hotel}</span><input onChange={(event) => setHotelQuery(event.target.value)} placeholder={text.hotelPlaceholder} value={hotelQuery} /></label>
+
+            <details className="planner-details">
+              <summary>{text.details}<span aria-hidden="true">＋</span></summary>
+              <div className="planner-detail-grid">
+                <label><span>{text.arrival}</span><select onChange={(event) => setArrivalAirport(event.target.value as AirportCode)} value={arrivalAirport}>{airportOptions.map((airport) => <option key={airport.value} value={airport.value}>{airport.label}</option>)}</select></label>
+                <label><span>{text.arrivalTime}</span><input disabled={arrivalAirport === "none"} onChange={(event) => setArrivalTime(event.target.value)} type="time" value={arrivalTime} /></label>
+                <label><span>{text.departure}</span><select onChange={(event) => setDepartureAirport(event.target.value as AirportCode)} value={departureAirport}>{airportOptions.map((airport) => <option key={airport.value} value={airport.value}>{airport.label}</option>)}</select></label>
+                <label><span>{text.departureTime}</span><input disabled={departureAirport === "none"} onChange={(event) => setDepartureTime(event.target.value)} type="time" value={departureTime} /></label>
+                <label><span>{text.pace}</span><select onChange={(event) => setPace(event.target.value as Pace)} value={pace}><option value="relaxed">{text.relaxed}</option><option value="balanced">{text.balanced}</option><option value="fast">{text.fast}</option></select></label>
+                <label><span>{text.meal}</span><select onChange={(event) => setMealPlan(event.target.value as MealPlan)} value={mealPlan}><option value="all">{text.allMeals}</option><option value="dinner">{text.dinner}</option><option value="none">{text.noMeals}</option></select></label>
+              </div>
+            </details>
+
+            <button className="planner-build-button" disabled={!canBuild} onClick={buildPlan} type="button">
+              <span>{isBuilding ? text.building : text.build}</span><b aria-hidden="true">→</b>
+            </button>
+          </div>
+        ) : plan && day ? (
+          <div className="planner-result-view">
+            <header className="planner-result-header">
+              <div>
+                <span>{text.planSummary(plan.requestedDays, plan.scheduledStopCount)}</span>
+                <h1>{day.theme}</h1>
+              </div>
+              <button onClick={() => { setHasPlan(false); setInspector(null); }} type="button">{text.edit}</button>
+            </header>
+
+            <div className="planner-day-tabs" role="tablist">
+              {plan.days.map((candidate, index) => (
+                <button
+                  aria-selected={activeDay === index}
+                  className={activeDay === index ? "is-active" : ""}
+                  key={candidate.label}
+                  onClick={() => switchDay(index)}
+                  role="tab"
+                  type="button"
+                >
+                  <b>{index + 1}</b><span>{candidate.date ? candidate.date.slice(5).replace("-", "/") : candidate.label}</span>
+                </button>
+              ))}
+            </div>
+
+            {placeWarning ? <p className="planner-warning" role="status"><span aria-hidden="true">!</span>{text.placeFallback}</p> : null}
+
+            <section className="planner-day-summary">
+              <div>
+                <span>{day.date || day.label}</span>
+                <b>{day.startTime}—{day.finishTime}</b>
+              </div>
+              {day.deadlineOverrunMinutes > 0 && day.deadline ? <em>{text.deadlineOver(day.deadline)}</em> : <small>{text.estimated}</small>}
+            </section>
+
+            {day.stops.length === 0 ? <p className="planner-open-day">{text.openDay}</p> : (
               <ol className="planner-timeline">
                 {day.stops.map((builtStop, index) => {
                   const leg = index > 0 ? day.legs[index - 1] : null;
                   const recommended = leg?.comparison.recommended;
-                  const intelState = intelligence[builtStop.stop.id];
-                  const intel = intelState?.result;
+                  const checked = intelligence[builtStop.stop.id]?.status === "ready";
+                  const isSelected = inspector?.kind === "stop" && inspector.stopId === builtStop.stop.id;
                   return (
                     <li key={`${builtStop.stop.id}-${index}`}>
-                      {leg && recommended ? <div className="planner-leg"><span aria-hidden="true">{modeIcon(recommended.mode)}</span><b>{text.move[recommended.mode]}</b><small>{recommended.minutes} min</small></div> : null}
-                      <article>
+                      {leg && recommended ? (
+                        <div className="planner-leg">
+                          <span aria-hidden="true">{modeIcon(recommended.mode)}</span>
+                          <b>{text.move[recommended.mode]} {text.minutes(recommended.minutes)}</b>
+                          {recommended.source === "live" ? <em>{text.legLive}</em> : null}
+                        </div>
+                      ) : null}
+                      <button
+                        className={`planner-stop-row${isSelected ? " is-selected" : ""}`}
+                        onClick={() => setInspector(isSelected ? null : { kind: "stop", stopId: builtStop.stop.id })}
+                        type="button"
+                      >
                         <time>{builtStop.arrival}</time>
                         <span className="planner-stop-dot">{index + 1}</span>
-                        <div><h2>{builtStop.stop.name}</h2><p>{builtStop.stop.area}</p><small>{builtStop.departure !== builtStop.arrival ? `${text.stay} ${builtStop.arrival}–${builtStop.departure}` : ""}</small></div>
-                        <div className="planner-stop-tags">
-                          {builtStop.fixedTime ? <span>{text.reservation}</span> : null}
-                          {builtStop.priority === "must" ? <span>{text.must}</span> : builtStop.priority === "optional" ? <span>{text.optional}</span> : null}
-                          <button disabled={intelState?.status === "loading"} onClick={() => checkPlace(builtStop.stop)} type="button">
-                            <i aria-hidden="true" />{intelState?.status === "loading" ? text.fieldChecking : text.fieldCheck}
-                          </button>
-                        </div>
-                      </article>
-                      {intelState?.status === "unavailable" ? <p className="planner-intel-unavailable" role="status">{text.fieldUnavailable}</p> : null}
-                      {intelState?.status === "ready" && intel ? (
-                        <section className="planner-intel-card" aria-label={`${builtStop.stop.name} · ${text.fieldEvidence}`}>
-                          <header>
-                            <div><span>LIVE CHECK</span><h3>{text.fieldEvidence}</h3></div>
-                            <small>{intel.analyzedBy === "anthropic" ? text.aiAudited : text.rulesAudited}</small>
-                          </header>
-                          <p className="planner-intel-summary">{intel.analysis.summary}</p>
-                          <div className="planner-intel-facts">
-                            <span className={intel.place.openNow === false ? "is-warning" : ""}>{intel.place.openNow === true ? text.openNow : intel.place.openNow === false ? text.closedNow : text.hoursUnknown}</span>
-                            <span className={intel.place.payment.cashOnly === true ? "is-warning" : ""}>{intel.place.payment.cashOnly === true ? text.cashOnly : intel.place.payment.creditCards === true ? text.cardsAccepted : text.paymentUnknown}</span>
-                            {intel.place.rating !== null ? <span>★ {intel.place.rating.toFixed(1)} · {intel.place.userRatingCount?.toLocaleString(locale === "ja" ? "ja-JP" : "en-US") ?? "—"}</span> : null}
-                          </div>
-                          {intel.analysis.signals.length > 0 ? <ul className="planner-intel-signals">{intel.analysis.signals.map((signal, signalIndex) => (
-                            <li className={`is-${signal.severity}`} key={`${signal.kind}-${signalIndex}`}>
-                              <i aria-hidden="true" /><div><b>{signal.title}</b><p>{signal.detail}</p><small>{signal.evidence}</small></div>
-                            </li>
-                          ))}</ul> : null}
-                          {intel.reviews.length > 0 ? <div className="planner-intel-reviews"><h4>{text.recentVoices}</h4>{intel.reviews.slice(0, 2).map((review, reviewIndex) => (
-                            <blockquote key={`${review.authorName}-${reviewIndex}`}>
-                              <p>{review.text}</p>
-                              <footer><span>{review.rating !== null ? `★ ${review.rating}` : ""} {review.relativeTime}</span><a href={review.authorUri ?? review.googleMapsUri ?? intel.place.googleMapsUrl} rel="noreferrer" target="_blank">{review.authorName} ↗</a></footer>
-                            </blockquote>
-                          ))}</div> : null}
-                          <div className="planner-intel-links">
-                            <a href={intel.place.googleMapsUrl} rel="noreferrer" target="_blank">Google Maps ↗</a>
-                            {intel.place.websiteUrl ? <a href={intel.place.websiteUrl} rel="noreferrer" target="_blank">{text.official} ↗</a> : null}
-                            <a href={intel.links.x} rel="noreferrer" target="_blank">{text.latestX} ↗</a>
-                            <a href={intel.links.instagram} rel="noreferrer" target="_blank">{text.instagram} ↗</a>
-                          </div>
-                        </section>
-                      ) : null}
+                        <span className="planner-stop-main">
+                          <b>{builtStop.stop.name}</b>
+                          <small>{builtStop.stop.area}</small>
+                        </span>
+                        <span className="planner-stop-flags">
+                          {builtStop.fixedTime ? <i className="is-booked">{builtStop.fixedTime}</i> : null}
+                          {builtStop.priority === "must" ? <i className="is-must">{text.must}</i> : null}
+                          {builtStop.priority === "optional" ? <i className="is-optional">{text.optional}</i> : null}
+                          {checked ? <i className="is-checked" aria-hidden="true">✓</i> : null}
+                        </span>
+                      </button>
                     </li>
                   );
                 })}
               </ol>
+            )}
 
-              {plan.foodRecommendationSlots.filter((slot) => slot.dayIndex === activeDay).map((slot) => {
-                const foodState = foodSearches[slot.id] ?? { status: "idle", query: slot.queryIdeas[0], candidates: [] };
-                const broadLink = foodSearchLinks(foodState.query, slot.area, locale).googleMaps;
-                return (
-                  <section className="planner-food" key={slot.id}>
-                    <header><div><span>FOOD · {slot.window}</span><h2>{text.mealIdeas}</h2></div><small>{slot.area}</small></header>
-                    <p>{text.foodNote}</p>
-                    <div className="planner-food-chips">{slot.queryIdeas.map((query) => <button className={foodState.query === query ? "is-active" : ""} disabled={foodState.status === "loading"} key={query} onClick={() => findFood(slot, query)} type="button">{query}</button>)}</div>
-                    {foodState.status === "loading" ? <p className="planner-food-status" role="status">{text.foodLoading}</p> : null}
-                    {foodState.status === "unavailable" ? <p className="planner-food-status">{text.foodUnavailable} <a href={broadLink} rel="noreferrer" target="_blank">Google Maps ↗</a></p> : null}
-                    {foodState.status === "ready" ? <div className="planner-food-results">{foodState.candidates.map((candidate) => (
-                      <article key={candidate.id}>
-                        <a className="planner-food-image" href={candidate.googleMapsUrl} rel="noreferrer" target="_blank">
-                          {candidate.photoName ? <>
-                            {/* Google place photos are short-lived, server-proxied URLs and cannot use a static Next image allowlist. */}
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img alt={candidate.name} loading="lazy" src={`/api/place-photo?name=${encodeURIComponent(candidate.photoName)}`} />
-                          </> : <span aria-hidden="true">🍽</span>}
-                        </a>
-                        <div><small>{candidate.type}</small><h3>{candidate.name}</h3><p>{candidate.address}</p>{candidate.photoAttribution ? <a className="planner-photo-credit" href={candidate.photoAttribution.uri} rel="noreferrer" target="_blank">Photo: {candidate.photoAttribution.name}</a> : null}</div>
-                        <a className="planner-food-map" href={candidate.googleMapsUrl} rel="noreferrer" target="_blank">{text.maps}<span aria-hidden="true">↗</span></a>
-                      </article>
-                    ))}</div> : null}
-                  </section>
-                );
-              })}
+            <p className="planner-select-hint">{text.selectHint}</p>
 
-              {plan.unknownEntries.length > 0 ? <details className="planner-unknown"><summary>{text.unknown} · {plan.unknownEntries.length}</summary><ul>{plan.unknownEntries.map((entry) => <li key={entry}>{entry}</li>)}</ul></details> : null}
-            </div>
-          ) : (
-            <div className="planner-form-view"><p className="planner-warning">{text.placeFallback}</p><button className="planner-build-button" onClick={() => setHasPlan(false)} type="button"><span>{text.edit}</span><b>→</b></button></div>
-          )}
-        </section>
-
-        <section className="planner-map-pane" aria-label={text.mapReady}>
-          <PlannerGoogleMap
-            apiKey={mapsApiKey}
-            dayKey={`${activeDay}-${mapStops.map((stop) => stop.id).join("-") || "japan"}`}
-            departureTimes={routeDepartureTimes}
-            locale={locale}
-            stops={mapStops}
-          />
-          <div className="planner-map-topline">
-            <span className="planner-map-provider"><i aria-hidden="true" />{text.mapReady}</span>
-            <strong>{day ? `${day.label} · ${day.theme}` : text.japanOverview}</strong>
+            {plan.unknownEntries.length > 0 ? (
+              <details className="planner-unknown">
+                <summary>{text.unknown} · {plan.unknownEntries.length}</summary>
+                <ul>{plan.unknownEntries.map((entry) => <li key={entry}>{entry}</li>)}</ul>
+              </details>
+            ) : null}
           </div>
-          {!day ? <div className="planner-map-empty"><span aria-hidden="true">⌖</span><p>{text.mapEmpty}</p></div> : null}
-          {day ? <div className="planner-map-bottom">
-            <div className="planner-map-route-summary">
-              {plan?.selectedBase ? <span><i className="is-hotel" aria-hidden="true">H</i>{plan.selectedBase.name}</span> : null}
-              {day.stops.slice(0, 4).map(({ stop }, index) => <span key={stop.id}><i aria-hidden="true">{index + 1}</i>{stop.name}</span>)}
-            </div>
-            {day.googleMapsUrl ? <a href={day.googleMapsUrl} rel="noreferrer" target="_blank">{text.openMaps}<span aria-hidden="true">↗</span></a> : null}
-          </div> : null}
-        </section>
-      </div>
+        ) : (
+          <div className="planner-result-view">
+            <p className="planner-warning" role="status"><span aria-hidden="true">!</span>{text.noDays}</p>
+            {plan && plan.unknownEntries.length > 0 ? (
+              <details className="planner-unknown" open>
+                <summary>{text.unknown} · {plan.unknownEntries.length}</summary>
+                <ul>{plan.unknownEntries.map((entry) => <li key={entry}>{entry}</li>)}</ul>
+              </details>
+            ) : null}
+            <button className="planner-build-button" onClick={() => setHasPlan(false)} type="button"><span>{text.edit}</span><b aria-hidden="true">→</b></button>
+          </div>
+        )}
+      </section>
     </main>
   );
 }

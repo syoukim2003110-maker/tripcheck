@@ -68,6 +68,7 @@ export type FoodRecommendationSlot = {
   date: string | null;
   kind: MealKind;
   area: string;
+  anchorStopId: string;
   latitude: number;
   longitude: number;
   window: string;
@@ -434,6 +435,7 @@ function buildFoodRecommendationSlots(days: BuiltPlanDay[], mealPlan: MealPlan, 
         date: day.date,
         kind,
         area: anchor.stop.area,
+        anchorStopId: anchor.stop.id,
         latitude: anchor.stop.latitude,
         longitude: anchor.stop.longitude,
         window: kind === "lunch" ? "11:30–14:00" : "17:30–21:00",
@@ -722,13 +724,12 @@ function scheduleOrderScore(
   base: TripBase | null,
   startMinutes: number,
   constraints: Map<string, WishlistStopConstraint>,
-  liveTransitMinutes?: Record<string, number>,
 ) {
   let cursor = startMinutes;
   let lateMinutes = 0;
   let travelMinutes = 0;
   if (base && ordered[0]) {
-    const travel = routeTravelMinutes(base, ordered[0], liveTransitMinutes);
+    const travel = routeTravelMinutes(base, ordered[0]);
     travelMinutes += travel;
     cursor += travel;
   }
@@ -740,7 +741,7 @@ function scheduleOrderScore(
     }
     cursor += stop.planningDurationMinutes;
     if (ordered[index + 1]) {
-      const travel = routeTravelMinutes(stop, ordered[index + 1], liveTransitMinutes);
+      const travel = routeTravelMinutes(stop, ordered[index + 1]);
       travelMinutes += travel;
       cursor += travel;
     }
@@ -758,7 +759,6 @@ function orderForReservations(
   base: TripBase | null,
   startMinutes: number,
   constraints: Map<string, WishlistStopConstraint>,
-  liveTransitMinutes?: Record<string, number>,
 ) {
   const geographic = base ? optimizeFromBase(stops, base) : optimizeKnownStopOrder(stops, false);
   if (stops.length <= 1 || !stops.some((stop) => constraints.get(stop.id)?.fixedTimeMinutes != null)) return geographic;
@@ -772,12 +772,12 @@ function orderForReservations(
   }
 
   let best = geographic;
-  let bestScore = scheduleOrderScore(best, base, startMinutes, constraints, liveTransitMinutes);
+  let bestScore = scheduleOrderScore(best, base, startMinutes, constraints);
   const used = new Set<string>();
   const candidate: RouteStop[] = [];
   const visit = () => {
     if (candidate.length === stops.length) {
-      const score = scheduleOrderScore(candidate, base, startMinutes, constraints, liveTransitMinutes);
+      const score = scheduleOrderScore(candidate, base, startMinutes, constraints);
       if (score < bestScore) {
         best = [...candidate];
         bestScore = score;
@@ -816,7 +816,8 @@ function buildDay(
     : 9 * 60;
   const requestedStartMinutes = clockMinutes(requestedStart) ?? 9 * 60;
   const startMinutes = Math.max(requestedStartMinutes, arrivalReadyMinutes);
-  const ordered = orderForReservations(stops, base, startMinutes, constraints, liveTransitMinutes);
+  // Ordering deliberately ignores live transit minutes so a route refresh can never reshuffle the day mid-view.
+  const ordered = orderForReservations(stops, base, startMinutes, constraints);
   const date = addDaysToIsoDate(startDate, index);
   const legs = ordered.slice(0, -1).map((from, stopIndex): BuiltPlanLeg => {
     const to = ordered[stopIndex + 1];

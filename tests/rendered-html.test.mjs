@@ -29,11 +29,12 @@ test("server-renders the map-first TripCheck planner", async () => {
 
   const html = await response.text();
   assert.match(html, /<title>TripCheck — Japan trip planner<\/title>/i);
-  assert.match(html, /Turn places into a workable trip/);
-  assert.match(html, /Build my trip/);
-  assert.match(html, /Use demo/);
-  assert.match(html, /Your day-by-day route will appear here/);
+  assert.match(html, /Where do you want to go\?/);
+  assert.match(html, /Put it on the map/);
+  assert.match(html, /Try a sample/);
+  assert.match(html, /Your trip will appear here/);
   assert.match(html, /Google Maps/);
+  assert.match(html, /Itinerary on Google Maps/);
   assert.match(html, /Hotel or nearest station/);
   assert.match(html, /FAQPage/);
   assert.match(html, /SoftwareApplication/);

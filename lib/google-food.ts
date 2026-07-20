@@ -13,6 +13,8 @@ export type FoodCandidate = {
   address: string;
   type: string;
   googleMapsUrl: string;
+  latitude?: number;
+  longitude?: number;
   photoName?: string;
   photoAttribution?: { name: string; uri: string };
 };
@@ -56,7 +58,7 @@ export async function fetchGoogleFoodCandidates(
     headers: {
       "Content-Type": "application/json",
       "X-Goog-Api-Key": apiKey,
-      "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.googleMapsUri,places.primaryTypeDisplayName,places.photos",
+      "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.googleMapsUri,places.location,places.primaryTypeDisplayName,places.photos",
     },
     body: JSON.stringify({
       textQuery: `${request.query} ${request.area}`,
@@ -82,6 +84,7 @@ export async function fetchGoogleFoodCandidates(
       displayName?: { text?: string };
       formattedAddress?: string;
       googleMapsUri?: string;
+      location?: { latitude?: number; longitude?: number };
       primaryTypeDisplayName?: { text?: string };
       photos?: Array<{
         name?: string;
@@ -93,12 +96,15 @@ export async function fetchGoogleFoodCandidates(
     const name = place.displayName?.text?.trim();
     const googleMapsUrl = place.googleMapsUri?.trim();
     if (!place.id || !name || !googleMapsUrl) return [];
+    const latitude = place.location?.latitude;
+    const longitude = place.location?.longitude;
     return [{
       id: place.id,
       name,
       address: place.formattedAddress?.trim() ?? "",
       type: place.primaryTypeDisplayName?.text?.trim() ?? "Restaurant",
       googleMapsUrl,
+      ...(typeof latitude === "number" && typeof longitude === "number" ? { latitude, longitude } : {}),
       ...(place.photos?.[0]?.name ? { photoName: place.photos[0].name } : {}),
       ...(place.photos?.[0]?.authorAttributions?.[0]?.displayName && place.photos[0].authorAttributions[0].uri ? {
         photoAttribution: {

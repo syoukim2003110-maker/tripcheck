@@ -141,6 +141,15 @@ function rulesAnalysis(result: Omit<PlaceIntelligenceResult, "analysis" | "analy
       evidence: "Google Maps payment options",
     });
   }
+  if (result.place.websiteUrl === null) {
+    signals.push({
+      kind: "freshness",
+      severity: "info",
+      title: ja ? "公式サイトの掲載なし" : "No official site listed",
+      detail: ja ? "InstagramやXの投稿が一番新しい一次情報かもしれません。臨時休業は当日に確認を。" : "Instagram or X posts may be the freshest first-hand source. Recheck closures on the day.",
+      evidence: "Google Maps listing",
+    });
+  }
   if (result.reviews.length === 0) {
     signals.push({
       kind: "freshness",
@@ -186,16 +195,19 @@ async function fetchAnthropicAnalysis(
   apiKey: string,
   fetcher: typeof fetch,
 ) {
+  // Null fields carry no evidence, so they are stripped to keep the prompt small and the response fast.
+  const compact = (record: Record<string, unknown>) =>
+    Object.fromEntries(Object.entries(record).filter(([, value]) => value !== null && value !== undefined));
   const evidence = {
-    listing: {
+    listing: compact({
       businessStatus: result.place.businessStatus,
       openNow: result.place.openNow,
-      hours: result.place.hours,
-      payment: result.place.payment,
+      hours: result.place.hours.length > 0 ? result.place.hours : null,
+      payment: compact({ ...result.place.payment }),
       rating: result.place.rating,
       userRatingCount: result.place.userRatingCount,
-    },
-    reviews: result.reviews.map((review, index) => ({
+    }),
+    reviews: result.reviews.map((review, index) => compact({
       id: `review_${index + 1}`,
       publishedAt: review.publishedAt,
       relativeTime: review.relativeTime,
@@ -215,13 +227,13 @@ async function fetchAnthropicAnalysis(
     },
     body: JSON.stringify({
       model: FOOD_RANKING_MODEL,
-      max_tokens: 480,
+      max_tokens: 440,
       temperature: 0,
-      system: "Audit one travel stop using only the supplied evidence. The listing is platform data; reviews are individual reports, not confirmed facts. Identify only explicit evidence about hours, early closing, payment, crowds, closures or access friction. Never infer missing facts. If evidence is absent, mark it unknown. Cite listing or review_N in every signal.",
+      system: "Audit one travel stop using only the supplied evidence. The listing is platform data; reviews are individual reports, not confirmed facts. Identify only explicit evidence about hours, early closing, payment, crowds, closures or access friction. Prioritize evidence that reality differs from the listing: earlier last entry or sell-outs than posted hours, crowd cutoffs, irregular holidays, cash-only in practice, or detours to reach the place. Never infer missing facts. If evidence is absent, mark it unknown. Cite listing or review_N in every signal.",
       messages: [{ role: "user", content: JSON.stringify({ task: languageRule, evidence }) }],
       output_config: { format: { type: "json_schema", schema: analysisSchema } },
     }),
-    signal: AbortSignal.timeout(6_000),
+    signal: AbortSignal.timeout(5_000),
   });
   if (!response.ok) throw new Error("anthropic_unavailable");
   const payload = await response.json() as { content?: Array<{ type?: string; text?: string }> };
@@ -306,7 +318,9 @@ export async function fetchPlaceIntelligence(
     links: socialLinks(name, request.area),
   };
   const fallback = rulesAnalysis(base, request.languageCode);
-  if (!anthropicApiKey) return { ...base, analyzedBy: "rules", analysis: fallback };
+  // With no reviews and no posted hours there is nothing for the model to audit — answer instantly from rules.
+  const thinEvidence = base.reviews.length === 0 && base.place.hours.length === 0;
+  if (!anthropicApiKey || thinEvidence) return { ...base, analyzedBy: "rules", analysis: fallback };
   try {
     const analysis = await fetchAnthropicAnalysis(base, request.languageCode, anthropicApiKey, fetcher);
     return { ...base, analyzedBy: "anthropic", analysis };

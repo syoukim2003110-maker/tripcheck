@@ -12,7 +12,7 @@ const engineSourceUrls = [
 test("keeps the completed itinerary out of storage and direct network calls", async () => {
   const source = await readFile(appSourceUrl, "utf8");
 
-  assert.match(source, /analyzeTrip\(itinerary, pace, locale, tripDays, \{/);
+  assert.match(source, /buildTripFromWishlist\(itinerary, tripDays, pace, locale, \{/);
   assert.match(source, /requestPlaceResolution\(itinerary, hotelQuery, locale\)/);
   assert.doesNotMatch(source, /fetch\s*\(/);
   assert.doesNotMatch(source, /sendBeacon\s*\(/);

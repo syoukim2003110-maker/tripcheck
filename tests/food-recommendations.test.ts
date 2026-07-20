@@ -39,7 +39,7 @@ test("requests only minimal Google Places fields near the planned area", async (
   assert.equal(results[0].name, "Shibuya Table");
   assert.equal(captured?.url, "https://places.googleapis.com/v1/places:searchText");
   const headers = captured?.init.headers as Record<string, string>;
-  assert.equal(headers["X-Goog-FieldMask"], "places.id,places.displayName,places.formattedAddress,places.googleMapsUri,places.primaryTypeDisplayName,places.photos");
+  assert.equal(headers["X-Goog-FieldMask"], "places.id,places.displayName,places.formattedAddress,places.googleMapsUri,places.location,places.primaryTypeDisplayName,places.photos");
   const body = JSON.parse(String(captured?.init.body));
   assert.equal(body.locationBias.circle.radius, 1500);
   assert.equal(body.pageSize, 4);
@@ -55,6 +55,7 @@ test("client payload excludes itinerary prose and timing details", () => {
     date: "2026-09-19",
     kind: "dinner",
     area: "Shibuya",
+    anchorStopId: "shibuya",
     latitude: 35.6595,
     longitude: 139.7005,
     window: "17:30–21:00",

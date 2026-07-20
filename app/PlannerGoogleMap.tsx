@@ -5,15 +5,28 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { RouteStop } from "../lib/route-optimizer";
+import { routeLegKey } from "../lib/trip-builder";
 
 type MapLocale = "en" | "ja";
 type RouteState = "idle" | "loading" | "live" | "fallback";
 
+export type FoodPin = {
+  id: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+  index: number;
+};
+
 type Props = {
   apiKey: string;
-  dayKey: string;
+  base: RouteStop | null;
   departureTimes: string[];
+  foodPins: FoodPin[];
   locale: MapLocale;
+  onLegDurations: (minutes: Record<string, number>) => void;
+  onSelectStop: (stopId: string | null) => void;
+  selectedStopId: string | null;
   stops: RouteStop[];
 };
 
@@ -24,18 +37,37 @@ declare global {
   }
 }
 
+const JAPAN_CENTER = { lat: 36.2048, lng: 138.2529 };
+
+/* Soft, decluttered basemap so the trip chips and route stay the loudest layer. */
+const warmMapStyle = [
+  { elementType: "geometry", stylers: [{ color: "#f6f1e7" }] },
+  { elementType: "labels.text.fill", stylers: [{ color: "#8a8172" }] },
+  { elementType: "labels.text.stroke", stylers: [{ color: "#fbf8f2" }] },
+  { featureType: "administrative", elementType: "geometry.stroke", stylers: [{ color: "#e3dbc9" }] },
+  { featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] },
+  { featureType: "poi.park", elementType: "geometry", stylers: [{ color: "#e0ecd4" }] },
+  { featureType: "road", elementType: "geometry", stylers: [{ color: "#ffffff" }] },
+  { featureType: "road", elementType: "geometry.stroke", stylers: [{ color: "#efe7d8" }] },
+  { featureType: "road", elementType: "labels.icon", stylers: [{ visibility: "off" }] },
+  { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#f7e9d3" }] },
+  { featureType: "transit.line", elementType: "geometry", stylers: [{ color: "#ddd3bd" }] },
+  { featureType: "transit.station", elementType: "labels.icon", stylers: [{ visibility: "off" }] },
+  { featureType: "water", elementType: "geometry", stylers: [{ color: "#cfe2df" }] },
+];
+
 async function loadGoogleMaps(apiKey: string) {
   if (window.google?.maps?.importLibrary) return window.google;
   if (!apiKey) throw new Error("maps_not_configured");
   if (!window.__tripcheckMapsPromise) {
     window.__tripcheckMapsPromise = new Promise((resolve, reject) => {
-        const script = document.createElement("script");
-        script.async = true;
-        script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&v=weekly&loading=async`;
-        script.onload = () => resolve(window.google);
-        script.onerror = () => reject(new Error("maps_unavailable"));
-        document.head.append(script);
-      });
+      const script = document.createElement("script");
+      script.async = true;
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&v=weekly&loading=async`;
+      script.onload = () => resolve(window.google);
+      script.onerror = () => reject(new Error("maps_unavailable"));
+      document.head.append(script);
+    });
   }
   return window.__tripcheckMapsPromise;
 }
@@ -46,150 +78,331 @@ function usableDepartureTime(value: string) {
   return Number.isFinite(deltaDays) && deltaDays >= -7 && deltaDays <= 100 ? date : undefined;
 }
 
-export default function PlannerGoogleMap({ apiKey, dayKey, departureTimes, locale, stops }: Props) {
-  const mapElement = useRef<HTMLDivElement>(null);
+type Chip = {
+  overlay: any;
+  stopId: string;
+  setSelected: (selected: boolean) => void;
+};
+
+function createChip(
+  google: any,
+  map: any,
+  options: {
+    position: { lat: number; lng: number };
+    badge: string;
+    name: string;
+    kind: "stop" | "hotel" | "food";
+    stopId: string;
+    onClick?: () => void;
+  },
+): Chip {
+  const overlay = new google.maps.OverlayView();
+  let element: HTMLButtonElement | null = null;
+  overlay.onAdd = function onAdd() {
+    element = document.createElement("button");
+    element.type = "button";
+    element.className = `planner-map-chip is-${options.kind}`;
+    const badge = document.createElement("i");
+    badge.textContent = options.badge;
+    const label = document.createElement("span");
+    label.textContent = options.name;
+    element.append(badge, label);
+    element.title = options.name;
+    if (options.onClick) {
+      element.addEventListener("click", (event) => {
+        event.stopPropagation();
+        options.onClick?.();
+      });
+    }
+    this.getPanes()?.overlayMouseTarget.appendChild(element);
+  };
+  overlay.draw = function draw() {
+    if (!element) return;
+    const projection = this.getProjection();
+    if (!projection) return;
+    const point = projection.fromLatLngToDivPixel(new google.maps.LatLng(options.position));
+    if (!point) return;
+    element.style.left = `${point.x}px`;
+    element.style.top = `${point.y}px`;
+  };
+  overlay.onRemove = function onRemove() {
+    element?.remove();
+    element = null;
+  };
+  overlay.setMap(map);
+  return {
+    overlay,
+    stopId: options.stopId,
+    setSelected: (selected: boolean) => element?.classList.toggle("is-selected", selected),
+  };
+}
+
+export default function PlannerGoogleMap({
+  apiKey,
+  base,
+  departureTimes,
+  foodPins,
+  locale,
+  onLegDurations,
+  onSelectStop,
+  selectedStopId,
+  stops,
+}: Props) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const engineRef = useRef<{ google: any; map: any; maps: any } | null>(null);
+  const chipsRef = useRef<Chip[]>([]);
+  const routeLinesRef = useRef<any[]>([]);
+  const foodChipsRef = useRef<Chip[]>([]);
+  const legCacheRef = useRef<Map<string, { path: any[]; minutes: number | null }>>(new Map());
+  const renderSeqRef = useRef(0);
+  const departureTimesRef = useRef(departureTimes);
+  const onSelectStopRef = useRef(onSelectStop);
+  const onLegDurationsRef = useRef(onLegDurations);
+  const [engineState, setEngineState] = useState<"loading" | "js" | "embed">(apiKey ? "loading" : "embed");
   const [routeState, setRouteState] = useState<RouteState>("idle");
 
-  const embedPoints = stops.length > 0
-    ? stops
-    : [{ latitude: 36.2048, longitude: 138.2529, name: locale === "ja" ? "日本" : "Japan" }];
+  useEffect(() => {
+    departureTimesRef.current = departureTimes;
+    onSelectStopRef.current = onSelectStop;
+    onLegDurationsRef.current = onLegDurations;
+  });
+
+  const displayStops = base ? [base, ...stops] : stops;
+  const pathStops = base && stops.length > 0 ? [base, ...stops, base] : stops;
+  const stopsSignature = `${locale}|${displayStops.map((stop) => `${stop.id}@${stop.latitude.toFixed(5)},${stop.longitude.toFixed(5)}`).join("|")}`;
+  const foodSignature = foodPins.map((pin) => `${pin.id}@${pin.latitude.toFixed(5)},${pin.longitude.toFixed(5)}`).join("|");
+
+  useEffect(() => {
+    let cancelled = false;
+    async function boot() {
+      if (!containerRef.current) return;
+      try {
+        const google = await loadGoogleMaps(apiKey);
+        const [{ Map }, core] = await Promise.all([
+          google.maps.importLibrary("maps"),
+          google.maps.importLibrary("core"),
+        ]);
+        if (cancelled || !containerRef.current) return;
+        const map = new Map(containerRef.current, {
+          center: JAPAN_CENTER,
+          zoom: 5,
+          clickableIcons: false,
+          fullscreenControl: false,
+          mapTypeControl: false,
+          streetViewControl: false,
+          zoomControl: true,
+          styles: warmMapStyle,
+          backgroundColor: "#f6f1e7",
+        });
+        map.addListener("click", () => onSelectStopRef.current(null));
+        engineRef.current = { google, map, maps: { core } };
+        setEngineState("js");
+      } catch {
+        if (!cancelled) setEngineState("embed");
+      }
+    }
+    void boot();
+    return () => {
+      cancelled = true;
+      chipsRef.current.forEach((chip) => chip.overlay.setMap(null));
+      foodChipsRef.current.forEach((chip) => chip.overlay.setMap(null));
+      routeLinesRef.current.forEach((line) => line.setMap(null));
+      engineRef.current = null;
+    };
+  }, [apiKey]);
+
+  useEffect(() => {
+    if (engineState !== "js" || !engineRef.current) return;
+    const seq = ++renderSeqRef.current;
+    const { google, map } = engineRef.current;
+    const { LatLngBounds } = engineRef.current.maps.core;
+
+    chipsRef.current.forEach((chip) => chip.overlay.setMap(null));
+    chipsRef.current = [];
+    routeLinesRef.current.forEach((line) => line.setMap(null));
+    routeLinesRef.current = [];
+
+    chipsRef.current = displayStops.map((stop, index) => {
+      const isHotel = Boolean(base) && index === 0;
+      return createChip(google, map, {
+        position: { lat: stop.latitude, lng: stop.longitude },
+        badge: isHotel ? "H" : String(base ? index : index + 1),
+        name: stop.name,
+        kind: isHotel ? "hotel" : "stop",
+        stopId: stop.id,
+        onClick: isHotel ? undefined : () => onSelectStopRef.current(stop.id),
+      });
+    });
+
+    if (displayStops.length === 0) {
+      map.setCenter(JAPAN_CENTER);
+      map.setZoom(5);
+      return;
+    }
+    if (displayStops.length === 1) {
+      map.setCenter({ lat: displayStops[0].latitude, lng: displayStops[0].longitude });
+      map.setZoom(14);
+      return;
+    }
+    const bounds = new LatLngBounds();
+    displayStops.forEach((stop) => bounds.extend({ lat: stop.latitude, lng: stop.longitude }));
+    map.fitBounds(bounds, 88);
+
+    if (pathStops.length < 2) return;
+
+    const legs = pathStops.slice(0, -1).map((from, index) => ({ from, to: pathStops[index + 1], index }));
+    const dashedLegs = legs.map(({ from, to }) => new google.maps.Polyline({
+      map,
+      path: [
+        { lat: from.latitude, lng: from.longitude },
+        { lat: to.latitude, lng: to.longitude },
+      ],
+      strokeOpacity: 0,
+      icons: [{
+        icon: { path: "M 0,-1 0,1", strokeOpacity: 0.5, strokeColor: "#8a8172", scale: 2.4 },
+        offset: "0",
+        repeat: "13px",
+      }],
+      zIndex: 3,
+    }));
+    routeLinesRef.current.push(...dashedLegs);
+
+    async function drawRoutes() {
+      const { Route } = await google.maps.importLibrary("routes");
+      if (renderSeqRef.current !== seq) return;
+      setRouteState("loading");
+      const computeLeg = async (from: RouteStop, to: RouteStop, index: number) => {
+        const cacheKey = `${from.id}->${to.id}@${locale}`;
+        const cached = legCacheRef.current.get(cacheKey);
+        if (cached) return cached;
+        const request = (fields: string[]) => Route.computeRoutes({
+          origin: { lat: from.latitude, lng: from.longitude },
+          destination: { lat: to.latitude, lng: to.longitude },
+          travelMode: "TRANSIT",
+          ...(usableDepartureTime(departureTimesRef.current[index] ?? "")
+            ? { departureTime: usableDepartureTime(departureTimesRef.current[index] ?? "") }
+            : {}),
+          transitPreference: {
+            allowedTransitModes: ["BUS", "SUBWAY", "TRAIN", "LIGHT_RAIL", "RAIL"],
+            routingPreference: "FEWER_TRANSFERS",
+          },
+          region: "JP",
+          language: locale,
+          fields,
+        });
+        let routes;
+        try {
+          ({ routes } = await request(["path", "durationMillis"]));
+        } catch {
+          ({ routes } = await request(["path"]));
+        }
+        const route = routes?.[0];
+        const path = route?.path ?? [];
+        const rawMillis = route?.durationMillis;
+        const millis = typeof rawMillis === "number" ? rawMillis : typeof rawMillis === "string" ? Number(rawMillis) : Number.NaN;
+        const result = {
+          path,
+          minutes: Number.isFinite(millis) && millis > 0 ? Math.max(1, Math.round(millis / 60_000)) : null,
+        };
+        // First measurement wins for the session so schedule times stay put while the user explores.
+        if (path.length >= 2) legCacheRef.current.set(cacheKey, result);
+        return result;
+      };
+
+      const results = await Promise.all(legs.map(async ({ from, to, index }) => {
+        try {
+          return { from, to, index, ...(await computeLeg(from, to, index)) };
+        } catch {
+          return { from, to, index, path: [], minutes: null };
+        }
+      }));
+      if (renderSeqRef.current !== seq || !engineRef.current) return;
+
+      const durations: Record<string, number> = {};
+      let liveLegCount = 0;
+      const routeBounds = new LatLngBounds();
+      for (const result of results) {
+        if (result.minutes !== null) durations[routeLegKey(result.from.id, result.to.id)] = result.minutes;
+        if (result.path.length < 2) continue;
+        liveLegCount += 1;
+        dashedLegs[result.index]?.setMap(null);
+        result.path.forEach((point: any) => routeBounds.extend(point));
+        routeLinesRef.current.push(
+          new google.maps.Polyline({ map, path: result.path, strokeColor: "#ffffff", strokeOpacity: 0.92, strokeWeight: 9, zIndex: 4 }),
+          new google.maps.Polyline({ map, path: result.path, strokeColor: "#e2634e", strokeOpacity: 0.95, strokeWeight: 5, zIndex: 5 }),
+        );
+      }
+      if (liveLegCount === legs.length) {
+        displayStops.forEach((stop) => routeBounds.extend({ lat: stop.latitude, lng: stop.longitude }));
+        map.fitBounds(routeBounds, 88);
+      }
+      setRouteState(liveLegCount === legs.length ? "live" : "fallback");
+      if (Object.keys(durations).length > 0) onLegDurationsRef.current(durations);
+    }
+
+    drawRoutes().catch(() => {
+      if (renderSeqRef.current === seq) setRouteState("fallback");
+    });
+    // Redraw only when the day's stops actually change, not on unrelated re-renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engineState, stopsSignature]);
+
+  useEffect(() => {
+    chipsRef.current.forEach((chip) => chip.setSelected(chip.stopId === selectedStopId));
+    if (!selectedStopId || engineState !== "js" || !engineRef.current) return;
+    const stop = displayStops.find((candidate) => candidate.id === selectedStopId);
+    if (stop) engineRef.current.map.panTo({ lat: stop.latitude, lng: stop.longitude });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedStopId, engineState, stopsSignature]);
+
+  useEffect(() => {
+    if (engineState !== "js" || !engineRef.current) return;
+    const { google, map } = engineRef.current;
+    const { LatLngBounds } = engineRef.current.maps.core;
+    foodChipsRef.current.forEach((chip) => chip.overlay.setMap(null));
+    foodChipsRef.current = foodPins.map((pin) => createChip(google, map, {
+      position: { lat: pin.latitude, lng: pin.longitude },
+      badge: String(pin.index + 1),
+      name: pin.name,
+      kind: "food",
+      stopId: `food-${pin.id}`,
+    }));
+    if (foodPins.length > 0) {
+      const bounds = new LatLngBounds();
+      foodPins.forEach((pin) => bounds.extend({ lat: pin.latitude, lng: pin.longitude }));
+      displayStops.forEach((stop) => bounds.extend({ lat: stop.latitude, lng: stop.longitude }));
+      map.fitBounds(bounds, 96);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engineState, foodSignature]);
+
+  const embedPoints = pathStops.length > 0
+    ? pathStops.slice(0, 10)
+    : [{ latitude: JAPAN_CENTER.lat, longitude: JAPAN_CENTER.lng, name: locale === "ja" ? "日本" : "Japan" }];
   const embedParams = new URLSearchParams({
     language: locale,
     points: embedPoints.map((stop) => `${stop.latitude},${stop.longitude}`).join("|"),
     labels: embedPoints.map((stop) => stop.name).join("|"),
-    ...(stops.length === 0 ? { overview: "1", zoom: "5" } : {}),
+    ...(pathStops.length === 0 ? { overview: "1", zoom: "5" } : {}),
   });
 
-  useEffect(() => {
-    let cancelled = false;
-    const overlays: any[] = [];
-
-    async function renderMap() {
-      if (!mapElement.current) return;
-      setRouteState(stops.length > 1 ? "loading" : "idle");
-      try {
-        const google = await loadGoogleMaps(apiKey);
-        const [{ Map, Polyline }, { LatLngBounds }] = await Promise.all([
-          google.maps.importLibrary("maps"),
-          google.maps.importLibrary("core"),
-        ]);
-        if (cancelled || !mapElement.current) return;
-
-        const center = stops.length > 0
-          ? { lat: stops[0].latitude, lng: stops[0].longitude }
-          : { lat: 36.2048, lng: 138.2529 };
-        const map = new Map(mapElement.current, {
-          center,
-          zoom: stops.length > 0 ? 12 : 5,
-          clickableIcons: false,
-          fullscreenControl: true,
-          mapTypeControl: false,
-          streetViewControl: false,
-          zoomControl: true,
-        });
-        const bounds = new LatLngBounds();
-        stops.forEach((stop, index) => {
-          const position = { lat: stop.latitude, lng: stop.longitude };
-          bounds.extend(position);
-          overlays.push(new google.maps.Marker({
-            map,
-            position,
-            title: stop.name,
-            label: {
-              text: index === 0 && stops.length > 1 ? "H" : String(index + (stops.length > 1 ? 0 : 1)),
-              color: "#ffffff",
-              fontSize: "11px",
-              fontWeight: "700",
-            },
-            icon: {
-              path: google.maps.SymbolPath.CIRCLE,
-              fillColor: index === 0 && stops.length > 1 ? "#2563eb" : "#171717",
-              fillOpacity: 1,
-              strokeColor: "#ffffff",
-              strokeWeight: 3,
-              scale: 14,
-            },
-          }));
-        });
-
-        if (stops.length === 1) map.setZoom(14);
-        if (stops.length > 1) map.fitBounds(bounds, 72);
-        if (stops.length < 2) return;
-
-        const directPath = stops.map((stop) => ({ lat: stop.latitude, lng: stop.longitude }));
-        const fallbackLine = new Polyline({
-          map,
-          path: directPath,
-          strokeColor: "#64748b",
-          strokeOpacity: 0.6,
-          strokeWeight: 4,
-          zIndex: 2,
-        });
-        overlays.push(fallbackLine);
-
-        try {
-          const { Route } = await google.maps.importLibrary("routes");
-          const results = await Promise.all(stops.slice(0, -1).map(async (origin, index) => {
-            const destination = stops[index + 1];
-            const departureTime = usableDepartureTime(departureTimes[index] ?? "");
-            const { routes } = await Route.computeRoutes({
-              origin: { lat: origin.latitude, lng: origin.longitude },
-              destination: { lat: destination.latitude, lng: destination.longitude },
-              travelMode: "TRANSIT",
-              ...(departureTime ? { departureTime } : {}),
-              transitPreference: {
-                allowedTransitModes: ["BUS", "SUBWAY", "TRAIN", "LIGHT_RAIL", "RAIL"],
-                routingPreference: "FEWER_TRANSFERS",
-              },
-              region: "JP",
-              language: locale,
-              fields: ["path"],
-            });
-            return routes?.[0]?.path ?? [];
-          }));
-          if (cancelled || results.some((path) => path.length < 2)) throw new Error("route_unavailable");
-
-          fallbackLine.setMap(null);
-          const routeBounds = new LatLngBounds();
-          results.forEach((path) => path.forEach((point: any) => routeBounds.extend(point)));
-          results.forEach((path) => {
-            overlays.push(new Polyline({ map, path, strokeColor: "#172033", strokeOpacity: 0.2, strokeWeight: 11, zIndex: 3 }));
-            overlays.push(new Polyline({ map, path, strokeColor: "#2563eb", strokeOpacity: 0.96, strokeWeight: 6, zIndex: 4 }));
-          });
-          map.fitBounds(routeBounds, 72);
-          if (!cancelled) setRouteState("live");
-        } catch {
-          if (!cancelled) setRouteState("fallback");
-        }
-      } catch {
-        if (!cancelled) setRouteState("fallback");
-      }
-    }
-
-    void renderMap();
-    return () => {
-      cancelled = true;
-      overlays.forEach((overlay) => overlay.setMap?.(null));
-    };
-  }, [apiKey, dayKey, departureTimes, locale, stops]);
-
   const statusText = locale === "ja"
-    ? { idle: "Googleマップ", loading: "実経路を取得中", live: "Google実経路", fallback: "Googleルート" }[routeState]
-    : { idle: "Google Maps", loading: "Loading real route", live: "Google route", fallback: "Google route" }[routeState];
+    ? { idle: "Googleマップ", loading: "実経路を取得中…", live: "Google実経路", fallback: "直線の目安" }[routeState]
+    : { idle: "Google Maps", loading: "Fetching routes…", live: "Live Google routes", fallback: "Straight-line guide" }[routeState];
 
   return (
     <>
-      <div className="planner-map-layers">
-        <iframe
-          className="planner-map-embed"
-          loading="eager"
-          referrerPolicy="no-referrer-when-downgrade"
-          src={`/api/map-embed?${embedParams.toString()}`}
-          title={locale === "ja" ? "旅程のGoogleマップ" : "Itinerary on Google Maps"}
-        />
-        <div className={`planner-google-map${routeState === "live" ? " is-visible" : ""}`} ref={mapElement} />
-      </div>
-      <span className={`planner-route-status is-${routeState}`}><i aria-hidden="true" />{statusText}</span>
+      <iframe
+        className="planner-map-embed"
+        loading="eager"
+        referrerPolicy="no-referrer-when-downgrade"
+        src={`/api/map-embed?${embedParams.toString()}`}
+        title={locale === "ja" ? "旅程のGoogleマップ" : "Itinerary on Google Maps"}
+      />
+      <div className={`planner-google-map${engineState === "js" ? " is-visible" : ""}`} ref={containerRef} />
+      {pathStops.length > 1 ? (
+        <span className={`planner-route-status is-${routeState}`}><i aria-hidden="true" />{statusText}</span>
+      ) : null}
     </>
   );
 }
