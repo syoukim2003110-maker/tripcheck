@@ -10,6 +10,7 @@ type MapLocale = "en" | "ja";
 type RouteState = "idle" | "loading" | "live" | "fallback";
 
 type Props = {
+  apiKey: string;
   dayKey: string;
   departureTimes: string[];
   locale: MapLocale;
@@ -23,22 +24,18 @@ declare global {
   }
 }
 
-async function loadGoogleMaps() {
+async function loadGoogleMaps(apiKey: string) {
   if (window.google?.maps?.importLibrary) return window.google;
+  if (!apiKey) throw new Error("maps_not_configured");
   if (!window.__tripcheckMapsPromise) {
-    window.__tripcheckMapsPromise = fetch("/api/maps-browser-config", { cache: "no-store" })
-      .then(async (response) => {
-        if (!response.ok) throw new Error("maps_not_configured");
-        return response.json() as Promise<{ key: string }>;
-      })
-      .then(({ key }) => new Promise((resolve, reject) => {
+    window.__tripcheckMapsPromise = new Promise((resolve, reject) => {
         const script = document.createElement("script");
         script.async = true;
-        script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&v=weekly&loading=async`;
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&v=weekly&loading=async`;
         script.onload = () => resolve(window.google);
         script.onerror = () => reject(new Error("maps_unavailable"));
         document.head.append(script);
-      }));
+      });
   }
   return window.__tripcheckMapsPromise;
 }
@@ -49,7 +46,7 @@ function usableDepartureTime(value: string) {
   return Number.isFinite(deltaDays) && deltaDays >= -7 && deltaDays <= 100 ? date : undefined;
 }
 
-export default function PlannerGoogleMap({ dayKey, departureTimes, locale, stops }: Props) {
+export default function PlannerGoogleMap({ apiKey, dayKey, departureTimes, locale, stops }: Props) {
   const mapElement = useRef<HTMLDivElement>(null);
   const [routeState, setRouteState] = useState<RouteState>("idle");
 
@@ -61,7 +58,7 @@ export default function PlannerGoogleMap({ dayKey, departureTimes, locale, stops
       if (!mapElement.current) return;
       setRouteState(stops.length > 1 ? "loading" : "idle");
       try {
-        const google = await loadGoogleMaps();
+        const google = await loadGoogleMaps(apiKey);
         const [{ Map, Polyline }, { LatLngBounds }] = await Promise.all([
           google.maps.importLibrary("maps"),
           google.maps.importLibrary("core"),
@@ -164,7 +161,7 @@ export default function PlannerGoogleMap({ dayKey, departureTimes, locale, stops
       cancelled = true;
       overlays.forEach((overlay) => overlay.setMap?.(null));
     };
-  }, [dayKey, departureTimes, locale, stops]);
+  }, [apiKey, dayKey, departureTimes, locale, stops]);
 
   const statusText = locale === "ja"
     ? { idle: "Googleマップ", loading: "実経路を取得中", live: "Google実経路", fallback: "位置関係を表示" }[routeState]

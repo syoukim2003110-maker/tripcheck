@@ -10,5 +10,5 @@ export const metadata: Metadata = {
 };
 
 export default function Home() {
-  return <><StructuredData locale="en" /><TripPlannerApp initialLocale="en" /></>;
+  return <><StructuredData locale="en" /><TripPlannerApp initialLocale="en" mapsApiKey={process.env.GOOGLE_MAPS_BROWSER_API_KEY ?? ""} /></>;
 }

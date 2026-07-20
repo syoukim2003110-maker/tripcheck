@@ -9,5 +9,5 @@ export const metadata: Metadata = {
 };
 
 export default function JapaneseHome() {
-  return <><StructuredData locale="ja" /><TripPlannerApp initialLocale="ja" /></>;
+  return <><StructuredData locale="ja" /><TripPlannerApp initialLocale="ja" mapsApiKey={process.env.GOOGLE_MAPS_BROWSER_API_KEY ?? ""} /></>;
 }

@@ -186,7 +186,7 @@ function modeIcon(mode: "walk" | "transit" | "taxi") {
   return "⇄";
 }
 
-export default function TripPlannerApp({ initialLocale = "en" }: { initialLocale?: PlannerLocale }) {
+export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }: { initialLocale?: PlannerLocale; mapsApiKey?: string }) {
   const [locale, setLocale] = useState<PlannerLocale>(initialLocale);
   const [itinerary, setItinerary] = useState("");
   const [tripDays, setTripDays] = useState(3);
@@ -493,6 +493,7 @@ export default function TripPlannerApp({ initialLocale = "en" }: { initialLocale
 
         <section className="planner-map-pane" aria-label={text.mapReady}>
           <PlannerGoogleMap
+            apiKey={mapsApiKey}
             dayKey={`${activeDay}-${mapStops.map((stop) => stop.id).join("-") || "japan"}`}
             departureTimes={routeDepartureTimes}
             locale={locale}
