@@ -649,7 +649,6 @@ select:focus-visible {
 }
 
 .hero-object-image {
-  background-image: url("/hero-route-v2.png");
   background-position: center;
   background-repeat: no-repeat;
   background-size: contain;
