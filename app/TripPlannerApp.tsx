@@ -1,9 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import PlannerGoogleMap from "./PlannerGoogleMap";
 import { foodSearchLinks, requestFoodRecommendations } from "../lib/food-recommendations-client";
 import type { FoodCandidate } from "../lib/google-food";
 import { fullTripDemo } from "../lib/mock-trip";
+import { requestPlaceIntelligence } from "../lib/place-intelligence-client";
+import type { PlaceIntelligenceResult } from "../lib/place-intelligence";
 import { PlaceResolutionError, requestPlaceResolution } from "../lib/place-resolution-client";
 import type { ResolvedInputStop, RouteStop } from "../lib/route-optimizer";
 import { analyzeTrip, type Pace } from "../lib/trip-analysis";
@@ -14,6 +17,10 @@ type FoodState = {
   status: "idle" | "loading" | "ready" | "unavailable";
   query: string;
   candidates: FoodCandidate[];
+};
+type IntelligenceState = {
+  status: "loading" | "ready" | "unavailable";
+  result: PlaceIntelligenceResult | null;
 };
 
 const airportOptions: Array<{ value: AirportCode; label: string }> = [
@@ -79,6 +86,22 @@ const ui = {
     estimated: "移動時間は計画用の目安",
     language: "言語",
     privacy: "旅程は保存しません",
+    fieldCheck: "現地チェック",
+    fieldChecking: "現地情報を確認中…",
+    fieldUnavailable: "現地情報を取得できませんでした。出発前に公式情報を確認してください。",
+    fieldEvidence: "現地シグナル",
+    openNow: "営業中表示",
+    closedNow: "営業時間外表示",
+    hoursUnknown: "営業時間不明",
+    cashOnly: "現金のみ",
+    cardsAccepted: "カード可",
+    paymentUnknown: "支払い不明",
+    recentVoices: "Googleの口コミ",
+    official: "公式サイト",
+    latestX: "Xの最新投稿",
+    instagram: "Instagram",
+    aiAudited: "Claudeが根拠だけを整理",
+    rulesAudited: "取得情報を自動整理",
   },
   en: {
     brandNote: "Japan trip planner",
@@ -130,6 +153,22 @@ const ui = {
     estimated: "Travel times are planning estimates",
     language: "Language",
     privacy: "Your itinerary is not saved",
+    fieldCheck: "Field check",
+    fieldChecking: "Checking current evidence…",
+    fieldUnavailable: "Live evidence did not load. Check the official source before leaving.",
+    fieldEvidence: "Field signals",
+    openNow: "Listed open now",
+    closedNow: "Listed closed now",
+    hoursUnknown: "Hours unknown",
+    cashOnly: "Cash only",
+    cardsAccepted: "Cards accepted",
+    paymentUnknown: "Payment unknown",
+    recentVoices: "Google reviews",
+    official: "Official site",
+    latestX: "Latest on X",
+    instagram: "Instagram",
+    aiAudited: "Evidence organized by Claude",
+    rulesAudited: "Evidence organized automatically",
   },
 } as const;
 
@@ -166,6 +205,7 @@ export default function TripPlannerApp({ initialLocale = "en" }: { initialLocale
   const [placeWarning, setPlaceWarning] = useState(false);
   const [activeDay, setActiveDay] = useState(0);
   const [foodSearches, setFoodSearches] = useState<Record<string, FoodState>>({});
+  const [intelligence, setIntelligence] = useState<Record<string, IntelligenceState>>({});
   const text = ui[locale];
 
   useEffect(() => {
@@ -189,15 +229,17 @@ export default function TripPlannerApp({ initialLocale = "en" }: { initialLocale
 
   const plan = analysis?.inputMode === "wishlist" ? analysis.plan : null;
   const day = plan?.days[activeDay] ?? null;
-  const mapStops = day ? uniqueMapStops(plan?.selectedBase ?? null, day.stops.map(({ stop }) => stop)) : [];
-  const mapParams = new URLSearchParams({
-    language: locale,
-    points: mapStops.length > 0
-      ? mapStops.map((stop) => `${stop.latitude},${stop.longitude}`).join("|")
-      : "36.2048,138.2529",
-    labels: mapStops.length > 0 ? mapStops.map((stop) => stop.name.replaceAll("|", " ")).join("|") : "Japan",
-    ...(mapStops.length === 0 ? { zoom: "5", overview: "1" } : {}),
-  });
+  const mapStops = useMemo(
+    () => day ? uniqueMapStops(plan?.selectedBase ?? null, day.stops.map(({ stop }) => stop)) : [],
+    [day, plan?.selectedBase],
+  );
+  const routeDepartureTimes = useMemo(() => {
+    if (!day?.date || mapStops.length < 2) return [];
+    return mapStops.slice(0, -1).map((_, index) => {
+      const time = index === 0 ? day.startTime : day.stops[index - 1]?.departure ?? day.startTime;
+      return `${day.date}T${time}:00+09:00`;
+    });
+  }, [day, mapStops]);
 
   const canBuild = itinerary.trim().length >= 3 && !isBuilding;
 
@@ -221,6 +263,7 @@ export default function TripPlannerApp({ initialLocale = "en" }: { initialLocale
     setResolvedBase(null);
     setPlaceWarning(false);
     setActiveDay(0);
+    setIntelligence({});
     setHasPlan(true);
   }
 
@@ -229,6 +272,7 @@ export default function TripPlannerApp({ initialLocale = "en" }: { initialLocale
     setIsBuilding(true);
     setPlaceWarning(false);
     setFoodSearches({});
+    setIntelligence({});
     try {
       const response = await requestPlaceResolution(itinerary, hotelQuery, locale);
       setResolvedStops(response.places);
@@ -250,6 +294,7 @@ export default function TripPlannerApp({ initialLocale = "en" }: { initialLocale
     setResolvedStops([]);
     setResolvedBase(null);
     setFoodSearches({});
+    setIntelligence({});
     setHasPlan(false);
     setPlaceWarning(false);
     setActiveDay(0);
@@ -262,6 +307,16 @@ export default function TripPlannerApp({ initialLocale = "en" }: { initialLocale
       setFoodSearches((current) => ({ ...current, [slot.id]: { status: "ready", query, candidates: response.candidates } }));
     } catch {
       setFoodSearches((current) => ({ ...current, [slot.id]: { status: "unavailable", query, candidates: [] } }));
+    }
+  }
+
+  async function checkPlace(stop: RouteStop) {
+    setIntelligence((current) => ({ ...current, [stop.id]: { status: "loading", result: null } }));
+    try {
+      const result = await requestPlaceIntelligence(stop, locale);
+      setIntelligence((current) => ({ ...current, [stop.id]: { status: "ready", result } }));
+    } catch {
+      setIntelligence((current) => ({ ...current, [stop.id]: { status: "unavailable", result: null } }));
     }
   }
 
@@ -348,6 +403,8 @@ export default function TripPlannerApp({ initialLocale = "en" }: { initialLocale
                 {day.stops.map((builtStop, index) => {
                   const leg = index > 0 ? day.legs[index - 1] : null;
                   const recommended = leg?.comparison.recommended;
+                  const intelState = intelligence[builtStop.stop.id];
+                  const intel = intelState?.result;
                   return (
                     <li key={`${builtStop.stop.id}-${index}`}>
                       {leg && recommended ? <div className="planner-leg"><span aria-hidden="true">{modeIcon(recommended.mode)}</span><b>{text.move[recommended.mode]}</b><small>{recommended.minutes} min</small></div> : null}
@@ -355,8 +412,46 @@ export default function TripPlannerApp({ initialLocale = "en" }: { initialLocale
                         <time>{builtStop.arrival}</time>
                         <span className="planner-stop-dot">{index + 1}</span>
                         <div><h2>{builtStop.stop.name}</h2><p>{builtStop.stop.area}</p><small>{builtStop.departure !== builtStop.arrival ? `${text.stay} ${builtStop.arrival}–${builtStop.departure}` : ""}</small></div>
-                        <div className="planner-stop-tags">{builtStop.fixedTime ? <span>{text.reservation}</span> : null}{builtStop.priority === "must" ? <span>{text.must}</span> : builtStop.priority === "optional" ? <span>{text.optional}</span> : null}</div>
+                        <div className="planner-stop-tags">
+                          {builtStop.fixedTime ? <span>{text.reservation}</span> : null}
+                          {builtStop.priority === "must" ? <span>{text.must}</span> : builtStop.priority === "optional" ? <span>{text.optional}</span> : null}
+                          <button disabled={intelState?.status === "loading"} onClick={() => checkPlace(builtStop.stop)} type="button">
+                            <i aria-hidden="true" />{intelState?.status === "loading" ? text.fieldChecking : text.fieldCheck}
+                          </button>
+                        </div>
                       </article>
+                      {intelState?.status === "unavailable" ? <p className="planner-intel-unavailable" role="status">{text.fieldUnavailable}</p> : null}
+                      {intelState?.status === "ready" && intel ? (
+                        <section className="planner-intel-card" aria-label={`${builtStop.stop.name} · ${text.fieldEvidence}`}>
+                          <header>
+                            <div><span>LIVE CHECK</span><h3>{text.fieldEvidence}</h3></div>
+                            <small>{intel.analyzedBy === "anthropic" ? text.aiAudited : text.rulesAudited}</small>
+                          </header>
+                          <p className="planner-intel-summary">{intel.analysis.summary}</p>
+                          <div className="planner-intel-facts">
+                            <span className={intel.place.openNow === false ? "is-warning" : ""}>{intel.place.openNow === true ? text.openNow : intel.place.openNow === false ? text.closedNow : text.hoursUnknown}</span>
+                            <span className={intel.place.payment.cashOnly === true ? "is-warning" : ""}>{intel.place.payment.cashOnly === true ? text.cashOnly : intel.place.payment.creditCards === true ? text.cardsAccepted : text.paymentUnknown}</span>
+                            {intel.place.rating !== null ? <span>★ {intel.place.rating.toFixed(1)} · {intel.place.userRatingCount?.toLocaleString(locale === "ja" ? "ja-JP" : "en-US") ?? "—"}</span> : null}
+                          </div>
+                          {intel.analysis.signals.length > 0 ? <ul className="planner-intel-signals">{intel.analysis.signals.map((signal, signalIndex) => (
+                            <li className={`is-${signal.severity}`} key={`${signal.kind}-${signalIndex}`}>
+                              <i aria-hidden="true" /><div><b>{signal.title}</b><p>{signal.detail}</p><small>{signal.evidence}</small></div>
+                            </li>
+                          ))}</ul> : null}
+                          {intel.reviews.length > 0 ? <div className="planner-intel-reviews"><h4>{text.recentVoices}</h4>{intel.reviews.slice(0, 2).map((review, reviewIndex) => (
+                            <blockquote key={`${review.authorName}-${reviewIndex}`}>
+                              <p>{review.text}</p>
+                              <footer><span>{review.rating !== null ? `★ ${review.rating}` : ""} {review.relativeTime}</span><a href={review.authorUri ?? review.googleMapsUri ?? intel.place.googleMapsUrl} rel="noreferrer" target="_blank">{review.authorName} ↗</a></footer>
+                            </blockquote>
+                          ))}</div> : null}
+                          <div className="planner-intel-links">
+                            <a href={intel.place.googleMapsUrl} rel="noreferrer" target="_blank">Google Maps ↗</a>
+                            {intel.place.websiteUrl ? <a href={intel.place.websiteUrl} rel="noreferrer" target="_blank">{text.official} ↗</a> : null}
+                            <a href={intel.links.x} rel="noreferrer" target="_blank">{text.latestX} ↗</a>
+                            <a href={intel.links.instagram} rel="noreferrer" target="_blank">{text.instagram} ↗</a>
+                          </div>
+                        </section>
+                      ) : null}
                     </li>
                   );
                 })}
@@ -397,12 +492,11 @@ export default function TripPlannerApp({ initialLocale = "en" }: { initialLocale
         </section>
 
         <section className="planner-map-pane" aria-label={text.mapReady}>
-          <iframe
-            allowFullScreen
-            key={`${activeDay}-${mapStops.map((stop) => stop.id).join("-") || "japan"}`}
-            referrerPolicy="strict-origin-when-cross-origin"
-            src={`/api/map-embed?${mapParams.toString()}`}
-            title={day ? `${day.label} · Google Maps` : text.japanOverview}
+          <PlannerGoogleMap
+            dayKey={`${activeDay}-${mapStops.map((stop) => stop.id).join("-") || "japan"}`}
+            departureTimes={routeDepartureTimes}
+            locale={locale}
+            stops={mapStops}
           />
           <div className="planner-map-topline">
             <span className="planner-map-provider"><i aria-hidden="true" />{text.mapReady}</span>
