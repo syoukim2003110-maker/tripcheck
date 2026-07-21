@@ -35,7 +35,7 @@ test("server-renders the map-first TripCheck planner", async () => {
   assert.match(html, /Your trip will appear here/);
   assert.match(html, /Google Maps/);
   assert.match(html, /Itinerary on Google Maps/);
-  assert.match(html, /Hotel or nearest station/);
+  assert.match(html, /Hotel or preferred area/);
   assert.match(html, /FAQPage/);
   assert.match(html, /SoftwareApplication/);
   assert.doesNotMatch(html, /SCROLL TO PLAY|Get the whole trip\.|One plan instead of six tabs/i);

@@ -199,6 +199,7 @@ body:has(.trip-planner-app) {
 }
 .planner-map-chip span { color: var(--planner-ink); font-size: 12.5px; font-weight: 650; max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
 .planner-map-chip:hover { border-color: var(--planner-accent); }
+.planner-map-chip:disabled { border-color: white; cursor: default !important; opacity: 1; }
 .planner-map-chip.is-selected { border-color: var(--planner-accent); z-index: 3; }
 .planner-map-chip.is-selected i { background: var(--planner-accent); }
 .planner-map-chip.is-hotel i { background: var(--planner-teal); border-radius: 9px; font-size: 12px; }
@@ -272,7 +273,8 @@ body:has(.trip-planner-app) {
 }
 
 .planner-form-view,
-.planner-result-view { padding: 26px 22px 30px; }
+.planner-result-view,
+.planner-building-view { padding: 26px 22px 30px; }
 
 .planner-intro { margin-bottom: 20px; }
 .planner-intro h1 { font-size: 29px; letter-spacing: -0.04em; line-height: 1.15; margin: 0; }
@@ -331,6 +333,34 @@ body:has(.trip-planner-app) {
 .planner-build-button:active:not(:disabled) { transform: scale(0.99); }
 .planner-build-button:disabled { opacity: 0.4; }
 
+/* ---------- evidence-first build progress ---------- */
+
+.planner-building-view { min-height: 100%; }
+.planner-building-head { align-items: center; display: grid; gap: 14px; grid-template-columns: 48px minmax(0, 1fr); }
+.planner-building-orbit { align-items: center; background: var(--planner-accent-soft); border-radius: 16px; display: flex; height: 48px; justify-content: center; position: relative; width: 48px; }
+.planner-building-orbit::before,
+.planner-building-orbit::after { border: 2px solid var(--planner-accent); border-radius: 50%; content: ""; position: absolute; }
+.planner-building-orbit::before { animation: planner-orbit 1.4s linear infinite; border-bottom-color: transparent; height: 26px; width: 26px; }
+.planner-building-orbit::after { background: var(--planner-accent); border: 0; height: 7px; width: 7px; }
+.planner-building-head h1 { font-size: 23px; letter-spacing: -0.035em; line-height: 1.2; margin: 0; }
+.planner-building-head p { color: var(--planner-muted); font-size: 12.5px; margin: 4px 0 0; }
+.planner-building-steps { display: grid; gap: 0; list-style: none; margin: 26px 0 0; padding: 0; }
+.planner-building-steps li { align-items: start; display: grid; gap: 11px; grid-template-columns: 28px minmax(0, 1fr); min-height: 62px; position: relative; }
+.planner-building-steps li:not(:last-child)::after { background: var(--planner-line); content: ""; height: calc(100% - 27px); left: 13px; position: absolute; top: 28px; width: 2px; }
+.planner-building-step-dot { align-items: center; background: var(--planner-soft); border: 1px solid var(--planner-line); border-radius: 50%; color: var(--planner-muted); display: flex; font-size: 11px; font-weight: 750; height: 28px; justify-content: center; position: relative; width: 28px; z-index: 1; }
+.planner-building-steps li.is-active .planner-building-step-dot { animation: planner-step-pulse 1.1s ease-in-out infinite; background: var(--planner-accent); border-color: var(--planner-accent); box-shadow: 0 0 0 6px rgb(226 99 78 / 12%); color: white; }
+.planner-building-steps li.is-complete .planner-building-step-dot { background: var(--planner-good); border-color: var(--planner-good); color: white; }
+.planner-building-step-copy { min-width: 0; padding-top: 3px; }
+.planner-building-step-copy b { display: block; font-size: 13.5px; }
+.planner-building-step-copy small { color: var(--planner-muted); display: block; font-size: 11.5px; line-height: 1.45; margin-top: 2px; }
+.planner-building-steps li.is-active .planner-building-step-copy b { color: var(--planner-accent-deep); }
+.planner-building-live { align-items: center; background: var(--planner-soft); border-radius: 13px; color: var(--planner-muted); display: flex; font-size: 11.5px; gap: 9px; margin-top: 8px; padding: 11px 12px; }
+.planner-building-live i { animation: planner-step-pulse 1.1s ease-in-out infinite; background: var(--planner-accent); border-radius: 50%; flex: 0 0 auto; height: 8px; width: 8px; }
+.planner-building-cancel { background: transparent; border: 0; color: var(--planner-muted); display: block; font-size: 11.5px; margin: 16px auto 0; padding: 7px 10px; }
+.planner-building-cancel:hover { color: var(--planner-ink); }
+@keyframes planner-orbit { to { transform: rotate(360deg); } }
+@keyframes planner-step-pulse { 50% { opacity: 0.52; transform: scale(0.9); } }
+
 /* ---------- plan view ---------- */
 
 .planner-result-view { padding-top: 22px; }
@@ -339,6 +369,10 @@ body:has(.trip-planner-app) {
 .planner-result-header h1 { font-size: 23px; letter-spacing: -0.03em; line-height: 1.2; margin: 0; }
 .planner-result-header button { background: white; border: 1px solid var(--planner-line); border-radius: 999px; color: var(--planner-ink); flex: 0 0 auto; font-size: 11.5px; font-weight: 600; padding: 8px 12px; }
 .planner-result-header button:hover { border-color: var(--planner-accent); color: var(--planner-accent); }
+.planner-evidence-summary { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 2px; }
+.planner-evidence-summary span { background: var(--planner-soft); border: 1px solid var(--planner-line); border-radius: 999px; color: var(--planner-muted); font-size: 10.5px; font-weight: 650; line-height: 1.2; padding: 6px 9px; }
+.planner-evidence-summary span.is-good { background: color-mix(in srgb, var(--planner-good) 9%, white); border-color: color-mix(in srgb, var(--planner-good) 24%, white); color: var(--planner-good); }
+.planner-evidence-summary span.is-warning { background: var(--planner-warn-bg); border-color: var(--planner-warn-border); color: var(--planner-warn-ink); }
 
 .planner-day-tabs { display: flex; gap: 6px; margin: 18px -4px 16px; overflow-x: auto; padding: 4px; scrollbar-width: none; }
 .planner-day-tabs::-webkit-scrollbar { display: none; }
@@ -483,6 +517,12 @@ body:has(.trip-planner-app) {
 .planner-intel-links a { background: white; border: 1px solid var(--planner-line); border-radius: 999px; color: var(--planner-ink); font-size: 11px; font-weight: 600; padding: 7px 10px; text-decoration: none; }
 .planner-intel-links a:hover { border-color: var(--planner-accent); color: var(--planner-accent); }
 
+.planner-evidence-sources { border-top: 1px solid var(--planner-line); margin-top: 13px; padding-top: 11px; }
+.planner-evidence-sources summary { align-items: center; color: var(--planner-muted); display: flex; font-size: 11.5px; font-weight: 650; justify-content: space-between; list-style: none; }
+.planner-evidence-sources summary::-webkit-details-marker { display: none; }
+.planner-evidence-sources summary::after { content: "＋"; }
+.planner-evidence-sources[open] summary::after { content: "−"; }
+
 .planner-fresh-card { border-top: 1px solid var(--planner-line); margin-top: 16px; padding-top: 15px; }
 .planner-fresh-card > header { align-items: center; display: grid; gap: 10px; grid-template-columns: 30px minmax(0, 1fr); }
 .planner-fresh-card > header > span { align-items: center; background: linear-gradient(145deg, #171512, #51483d); border-radius: 10px; color: white; display: flex; font-size: 16px; height: 30px; justify-content: center; width: 30px; }
@@ -511,14 +551,11 @@ body:has(.trip-planner-app) {
 /* ---------- food panel ---------- */
 
 .planner-food-rationale { color: var(--planner-muted); font-size: 12.5px; line-height: 1.6; margin: 12px 0 0; }
-.planner-food-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
-.planner-food-chips button { background: var(--planner-soft); border: 1.5px solid transparent; border-radius: 999px; color: var(--planner-ink); font-size: 12px; font-weight: 600; padding: 7px 12px; }
-.planner-food-chips button:hover,
-.planner-food-chips button.is-active { background: white; border-color: var(--planner-accent); color: var(--planner-accent-deep); }
 .planner-food-status { color: var(--planner-muted); font-size: 12px; margin: 14px 0 0; }
 .planner-food-status a { color: var(--planner-accent); }
 .planner-food-results { display: grid; gap: 10px; margin-top: 14px; }
 .planner-food-results > article { border: 1px solid var(--planner-line); border-radius: 14px; display: grid; gap: 12px; grid-template-columns: 86px minmax(0, 1fr) auto; min-height: 86px; overflow: hidden; }
+.planner-food-results > article.is-selected { border-color: var(--planner-accent); box-shadow: 0 0 0 3px rgb(226 99 78 / 12%); }
 .planner-food-image { background: var(--planner-soft) url("/food-moods-v1.jpg") center / 480px auto; display: block; min-height: 86px; overflow: hidden; position: relative; }
 .planner-food-image img { display: block; height: 100%; object-fit: cover; width: 100%; }
 .planner-food-image > span { align-items: center; display: flex; font-size: 24px; height: 100%; justify-content: center; }
@@ -532,6 +569,33 @@ body:has(.trip-planner-app) {
 .planner-food-map:hover { color: var(--planner-accent); }
 .planner-food-map span { font-size: 15px; }
 .planner-food-note { color: var(--planner-muted); font-size: 11.5px; margin: 4px 2px 0; }
+.planner-food-stats { align-items: center; display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
+.planner-food-stats span { background: var(--planner-soft); border-radius: 999px; color: var(--planner-muted); font-size: 9.5px; font-weight: 650; padding: 3px 6px; }
+.planner-food-stats span.is-rating { background: #fff1cf; color: #7b5a13; }
+.planner-food-stats span.is-fresh { background: #ece8ff; color: #5944a5; }
+.planner-food-proof { border-top: 1px solid var(--planner-line); color: #5c5449; font-size: 11.5px; line-height: 1.55; margin: 10px 0 0; padding-top: 9px; }
+.planner-food-proof a { color: var(--planner-accent-deep); display: block; font-size: 10px; margin-top: 4px; text-decoration: none; }
+
+/* ---------- real hotel panel ---------- */
+
+.planner-hotel-chip { align-items: center; backdrop-filter: blur(14px); background: rgb(255 253 248 / 92%); border: 1px solid rgb(76 60 34 / 10%); border-radius: 999px; box-shadow: var(--planner-shadow-soft); color: var(--planner-ink); display: flex; font-size: 12.5px; font-weight: 650; gap: 7px; min-height: 40px; padding: 0 15px; }
+.planner-hotel-chip:hover,
+.planner-hotel-chip.is-active { border-color: var(--planner-teal); color: var(--planner-teal); }
+.planner-hotel-hero { background: var(--planner-soft); border-radius: 14px; display: block; height: 154px; margin: 14px 0 0; overflow: hidden; }
+.planner-hotel-hero img { display: block; height: 100%; object-fit: cover; width: 100%; }
+.planner-hotel-hero span { align-items: center; color: var(--planner-muted); display: flex; font-size: 30px; height: 100%; justify-content: center; }
+.planner-hotel-facts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.planner-hotel-facts span { background: var(--planner-soft); border-radius: 999px; color: var(--planner-muted); font-size: 11px; font-weight: 650; padding: 5px 9px; }
+.planner-hotel-facts .is-rating { background: #fff1cf; color: #7b5a13; }
+.planner-hotel-address { color: var(--planner-muted); font-size: 12px; line-height: 1.55; margin: 10px 0 0; }
+.planner-hotel-review { background: white; border: 1px solid var(--planner-line); border-radius: 12px; color: #5c5449; font-size: 12px; line-height: 1.55; margin: 12px 0 0; padding: 11px 12px; }
+.planner-hotel-review p { margin: 0; }
+.planner-hotel-review footer { align-items: center; color: var(--planner-muted); display: flex; font-size: 10px; justify-content: space-between; margin-top: 7px; }
+.planner-hotel-review a { color: var(--planner-accent-deep); text-decoration: none; }
+.planner-hotel-alternatives { border-top: 1px solid var(--planner-line); margin-top: 14px; padding-top: 12px; }
+.planner-hotel-alternatives > span { color: var(--planner-muted); display: block; font-size: 10.5px; margin-bottom: 7px; }
+.planner-hotel-alternatives a { align-items: center; color: var(--planner-ink); display: flex; font-size: 12px; font-weight: 650; justify-content: space-between; padding: 7px 0; text-decoration: none; }
+.planner-hotel-alternatives a:hover { color: var(--planner-teal); }
 
 /* ---------- focus ---------- */
 
@@ -563,8 +627,12 @@ body:has(.trip-planner-app) {
     height: 52dvh;
     width: 100%;
   }
+  .planner-sheet:has(.planner-building-view) { height: 64dvh; }
   .planner-form-view,
-  .planner-result-view { padding: 20px 16px 28px; }
+  .planner-result-view,
+  .planner-building-view { padding: 20px 16px 28px; }
+  .planner-building-steps { margin-top: 16px; }
+  .planner-building-steps li { min-height: 48px; }
   .planner-intro h1 { font-size: 25px; }
   .planner-composer textarea { height: 132px; }
 
@@ -586,9 +654,16 @@ body:has(.trip-planner-app) {
   }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .planner-building-orbit::before,
+  .planner-building-steps li.is-active .planner-building-step-dot,
+  .planner-building-live i,
+  .planner-fresh-status i { animation: none; }
+}
+
 @media (max-width: 460px) {
-  .planner-primary-fields,
-  .planner-detail-grid { grid-template-columns: 1fr; }
+  .planner-primary-fields { grid-template-columns: 1fr; }
+  .planner-detail-grid { grid-template-columns: 1fr 1fr; }
   .planner-map-chip span { max-width: 96px; }
   .planner-food-results > article { grid-template-columns: 76px minmax(0, 1fr) 40px; }
   .planner-food-map { font-size: 0; }

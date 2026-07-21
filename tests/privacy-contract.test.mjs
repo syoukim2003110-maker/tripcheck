@@ -14,7 +14,7 @@ test("keeps the completed itinerary out of storage and direct network calls", as
   const source = await readFile(appSourceUrl, "utf8");
 
   assert.match(source, /buildTripFromWishlist\(itinerary, tripDays, pace, locale, \{/);
-  assert.match(source, /requestPlaceResolution\(itinerary, hotelQuery, locale\)/);
+  assert.match(source, /requestPlaceResolution\(itinerary, hotelQuery, locale, controller\.signal\)/);
   assert.doesNotMatch(source, /fetch\s*\(/);
   assert.doesNotMatch(source, /sendBeacon\s*\(/);
   assert.doesNotMatch(source, /localStorage\.setItem\([^\n]*itinerary/i);
@@ -38,11 +38,15 @@ test("stores only the locale preference in the TripCheck app surface", async () 
   assert.deepEqual([...new Set(storedKeys)], ["tripcheck-locale"]);
 });
 
-test("discloses the bounded on-demand public-web search", async () => {
+test("discloses the bounded planning-time public-web search", async () => {
   const source = await readFile(privacySourceUrl, "utf8");
 
-  assert.match(source, /resolved name, public address and interface language/);
-  assert.match(source, /capped at two searches/);
+  assert.match(source, /resolved place, restaurant or hotel name/);
+  assert.match(source, /deeper place or hotel check at two/);
+  assert.match(source, /capped at 24 search units/);
   assert.match(source, /server memory for up to 30 minutes/);
   assert.match(source, /rejects sources verifiably older than 90 days/);
+  assert.match(source, /automatically sends only the origin and destination coordinates/);
+  assert.match(source, /browser also sends route coordinates/);
+  assert.match(source, /Structured opening periods are checked against each travel date/);
 });

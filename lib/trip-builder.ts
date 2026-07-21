@@ -19,6 +19,7 @@ export type BuiltPlanStop = {
   priority: StopPriority;
   fixedTime: string | null;
   reservationLateMinutes: number;
+  openingStatus: "verified_open" | "unknown" | "conflict";
   crowd: CrowdOutlook | null;
 };
 
@@ -45,7 +46,13 @@ export type BuiltPlanDay = {
   deadline: string | null;
   deadlineOverrunMinutes: number;
   reservationConflictCount: number;
+  openingConflictCount: number;
   googleMapsUrl: string | null;
+};
+
+export type VisitWindow = {
+  openMinutes: number;
+  closeMinutes: number;
 };
 
 export type StopPriority = "must" | "normal" | "optional";
@@ -97,7 +104,10 @@ export type TripPlannerContext = {
   flightKind?: FlightKind;
   dayStartTimes?: Record<number, string>;
   durationOverrides?: Record<string, number>;
+  earlyVisitStopIds?: string[];
   liveTransitMinutes?: Record<string, number>;
+  liveWalkingMinutes?: Record<string, number>;
+  openingWindowsByDay?: Record<string, Record<number, VisitWindow[]>>;
   mealPlan?: MealPlan;
   resolvedStops?: ResolvedInputStop[];
   resolvedBase?: ResolvedInputStop | null;
@@ -129,6 +139,7 @@ export type BuiltTripPlan = {
   mealBreakCount: number;
   unknownEntries: string[];
   deferredOptionalStops: RouteStop[];
+  deferredUnavailableStops: RouteStop[];
   constraintCount: number;
   overCapacityCount: number;
   scheduleConflictCount: number;
@@ -517,16 +528,16 @@ function buildBase(definition: (typeof baseDefinitions)[number], locale: Locale,
 
 function resolveTripBase(query: string, locale: Locale, resolvedBase?: ResolvedInputStop | null) {
   const normalized = query.trim();
-  if (!normalized) return null;
   if (resolvedBase) {
     return {
       ...resolvedBase,
       id: `base-${resolvedBase.id}`,
       planningDurationMinutes: 0,
       isAnchor: false,
-      query: normalized,
+      query: normalized || resolvedBase.name,
     };
   }
+  if (!normalized) return null;
   const match = baseDefinitions.find((definition) => definition.aliases.some((alias) => alias.test(normalized)));
   return match ? buildBase(match, locale, normalized) : null;
 }
@@ -708,15 +719,75 @@ function applyFixedDays(
   return assigned;
 }
 
-function routeComparison(from: RouteStop, to: RouteStop, liveTransitMinutes?: Record<string, number>) {
+function hasUsableOpeningWindow(stop: RouteStop, windows: VisitWindow[] | undefined) {
+  if (windows === undefined) return null;
+  return windows.some((window) => (
+    Number.isFinite(window.openMinutes)
+    && Number.isFinite(window.closeMinutes)
+    && window.closeMinutes - window.openMinutes >= stop.planningDurationMinutes
+  ));
+}
+
+function applyOpeningDays(
+  clusters: RouteStop[][],
+  constraints: Map<string, WishlistStopConstraint>,
+  availability: Record<string, Record<number, VisitWindow[]>>,
+  capacity: number,
+) {
+  const assigned = clusters.map((cluster) => [...cluster]);
+  const unavailable: RouteStop[] = [];
+  for (let dayIndex = 0; dayIndex < assigned.length; dayIndex += 1) {
+    for (const stop of [...assigned[dayIndex]]) {
+      if (hasUsableOpeningWindow(stop, availability[stop.id]?.[dayIndex]) !== false) continue;
+      const constraint = constraints.get(stop.id) ?? defaultConstraint;
+      if (constraint.fixedDay !== null || constraint.isReservation) continue;
+      const destination = assigned
+        .map((cluster, index) => ({ cluster, index }))
+        .filter(({ cluster, index }) => (
+          index !== dayIndex
+          && cluster.length < capacity
+          && hasUsableOpeningWindow(stop, availability[stop.id]?.[index]) === true
+        ))
+        .sort((left, right) => Math.abs(left.index - dayIndex) - Math.abs(right.index - dayIndex))[0];
+      assigned[dayIndex] = assigned[dayIndex].filter((candidate) => candidate.id !== stop.id);
+      if (destination) assigned[destination.index].push(stop);
+      else unavailable.push(stop);
+    }
+  }
+  return { assigned, unavailable };
+}
+
+function routeComparison(
+  from: RouteStop,
+  to: RouteStop,
+  liveTransitMinutes?: Record<string, number>,
+  liveWalkingMinutes?: Record<string, number>,
+) {
+  const key = routeLegKey(from.id, to.id);
   return applyLiveTransitMinutes(
     estimateTravelOptions(from, to),
-    liveTransitMinutes?.[routeLegKey(from.id, to.id)],
+    liveTransitMinutes?.[key],
+    liveWalkingMinutes?.[key],
   );
 }
 
-function routeTravelMinutes(from: RouteStop, to: RouteStop, liveTransitMinutes?: Record<string, number>) {
-  return routeComparison(from, to, liveTransitMinutes).recommended.minutes + 10;
+function routeTravelMinutes(
+  from: RouteStop,
+  to: RouteStop,
+  liveTransitMinutes?: Record<string, number>,
+  liveWalkingMinutes?: Record<string, number>,
+) {
+  return routeComparison(from, to, liveTransitMinutes, liveWalkingMinutes).recommended.minutes + 10;
+}
+
+function fitVisitToWindow(cursor: number, duration: number, windows: VisitWindow[] | undefined) {
+  if (windows === undefined) return { start: cursor, status: "unknown" as const };
+  for (const window of windows) {
+    if (!Number.isFinite(window.openMinutes) || !Number.isFinite(window.closeMinutes) || window.closeMinutes <= window.openMinutes) continue;
+    const start = Math.max(cursor, window.openMinutes);
+    if (start + duration <= window.closeMinutes) return { start, status: "verified_open" as const };
+  }
+  return { start: cursor, status: "conflict" as const };
 }
 
 function scheduleOrderScore(
@@ -724,12 +795,17 @@ function scheduleOrderScore(
   base: TripBase | null,
   startMinutes: number,
   constraints: Map<string, WishlistStopConstraint>,
+  earlyVisitStopIds: Set<string>,
+  openingWindows: Record<string, VisitWindow[]>,
+  liveTransitMinutes?: Record<string, number>,
+  liveWalkingMinutes?: Record<string, number>,
 ) {
   let cursor = startMinutes;
   let lateMinutes = 0;
   let travelMinutes = 0;
+  let earlyVisitPenalty = 0;
   if (base && ordered[0]) {
-    const travel = routeTravelMinutes(base, ordered[0]);
+    const travel = routeTravelMinutes(base, ordered[0], liveTransitMinutes, liveWalkingMinutes);
     travelMinutes += travel;
     cursor += travel;
   }
@@ -739,19 +815,27 @@ function scheduleOrderScore(
       lateMinutes += Math.max(0, cursor - fixed);
       cursor = Math.max(cursor, fixed);
     }
+    const fitted = fitVisitToWindow(cursor, stop.planningDurationMinutes, openingWindows[stop.id]);
+    if (fitted.status === "conflict") lateMinutes += 24 * 60;
+    else cursor = fitted.start;
+    if (earlyVisitStopIds.has(stop.id)) {
+      // Explicit sell-out, early-cutoff or queue evidence is a soft preference,
+      // never a replacement for a reservation or verified opening time.
+      earlyVisitPenalty += index * 90 + Math.max(0, cursor - 12 * 60);
+    }
     cursor += stop.planningDurationMinutes;
     if (ordered[index + 1]) {
-      const travel = routeTravelMinutes(stop, ordered[index + 1]);
+      const travel = routeTravelMinutes(stop, ordered[index + 1], liveTransitMinutes, liveWalkingMinutes);
       travelMinutes += travel;
       cursor += travel;
     }
   });
   if (base && ordered.at(-1)) {
-    const travel = estimateTravelOptions(ordered.at(-1)!, base).recommended.minutes;
+    const travel = routeComparison(ordered.at(-1)!, base, liveTransitMinutes, liveWalkingMinutes).recommended.minutes;
     travelMinutes += travel;
     cursor += travel;
   }
-  return lateMinutes * 100_000 + cursor - startMinutes + travelMinutes;
+  return lateMinutes * 100_000 + earlyVisitPenalty * 100 + cursor - startMinutes + travelMinutes;
 }
 
 function orderForReservations(
@@ -759,11 +843,23 @@ function orderForReservations(
   base: TripBase | null,
   startMinutes: number,
   constraints: Map<string, WishlistStopConstraint>,
+  earlyVisitStopIds: Set<string>,
+  openingWindows: Record<string, VisitWindow[]>,
+  liveTransitMinutes?: Record<string, number>,
+  liveWalkingMinutes?: Record<string, number>,
 ) {
   const geographic = base ? optimizeFromBase(stops, base) : optimizeKnownStopOrder(stops, false);
-  if (stops.length <= 1 || !stops.some((stop) => constraints.get(stop.id)?.fixedTimeMinutes != null)) return geographic;
+  const hasTimedConstraint = stops.some((stop) => constraints.get(stop.id)?.fixedTimeMinutes != null);
+  const hasEarlyPreference = stops.some((stop) => earlyVisitStopIds.has(stop.id));
+  const hasOpeningConstraint = stops.some((stop) => openingWindows[stop.id] !== undefined);
+  if (stops.length <= 1 || (!hasTimedConstraint && !hasEarlyPreference && !hasOpeningConstraint && !liveTransitMinutes && !liveWalkingMinutes)) return geographic;
   if (stops.length > 8) {
     return [...geographic].sort((a, b) => {
+      const earlyDifference = Number(earlyVisitStopIds.has(b.id)) - Number(earlyVisitStopIds.has(a.id));
+      if (earlyDifference !== 0) return earlyDifference;
+      const aOpen = openingWindows[a.id]?.[0]?.openMinutes;
+      const bOpen = openingWindows[b.id]?.[0]?.openMinutes;
+      if (aOpen !== undefined || bOpen !== undefined) return (aOpen ?? Number.MAX_SAFE_INTEGER) - (bOpen ?? Number.MAX_SAFE_INTEGER);
       const aTime = constraints.get(a.id)?.fixedTimeMinutes;
       const bTime = constraints.get(b.id)?.fixedTimeMinutes;
       if (aTime === null || aTime === undefined || bTime === null || bTime === undefined) return 0;
@@ -772,12 +868,12 @@ function orderForReservations(
   }
 
   let best = geographic;
-  let bestScore = scheduleOrderScore(best, base, startMinutes, constraints);
+  let bestScore = scheduleOrderScore(best, base, startMinutes, constraints, earlyVisitStopIds, openingWindows, liveTransitMinutes, liveWalkingMinutes);
   const used = new Set<string>();
   const candidate: RouteStop[] = [];
   const visit = () => {
     if (candidate.length === stops.length) {
-      const score = scheduleOrderScore(candidate, base, startMinutes, constraints);
+      const score = scheduleOrderScore(candidate, base, startMinutes, constraints, earlyVisitStopIds, openingWindows, liveTransitMinutes, liveWalkingMinutes);
       if (score < bestScore) {
         best = [...candidate];
         bestScore = score;
@@ -805,9 +901,12 @@ function buildDay(
   base: TripBase | null,
   airportConstraints: AirportConstraint[],
   constraints: Map<string, WishlistStopConstraint>,
+  earlyVisitStopIds: Set<string>,
+  openingWindows: Record<string, VisitWindow[]>,
   requestedStart?: string,
   startDate?: string,
   liveTransitMinutes?: Record<string, number>,
+  liveWalkingMinutes?: Record<string, number>,
 ): BuiltPlanDay {
   const arrivalConstraint = index === 0 ? airportConstraints.find((constraint) => constraint.direction === "arrival") : null;
   const departureConstraint = index === dayCount - 1 ? airportConstraints.find((constraint) => constraint.direction === "departure") : null;
@@ -816,15 +915,25 @@ function buildDay(
     : 9 * 60;
   const requestedStartMinutes = clockMinutes(requestedStart) ?? 9 * 60;
   const startMinutes = Math.max(requestedStartMinutes, arrivalReadyMinutes);
-  // Ordering deliberately ignores live transit minutes so a route refresh can never reshuffle the day mid-view.
-  const ordered = orderForReservations(stops, base, startMinutes, constraints);
+  const ordered = orderForReservations(
+    stops,
+    base,
+    startMinutes,
+    constraints,
+    earlyVisitStopIds,
+    openingWindows,
+    // The prefetch covers the selected draft legs, not an all-pairs matrix.
+    // Keep its order stable and use measured durations only for the clock.
+    undefined,
+    undefined,
+  );
   const date = addDaysToIsoDate(startDate, index);
   const legs = ordered.slice(0, -1).map((from, stopIndex): BuiltPlanLeg => {
     const to = ordered[stopIndex + 1];
     return {
       from,
       to,
-      comparison: routeComparison(from, to, liveTransitMinutes),
+      comparison: routeComparison(from, to, liveTransitMinutes, liveWalkingMinutes),
       googleMapsUrls: {
         walk: buildGoogleMapsUrl([from, to], "walking"),
         transit: buildGoogleMapsUrl([from, to], "transit"),
@@ -836,14 +945,16 @@ function buildDay(
   let cursor = startMinutes;
   let hotelTravelMinutes: number | null = null;
   if (base && ordered[0]) {
-    const outbound = routeComparison(base, ordered[0], liveTransitMinutes).recommended.minutes;
+    const outbound = routeComparison(base, ordered[0], liveTransitMinutes, liveWalkingMinutes).recommended.minutes;
     cursor += outbound + 10;
     hotelTravelMinutes = outbound;
   }
   const scheduledStops = ordered.map((stop, stopIndex): BuiltPlanStop => {
     const constraint = constraints.get(stop.id) ?? defaultConstraint;
-    const reservationLateMinutes = constraint.fixedTimeMinutes === null ? 0 : Math.max(0, cursor - constraint.fixedTimeMinutes);
     if (constraint.fixedTimeMinutes !== null) cursor = Math.max(cursor, constraint.fixedTimeMinutes);
+    const opening = fitVisitToWindow(cursor, stop.planningDurationMinutes, openingWindows[stop.id]);
+    if (opening.status !== "conflict") cursor = opening.start;
+    const reservationLateMinutes = constraint.fixedTimeMinutes === null ? 0 : Math.max(0, cursor - constraint.fixedTimeMinutes);
     const arrival = clock(cursor);
     cursor += stop.planningDurationMinutes;
     const departure = clock(cursor);
@@ -858,11 +969,12 @@ function buildDay(
       priority: constraint.priority,
       fixedTime: constraint.fixedTime,
       reservationLateMinutes,
+      openingStatus: opening.status,
       crowd: buildCrowdOutlook(date, arrival, stop),
     };
   });
   if (base && ordered.at(-1)) {
-    const inbound = routeComparison(ordered.at(-1)!, base, liveTransitMinutes).recommended.minutes;
+    const inbound = routeComparison(ordered.at(-1)!, base, liveTransitMinutes, liveWalkingMinutes).recommended.minutes;
     cursor += inbound;
     hotelTravelMinutes = (hotelTravelMinutes ?? 0) + inbound;
   }
@@ -886,6 +998,7 @@ function buildDay(
     deadline: deadlineMinutes === null ? null : clock(deadlineMinutes),
     deadlineOverrunMinutes: deadlineMinutes === null ? 0 : Math.max(0, cursor - deadlineMinutes),
     reservationConflictCount: scheduledStops.filter((stop) => stop.reservationLateMinutes > 0).length,
+    openingConflictCount: scheduledStops.filter((stop) => stop.openingStatus === "conflict").length,
     googleMapsUrl: ordered.length > 0 ? buildGoogleMapsUrl(mapStops) : null,
   };
 }
@@ -930,7 +1043,9 @@ export function buildTripFromWishlist(
 
   const paceCapacity = pace === "relaxed" ? 3 : pace === "fast" ? 5 : 4;
   const initialClusters = knownStops.length > 0 ? clusterStops(knownStops, requestedDays) : [];
-  const fullClusters = applyFixedDays(initialClusters, constraints);
+  const fixedClusters = applyFixedDays(initialClusters, constraints);
+  const openingAssignment = applyOpeningDays(fixedClusters, constraints, context.openingWindowsByDay ?? {}, paceCapacity);
+  const fullClusters = openingAssignment.assigned;
   const clusters = fullClusters.map((cluster) => [...cluster]);
   const deferredOptionalStops: RouteStop[] = [];
   for (const cluster of clusters) {
@@ -942,8 +1057,10 @@ export function buildTripFromWishlist(
   }
   const hotelQuery = context.hotelQuery?.trim() ?? "";
   const selectedBase = resolveTripBase(hotelQuery, locale, context.resolvedBase);
-  const baseRecommendations = recommendBases(knownStops, fullClusters, locale, Boolean(context.resolvedStops?.length));
+  const scheduledKnownStops = fullClusters.flat();
+  const baseRecommendations = recommendBases(scheduledKnownStops, fullClusters, locale, Boolean(context.resolvedStops?.length));
   const airportConstraints = buildAirportConstraints(context, selectedBase, locale);
+  const earlyVisitStopIds = new Set(context.earlyVisitStopIds ?? []);
   const days = clusters.map((cluster, index) => buildDay(
     cluster,
     index,
@@ -952,9 +1069,12 @@ export function buildTripFromWishlist(
     selectedBase,
     airportConstraints,
     constraints,
+    earlyVisitStopIds,
+    Object.fromEntries(cluster.map((stop) => [stop.id, context.openingWindowsByDay?.[stop.id]?.[index]]).filter((entry) => entry[1] !== undefined)) as Record<string, VisitWindow[]>,
     context.dayStartTimes?.[index],
     context.tripStartDate,
     context.liveTransitMinutes,
+    context.liveWalkingMinutes,
   ));
   const lastIndex = days.length - 1;
   if (lastIndex >= 0) {
@@ -970,9 +1090,12 @@ export function buildTripFromWishlist(
         selectedBase,
         airportConstraints,
         constraints,
+        earlyVisitStopIds,
+        Object.fromEntries(clusters[lastIndex].map((stop) => [stop.id, context.openingWindowsByDay?.[stop.id]?.[lastIndex]]).filter((entry) => entry[1] !== undefined)) as Record<string, VisitWindow[]>,
         context.dayStartTimes?.[lastIndex],
         context.tripStartDate,
         context.liveTransitMinutes,
+        context.liveWalkingMinutes,
       );
     }
   }
@@ -985,14 +1108,15 @@ export function buildTripFromWishlist(
     mealBreakCount: 0,
     unknownEntries: [...new Set(unknownEntries)],
     deferredOptionalStops,
+    deferredUnavailableStops: openingAssignment.unavailable,
     constraintCount: [...constraints.values()].filter((constraint) => (
       constraint.priority !== "normal" || constraint.fixedDay !== null || constraint.fixedTime !== null
     )).length,
     overCapacityCount: clusters.reduce((sum, cluster) => sum + Math.max(0, cluster.length - paceCapacity), 0),
-    scheduleConflictCount: days.filter((day) => day.deadlineOverrunMinutes > 0 || day.reservationConflictCount > 0).length,
+    scheduleConflictCount: days.filter((day) => day.deadlineOverrunMinutes > 0 || day.reservationConflictCount > 0 || day.openingConflictCount > 0).length,
     selectedBase,
     hotelQuery,
-    hotelResolved: hotelQuery.length > 0 && selectedBase !== null,
+    hotelResolved: selectedBase !== null,
     baseRecommendations,
     airportConstraints,
     foodRecommendationSlots,

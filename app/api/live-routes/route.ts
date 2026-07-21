@@ -1,4 +1,4 @@
-import { fetchGoogleTransitRoutes, parseLiveRoutesRequest } from "../../../lib/google-routes";
+import { fetchGoogleRoutes, parseLiveRoutesRequest } from "../../../lib/google-routes";
 
 const noStoreHeaders = { "Cache-Control": "no-store, max-age=0" };
 
@@ -23,10 +23,11 @@ export async function POST(request: Request) {
     return Response.json({ code: "invalid_or_out_of_range" }, { status: 400, headers: noStoreHeaders });
   }
 
-  const legs = await fetchGoogleTransitRoutes(parsed, apiKey);
+  const legs = await fetchGoogleRoutes(parsed, apiKey);
   return Response.json({
     provider: "google_maps",
     fetchedAt: new Date().toISOString(),
+    travelMode: parsed.travelMode,
     legs,
   }, { headers: noStoreHeaders });
 }

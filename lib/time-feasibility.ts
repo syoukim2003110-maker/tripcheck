@@ -115,11 +115,15 @@ export function estimateTravelOptions(from: RouteStop, to: RouteStop): ModeCompa
   return { options, fastest, recommended };
 }
 
-export function applyLiveTransitMinutes(comparison: ModeComparison, minutes?: number) {
-  if (typeof minutes !== "number" || !Number.isFinite(minutes) || minutes <= 0) return comparison;
-  const options = comparison.options.map((option): ModeEstimate => option.mode === "transit"
-    ? { ...option, minutes: Math.round(minutes), source: "live" }
-    : { ...option, source: option.source ?? "estimate" });
+export function applyLiveTransitMinutes(comparison: ModeComparison, minutes?: number, walkingMinutes?: number) {
+  const hasTransit = typeof minutes === "number" && Number.isFinite(minutes) && minutes > 0;
+  const hasWalking = typeof walkingMinutes === "number" && Number.isFinite(walkingMinutes) && walkingMinutes > 0;
+  if (!hasTransit && !hasWalking) return comparison;
+  const options = comparison.options.map((option): ModeEstimate => {
+    if (option.mode === "transit" && hasTransit) return { ...option, minutes: Math.round(minutes!), source: "live" };
+    if (option.mode === "walk" && hasWalking) return { ...option, minutes: Math.round(walkingMinutes!), source: "live" };
+    return { ...option, source: option.source ?? "estimate" };
+  });
   const fastest = options.reduce((best, option) => option.minutes < best.minutes ? option : best);
   const walk = options.find((option) => option.mode === "walk")!;
   const transit = options.find((option) => option.mode === "transit")!;

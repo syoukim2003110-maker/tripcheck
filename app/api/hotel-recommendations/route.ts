@@ -1,10 +1,10 @@
-import { fetchGoogleFoodCandidates, parseFoodSearchRequest } from "../../../lib/google-food";
+import { fetchGoogleHotelCandidates, parseHotelSearchRequest } from "../../../lib/google-hotels";
 
 const noStoreHeaders = { "Cache-Control": "no-store, max-age=0" };
 
 function sameOrigin(request: Request) {
   const origin = request.headers.get("Origin");
-  if (!origin) return true;
+  if (!origin) return process.env.NODE_ENV !== "production";
   try {
     return new URL(origin).origin === new URL(request.url).origin;
   } catch {
@@ -13,10 +13,10 @@ function sameOrigin(request: Request) {
 }
 
 export async function POST(request: Request) {
-  if (!sameOrigin(request)) {
+  if (!sameOrigin(request) || request.headers.get("Sec-Fetch-Site") === "cross-site") {
     return Response.json({ code: "forbidden" }, { status: 403, headers: noStoreHeaders });
   }
-  const apiKey = process.env.GOOGLE_PLACES_API_KEY ?? process.env.GOOGLE_ROUTES_API_KEY;
+  const apiKey = process.env.GOOGLE_PLACES_API_KEY;
   if (!apiKey) return Response.json({ code: "not_configured" }, { status: 503, headers: noStoreHeaders });
 
   let body: unknown;
@@ -25,14 +25,13 @@ export async function POST(request: Request) {
   } catch {
     return Response.json({ code: "invalid_request" }, { status: 400, headers: noStoreHeaders });
   }
-  const parsed = parseFoodSearchRequest(body);
+  const parsed = parseHotelSearchRequest(body);
   if (!parsed) return Response.json({ code: "invalid_request" }, { status: 400, headers: noStoreHeaders });
 
   try {
-    const candidates = await fetchGoogleFoodCandidates(parsed, apiKey);
+    const candidates = await fetchGoogleHotelCandidates(parsed, apiKey);
     return Response.json({
       provider: "google_maps",
-      ranking: "evidence_weighted",
       fetchedAt: new Date().toISOString(),
       candidates,
     }, { headers: noStoreHeaders });

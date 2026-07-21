@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildFreshVoicesBody, fetchFreshVoices, pageAgeDays } from "../lib/fresh-voices.ts";
+import {
+  buildFreshVoicesBody,
+  fetchFreshVoices,
+  pageAgeDays,
+  parseFreshVoicesRequest,
+} from "../lib/fresh-voices.ts";
 
 const request = { name: "浅草寺", area: "浅草", languageCode: "ja" as const };
 
@@ -14,6 +19,29 @@ test("caps one field check at two localized public-web searches", () => {
   assert.match(body.messages[0].content, /浅草寺 \(浅草, Japan\)/);
   assert.match(body.system, /untrusted evidence/);
   assert.match(body.system, /Never infer/);
+});
+
+test("parses bounded intent and depth while preserving legacy defaults", () => {
+  assert.deepEqual(parseFreshVoicesRequest(request), { ...request, intent: "place", depth: "deep" });
+  assert.deepEqual(parseFreshVoicesRequest({ ...request, intent: "food", depth: "quick" }), {
+    ...request,
+    intent: "food",
+    depth: "quick",
+  });
+  assert.equal(parseFreshVoicesRequest({ ...request, intent: "shopping" }), null);
+  assert.equal(parseFreshVoicesRequest({ ...request, depth: "unlimited" }), null);
+});
+
+test("uses one search for quick checks and intent-specific natural prompts", () => {
+  const food = buildFreshVoicesBody({ ...request, intent: "food", depth: "quick" });
+  const hotel = buildFreshVoicesBody({ ...request, name: "旅館サンプル", intent: "hotel", depth: "deep" });
+
+  assert.equal(food.tools[0].max_uses, 1);
+  assert.match(food.messages[0].content, /土地の名物/);
+  assert.match(food.messages[0].content, /いいね・閲覧・リポスト数/);
+  assert.equal(hotel.tools[0].max_uses, 2);
+  assert.match(hotel.messages[0].content, /宿泊記/);
+  assert.match(hotel.messages[0].content, /騒音/);
 });
 
 test("shows only cited search evidence and takes title and age from provider metadata", async () => {
@@ -42,6 +70,8 @@ test("shows only cited search evidence and takes title and age from provider met
   })) as typeof fetch);
 
   assert.equal(result.provider, "anthropic_web_search");
+  assert.equal(result.intent, "place");
+  assert.equal(result.depth, "deep");
   assert.equal(result.findings.length, 2);
   assert.equal(result.findings[0].url, "https://x.com/user/status/1");
   assert.equal(result.findings[0].title, "浅草寺 混雑レポ");

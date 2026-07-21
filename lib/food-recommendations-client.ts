@@ -1,10 +1,11 @@
 import type { Locale } from "./i18n.ts";
 import type { FoodRecommendationSlot } from "./trip-builder.ts";
-import type { FoodCandidate } from "./google-food.ts";
+import { defaultFoodDiscoveryQuery, type FoodCandidate } from "./google-food.ts";
 import type { FoodRankingItem } from "./ai-food-ranking.ts";
 
 export type FoodRecommendationsResponse = {
   provider: "google_maps";
+  ranking: "evidence_weighted";
   fetchedAt: string;
   candidates: FoodCandidate[];
 };
@@ -15,6 +16,74 @@ export type FoodRankingResponse = {
   ranked: FoodRankingItem[];
 };
 
+type FoodSearchPayload = {
+  latitude: number;
+  longitude: number;
+  area: string;
+  mealKind: FoodRecommendationSlot["kind"];
+  query: string;
+  languageCode: "en" | "ja";
+  visitDate?: string;
+  visitTime?: string;
+};
+
+type FoodRequestOptions = {
+  signal?: AbortSignal;
+};
+
+export type FoodSlotReconciliation = {
+  refresh: FoodRecommendationSlot[];
+  reuse: FoodRecommendationSlot[];
+  droppedIds: string[];
+};
+
+const earthRadiusMeters = 6_371_000;
+
+function foodSlotDistanceMeters(left: FoodRecommendationSlot, right: FoodRecommendationSlot) {
+  const radians = (degrees: number) => degrees * Math.PI / 180;
+  const latitudeDelta = radians(right.latitude - left.latitude);
+  const longitudeDelta = radians(right.longitude - left.longitude);
+  const leftLatitude = radians(left.latitude);
+  const rightLatitude = radians(right.latitude);
+  const haversine = Math.sin(latitudeDelta / 2) ** 2
+    + Math.cos(leftLatitude) * Math.cos(rightLatitude) * Math.sin(longitudeDelta / 2) ** 2;
+  return 2 * earthRadiusMeters * Math.asin(Math.sqrt(haversine));
+}
+
+export function foodSlotNeedsRefresh(
+  previous: FoodRecommendationSlot | undefined,
+  next: FoodRecommendationSlot,
+  anchorToleranceMeters = 250,
+) {
+  if (!previous) return true;
+  if (previous.kind !== next.kind || previous.date !== next.date) return true;
+  return foodSlotDistanceMeters(previous, next) > anchorToleranceMeters;
+}
+
+export function reconcileFoodRecommendationSlots(
+  previousSlots: FoodRecommendationSlot[],
+  nextSlots: FoodRecommendationSlot[],
+  maxRefresh = 20,
+): FoodSlotReconciliation {
+  const previousById = new Map(previousSlots.map((slot) => [slot.id, slot]));
+  const nextIds = new Set(nextSlots.map((slot) => slot.id));
+  const refresh: FoodRecommendationSlot[] = [];
+  const reuse: FoodRecommendationSlot[] = [];
+  for (const slot of nextSlots) {
+    if (foodSlotNeedsRefresh(previousById.get(slot.id), slot) && refresh.length < maxRefresh) refresh.push(slot);
+    else reuse.push(slot);
+  }
+  return {
+    refresh,
+    reuse,
+    droppedIds: previousSlots.filter((slot) => !nextIds.has(slot.id)).map((slot) => slot.id),
+  };
+}
+
+export function foodRecommendationRequestKey(slot: FoodRecommendationSlot, locale: Locale) {
+  return `${slot.latitude.toFixed(4)}|${slot.longitude.toFixed(4)}|${slot.area.normalize("NFKC").toLowerCase()}|${slot.date ?? "undated"}|${slot.kind}|${locale}`;
+}
+
 export class FoodRecommendationsError extends Error {
   code: "not_configured" | "invalid_request" | "unavailable";
 
@@ -24,14 +93,31 @@ export class FoodRecommendationsError extends Error {
   }
 }
 
-export function buildFoodSearchPayload(slot: FoodRecommendationSlot, query: string, locale: Locale) {
+function resolveFoodSearchArgs(queryOrLocale: string, maybeLocale?: Locale) {
+  const locale = maybeLocale ?? queryOrLocale as Locale;
+  const languageCode = locale === "ja" ? "ja" as const : "en" as const;
+  const query = maybeLocale ? queryOrLocale.trim() : "";
+  return {
+    languageCode,
+    query: query || defaultFoodDiscoveryQuery(languageCode),
+  };
+}
+
+export function buildFoodSearchPayload(slot: FoodRecommendationSlot, locale: Locale): FoodSearchPayload;
+export function buildFoodSearchPayload(slot: FoodRecommendationSlot, query: string, locale: Locale): FoodSearchPayload;
+export function buildFoodSearchPayload(slot: FoodRecommendationSlot, queryOrLocale: string, maybeLocale?: Locale) {
+  const { languageCode, query } = resolveFoodSearchArgs(queryOrLocale, maybeLocale);
   return {
     latitude: slot.latitude,
     longitude: slot.longitude,
     area: slot.area,
     mealKind: slot.kind,
     query,
-    languageCode: locale === "ja" ? "ja" as const : "en" as const,
+    languageCode,
+    ...(slot.date ? {
+      visitDate: slot.date,
+      visitTime: slot.kind === "lunch" ? "12:30" : "19:00",
+    } : {}),
   };
 }
 
@@ -51,7 +137,9 @@ export function buildFoodRankingPayload(
 }
 
 export function foodSearchLinks(query: string, area: string, locale: Locale) {
-  const search = encodeURIComponent(`${query} ${area}`);
+  const languageCode = locale === "ja" ? "ja" : "en";
+  const phrase = query.trim() || defaultFoodDiscoveryQuery(languageCode);
+  const search = encodeURIComponent(`${phrase} ${area}`);
   return {
     googleMaps: `https://www.google.com/maps/search/?api=1&query=${search}`,
     tabelog: `${locale === "ja" ? "https://tabelog.com/rstLst/" : "https://tabelog.com/en/rstLst/"}?sk=${search}`,
@@ -59,17 +147,25 @@ export function foodSearchLinks(query: string, area: string, locale: Locale) {
   };
 }
 
+export function requestFoodRecommendations(slot: FoodRecommendationSlot, locale: Locale, options?: FoodRequestOptions): Promise<FoodRecommendationsResponse>;
+export function requestFoodRecommendations(slot: FoodRecommendationSlot, query: string, locale: Locale, options?: FoodRequestOptions): Promise<FoodRecommendationsResponse>;
 export async function requestFoodRecommendations(
   slot: FoodRecommendationSlot,
-  query: string,
-  locale: Locale,
+  queryOrLocale: string,
+  localeOrOptions?: Locale | FoodRequestOptions,
+  maybeOptions?: FoodRequestOptions,
 ): Promise<FoodRecommendationsResponse> {
+  const maybeLocale = typeof localeOrOptions === "string" ? localeOrOptions : undefined;
+  const options = typeof localeOrOptions === "string" ? maybeOptions : localeOrOptions;
   let response: Response;
   try {
     response = await fetch("/api/food-recommendations", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(buildFoodSearchPayload(slot, query, locale)),
+      signal: options?.signal,
+      body: JSON.stringify(maybeLocale
+        ? buildFoodSearchPayload(slot, queryOrLocale, maybeLocale)
+        : buildFoodSearchPayload(slot, queryOrLocale as Locale)),
     });
   } catch {
     throw new FoodRecommendationsError("unavailable");
@@ -97,5 +193,14 @@ export async function requestFoodRanking(
   if (!response?.ok) throw new Error("ai_ranking_unavailable");
   const payload = await response.json().catch(() => null) as FoodRankingResponse | null;
   if (!payload || payload.provider !== "anthropic" || !Array.isArray(payload.ranked)) throw new Error("ai_ranking_unavailable");
-  return payload;
+  // The Google evidence score is the source of truth for order. Claude may add
+  // compact copy, but must not undo the deterministic popularity ranking.
+  const notesById = new Map(payload.ranked.map((item) => [item.id, item]));
+  return {
+    ...payload,
+    ranked: candidates.flatMap((candidate) => {
+      const item = notesById.get(candidate.id);
+      return item ? [item] : [];
+    }),
+  };
 }

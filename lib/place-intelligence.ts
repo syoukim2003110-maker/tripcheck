@@ -16,6 +16,15 @@ export type PlaceReviewEvidence = {
   googleMapsUri: string | null;
 };
 
+export type PaymentObservation = {
+  method: "cash" | "card" | "qr" | "transport_ic";
+  accepted: boolean;
+  label: string;
+  excerpt: string;
+  publishedAt: string | null;
+  source: "google_review";
+};
+
 export type PlaceIntelSignal = {
   kind: "hours" | "payment" | "crowd" | "closure" | "access" | "freshness";
   severity: "info" | "warning" | "unknown";
@@ -38,11 +47,13 @@ export type PlaceIntelligenceResult = {
     userRatingCount: number | null;
     openNow: boolean | null;
     hours: string[];
+    regularOpeningPeriods?: unknown[] | null;
     payment: {
       cashOnly: boolean | null;
       creditCards: boolean | null;
       debitCards: boolean | null;
       nfc: boolean | null;
+      observations: PaymentObservation[];
     };
   };
   reviews: PlaceReviewEvidence[];
@@ -95,6 +106,105 @@ function optionalBoolean(value: unknown) {
   return typeof value === "boolean" ? value : null;
 }
 
+function excerptAroundMatch(text: string, matchIndex: number) {
+  const start = Math.max(0, matchIndex - 38);
+  const end = Math.min(text.length, matchIndex + 86);
+  return `${start > 0 ? "…" : ""}${text.slice(start, end).trim()}${end < text.length ? "…" : ""}`;
+}
+
+export function extractPaymentObservations(reviews: PlaceReviewEvidence[]): PaymentObservation[] {
+  const patterns: Array<{
+    method: PaymentObservation["method"];
+    accepted: boolean;
+    label: string;
+    pattern: RegExp;
+  }> = [
+    { method: "cash", accepted: true, label: "Cash only", pattern: /現金(?:のみ|だけ|しか(?:使え|対応))|キャッシュオンリー|cash[ -]?only|only\s+accept(?:s|ed)?\s+cash/i },
+    { method: "card", accepted: false, label: "Cards not accepted", pattern: /(?:クレジット)?カード(?:は|が)?(?:使えない|使えません|不可|非対応)|no\s+(?:credit\s+)?cards?|cards?\s+(?:are\s+)?not\s+accepted/i },
+    { method: "card", accepted: true, label: "Cards accepted", pattern: /(?:クレジット)?カード.{0,12}(?:使え(?:た|ます|ました|る)|支払え(?:た|ます|ました|る)|利用可|対応|OK)|カード(?:決済|払い)(?:可|対応)|クレジットカード(?:可|対応)|cards?.{0,12}(?:accepted|worked)|paid\s+by\s+(?:credit\s+)?card/i },
+    { method: "qr", accepted: false, label: "QR / code payment not accepted", pattern: /(?:PayPay|楽天ペイ|d払い|au\s*PAY|メルペイ|コード決済|QR(?:コード)?決済|Alipay|WeChat\s*Pay).{0,14}(?:不可|使えない|使えません|支払えない|非対応|NG|not accepted|unavailable|did(?: not|n't) work)/i },
+    { method: "qr", accepted: true, label: "QR / code payment accepted", pattern: /(?:PayPay|楽天ペイ|d払い|au\s*PAY|メルペイ|コード決済|QR(?:コード)?決済|Alipay|WeChat\s*Pay).{0,14}(?:使え(?:た|ます|ました|る)|支払え(?:た|ます|ました|る)|利用可|対応|OK|accepted|worked)|(?:使え(?:た|ます|ました|る)|支払え(?:た|ます|ました|る)|利用可|対応|OK|accepts?).{0,14}(?:PayPay|楽天ペイ|d払い|au\s*PAY|メルペイ|コード決済|QR(?:コード)?決済|Alipay|WeChat\s*Pay)/i },
+    { method: "transport_ic", accepted: false, label: "Transit IC not accepted", pattern: /(?:Suica|PASMO|ICOCA|交通系\s*IC|ICカード|transit\s+IC).{0,14}(?:不可|使えない|使えません|支払えない|非対応|NG|not accepted|unavailable|did(?: not|n't) work)/i },
+    { method: "transport_ic", accepted: true, label: "Transit IC accepted", pattern: /(?:Suica|PASMO|ICOCA|交通系\s*IC|ICカード|transit\s+IC).{0,14}(?:使え(?:た|ます|ました|る)|支払え(?:た|ます|ました|る)|利用可|対応|OK|accepted|worked)|(?:使え(?:た|ます|ました|る)|支払え(?:た|ます|ました|る)|利用可|対応|OK|accepts?).{0,14}(?:Suica|PASMO|ICOCA|交通系\s*IC|ICカード|transit\s+IC)/i },
+  ];
+  const observations: PaymentObservation[] = [];
+  for (const review of reviews) {
+    for (const candidate of patterns) {
+      const match = review.text.match(candidate.pattern);
+      if (!match || typeof match.index !== "number") continue;
+      if (candidate.accepted && patterns.some((pattern) => pattern.method === candidate.method
+        && !pattern.accepted
+        && pattern.pattern.test(review.text))) continue;
+      observations.push({
+        method: candidate.method,
+        accepted: candidate.accepted,
+        label: candidate.label,
+        excerpt: excerptAroundMatch(review.text, match.index),
+        publishedAt: review.publishedAt,
+        source: "google_review",
+      });
+    }
+  }
+  const valuesByMethod = new Map<PaymentObservation["method"], Set<boolean>>();
+  for (const observation of observations) {
+    const values = valuesByMethod.get(observation.method) ?? new Set<boolean>();
+    values.add(observation.accepted);
+    valuesByMethod.set(observation.method, values);
+  }
+  const positiveNonCash = observations.some((observation) => observation.method !== "cash"
+    && observation.accepted
+    && valuesByMethod.get(observation.method)?.size === 1);
+  const seen = new Set<string>();
+  return observations.filter((observation) => {
+    if (valuesByMethod.get(observation.method)?.size !== 1) return false;
+    // "Cash only" contradicts any explicit report that a non-cash method worked.
+    if (observation.method === "cash" && positiveNonCash) return false;
+    const key = `${observation.method}:${observation.accepted}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, 4);
+}
+
+function reconcilePaymentEvidence(
+  payment: Record<string, unknown> | undefined,
+  reviews: PlaceReviewEvidence[],
+) {
+  let cashOnly = optionalBoolean(payment?.acceptsCashOnly);
+  let creditCards = optionalBoolean(payment?.acceptsCreditCards);
+  const debitCards = optionalBoolean(payment?.acceptsDebitCards);
+  const nfc = optionalBoolean(payment?.acceptsNfc);
+  const reviewObservations = extractPaymentObservations(reviews);
+  let observations = reviewObservations;
+
+  // A listing and an individual review are independent evidence. When they
+  // explicitly disagree about the same method, present neither claim as fact.
+  const cardObservation = reviewObservations.find(({ method }) => method === "card");
+  if (cardObservation && creditCards !== null && cardObservation.accepted !== creditCards) {
+    creditCards = null;
+    observations = observations.filter(({ method }) => method !== "card");
+  }
+
+  const cashObservation = reviewObservations.find(({ method }) => method === "cash");
+  if (cashObservation && cashOnly !== null && cashObservation.accepted !== cashOnly) {
+    cashOnly = null;
+    observations = observations.filter(({ method }) => method !== "cash");
+  }
+
+  const listingAcceptsNonCash = optionalBoolean(payment?.acceptsCreditCards) === true
+    || debitCards === true
+    || nfc === true;
+  const reviewAcceptsNonCash = reviewObservations.some(({ method, accepted }) => method !== "cash" && accepted);
+
+  // "Cash only" is a stronger assertion than any individual method. Any
+  // explicit non-cash success report makes that assertion unsafe, even if a
+  // separate source disagrees about the particular non-cash method.
+  if (cashOnly === true && (listingAcceptsNonCash || reviewAcceptsNonCash)) cashOnly = null;
+  if (listingAcceptsNonCash) observations = observations.filter(({ method }) => method !== "cash");
+
+  return { cashOnly, creditCards, debitCards, nfc, observations };
+}
+
 export function parsePlaceIntelligenceRequest(input: unknown): PlaceIntelligenceRequest | null {
   if (!input || typeof input !== "object") return null;
   const source = input as Record<string, unknown>;
@@ -139,6 +249,28 @@ function rulesAnalysis(result: Omit<PlaceIntelligenceResult, "analysis" | "analy
       title: ja ? "カード利用可の掲載" : "Cards listed as accepted",
       detail: ja ? "利用可能ブランドは現地で確認してください。" : "Confirm the supported card brand on arrival.",
       evidence: "Google Maps payment options",
+    });
+  } else if (result.place.payment.observations.length > 0) {
+    const observation = result.place.payment.observations[0];
+    const title = observation.method === "cash"
+      ? (ja ? "口コミに現金のみとの報告" : "A review reports cash only")
+      : observation.method === "card" && !observation.accepted
+        ? (ja ? "口コミにカード不可との報告" : "A review reports cards are not accepted")
+        : observation.method === "qr"
+          ? observation.accepted
+            ? (ja ? "口コミにコード決済の利用報告" : "A review reports code payment")
+            : (ja ? "口コミにコード決済不可との報告" : "A review reports code payment is not accepted")
+          : observation.method === "transport_ic"
+            ? observation.accepted
+              ? (ja ? "口コミに交通系ICの利用報告" : "A review reports transit IC payment")
+              : (ja ? "口コミに交通系IC不可との報告" : "A review reports transit IC is not accepted")
+            : (ja ? "口コミにカード利用の報告" : "A review reports card payment");
+    signals.push({
+      kind: "payment",
+      severity: observation.accepted && observation.method !== "cash" ? "info" : "warning",
+      title,
+      detail: observation.excerpt,
+      evidence: "Google review (individual report)",
     });
   }
   if (result.place.websiteUrl === null) {
@@ -275,9 +407,9 @@ export async function fetchPlaceIntelligence(
   const name = boundedText(displayName?.text, 1, 160);
   if (!mapsUrl || !name) throw new Error("place_not_found");
   const currentHours = raw.currentOpeningHours as { openNow?: boolean; weekdayDescriptions?: unknown } | undefined;
-  const regularHours = raw.regularOpeningHours as { openNow?: boolean; weekdayDescriptions?: unknown } | undefined;
+  const regularHours = raw.regularOpeningHours as { openNow?: boolean; weekdayDescriptions?: unknown; periods?: unknown } | undefined;
   const payment = raw.paymentOptions as Record<string, unknown> | undefined;
-  const reviews = Array.isArray(raw.reviews) ? raw.reviews.slice(0, 3).flatMap((review) => {
+  const reviews = Array.isArray(raw.reviews) ? raw.reviews.slice(0, 5).flatMap((review) => {
     if (!review || typeof review !== "object") return [];
     const source = review as Record<string, unknown>;
     const reviewText = source.text as { text?: string } | undefined;
@@ -307,12 +439,8 @@ export async function fetchPlaceIntelligence(
       userRatingCount: typeof raw.userRatingCount === "number" ? raw.userRatingCount : null,
       openNow: optionalBoolean(currentHours?.openNow ?? regularHours?.openNow),
       hours: (Array.isArray(currentHours?.weekdayDescriptions) ? currentHours?.weekdayDescriptions : regularHours?.weekdayDescriptions) as string[] ?? [],
-      payment: {
-        cashOnly: optionalBoolean(payment?.acceptsCashOnly),
-        creditCards: optionalBoolean(payment?.acceptsCreditCards),
-        debitCards: optionalBoolean(payment?.acceptsDebitCards),
-        nfc: optionalBoolean(payment?.acceptsNfc),
-      },
+      regularOpeningPeriods: Array.isArray(regularHours?.periods) ? regularHours.periods : null,
+      payment: reconcilePaymentEvidence(payment, reviews),
     },
     reviews,
     links: socialLinks(name, request.area),

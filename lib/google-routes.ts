@@ -13,7 +13,10 @@ export type LiveRouteLegRequest = {
 export type LiveRoutesRequest = {
   legs: LiveRouteLegRequest[];
   languageCode: "en" | "ja" | "ko" | "zh-CN";
+  travelMode: LiveRouteTravelMode;
 };
+
+export type LiveRouteTravelMode = "TRANSIT" | "WALK";
 
 export type LiveRouteResult = {
   id: string;
@@ -23,6 +26,7 @@ export type LiveRouteResult = {
 };
 
 const validLanguages = new Set(["en", "ja", "ko", "zh-CN"]);
+const validTravelModes = new Set<LiveRouteTravelMode>(["TRANSIT", "WALK"]);
 
 function validCoordinate(value: unknown): value is LiveRouteCoordinate {
   if (!value || typeof value !== "object") return false;
@@ -42,6 +46,8 @@ export function parseLiveRoutesRequest(input: unknown, now = new Date()): LiveRo
   const candidate = input as Record<string, unknown>;
   if (!Array.isArray(candidate.legs) || candidate.legs.length < 1 || candidate.legs.length > 24) return null;
   if (typeof candidate.languageCode !== "string" || !validLanguages.has(candidate.languageCode)) return null;
+  const travelMode = candidate.travelMode ?? "TRANSIT";
+  if (typeof travelMode !== "string" || !validTravelModes.has(travelMode as LiveRouteTravelMode)) return null;
 
   const earliest = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
   const latest = new Date(now.getTime() + 100 * 24 * 60 * 60 * 1000);
@@ -65,6 +71,7 @@ export function parseLiveRoutesRequest(input: unknown, now = new Date()): LiveRo
   return {
     legs,
     languageCode: candidate.languageCode as LiveRoutesRequest["languageCode"],
+    travelMode: travelMode as LiveRouteTravelMode,
   };
 }
 
@@ -74,12 +81,31 @@ function durationMinutes(value: unknown) {
   return match ? Math.max(1, Math.ceil(Number(match[1]) / 60)) : null;
 }
 
-export async function fetchGoogleTransitRoutes(
+async function mapWithConcurrency<T, R>(
+  values: T[],
+  concurrency: number,
+  mapper: (value: T) => Promise<R>,
+) {
+  const results = new Array<R>(values.length);
+  let nextIndex = 0;
+  const workerCount = Math.min(values.length, Math.max(1, Math.floor(concurrency)));
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    while (nextIndex < values.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await mapper(values[index]);
+    }
+  }));
+  return results;
+}
+
+export async function fetchGoogleRoutes(
   request: LiveRoutesRequest,
   apiKey: string,
   fetcher: typeof fetch = fetch,
+  concurrency = 4,
 ): Promise<LiveRouteResult[]> {
-  return Promise.all(request.legs.map(async (leg): Promise<LiveRouteResult> => {
+  return mapWithConcurrency(request.legs, Math.min(4, concurrency), async (leg): Promise<LiveRouteResult> => {
     try {
       const response = await fetcher("https://routes.googleapis.com/directions/v2:computeRoutes", {
         method: "POST",
@@ -91,8 +117,8 @@ export async function fetchGoogleTransitRoutes(
         body: JSON.stringify({
           origin: { location: { latLng: leg.origin } },
           destination: { location: { latLng: leg.destination } },
-          travelMode: "TRANSIT",
-          departureTime: leg.departureTime,
+          travelMode: request.travelMode,
+          ...(request.travelMode === "TRANSIT" ? { departureTime: leg.departureTime } : {}),
           languageCode: request.languageCode,
           units: "METRIC",
         }),
@@ -112,5 +138,15 @@ export async function fetchGoogleTransitRoutes(
     } catch {
       return { id: leg.id, durationMinutes: null, distanceMeters: null, status: "unavailable" };
     }
-  }));
+  });
+}
+
+/** Backward-compatible adapter for callers that explicitly need transit only. */
+export async function fetchGoogleTransitRoutes(
+  request: LiveRoutesRequest,
+  apiKey: string,
+  fetcher: typeof fetch = fetch,
+  concurrency = 4,
+): Promise<LiveRouteResult[]> {
+  return fetchGoogleRoutes({ ...request, travelMode: "TRANSIT" }, apiKey, fetcher, concurrency);
 }

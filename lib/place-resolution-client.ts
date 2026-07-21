@@ -44,7 +44,7 @@ export function buildPlaceResolutionPayload(raw: string, hotelQuery: string, loc
   };
 }
 
-export async function requestPlaceResolution(raw: string, hotelQuery: string, locale: Locale): Promise<PlaceResolutionResponse> {
+export async function requestPlaceResolution(raw: string, hotelQuery: string, locale: Locale, signal?: AbortSignal): Promise<PlaceResolutionResponse> {
   const payload = buildPlaceResolutionPayload(raw, hotelQuery, locale);
   if (payload.queries.length === 0 && !payload.hotelQuery) {
     return { provider: "google_maps", fetchedAt: "", places: [], hotel: null };
@@ -55,6 +55,7 @@ export async function requestPlaceResolution(raw: string, hotelQuery: string, lo
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
+      signal,
     });
   } catch {
     throw new PlaceResolutionError("unavailable");

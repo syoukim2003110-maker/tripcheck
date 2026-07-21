@@ -1,11 +1,17 @@
-import { fetchFreshVoices, type FreshVoicesResult } from "../../../../lib/fresh-voices";
-import { parsePlaceIntelligenceRequest } from "../../../../lib/place-intelligence";
+import {
+  fetchFreshVoices,
+  parseFreshVoicesRequest,
+  type FreshVoicesDepth,
+  type FreshVoicesResult,
+} from "../../../../lib/fresh-voices";
 
 const noStoreHeaders = { "Cache-Control": "private, no-store, max-age=0" };
 const cacheTtlMs = 30 * 60 * 1000;
 const quotaWindowMs = 60 * 60 * 1000;
-const perClientQuota = 6;
-const globalQuota = 48;
+// One plan is capped at 24 units in the client. Allow two substantially
+// different plans per hour while keeping the global spend ceiling bounded.
+const perClientQuota = 48;
+const globalQuota = 192;
 const resultCache = new Map<string, { expiresAt: number; result: FreshVoicesResult }>();
 const inFlight = new Map<string, Promise<FreshVoicesResult>>();
 const clientWindows = new Map<string, { startedAt: number; count: number }>();
@@ -21,8 +27,8 @@ function sameOrigin(request: Request) {
   }
 }
 
-function cacheKey(name: string, area: string, languageCode: string) {
-  return [name, area, languageCode]
+function cacheKey(name: string, area: string, languageCode: string, intent: string, depth: string) {
+  return [name, area, languageCode, intent, depth]
     .map((value) => value.normalize("NFKC").toLocaleLowerCase("en-US").replace(/\s+/g, " ").trim())
     .join("|");
 }
@@ -40,18 +46,35 @@ function prune(now: number) {
   for (const [key, value] of clientWindows) if (now - value.startedAt >= quotaWindowMs) clientWindows.delete(key);
 }
 
-function takeQuota(request: Request, now: number) {
+type QuotaReservation = { client: string; reserved: number };
+
+function searchBudget(depth: FreshVoicesDepth) {
+  return depth === "quick" ? 1 : 2;
+}
+
+function takeQuota(request: Request, now: number, reserved: number): QuotaReservation | null {
   if (now - globalWindow.startedAt >= quotaWindowMs) globalWindow = { startedAt: now, count: 0 };
   const key = clientKey(request);
   const previous = clientWindows.get(key);
   const window = !previous || now - previous.startedAt >= quotaWindowMs
     ? { startedAt: now, count: 0 }
     : previous;
-  if (window.count >= perClientQuota || globalWindow.count >= globalQuota) return false;
-  window.count += 1;
-  globalWindow.count += 1;
+  if (window.count + reserved > perClientQuota || globalWindow.count + reserved > globalQuota) return null;
+  window.count += reserved;
+  globalWindow.count += reserved;
   clientWindows.set(key, window);
-  return true;
+  return { client: key, reserved };
+}
+
+function settleQuota(reservation: QuotaReservation, reportedSearchCount: number) {
+  const charged = reportedSearchCount > 0
+    ? Math.min(reservation.reserved, Math.max(0, Math.round(reportedSearchCount)))
+    : reservation.reserved;
+  const refund = reservation.reserved - charged;
+  if (refund <= 0) return;
+  const window = clientWindows.get(reservation.client);
+  if (window) window.count = Math.max(0, window.count - refund);
+  globalWindow.count = Math.max(0, globalWindow.count - refund);
 }
 
 export async function POST(request: Request) {
@@ -66,12 +89,12 @@ export async function POST(request: Request) {
   } catch {
     return Response.json({ code: "invalid_request" }, { status: 400, headers: noStoreHeaders });
   }
-  const parsed = parsePlaceIntelligenceRequest(body);
+  const parsed = parseFreshVoicesRequest(body);
   if (!parsed) return Response.json({ code: "invalid_request" }, { status: 400, headers: noStoreHeaders });
 
   const now = Date.now();
   prune(now);
-  const key = cacheKey(parsed.name, parsed.area, parsed.languageCode);
+  const key = cacheKey(parsed.name, parsed.area, parsed.languageCode, parsed.intent, parsed.depth);
   const cached = resultCache.get(key);
   if (cached && cached.expiresAt > now) {
     return Response.json(cached.result, { headers: { ...noStoreHeaders, "X-TripCheck-Cache": "hit" } });
@@ -84,7 +107,8 @@ export async function POST(request: Request) {
       return Response.json({ code: "unavailable" }, { status: 502, headers: noStoreHeaders });
     }
   }
-  if (!takeQuota(request, now)) {
+  const reservation = takeQuota(request, now, searchBudget(parsed.depth));
+  if (!reservation) {
     return Response.json({ code: "rate_limited" }, {
       status: 429,
       headers: { ...noStoreHeaders, "Retry-After": "3600" },
@@ -92,9 +116,10 @@ export async function POST(request: Request) {
   }
 
   try {
-    const pending = fetchFreshVoices(parsed, anthropicApiKey).finally(() => inFlight.delete(key));
+    const pending = fetchFreshVoices(parsed, anthropicApiKey, fetch, request.signal).finally(() => inFlight.delete(key));
     inFlight.set(key, pending);
     const result = await pending;
+    settleQuota(reservation, result.searchCount);
     resultCache.set(key, { expiresAt: now + cacheTtlMs, result });
     return Response.json(result, { headers: { ...noStoreHeaders, "X-TripCheck-Cache": "miss" } });
   } catch {

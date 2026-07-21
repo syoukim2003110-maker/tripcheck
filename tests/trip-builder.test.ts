@@ -50,6 +50,30 @@ test("builds the day around a recognised hotel area and ranks alternative bases"
   assert.ok(plan.days.every((day) => day.googleMapsUrl.includes("travelmode=transit")));
 });
 
+test("can use a real recommended hotel even when the user left the hotel field blank", () => {
+  const plan = buildTripFromWishlist("Senso-ji", 1, "balanced", "en", {
+    hotelQuery: "",
+    resolvedBase: {
+      id: "hotel-real-1",
+      input: "Real Hotel",
+      name: "Real Hotel",
+      area: "Asakusa",
+      address: "1 Asakusa, Tokyo",
+      latitude: 35.711,
+      longitude: 139.797,
+      sourceUrl: "https://maps.google.com/real-hotel",
+      verifiedAt: "2026-07-21T00:00:00Z",
+      confidence: "medium",
+      planningDurationMinutes: 0,
+      isAnchor: false,
+    },
+  });
+
+  assert.equal(plan.selectedBase?.name, "Real Hotel");
+  assert.equal(plan.hotelResolved, true);
+  assert.ok(plan.days[0].hotelTravelMinutes !== null);
+});
+
 test("protects airport processing, city transfer and international departure time", () => {
   const plan = buildTripFromWishlist(`Senso-ji\nTokyo Skytree`, 1, "balanced", "en", {
     hotelQuery: "Ueno hotel",
@@ -156,6 +180,18 @@ test("recalculates the day from a user start time and stay duration", () => {
   assert.equal(stop.stop.planningDurationMinutes, 180);
 });
 
+test("softly moves a stop with explicit early-cutoff evidence earlier without overriding reservations", () => {
+  const plan = buildTripFromWishlist("Senso-ji\nTokyo Skytree", 1, "balanced", "en", {
+    earlyVisitStopIds: ["tokyo-skytree"],
+  });
+  const reserved = buildTripFromWishlist("Senso-ji — 09:00 booked\nTokyo Skytree", 1, "balanced", "en", {
+    earlyVisitStopIds: ["tokyo-skytree"],
+  });
+
+  assert.equal(plan.days[0].stops[0].stop.id, "tokyo-skytree");
+  assert.equal(reserved.days[0].stops[0].stop.id, "sensoji");
+});
+
 test("keeps airport arrival as a hard lower bound when a user selects an earlier start", () => {
   const plan = buildTripFromWishlist("Senso-ji", 1, "balanced", "en", {
     arrivalAirport: "HND",
@@ -189,6 +225,56 @@ test("uses fresh transit minutes when supplied while preserving estimated altern
   assert.equal(transit.minutes, 41);
   assert.equal(transit.source, "live");
   assert.ok(options.filter((option) => option.mode !== "transit").every((option) => option.source === "estimate"));
+});
+
+test("uses live walking minutes when Google returns them", () => {
+  const key = routeLegKey("sensoji", "tokyo-skytree");
+  const plan = buildTripFromWishlist("Senso-ji\nTokyo Skytree", 1, "balanced", "en", {
+    liveWalkingMinutes: { [key]: 7 },
+  });
+  const walking = plan.days[0].legs[0].comparison.options.find((option) => option.mode === "walk")!;
+  assert.equal(walking.minutes, 7);
+  assert.equal(walking.source, "live");
+});
+
+test("waits for a verified opening window before starting a visit", () => {
+  const plan = buildTripFromWishlist("Senso-ji", 1, "balanced", "en", {
+    openingWindowsByDay: { sensoji: { 0: [{ openMinutes: 12 * 60, closeMinutes: 17 * 60 }] } },
+  });
+  assert.equal(plan.days[0].stops[0].arrival, "12:00");
+  assert.equal(plan.days[0].stops[0].openingStatus, "verified_open");
+});
+
+test("flags a reservation as late when its verified opening window starts later", () => {
+  const plan = buildTripFromWishlist("Senso-ji — Day 1 10:00 booked", 1, "balanced", "en", {
+    openingWindowsByDay: { sensoji: { 0: [{ openMinutes: 11 * 60, closeMinutes: 17 * 60 }] } },
+  });
+  const stop = plan.days[0].stops[0];
+
+  assert.equal(stop.arrival, "11:00");
+  assert.equal(stop.fixedTime, "10:00");
+  assert.equal(stop.reservationLateMinutes, 60);
+  assert.equal(stop.openingStatus, "verified_open");
+  assert.equal(plan.days[0].reservationConflictCount, 1);
+  assert.equal(plan.days[0].openingConflictCount, 0);
+  assert.equal(plan.scheduleConflictCount, 1);
+});
+
+test("moves a flexible stop to an open trip day and defers it if no day can fit", () => {
+  const moved = buildTripFromWishlist("Senso-ji", 2, "balanced", "en", {
+    openingWindowsByDay: { sensoji: {
+      0: [],
+      1: [{ openMinutes: 9 * 60, closeMinutes: 17 * 60 }],
+    } },
+  });
+  assert.equal(moved.days[0].stops.length, 0);
+  assert.equal(moved.days[1].stops[0].stop.id, "sensoji");
+
+  const unavailable = buildTripFromWishlist("Senso-ji", 2, "balanced", "en", {
+    openingWindowsByDay: { sensoji: { 0: [], 1: [] } },
+  });
+  assert.equal(unavailable.scheduledStopCount, 0);
+  assert.deepEqual(unavailable.deferredUnavailableStops.map((stop) => stop.id), ["sensoji"]);
 });
 
 test("suggests lunch and dinner near the route without changing schedule time", () => {

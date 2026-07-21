@@ -1,4 +1,4 @@
-import type { FreshVoicesResult } from "./fresh-voices.ts";
+import type { FreshVoicesDepth, FreshVoicesIntent, FreshVoicesResult } from "./fresh-voices.ts";
 import type { Locale } from "./i18n.ts";
 import type { RouteStop } from "./route-optimizer.ts";
 import type { PlaceIntelligenceResult } from "./place-intelligence.ts";
@@ -12,7 +12,7 @@ export class PlaceIntelligenceError extends Error {
   }
 }
 
-export async function requestPlaceIntelligence(stop: RouteStop, locale: Locale): Promise<PlaceIntelligenceResult> {
+export async function requestPlaceIntelligence(stop: RouteStop, locale: Locale, signal?: AbortSignal): Promise<PlaceIntelligenceResult> {
   const response = await fetch("/api/place-intelligence", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -21,6 +21,7 @@ export async function requestPlaceIntelligence(stop: RouteStop, locale: Locale):
       area: stop.area,
       languageCode: locale === "ja" ? "ja" : "en",
     }),
+    signal,
   }).catch(() => null);
   if (!response) throw new PlaceIntelligenceError("unavailable");
   const payload = await response.json().catch(() => null) as (PlaceIntelligenceResult & { code?: string }) | null;
@@ -32,7 +33,11 @@ export async function requestPlaceIntelligence(stop: RouteStop, locale: Locale):
   return payload;
 }
 
-export async function requestFreshVoices(stop: Pick<RouteStop, "name" | "area">, locale: Locale): Promise<FreshVoicesResult> {
+export async function requestFreshVoices(
+  stop: Pick<RouteStop, "name" | "area">,
+  locale: Locale,
+  options: { intent?: FreshVoicesIntent; depth?: FreshVoicesDepth; signal?: AbortSignal } = {},
+): Promise<FreshVoicesResult> {
   const response = await fetch("/api/place-intelligence/fresh", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -41,7 +46,10 @@ export async function requestFreshVoices(stop: Pick<RouteStop, "name" | "area">,
       name: stop.name,
       area: stop.area,
       languageCode: locale === "ja" ? "ja" : "en",
+      intent: options.intent ?? "place",
+      depth: options.depth ?? "deep",
     }),
+    signal: options.signal,
   }).catch(() => null);
   if (!response) throw new PlaceIntelligenceError("unavailable");
   const payload = await response.json().catch(() => null) as (FreshVoicesResult & { code?: string }) | null;

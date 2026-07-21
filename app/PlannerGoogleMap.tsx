@@ -23,11 +23,16 @@ type Props = {
   apiKey: string;
   base: RouteStop | null;
   departureTimes: string[];
+  drawRoute?: boolean;
   foodPins: FoodPin[];
+  inspectorOpen: boolean;
   locale: MapLocale;
   onLegDurations: (minutes: Record<string, number>) => void;
+  onSelectFood: (candidateId: string) => void;
+  onSelectHotel?: () => void;
   onSelectStop: (stopId: string | null) => void;
   routeModes: TransportMode[];
+  selectedFoodPinId: string | null;
   selectedStopId: string | null;
   stops: RouteStop[];
 };
@@ -88,6 +93,33 @@ function usableDepartureTime(value: string) {
   return Number.isFinite(deltaDays) && deltaDays >= -7 && deltaDays <= 100 ? date : undefined;
 }
 
+type MapPadding = { top: number; right: number; bottom: number; left: number };
+
+function visibleMapPadding(map: any, inspectorOpen: boolean): MapPadding {
+  const container = map.getDiv() as HTMLElement;
+  const width = Math.max(320, container.clientWidth);
+  const height = Math.max(320, container.clientHeight);
+  const mobile = window.matchMedia("(max-width: 840px)").matches;
+  if (mobile) {
+    const top = 74;
+    const preferredBottom = Math.round(height * (inspectorOpen ? 0.64 : 0.54));
+    return { top, right: 18, bottom: Math.min(preferredBottom, Math.max(100, height - top - 140)), left: 18 };
+  }
+  const left = 442;
+  const right = inspectorOpen ? Math.min(408, Math.max(24, width - left - 160)) : 24;
+  return { top: 92, right, bottom: 72, left };
+}
+
+function fitVisibleBounds(map: any, bounds: any, inspectorOpen: boolean) {
+  map.fitBounds(bounds, visibleMapPadding(map, inspectorOpen));
+}
+
+function focusVisiblePoint(map: any, position: { lat: number; lng: number }, inspectorOpen: boolean) {
+  const padding = visibleMapPadding(map, inspectorOpen);
+  map.panTo(position);
+  map.panBy((padding.right - padding.left) / 2, (padding.bottom - padding.top) / 2);
+}
+
 type Chip = {
   overlay: any;
   stopId: string;
@@ -123,6 +155,10 @@ function createChip(
         event.stopPropagation();
         options.onClick?.();
       });
+    } else {
+      element.disabled = true;
+      element.tabIndex = -1;
+      element.setAttribute("aria-hidden", "true");
     }
     this.getPanes()?.overlayMouseTarget.appendChild(element);
   };
@@ -151,11 +187,16 @@ export default function PlannerGoogleMap({
   apiKey,
   base,
   departureTimes,
+  drawRoute = true,
   foodPins,
+  inspectorOpen,
   locale,
   onLegDurations,
+  onSelectFood,
+  onSelectHotel,
   onSelectStop,
   routeModes,
+  selectedFoodPinId,
   selectedStopId,
   stops,
 }: Props) {
@@ -167,6 +208,9 @@ export default function PlannerGoogleMap({
   const legCacheRef = useRef<Map<string, { path: any[]; minutes: number | null }>>(new Map());
   const renderSeqRef = useRef(0);
   const departureTimesRef = useRef(departureTimes);
+  const inspectorOpenRef = useRef(inspectorOpen);
+  const onSelectFoodRef = useRef(onSelectFood);
+  const onSelectHotelRef = useRef(onSelectHotel);
   const onSelectStopRef = useRef(onSelectStop);
   const onLegDurationsRef = useRef(onLegDurations);
   const [engineState, setEngineState] = useState<"loading" | "js" | "embed">(apiKey ? "loading" : "embed");
@@ -174,14 +218,17 @@ export default function PlannerGoogleMap({
 
   useEffect(() => {
     departureTimesRef.current = departureTimes;
+    inspectorOpenRef.current = inspectorOpen;
+    onSelectFoodRef.current = onSelectFood;
+    onSelectHotelRef.current = onSelectHotel;
     onSelectStopRef.current = onSelectStop;
     onLegDurationsRef.current = onLegDurations;
   });
 
   const displayStops = base ? [base, ...stops] : stops;
   const pathStops = base && stops.length > 0 ? [base, ...stops, base] : stops;
-  const stopsSignature = `${locale}|${displayStops.map((stop) => `${stop.id}@${stop.latitude.toFixed(5)},${stop.longitude.toFixed(5)}`).join("|")}`;
-  const routeSignature = `${stopsSignature}|${routeModes.join(",")}|${departureTimes.join(",")}`;
+  const stopsSignature = `${locale}|${onSelectHotel ? "hotel-on" : "hotel-off"}|${displayStops.map((stop) => `${stop.id}@${stop.latitude.toFixed(5)},${stop.longitude.toFixed(5)}`).join("|")}`;
+  const routeSignature = `${stopsSignature}|${drawRoute ? "route" : "pins"}|${routeModes.join(",")}|${departureTimes.join(",")}`;
   const foodSignature = foodPins.map((pin) => `${pin.id}@${pin.latitude.toFixed(5)},${pin.longitude.toFixed(5)}`).join("|");
 
   useEffect(() => {
@@ -240,13 +287,14 @@ export default function PlannerGoogleMap({
 
     chipsRef.current = displayStops.map((stop, index) => {
       const isHotel = Boolean(base) && index === 0;
+      const selectHotel = onSelectHotelRef.current;
       return createChip(google, map, {
         position: { lat: stop.latitude, lng: stop.longitude },
         badge: isHotel ? "H" : String(base ? index : index + 1),
         name: stop.name,
         kind: isHotel ? "hotel" : "stop",
         stopId: stop.id,
-        onClick: isHotel ? undefined : () => onSelectStopRef.current(stop.id),
+        onClick: isHotel ? (selectHotel ? () => selectHotel() : undefined) : () => onSelectStopRef.current(stop.id),
       });
     });
 
@@ -256,15 +304,15 @@ export default function PlannerGoogleMap({
       return;
     }
     if (displayStops.length === 1) {
-      map.setCenter({ lat: displayStops[0].latitude, lng: displayStops[0].longitude });
+      focusVisiblePoint(map, { lat: displayStops[0].latitude, lng: displayStops[0].longitude }, inspectorOpenRef.current);
       map.setZoom(14);
       return;
     }
     const bounds = new LatLngBounds();
     displayStops.forEach((stop) => bounds.extend({ lat: stop.latitude, lng: stop.longitude }));
-    map.fitBounds(bounds, 88);
+    fitVisibleBounds(map, bounds, inspectorOpenRef.current);
 
-    if (pathStops.length < 2) return;
+    if (!drawRoute || pathStops.length < 2) return;
 
     const legs = pathStops.slice(0, -1).map((from, index) => ({ from, to: pathStops[index + 1], index }));
     const dashedLegs = legs.map(({ from, to }) => new google.maps.Polyline({
@@ -358,7 +406,7 @@ export default function PlannerGoogleMap({
       }
       if (liveLegCount === legs.length) {
         displayStops.forEach((stop) => routeBounds.extend({ lat: stop.latitude, lng: stop.longitude }));
-        map.fitBounds(routeBounds, 88);
+        fitVisibleBounds(map, routeBounds, inspectorOpenRef.current);
       }
       setRouteState(liveLegCount === legs.length ? "live" : liveLegCount > 0 ? "partial" : "fallback");
       if (Object.keys(durations).length > 0) onLegDurationsRef.current(durations);
@@ -372,10 +420,42 @@ export default function PlannerGoogleMap({
   }, [engineState, routeSignature]);
 
   useEffect(() => {
+    if (engineState !== "js" || !engineRef.current) return;
+    const { map } = engineRef.current;
+    const { LatLngBounds } = engineRef.current.maps.core;
+    const fitCurrentView = () => {
+      const points = [
+        ...displayStops.map((stop) => ({ lat: stop.latitude, lng: stop.longitude })),
+        ...foodPins.map((pin) => ({ lat: pin.latitude, lng: pin.longitude })),
+      ];
+      if (points.length === 0) return;
+      if (points.length === 1) {
+        focusVisiblePoint(map, points[0], inspectorOpenRef.current);
+        return;
+      }
+      const bounds = new LatLngBounds();
+      points.forEach((point) => bounds.extend(point));
+      fitVisibleBounds(map, bounds, inspectorOpenRef.current);
+    };
+    const frame = window.requestAnimationFrame(fitCurrentView);
+    window.addEventListener("resize", fitCurrentView);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("resize", fitCurrentView);
+    };
+    // This effect changes only the camera framing; it deliberately does not refetch routes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engineState, stopsSignature, foodSignature, inspectorOpen]);
+
+  useEffect(() => {
     chipsRef.current.forEach((chip) => chip.setSelected(chip.stopId === selectedStopId));
     if (!selectedStopId || engineState !== "js" || !engineRef.current) return;
     const stop = displayStops.find((candidate) => candidate.id === selectedStopId);
-    if (stop) engineRef.current.map.panTo({ lat: stop.latitude, lng: stop.longitude });
+    if (stop) focusVisiblePoint(
+      engineRef.current.map,
+      { lat: stop.latitude, lng: stop.longitude },
+      inspectorOpenRef.current,
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedStopId, engineState, stopsSignature]);
 
@@ -390,15 +470,21 @@ export default function PlannerGoogleMap({
       name: pin.name,
       kind: "food",
       stopId: `food-${pin.id}`,
+      onClick: () => onSelectFoodRef.current(pin.id),
     }));
     if (foodPins.length > 0) {
       const bounds = new LatLngBounds();
       foodPins.forEach((pin) => bounds.extend({ lat: pin.latitude, lng: pin.longitude }));
       displayStops.forEach((stop) => bounds.extend({ lat: stop.latitude, lng: stop.longitude }));
-      map.fitBounds(bounds, 96);
+      fitVisibleBounds(map, bounds, inspectorOpenRef.current);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engineState, foodSignature]);
+
+  useEffect(() => {
+    const selectedId = selectedFoodPinId ? `food-${selectedFoodPinId}` : null;
+    foodChipsRef.current.forEach((chip) => chip.setSelected(chip.stopId === selectedId));
+  }, [selectedFoodPinId, foodSignature]);
 
   const embedPoints = pathStops.length > 0
     ? pathStops.length <= 10 ? pathStops : [...pathStops.slice(0, 9), pathStops.at(-1)!]
@@ -424,7 +510,7 @@ export default function PlannerGoogleMap({
         title={locale === "ja" ? "旅程のGoogleマップ" : "Itinerary on Google Maps"}
       />
       <div className={`planner-google-map${engineState === "js" ? " is-visible" : ""}`} ref={containerRef} />
-      {pathStops.length > 1 ? (
+      {drawRoute && pathStops.length > 1 ? (
         <span aria-live="polite" className={`planner-route-status is-${routeState}`}><i aria-hidden="true" />{statusText}</span>
       ) : null}
     </>
