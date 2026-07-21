@@ -48,6 +48,8 @@ export type PlaceIntelligenceResult = {
     openNow: boolean | null;
     hours: string[];
     regularOpeningPeriods?: unknown[] | null;
+    photoName?: string | null;
+    photoAttribution?: { name: string; uri: string } | null;
     payment: {
       cashOnly: boolean | null;
       creditCards: boolean | null;
@@ -387,7 +389,7 @@ export async function fetchPlaceIntelligence(
     headers: {
       "Content-Type": "application/json",
       "X-Goog-Api-Key": placesApiKey,
-      "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.googleMapsUri,places.websiteUri,places.businessStatus,places.currentOpeningHours,places.regularOpeningHours,places.rating,places.userRatingCount,places.paymentOptions,places.reviews",
+      "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.googleMapsUri,places.websiteUri,places.businessStatus,places.currentOpeningHours,places.regularOpeningHours,places.rating,places.userRatingCount,places.paymentOptions,places.reviews,places.photos",
     },
     body: JSON.stringify({
       textQuery: `${request.name} ${request.area} Japan`,
@@ -409,6 +411,15 @@ export async function fetchPlaceIntelligence(
   const currentHours = raw.currentOpeningHours as { openNow?: boolean; weekdayDescriptions?: unknown } | undefined;
   const regularHours = raw.regularOpeningHours as { openNow?: boolean; weekdayDescriptions?: unknown; periods?: unknown } | undefined;
   const payment = raw.paymentOptions as Record<string, unknown> | undefined;
+  const photos = Array.isArray(raw.photos) ? raw.photos as Array<Record<string, unknown>> : [];
+  const photo = photos.find((candidate) => typeof candidate?.name === "string"
+    && /^places\/[A-Za-z0-9_-]{8,300}\/photos\/[A-Za-z0-9_-]{8,600}$/.test(candidate.name as string)) ?? null;
+  const photoAuthor = Array.isArray(photo?.authorAttributions)
+    ? (photo.authorAttributions as Array<Record<string, unknown>>)[0]
+    : undefined;
+  const photoAttribution = photoAuthor && boundedText(photoAuthor.displayName, 1, 120) && boundedText(photoAuthor.uri, 1, 500)
+    ? { name: boundedText(photoAuthor.displayName, 1, 120)!, uri: boundedText(photoAuthor.uri, 1, 500)! }
+    : null;
   const reviews = Array.isArray(raw.reviews) ? raw.reviews.slice(0, 5).flatMap((review) => {
     if (!review || typeof review !== "object") return [];
     const source = review as Record<string, unknown>;
@@ -440,6 +451,8 @@ export async function fetchPlaceIntelligence(
       openNow: optionalBoolean(currentHours?.openNow ?? regularHours?.openNow),
       hours: (Array.isArray(currentHours?.weekdayDescriptions) ? currentHours?.weekdayDescriptions : regularHours?.weekdayDescriptions) as string[] ?? [],
       regularOpeningPeriods: Array.isArray(regularHours?.periods) ? regularHours.periods : null,
+      photoName: photo ? photo.name as string : null,
+      photoAttribution,
       payment: reconcilePaymentEvidence(payment, reviews),
     },
     reviews,

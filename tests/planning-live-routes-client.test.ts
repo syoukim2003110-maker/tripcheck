@@ -67,3 +67,23 @@ test("requires a real trip date instead of inventing a departure", async () => {
     (error: unknown) => error instanceof LiveRoutesError && error.code === "missing_date",
   );
 });
+
+test("a cancelled build aborts the route prefetch instead of substituting estimates", async () => {
+  const draft = buildTripFromWishlist("Senso-ji\nTokyo Skytree", 1, "balanced", "en", {
+    tripStartDate: "2026-09-14",
+    hotelQuery: "Shinjuku",
+  });
+  const controller = new AbortController();
+  controller.abort();
+  let sawAbortedSignal = false;
+  const fetcher: typeof fetch = async (_input, init) => {
+    sawAbortedSignal = init?.signal?.aborted === true;
+    throw new DOMException("Aborted", "AbortError");
+  };
+
+  await assert.rejects(
+    () => prefetchPlanningRouteDurations(draft, "en", { fetcher, signal: controller.signal, concurrency: 1 }),
+    LiveRoutesError,
+  );
+  assert.equal(sawAbortedSignal, true);
+});

@@ -2,15 +2,6 @@ import type { Locale } from "./i18n.ts";
 
 type Localized = Record<Locale, string>;
 
-export type MockHotel = {
-  id: string;
-  baseId: string;
-  baseQuery: Localized;
-  name: Localized;
-  nightlyPriceJpy: number;
-  stationWalkMinutes: number;
-};
-
 export const fullTripDemo = {
   tripDays: 4,
   tripStartDate: "2026-09-14",
@@ -61,57 +52,3 @@ teamLab Planets — 第1天 15:30 预约 · 必去
   departureTime: "18:30",
   flightKind: "international" as const,
 };
-
-const hotels: MockHotel[] = [
-  {
-    id: "mock-kado-shinjuku",
-    baseId: "base-shinjuku",
-    baseQuery: { en: "Shinjuku hotel", ja: "新宿のホテル", ko: "신주쿠 호텔", zh: "新宿酒店" },
-    name: { en: "KADO Shinjuku", ja: "KADO 新宿", ko: "KADO 신주쿠", zh: "KADO 新宿" },
-    nightlyPriceJpy: 28600,
-    stationWalkMinutes: 6,
-  },
-  {
-    id: "mock-arc-shibuya",
-    baseId: "base-shibuya",
-    baseQuery: { en: "Shibuya hotel", ja: "渋谷のホテル", ko: "시부야 호텔", zh: "涩谷酒店" },
-    name: { en: "ARC Shibuya", ja: "ARC 渋谷", ko: "ARC 시부야", zh: "ARC 涩谷" },
-    nightlyPriceJpy: 31400,
-    stationWalkMinutes: 4,
-  },
-  {
-    id: "mock-maru-tokyo",
-    baseId: "base-tokyo-station",
-    baseQuery: { en: "Tokyo Station hotel", ja: "東京駅のホテル", ko: "도쿄역 호텔", zh: "东京站酒店" },
-    name: { en: "MARU Tokyo", ja: "MARU 東京", ko: "MARU 도쿄", zh: "MARU 东京" },
-    nightlyPriceJpy: 35200,
-    stationWalkMinutes: 7,
-  },
-  {
-    id: "mock-north-ueno",
-    baseId: "base-ueno",
-    baseQuery: { en: "Ueno hotel", ja: "上野のホテル", ko: "우에노 호텔", zh: "上野酒店" },
-    name: { en: "NORTH Ueno", ja: "NORTH 上野", ko: "NORTH 우에노", zh: "NORTH 上野" },
-    nightlyPriceJpy: 22800,
-    stationWalkMinutes: 3,
-  },
-  {
-    id: "mock-kura-asakusa",
-    baseId: "base-asakusa",
-    baseQuery: { en: "Asakusa hotel", ja: "浅草のホテル", ko: "아사쿠사 호텔", zh: "浅草酒店" },
-    name: { en: "KURA Asakusa", ja: "KURA 浅草", ko: "KURA 아사쿠사", zh: "KURA 浅草" },
-    nightlyPriceJpy: 19600,
-    stationWalkMinutes: 5,
-  },
-];
-
-export function getMockHotels(locale: Locale, baseIds: string[]) {
-  return baseIds.flatMap((baseId) => {
-    const hotel = hotels.find((candidate) => candidate.baseId === baseId);
-    return hotel ? [{
-      ...hotel,
-      name: hotel.name[locale],
-      baseQuery: hotel.baseQuery[locale],
-    }] : [];
-  });
-}

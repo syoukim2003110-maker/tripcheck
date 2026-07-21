@@ -18,6 +18,7 @@ export type BuiltPlanStop = {
   mealKind: MealKind | null;
   priority: StopPriority;
   fixedTime: string | null;
+  isReservation: boolean;
   reservationLateMinutes: number;
   openingStatus: "verified_open" | "unknown" | "conflict";
   crowd: CrowdOutlook | null;
@@ -89,6 +90,7 @@ export type WishlistStopConstraint = {
   fixedTime: string | null;
   fixedTimeMinutes: number | null;
   isReservation: boolean;
+  stayMinutes: number | null;
 };
 
 export type AirportCode = "none" | "HND" | "NRT" | "KIX" | "ITM" | "NGO" | "FUK" | "CTS" | "OKA";
@@ -265,8 +267,16 @@ function parseWishlistConstraint(line: string): WishlistStopConstraint {
     ?? line.match(/(\d{1,2})\s*日目/)
     ?? line.match(/(\d{1,2})\s*일차/)
     ?? line.match(/第?\s*(\d{1,2})\s*天/);
-  const timeMatch = line.match(/(?:@\s*|\b)((?:[01]?\d|2[0-3]):([0-5]\d))\b/);
-  const fixedTime = isReservation && timeMatch ? timeMatch[1].padStart(5, "0") : null;
+  // "9:00-17:00" style pairs read as opening hours, not a requested visit
+  // time, so a range suppresses time pinning entirely.
+  const timeRangePattern = /(?:[01]?\d|2[0-3]):[0-5]\d\s*[-–—~〜]\s*(?:[01]?\d|2[0-3]):[0-5]\d/;
+  const timeMatch = timeRangePattern.test(line) ? null : line.match(/(?:@\s*|\b)((?:[01]?\d|2[0-3]):([0-5]\d))\b/);
+  // A bare time is a requested visit time; the reservation markers only add the
+  // stronger "booked" meaning on top of it.
+  const fixedTime = timeMatch ? timeMatch[1].padStart(5, "0") : null;
+  const stayMatch = line.match(/(?:滞在|\bstay)\s*(\d{1,3})\s*(?:分|min(?:ute)?s?\b)/i)
+    ?? line.match(/(\d{1,3})\s*分\s*滞在/);
+  const stayMinutes = stayMatch ? Math.min(480, Math.max(15, Number(stayMatch[1]))) : null;
   const priority: StopPriority = mustPattern.test(line) || isReservation
     ? "must"
     : optionalPattern.test(line) ? "optional" : "normal";
@@ -277,6 +287,7 @@ function parseWishlistConstraint(line: string): WishlistStopConstraint {
     fixedTime,
     fixedTimeMinutes: fixedTime ? clockMinutes(fixedTime) : null,
     isReservation,
+    stayMinutes,
   };
 }
 
@@ -289,6 +300,7 @@ function mergeConstraints(current: WishlistStopConstraint | undefined, next: Wis
     fixedTime: next.fixedTime ?? current.fixedTime,
     fixedTimeMinutes: next.fixedTimeMinutes ?? current.fixedTimeMinutes,
     isReservation: current.isReservation || next.isReservation,
+    stayMinutes: next.stayMinutes ?? current.stayMinutes,
   };
 }
 
@@ -700,6 +712,7 @@ const defaultConstraint: WishlistStopConstraint = {
   fixedTime: null,
   fixedTimeMinutes: null,
   isReservation: false,
+  stayMinutes: null,
 };
 
 function applyFixedDays(
@@ -968,6 +981,7 @@ function buildDay(
       mealKind: null,
       priority: constraint.priority,
       fixedTime: constraint.fixedTime,
+      isReservation: constraint.isReservation,
       reservationLateMinutes,
       openingStatus: opening.status,
       crowd: buildCrowdOutlook(date, arrival, stop),
@@ -1032,13 +1046,23 @@ export function buildTripFromWishlist(
       continue;
     }
     for (const stop of resolved) {
-      const durationOverride = context.durationOverrides?.[stop.id];
-      const plannedStop = typeof durationOverride === "number" && Number.isFinite(durationOverride) && durationOverride >= 15 && durationOverride <= 480
-        ? { ...stop, planningDurationMinutes: Math.round(durationOverride) }
-        : stop;
-      if (!knownStops.some((candidate) => candidate.id === plannedStop.id)) knownStops.push(plannedStop);
+      if (!knownStops.some((candidate) => candidate.id === stop.id)) knownStops.push(stop);
       constraints.set(stop.id, mergeConstraints(constraints.get(stop.id), parsedConstraint));
     }
+  }
+
+  // Durations resolve from the merged constraints so a stay marker still
+  // applies when the same place appears on more than one line. A per-stop edit
+  // (or an evidence buffer) wins over the wishlist's own "滞在90分 / stay 90
+  // min" marker, which wins over the estimate.
+  for (let index = 0; index < knownStops.length; index += 1) {
+    const stop = knownStops[index];
+    const durationOverride = context.durationOverrides?.[stop.id];
+    const stayMinutes = constraints.get(stop.id)?.stayMinutes ?? null;
+    const effectiveDuration = typeof durationOverride === "number" && Number.isFinite(durationOverride) && durationOverride >= 15 && durationOverride <= 480
+      ? Math.round(durationOverride)
+      : stayMinutes;
+    if (effectiveDuration !== null) knownStops[index] = { ...stop, planningDurationMinutes: effectiveDuration };
   }
 
   const paceCapacity = pace === "relaxed" ? 3 : pace === "fast" ? 5 : 4;

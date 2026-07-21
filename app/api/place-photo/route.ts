@@ -2,6 +2,11 @@ const noStoreHeaders = { "Cache-Control": "no-store, max-age=0" };
 const photoNamePattern = /^places\/[A-Za-z0-9_-]{8,300}\/photos\/[A-Za-z0-9_-]{8,600}$/;
 
 export async function GET(request: Request) {
+  // Browsers label hotlinked images as cross-site; blocking them stops other
+  // sites from burning this deployment's Places photo quota.
+  if (request.headers.get("Sec-Fetch-Site") === "cross-site") {
+    return new Response("Forbidden", { status: 403, headers: noStoreHeaders });
+  }
   const apiKey = process.env.GOOGLE_PLACES_API_KEY;
   if (!apiKey) return new Response("Photo service is not configured", { status: 503, headers: noStoreHeaders });
 

@@ -152,3 +152,27 @@ test("neutralizes listing and review claims when they disagree about cards", asy
   assert.equal(result.place.payment.observations.some(({ method }) => method === "card"), false);
   assert.equal(result.analysis.signals.some(({ kind }) => kind === "payment"), false);
 });
+
+test("returns a proxyable place photo with its attribution and rejects malformed names", async () => {
+  const build = (photos: unknown) => fetchPlaceIntelligence(
+    { name: "Sample Cafe", area: "Tokyo", languageCode: "en" },
+    "places-key",
+    null,
+    (async () => Response.json({ places: [{
+      displayName: { text: "Sample Cafe" },
+      googleMapsUri: "https://maps.google.com/sample",
+      photos,
+    }] })) as typeof fetch,
+  );
+
+  const withPhoto = await build([{
+    name: "places/abcd1234efgh/photos/photo5678ijkl",
+    authorAttributions: [{ displayName: "A local guide", uri: "https://maps.google.com/contrib/9" }],
+  }]);
+  assert.equal(withPhoto.place.photoName, "places/abcd1234efgh/photos/photo5678ijkl");
+  assert.deepEqual(withPhoto.place.photoAttribution, { name: "A local guide", uri: "https://maps.google.com/contrib/9" });
+
+  const malformed = await build([{ name: "https://evil.example.com/injected" }]);
+  assert.equal(malformed.place.photoName, null);
+  assert.equal(malformed.place.photoAttribution, null);
+});

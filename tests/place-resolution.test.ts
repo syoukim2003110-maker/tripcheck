@@ -48,3 +48,9 @@ test("builds a nationwide itinerary from fresh runtime place results", () => {
 test("rejects oversized resolver batches", () => {
   assert.equal(parsePlaceResolutionRequest({ queries: Array.from({ length: 13 }, (_, index) => `place ${index}`), hotelQuery: null, languageCode: "en" }), null);
 });
+
+test("strips stay-duration and bare-time markers before querying Google", () => {
+  const payload = buildPlaceResolutionPayload("奈良公園 — 滞在90分\n東大寺 — 15:30\nNara Park stay 45 min", "", "ja");
+
+  assert.deepEqual(payload.queries, ["奈良公園", "東大寺", "Nara Park"]);
+});

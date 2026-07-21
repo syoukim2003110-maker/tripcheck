@@ -136,6 +136,32 @@ export function buildFoodRankingPayload(
   };
 }
 
+// One evidence-only sentence for the food card. Composes only fields Google
+// actually returned (rating, review volume, distance, planned-open) so the
+// reason never asserts anything a source did not.
+export function foodCandidateReason(candidate: FoodCandidate, locale: Locale): string {
+  const ja = locale === "ja";
+  const parts: string[] = [];
+  if (candidate.rating !== null && candidate.userRatingCount !== null && candidate.userRatingCount >= 50) {
+    const count = candidate.userRatingCount.toLocaleString(ja ? "ja-JP" : "en-US");
+    parts.push(ja
+      ? `★${candidate.rating.toFixed(1)}・口コミ${count}件と評価が安定`
+      : `a steady ★${candidate.rating.toFixed(1)} across ${count} reviews`);
+  }
+  if (typeof candidate.distanceMeters === "number" && candidate.distanceMeters <= 1_500) {
+    const walkMinutes = Math.max(1, Math.round(candidate.distanceMeters / 80));
+    parts.push(ja
+      ? `予定の流れから徒歩約${walkMinutes}分`
+      : `about a ${walkMinutes}-minute walk from the day's route`);
+  }
+  if (candidate.plannedOpen === true) {
+    parts.push(ja ? "食事の時間帯も営業予定" : "open for this meal time");
+  }
+  if (parts.length === 0) return candidate.address;
+  const sentence = parts.slice(0, 2).join(ja ? "、" : ", ");
+  return ja ? `${sentence}。` : `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}.`;
+}
+
 export function foodSearchLinks(query: string, area: string, locale: Locale) {
   const languageCode = locale === "ja" ? "ja" : "en";
   const phrase = query.trim() || defaultFoodDiscoveryQuery(languageCode);

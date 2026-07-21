@@ -3,11 +3,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import PlannerGoogleMap, { type FoodPin } from "./PlannerGoogleMap";
 import {
+  foodCandidateReason,
   foodRecommendationRequestKey,
   foodSearchLinks,
   reconcileFoodRecommendationSlots,
   requestFoodRecommendations,
 } from "../lib/food-recommendations-client";
+import { requestLinkPreview } from "../lib/link-preview-client";
 import { defaultFoodDiscoveryQuery, type FoodCandidate } from "../lib/google-food";
 import { requestHotelRecommendations } from "../lib/hotel-recommendations-client";
 import type { HotelCandidate } from "../lib/google-hotels";
@@ -55,6 +57,7 @@ type BuildProgress = {
   publicCount: number;
 };
 type Inspector = { kind: "stop"; stopId: string } | { kind: "food"; slotId: string; candidateId?: string } | { kind: "hotel" } | null;
+type SourcePreviewState = { status: "loading" | "ready" | "failed"; imageUrl: string | null };
 
 const emptyFreshState: FreshState = { status: "idle", result: null };
 const emptyHotelState: HotelState = { status: "idle", candidates: [], selectedId: null, fresh: emptyFreshState };
@@ -103,17 +106,26 @@ async function mapWithConcurrency<T, R>(
   return results.sort((a, b) => a.index - b.index).map(({ value }) => value);
 }
 
-const airportOptions: Array<{ value: AirportCode; label: string }> = [
-  { value: "none", label: "—" },
-  { value: "HND", label: "HND · Haneda" },
-  { value: "NRT", label: "NRT · Narita" },
-  { value: "KIX", label: "KIX · Kansai" },
-  { value: "ITM", label: "ITM · Itami" },
-  { value: "NGO", label: "NGO · Chubu" },
-  { value: "FUK", label: "FUK · Fukuoka" },
-  { value: "CTS", label: "CTS · New Chitose" },
-  { value: "OKA", label: "OKA · Naha" },
-];
+const airportNames: Record<Exclude<AirportCode, "none">, { ja: string; en: string }> = {
+  HND: { ja: "羽田空港", en: "Haneda" },
+  NRT: { ja: "成田空港", en: "Narita" },
+  KIX: { ja: "関西国際空港", en: "Kansai" },
+  ITM: { ja: "伊丹空港", en: "Itami" },
+  NGO: { ja: "中部国際空港", en: "Chubu" },
+  FUK: { ja: "福岡空港", en: "Fukuoka" },
+  CTS: { ja: "新千歳空港", en: "New Chitose" },
+  OKA: { ja: "那覇空港", en: "Naha" },
+};
+
+function airportOptionsFor(locale: PlannerLocale): Array<{ value: AirportCode; label: string }> {
+  return [
+    { value: "none" as const, label: "—" },
+    ...(Object.keys(airportNames) as Array<Exclude<AirportCode, "none">>).map((code) => ({
+      value: code,
+      label: `${code} · ${airportNames[code][locale]}`,
+    })),
+  ];
+}
 
 const ui = {
   ja: {
@@ -184,18 +196,29 @@ const ui = {
     foodNote: "Googleの評価・口コミ量・距離・営業表示をロジックで比較。公開SNSは引用できた情報だけを補足しています。",
     foodFresh: (count: number) => `最近の公開情報 ${count}件`,
     hotelChip: "ホテル",
-    hotelCandidate: "おすすめの実在ホテル",
-    hotelAlternatives: "ほかの実在候補",
+    hotelCandidate: "おすすめのホテル",
+    hotelAlternatives: "ほかの候補",
     hotelNoAvailability: "料金・空室は宿泊サイトで最終確認してください。",
+    hotelUnavailable: "ホテル候補を取得できませんでした。",
+    hotelSearch: "Google Mapsでホテルを探す",
     publicSources: "公開SNS・記事の出典",
     reviewReport: "口コミでの支払い報告",
     reservation: "予約",
+    timePinned: "時間指定",
+    lateBy: (minutes: number) => `指定時刻に約${minutes}分間に合わない見込み`,
+    lateShort: (minutes: number) => `${minutes}分遅れ`,
     must: "必須",
     optional: "任意",
+    stayLabel: "滞在時間",
+    stayAuto: "自動",
+    dayStart: "開始時刻",
     estimated: "移動時間は目安。Googleの実測が届くと自動でなじみます。",
     openingAdjusted: "営業時間に合わせて訪問時刻を調整",
     openingConflict: "営業時間と予約時刻を再確認",
-    unavailableStops: (count: number) => `休業・営業時間のため ${count}か所を予定から外しました`,
+    excludedHeading: "予定から外した場所",
+    excludedClosed: "休業・営業時間が合わない",
+    excludedPace: "ペースに収まらない任意の場所",
+    overCapacity: "1日に収まりきらない日があります。日数を増やすか、任意の場所を減らすと現実的になります。",
     publicEvidenceFound: (count: number) => `公開SNS・記事 ${count}件を確認`,
     publicEvidenceMissing: "公開SNSは確認できず、Google情報で作成",
     routeEvidenceFound: (count: number) => `Google実測 ${count}区間`,
@@ -214,9 +237,12 @@ const ui = {
     plannedOpen: "食事時間に営業予定",
     closedNow: "営業時間外の表示",
     hoursUnknown: "営業時間は不明",
+    dayHours: (value: string) => `この日の営業 ${value}`,
+    dayClosed: "この日は休業の表示",
     cashOnly: "現金のみ",
     cardsAccepted: "カード可",
     noWebsite: "公式サイト未掲載",
+    photoLabel: "写真:",
     recentVoices: "最近の口コミ（生の声）",
     freshHeading: "ネットの近況",
     freshLoading: "公開情報を探しています…",
@@ -225,7 +251,7 @@ const ui = {
     freshSource: { social: "SNS", news: "ニュース", blog: "体験記", web: "公開情報" },
     freshAgeUnknown: "更新日不明",
     freshCheckedAt: "確認",
-    freshAiRole: "AIは公開情報の検索・要約だけ。日程と移動はルール計算です。",
+    freshAiRole: "Claudeが公開の投稿・記事だけを検索して要約します（非公開・ログイン限定の投稿は対象外）。日程と移動はルール計算です。",
     official: "公式サイト",
     latestX: "Xで最新の声",
     instagram: "Instagramで探す",
@@ -233,6 +259,7 @@ const ui = {
     rulesAudited: "取得情報を自動整理",
     crowd: { quiet: "静かめ", moderate: "ふつう", busy: "混みやすい", veryBusy: "かなり混む" },
     crowdWeekend: "・週末",
+    crowdForecast: "（予測）",
     close: "閉じる",
   },
   en: {
@@ -303,18 +330,29 @@ const ui = {
     foodNote: "Ranked by Google rating strength, review volume, distance and open status. Public social evidence is shown only when a cited page was found.",
     foodFresh: (count: number) => `${count} recent public signals`,
     hotelChip: "Hotel",
-    hotelCandidate: "Recommended real hotel",
-    hotelAlternatives: "Other real options",
+    hotelCandidate: "Recommended hotel",
+    hotelAlternatives: "Other options",
     hotelNoAvailability: "Confirm price and availability with a booking provider.",
+    hotelUnavailable: "Hotel options didn't load.",
+    hotelSearch: "Search hotels on Google Maps",
     publicSources: "Public social and article sources",
     reviewReport: "Payment reported in a review",
     reservation: "Booked",
+    timePinned: "Timed",
+    lateBy: (minutes: number) => `Runs about ${minutes} min past the set time`,
+    lateShort: (minutes: number) => `${minutes} min late`,
     must: "Must",
     optional: "Optional",
+    stayLabel: "Stay",
+    stayAuto: "Auto",
+    dayStart: "Start time",
     estimated: "Times are estimates — live Google routes blend in automatically.",
     openingAdjusted: "Timed to verified opening hours",
     openingConflict: "Recheck opening hours and booking time",
-    unavailableStops: (count: number) => `${count} place${count === 1 ? "" : "s"} left out for closure or opening hours`,
+    excludedHeading: "Left out of this plan",
+    excludedClosed: "closed or hours don't fit",
+    excludedPace: "optional stop beyond this pace",
+    overCapacity: "Some days hold more than this pace fits. Add a day or trim optional stops.",
     publicEvidenceFound: (count: number) => `${count} public sources checked`,
     publicEvidenceMissing: "Public social sources unavailable · built from Google evidence",
     routeEvidenceFound: (count: number) => `${count} Google-measured route legs`,
@@ -333,9 +371,12 @@ const ui = {
     plannedOpen: "Open for this meal time",
     closedNow: "Listed closed now",
     hoursUnknown: "Hours unknown",
+    dayHours: (value: string) => `Hours this day: ${value}`,
+    dayClosed: "Listed closed on this day",
     cashOnly: "Cash only",
     cardsAccepted: "Cards accepted",
     noWebsite: "No official site",
+    photoLabel: "Photo:",
     recentVoices: "Recent reviews — real voices",
     freshHeading: "Latest public signals",
     freshLoading: "Searching public sources…",
@@ -344,7 +385,7 @@ const ui = {
     freshSource: { social: "Social", news: "News", blog: "Firsthand", web: "Web" },
     freshAgeUnknown: "Date unknown",
     freshCheckedAt: "Checked",
-    freshAiRole: "AI is used only to search and summarize public sources. Schedule and routing use rules.",
+    freshAiRole: "Claude searches and summarizes public posts only — private or login-only posts can't be read. Schedule and routing stay rule-based.",
     official: "Official site",
     latestX: "Latest on X",
     instagram: "Search Instagram",
@@ -352,9 +393,15 @@ const ui = {
     rulesAudited: "Evidence organized automatically",
     crowd: { quiet: "Quiet", moderate: "Steady", busy: "Busy", veryBusy: "Very busy" },
     crowdWeekend: " · weekend",
+    crowdForecast: " · forecast",
     close: "Close",
   },
 } as const;
+
+function formatWindowClock(minutes: number) {
+  const normalized = ((minutes % 1440) + 1440) % 1440;
+  return `${Math.floor(normalized / 60)}:${String(normalized % 60).padStart(2, "0")}`;
+}
 
 function modeIcon(mode: "walk" | "transit" | "taxi") {
   if (mode === "walk") return "🚶";
@@ -471,12 +518,16 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   const [freshVoices, setFreshVoices] = useState<Record<string, FreshState>>({});
   const [hotelState, setHotelState] = useState<HotelState>(emptyHotelState);
   const [durationOverrides, setDurationOverrides] = useState<Record<string, number>>({});
+  const [userStayMinutes, setUserStayMinutes] = useState<Record<string, number>>({});
   const [earlyVisitStopIds, setEarlyVisitStopIds] = useState<string[]>([]);
+  const [dayStartTimes, setDayStartTimes] = useState<Record<number, string>>({});
+  const [sourcePreviews, setSourcePreviews] = useState<Record<string, SourcePreviewState>>({});
   const [previewStops, setPreviewStops] = useState<RouteStop[]>([]);
   const [buildProgress, setBuildProgress] = useState<BuildProgress>(initialBuildProgress);
   const buildRunRef = useRef(0);
   const buildAbortRef = useRef<AbortController | null>(null);
   const text = ui[locale];
+  const airportChoices = airportOptionsFor(locale);
 
   useEffect(() => {
     document.documentElement.lang = locale;
@@ -505,12 +556,14 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     mealPlan,
     resolvedStops,
     resolvedBase,
-    durationOverrides,
+    dayStartTimes,
+    // Evidence buffers first, the user's explicit stay edits on top.
+    durationOverrides: { ...durationOverrides, ...userStayMinutes },
     earlyVisitStopIds,
     liveTransitMinutes: liveTransit,
     liveWalkingMinutes: liveWalking,
     openingWindowsByDay,
-  }) : null, [arrivalAirport, arrivalTime, departureAirport, departureTime, durationOverrides, earlyVisitStopIds, hasPlan, hotelQuery, itinerary, liveTransit, liveWalking, locale, mealPlan, openingWindowsByDay, pace, resolvedBase, resolvedStops, tripDays, tripStartDate]);
+  }) : null, [arrivalAirport, arrivalTime, dayStartTimes, departureAirport, departureTime, durationOverrides, earlyVisitStopIds, hasPlan, hotelQuery, itinerary, liveTransit, liveWalking, locale, mealPlan, openingWindowsByDay, pace, resolvedBase, resolvedStops, tripDays, tripStartDate, userStayMinutes]);
 
   const day = plan?.days[activeDay] ?? null;
   const base = day ? plan?.selectedBase ?? null : null;
@@ -586,6 +639,38 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     setInspector(stopId ? { kind: "stop", stopId } : null);
   }, []);
 
+  // A photo that 404s must not leave a broken frame (17.4). The node stays in
+  // the DOM (hidden) so React's reconciliation is never fighting a manually
+  // removed element; the parent class lets CSS show the place-type icon.
+  const handlePhotoError = useCallback((event: React.SyntheticEvent<HTMLImageElement>) => {
+    const image = event.currentTarget;
+    image.style.display = "none";
+    image.parentElement?.classList.add("is-photo-fallback");
+  }, []);
+
+  // Open Graph thumbnails for public-source cards, fetched lazily when the
+  // source list is opened and cached for the session. Failures fall back to
+  // the media-kind badge that is always rendered.
+  const requestedSourcePreviewsRef = useRef<Set<string>>(new Set());
+  const ensureSourcePreviews = useCallback((urls: string[]) => {
+    const missing = urls.filter((url) => url.startsWith("https://") && !requestedSourcePreviewsRef.current.has(url)).slice(0, 3);
+    if (missing.length === 0) return;
+    for (const url of missing) requestedSourcePreviewsRef.current.add(url);
+    setSourcePreviews((state) => ({
+      ...state,
+      ...Object.fromEntries(missing.map((url) => [url, { status: "loading", imageUrl: null } satisfies SourcePreviewState])),
+    }));
+    for (const url of missing) {
+      void requestLinkPreview(url)
+        .then((preview) => {
+          setSourcePreviews((state) => ({ ...state, [url]: { status: "ready", imageUrl: preview.imageUrl } }));
+        })
+        .catch(() => {
+          setSourcePreviews((state) => ({ ...state, [url]: { status: "failed", imageUrl: null } }));
+        });
+    }
+  }, []);
+
   const handleSelectFoodPin = useCallback((candidateId: string) => {
     if (!activeFoodSlot) return;
     setInspector({ kind: "food", slotId: activeFoodSlot.id, candidateId });
@@ -593,28 +678,20 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
 
   function changeLocale(next: PlannerLocale) {
     if (next === locale) return;
-    buildAbortRef.current?.abort();
-    buildAbortRef.current = null;
-    buildRunRef.current += 1;
-    setIsBuilding(false);
-    setHasPlan(false);
-    setResolvedStops([]);
-    setResolvedBase(null);
-    setPreviewStops([]);
+    // Switching language must not throw away the built plan or its evidence
+    // (coordinates, measured routes, reviews, public sources). Labels and the
+    // schedule text rebuild instantly from the same data; already-fetched
+    // evidence keeps the language it was collected in until re-checked.
+    if (isBuilding) {
+      buildAbortRef.current?.abort();
+      buildAbortRef.current = null;
+      buildRunRef.current += 1;
+      setIsBuilding(false);
+      setPreviewStops([]);
+      setBuildProgress(initialBuildProgress);
+    }
     setInspector(null);
     setLocale(next);
-    setFoodSearches({});
-    setIntelligence({});
-    setFreshVoices({});
-    setHotelState(emptyHotelState);
-    setDurationOverrides({});
-    setEarlyVisitStopIds([]);
-    setLiveTransit({});
-    setLiveWalking({});
-    setOpeningWindowsByDay({});
-    setPlaceWarning(false);
-    setActiveDay(0);
-    setBuildProgress(initialBuildProgress);
     window.history.replaceState({}, "", next === "ja" ? "/ja" : "/");
   }
 
@@ -642,7 +719,9 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     setFreshVoices({});
     setHotelState(emptyHotelState);
     setDurationOverrides({});
+    setUserStayMinutes({});
     setEarlyVisitStopIds([]);
+    setDayStartTimes({});
     setPreviewStops([]);
     setLiveTransit({});
     setLiveWalking({});
@@ -673,7 +752,9 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       setFreshVoices({});
       setHotelState({ ...emptyHotelState, status: "loading" });
       setDurationOverrides({});
+      setUserStayMinutes({});
       setEarlyVisitStopIds([]);
+      setDayStartTimes({});
       setPreviewStops([]);
       setLiveTransit({});
       setLiveWalking({});
@@ -750,8 +831,18 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
         if (cancelled()) return;
         const recommended = hotelResponse.candidates[0] ?? null;
         const matchedExact = resolvedHotel ? matchingHotelCandidate(resolvedHotel, hotelResponse.candidates) : null;
-        const selected = shouldUseRecommendedHotel(hotelQuery) ? recommended : matchedExact;
-        if (selected && shouldUseRecommendedHotel(hotelQuery)) {
+        // A typed hotel name can still match a Google candidate directly, but
+        // only when place resolution failed — once a resolved hotel is the
+        // routing base, the displayed hotel must never diverge from it.
+        const normalizedQuery = normalizeHotelName(hotelQuery);
+        const matchedByQuery = !shouldUseRecommendedHotel(hotelQuery) && !resolvedHotel && normalizedQuery.length >= 3
+          ? hotelResponse.candidates.find((candidate) => {
+            const candidateName = normalizeHotelName(candidate.name);
+            return candidateName.length >= 3 && (candidateName.includes(normalizedQuery) || normalizedQuery.includes(candidateName));
+          }) ?? null
+          : null;
+        const selected = shouldUseRecommendedHotel(hotelQuery) ? recommended : matchedExact ?? matchedByQuery;
+        if (selected && (shouldUseRecommendedHotel(hotelQuery) || !resolvedHotel)) {
           effectiveBase = hotelAsResolvedBase(selected, hotelQuery, hotelAnchor.area, hotelResponse.fetchedAt);
         }
         const candidates = selected
@@ -1132,7 +1223,9 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     setFreshVoices({});
     setHotelState(emptyHotelState);
     setDurationOverrides({});
+    setUserStayMinutes({});
     setEarlyVisitStopIds([]);
+    setDayStartTimes({});
     setPreviewStops([]);
     setLiveTransit({});
     setLiveWalking({});
@@ -1158,7 +1251,9 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     setFreshVoices({});
     setHotelState(emptyHotelState);
     setDurationOverrides({});
+    setUserStayMinutes({});
     setEarlyVisitStopIds([]);
+    setDayStartTimes({});
     setPreviewStops([]);
     setLiveTransit({});
     setLiveWalking({});
@@ -1183,10 +1278,9 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     try {
       const response = await requestFoodRecommendations(slot, locale);
       if (stale()) return;
-      const next: FoodState = { status: "ready", query, candidates: response.candidates, notes: {}, fresh: {} };
+      const next: FoodState = { status: "ready", query, candidates: response.candidates.slice(0, 2), notes: {}, fresh: {} };
       setFoodSearches((current) => ({ ...current, [slot.id]: next }));
-      const candidate = response.candidates[0];
-      if (candidate) {
+      for (const candidate of next.candidates) {
         void requestFreshVoices({ name: candidate.name, area: candidate.address.slice(0, 100) || slot.area }, locale, { intent: "food", depth: "quick" })
           .then((result) => {
             if (stale()) return;
@@ -1242,10 +1336,11 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     if (cachedFresh?.status === "ready") return;
     setFreshVoices((current) => ({ ...current, [stop.id]: { status: "loading", result: null } }));
     try {
+      // One search per ordinary target; only the selected hotel earns a deeper check.
       const result = await requestFreshVoices({
         name: placeResult.place.name,
         area: placeResult.place.address.slice(0, 100) || stop.area,
-      }, locale);
+      }, locale, { intent: "place", depth: "quick" });
       if (stale()) return;
       setFreshVoices((current) => ({ ...current, [stop.id]: { status: "ready", result } }));
     } catch {
@@ -1354,17 +1449,48 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
             </header>
             <div className="planner-inspector-meta">
               <span>{selectedBuiltStop.arrival}–{selectedBuiltStop.departure}</span>
-              {selectedBuiltStop.fixedTime ? <span className="is-booked">{text.reservation} {selectedBuiltStop.fixedTime}</span> : null}
+              {selectedBuiltStop.fixedTime ? <span className="is-booked">{selectedBuiltStop.isReservation ? text.reservation : text.timePinned} {selectedBuiltStop.fixedTime}</span> : null}
+              {selectedBuiltStop.reservationLateMinutes > 0 ? <span className="is-booked">{text.lateBy(selectedBuiltStop.reservationLateMinutes)}</span> : null}
               {selectedBuiltStop.priority === "must" ? <span className="is-must">{text.must}</span> : null}
               {selectedBuiltStop.priority === "optional" ? <span className="is-optional">{text.optional}</span> : null}
               {selectedBuiltStop.openingStatus === "verified_open" ? <span>{text.openingAdjusted}</span> : null}
               {selectedBuiltStop.openingStatus === "conflict" ? <span className="is-booked">{text.openingConflict}</span> : null}
               {selectedBuiltStop.crowd ? (
                 <span className="is-crowd">
-                  {text.crowd[selectedBuiltStop.crowd.level]}{selectedBuiltStop.crowd.isWeekend ? text.crowdWeekend : ""}
+                  {text.crowd[selectedBuiltStop.crowd.level]}{selectedBuiltStop.crowd.isWeekend ? text.crowdWeekend : ""}{text.crowdForecast}
                 </span>
               ) : null}
             </div>
+            <label className="planner-stay-edit">
+              <span>{text.stayLabel}</span>
+              <select
+                onChange={(event) => {
+                  const value = event.target.value;
+                  const stopId = selectedBuiltStop.stop.id;
+                  // Only the user's own edits live here; clearing back to auto
+                  // re-exposes the evidence buffer kept in durationOverrides.
+                  setUserStayMinutes((current) => {
+                    if (!value) {
+                      if (!(stopId in current)) return current;
+                      const next = { ...current };
+                      delete next[stopId];
+                      return next;
+                    }
+                    return { ...current, [stopId]: Number(value) };
+                  });
+                }}
+                value={String(userStayMinutes[selectedBuiltStop.stop.id] ?? "")}
+              >
+                <option value="">
+                  {userStayMinutes[selectedBuiltStop.stop.id] == null
+                    ? `${text.stayAuto} · ${text.minutes(selectedBuiltStop.stop.planningDurationMinutes)}`
+                    : text.stayAuto}
+                </option>
+                {[30, 45, 60, 90, 120, 150, 180, 240].map((minutes) => (
+                  <option key={minutes} value={minutes}>{text.minutes(minutes)}</option>
+                ))}
+              </select>
+            </label>
             <div className="planner-inspector-actions">
               <button
                 className="planner-check-button"
@@ -1381,22 +1507,47 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
             {selectedIntel?.status === "ready" && selectedIntel.result ? (() => {
               const intel = selectedIntel.result;
               const listedPayment = paymentLabel(intel, locale);
+              const dayWindows = day?.date
+                ? googleOpeningWindowsForDate({
+                  businessStatus: intel.place.businessStatus,
+                  regularOpeningPeriods: intel.place.regularOpeningPeriods,
+                }, day.date)
+                : null;
+              const dayHoursText = dayWindows && dayWindows.length > 0
+                ? dayWindows.map((window) => `${formatWindowClock(window.openMinutes)}–${formatWindowClock(window.closeMinutes)}`).join(" / ")
+                : null;
               return (
                 <section className="planner-intel-card" aria-label={`${selectedBuiltStop.stop.name} · ${text.fieldEvidence}`}>
                   <header>
                     <h3>{text.fieldEvidence}</h3>
                     <small>{intel.analyzedBy === "anthropic" ? text.aiAudited : text.rulesAudited}</small>
                   </header>
+                  {intel.place.photoName ? (
+                    <a className="planner-intel-hero" href={intel.place.googleMapsUrl} key={intel.place.photoName} rel="noreferrer" target="_blank">
+                      {/* Google place photos are proxied at request time and are not stored. */}
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img alt={intel.place.name} loading="lazy" onError={handlePhotoError} src={`/api/place-photo?name=${encodeURIComponent(intel.place.photoName)}`} />
+                    </a>
+                  ) : null}
+                  {intel.place.photoAttribution ? (
+                    <a className="planner-photo-credit" href={intel.place.photoAttribution.uri} rel="noreferrer" target="_blank">{text.photoLabel} {intel.place.photoAttribution.name}</a>
+                  ) : null}
                   <div className="planner-intel-facts">
                     <span className={intel.place.openNow === false ? "is-warning" : ""}>
                       {intel.place.openNow === true ? text.openNow : intel.place.openNow === false ? text.closedNow : text.hoursUnknown}
                     </span>
+                    {dayWindows !== null ? (
+                      dayHoursText
+                        ? <span>{text.dayHours(dayHoursText)}</span>
+                        : <span className="is-warning">{text.dayClosed}</span>
+                    ) : null}
                     {listedPayment ? <span className={intel.place.payment.cashOnly === true ? "is-warning" : ""}>{listedPayment}</span> : null}
                     {intel.place.websiteUrl === null ? <span className="is-warning">{text.noWebsite}</span> : null}
                     {intel.place.rating !== null ? (
                       <span>★ {intel.place.rating.toFixed(1)} · {intel.place.userRatingCount?.toLocaleString(locale === "ja" ? "ja-JP" : "en-US") ?? "—"}</span>
                     ) : null}
                   </div>
+                  {intel.place.address ? <p className="planner-intel-address">{intel.place.address}</p> : null}
                   <p className="planner-intel-summary">{intel.analysis.summary}</p>
                   {intel.analysis.signals.length > 0 ? (
                     <ul className="planner-intel-signals">
@@ -1449,7 +1600,14 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
             {selectedFresh?.status === "ready" && selectedFresh.result ? (() => {
               const fresh = selectedFresh.result;
               return (
-                <details className="planner-evidence-sources" aria-label={`${selectedBuiltStop.stop.name} · ${text.freshHeading}`}>
+                <details
+                  className="planner-evidence-sources"
+                  aria-label={`${selectedBuiltStop.stop.name} · ${text.freshHeading}`}
+                  key={selectedBuiltStop.stop.id}
+                  onToggle={(event) => {
+                    if ((event.target as HTMLDetailsElement).open) ensureSourcePreviews(fresh.findings.slice(0, 3).map((finding) => finding.url));
+                  }}
+                >
                   <summary>{text.publicSources} · {fresh.findings.length} <small>{formatCheckedAt(fresh.checkedAt, locale)}</small></summary>
                   {fresh.findings.length > 0 ? (
                     <div className="planner-fresh-list">
@@ -1461,6 +1619,11 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                           </div>
                           <b>{finding.title}</b>
                           <p>{finding.note}</p>
+                          {sourcePreviews[finding.url]?.imageUrl ? <>
+                            {/* Open Graph preview from the cited page itself; broken images fall back to the media badge. */}
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img alt="" className="planner-fresh-thumb" loading="lazy" onError={handlePhotoError} referrerPolicy="no-referrer" src={sourcePreviews[finding.url].imageUrl ?? undefined} />
+                          </> : null}
                           <i aria-hidden="true">↗</i>
                         </a>
                       ))}
@@ -1482,14 +1645,14 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                 <p>{text.hotelCandidate}</p>
               </div>
             </header>
-            <a className="planner-hotel-hero" href={selectedHotel.googleMapsUrl} rel="noreferrer" target="_blank">
+            <a className="planner-hotel-hero" href={selectedHotel.googleMapsUrl} key={selectedHotel.id} rel="noreferrer" target="_blank">
               {selectedHotel.photo ? <>
                 {/* Google place photos are proxied at request time and are not stored. */}
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img alt={selectedHotel.name} src={`/api/place-photo?name=${encodeURIComponent(selectedHotel.photo.name)}`} />
+                <img alt={selectedHotel.name} onError={handlePhotoError} src={`/api/place-photo?name=${encodeURIComponent(selectedHotel.photo.name)}`} />
               </> : <span aria-hidden="true">▣</span>}
             </a>
-            {selectedHotel.photo?.attribution ? <a className="planner-photo-credit" href={selectedHotel.photo.attribution.uri} rel="noreferrer" target="_blank">Photo: {selectedHotel.photo.attribution.name} ↗</a> : null}
+            {selectedHotel.photo?.attribution ? <a className="planner-photo-credit" href={selectedHotel.photo.attribution.uri} rel="noreferrer" target="_blank">{text.photoLabel} {selectedHotel.photo.attribution.name} ↗</a> : null}
             <div className="planner-hotel-facts">
               {selectedHotel.rating !== null ? <span className="is-rating">★ {selectedHotel.rating.toFixed(1)} · {selectedHotel.userRatingCount?.toLocaleString(locale === "ja" ? "ja-JP" : "en-US") ?? "—"}</span> : null}
               {selectedHotel.payment?.cashOnly === true ? <span>{text.cashOnly}</span> : null}
@@ -1511,13 +1674,23 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
               {selectedHotel.websiteUrl ? <a href={selectedHotel.websiteUrl} rel="noreferrer" target="_blank">{text.official} ↗</a> : null}
             </div>
             {hotelState.fresh.result?.findings.length ? (
-              <details className="planner-evidence-sources">
+              <details
+                className="planner-evidence-sources"
+                onToggle={(event) => {
+                  if ((event.target as HTMLDetailsElement).open) ensureSourcePreviews((hotelState.fresh.result?.findings ?? []).slice(0, 3).map((finding) => finding.url));
+                }}
+              >
                 <summary>{text.publicSources} · {hotelState.fresh.result.findings.length}</summary>
                 <div className="planner-fresh-list">
                   {hotelState.fresh.result.findings.map((finding) => (
                     <a href={finding.url} key={finding.url} rel="noreferrer" target="_blank">
                       <div><span className={`is-${finding.sourceKind}`}>{text.freshSource[finding.sourceKind]}</span><small>{finding.age ?? text.freshAgeUnknown}</small></div>
-                      <b>{finding.title}</b><p>{finding.note}</p><i aria-hidden="true">↗</i>
+                      <b>{finding.title}</b><p>{finding.note}</p>
+                      {sourcePreviews[finding.url]?.imageUrl ? <>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img alt="" className="planner-fresh-thumb" loading="lazy" onError={handlePhotoError} referrerPolicy="no-referrer" src={sourcePreviews[finding.url].imageUrl ?? undefined} />
+                      </> : null}
+                      <i aria-hidden="true">↗</i>
                     </a>
                   ))}
                 </div>
@@ -1566,14 +1739,14 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                         {candidate.photoName ? <>
                           {/* Google place photos are short-lived, server-proxied URLs and cannot use a static Next image allowlist. */}
                           {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img alt={candidate.name} loading="lazy" src={`/api/place-photo?name=${encodeURIComponent(candidate.photoName)}`} />
+                          <img alt={candidate.name} loading="lazy" onError={handlePhotoError} src={`/api/place-photo?name=${encodeURIComponent(candidate.photoName)}`} />
                         </> : <span aria-hidden="true">🍽</span>}
                         <i className="planner-food-badge">{index + 1}</i>
                       </a>
                       <div>
                         <small>{note?.tag ?? (index === 0 ? (locale === "ja" ? "この土地なら、まずここ" : "Start here") : candidate.type)}</small>
                         <h3>{candidate.name}</h3>
-                        <p>{note?.reason ?? candidate.address}</p>
+                        <p>{note?.reason ?? foodCandidateReason(candidate, locale)}</p>
                         <div className="planner-food-stats">
                           {candidate.rating !== null ? <span className="is-rating">★ {candidate.rating.toFixed(1)} · {candidate.userRatingCount?.toLocaleString(locale === "ja" ? "ja-JP" : "en-US") ?? "—"}</span> : null}
                           {candidate.plannedOpen === true ? <span>{text.plannedOpen}</span> : candidate.plannedOpen == null && candidate.openNow === true ? <span>{text.openNow}</span> : null}
@@ -1582,7 +1755,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                         </div>
                         {candidate.reviewSnippets[0] ? <p className="planner-food-proof">“{candidate.reviewSnippets[0].text}” <a href={candidate.reviewSnippets[0].googleMapsUrl ?? candidate.googleMapsUrl} rel="noreferrer" target="_blank">{candidate.reviewSnippets[0].authorName} · {candidate.reviewSnippets[0].relativeTime} ↗</a></p> : null}
                         {candidate.photoAttribution ? (
-                          <a className="planner-photo-credit" href={candidate.photoAttribution.uri} rel="noreferrer" target="_blank">Photo: {candidate.photoAttribution.name}</a>
+                          <a className="planner-photo-credit" href={candidate.photoAttribution.uri} rel="noreferrer" target="_blank">{text.photoLabel} {candidate.photoAttribution.name}</a>
                         ) : null}
                         {foodFresh?.findings[0] ? <a className="planner-photo-credit" href={foodFresh.findings[0].url} rel="noreferrer" target="_blank">{text.freshSource[foodFresh.findings[0].sourceKind]} · {foodFresh.findings[0].title} ↗</a> : null}
                       </div>
@@ -1650,9 +1823,9 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
             <details className="planner-details">
               <summary>{text.details}<span aria-hidden="true">＋</span></summary>
               <div className="planner-detail-grid">
-                <label><span>{text.arrival}</span><select onChange={(event) => setArrivalAirport(event.target.value as AirportCode)} value={arrivalAirport}>{airportOptions.map((airport) => <option key={airport.value} value={airport.value}>{airport.label}</option>)}</select></label>
+                <label><span>{text.arrival}</span><select onChange={(event) => setArrivalAirport(event.target.value as AirportCode)} value={arrivalAirport}>{airportChoices.map((airport) => <option key={airport.value} value={airport.value}>{airport.label}</option>)}</select></label>
                 <label><span>{text.arrivalTime}</span><input disabled={arrivalAirport === "none"} onChange={(event) => setArrivalTime(event.target.value)} type="time" value={arrivalTime} /></label>
-                <label><span>{text.departure}</span><select onChange={(event) => setDepartureAirport(event.target.value as AirportCode)} value={departureAirport}>{airportOptions.map((airport) => <option key={airport.value} value={airport.value}>{airport.label}</option>)}</select></label>
+                <label><span>{text.departure}</span><select onChange={(event) => setDepartureAirport(event.target.value as AirportCode)} value={departureAirport}>{airportChoices.map((airport) => <option key={airport.value} value={airport.value}>{airport.label}</option>)}</select></label>
                 <label><span>{text.departureTime}</span><input disabled={departureAirport === "none"} onChange={(event) => setDepartureTime(event.target.value)} type="time" value={departureTime} /></label>
                 <label><span>{text.pace}</span><select onChange={(event) => setPace(event.target.value as Pace)} value={pace}><option value="relaxed">{text.relaxed}</option><option value="balanced">{text.balanced}</option><option value="fast">{text.fast}</option></select></label>
                 <label><span>{text.meal}</span><select onChange={(event) => setMealPlan(event.target.value as MealPlan)} value={mealPlan}><option value="all">{text.allMeals}</option><option value="dinner">{text.dinner}</option><option value="none">{text.noMeals}</option></select></label>
@@ -1697,13 +1870,56 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
             </div>
 
             {placeWarning ? <p className="planner-warning" role="status"><span aria-hidden="true">!</span>{text.placeFallback}</p> : null}
-            {plan.deferredUnavailableStops.length > 0 ? <p className="planner-warning" role="status"><span aria-hidden="true">!</span>{text.unavailableStops(plan.deferredUnavailableStops.length)}</p> : null}
+            {hotelState.status === "unavailable" ? (
+              <p className="planner-warning" role="status">
+                <span aria-hidden="true">!</span>
+                <span className="planner-warning-body">
+                  {text.hotelUnavailable}{" "}
+                  <a
+                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${hotelQuery.trim() || mapStops[0]?.area || "Japan"} ${locale === "ja" ? "ホテル" : "hotels"}`)}`}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    {text.hotelSearch} ↗
+                  </a>
+                </span>
+              </p>
+            ) : null}
+            {plan.overCapacityCount > 0 ? <p className="planner-warning" role="status"><span aria-hidden="true">!</span>{text.overCapacity}</p> : null}
+            {plan.deferredUnavailableStops.length > 0 || plan.deferredOptionalStops.length > 0 ? (
+              <details className="planner-warning planner-excluded" role="status">
+                <summary><span aria-hidden="true">!</span>{text.excludedHeading} · {plan.deferredUnavailableStops.length + plan.deferredOptionalStops.length}</summary>
+                <ul>
+                  {plan.deferredUnavailableStops.map((stop) => <li key={stop.id}><b>{stop.name}</b><small> — {text.excludedClosed}</small></li>)}
+                  {plan.deferredOptionalStops.map((stop) => <li key={stop.id}><b>{stop.name}</b><small> — {text.excludedPace}</small></li>)}
+                </ul>
+              </details>
+            ) : null}
 
             <section className="planner-day-summary">
               <div>
                 <span>{day.date || day.label}</span>
                 <b>{day.startTime}—{day.finishTime}</b>
               </div>
+              <label className="planner-day-start">
+                <span>{text.dayStart}</span>
+                <input
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setDayStartTimes((current) => {
+                      if (!value) {
+                        if (!(activeDay in current)) return current;
+                        const next = { ...current };
+                        delete next[activeDay];
+                        return next;
+                      }
+                      return { ...current, [activeDay]: value };
+                    });
+                  }}
+                  type="time"
+                  value={dayStartTimes[activeDay] ?? day.requestedStartTime}
+                />
+              </label>
               {day.deadlineOverrunMinutes > 0 && day.deadline ? <em>{text.deadlineOver(day.deadline)}</em> : <small>{measuredRouteCount > 0 ? text.walkingSafety : text.estimated}</small>}
             </section>
 
@@ -1738,6 +1954,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                         </span>
                         <span className="planner-stop-flags">
                           {builtStop.fixedTime ? <i className="is-booked">{builtStop.fixedTime}</i> : null}
+                          {builtStop.reservationLateMinutes > 0 ? <i className="is-booked">{text.lateShort(builtStop.reservationLateMinutes)}</i> : null}
                           {builtStop.priority === "must" ? <i className="is-must">{text.must}</i> : null}
                           {builtStop.priority === "optional" ? <i className="is-optional">{text.optional}</i> : null}
                           {stopIntel?.place.rating !== null && stopIntel?.place.rating !== undefined ? <i className="is-checked">★ {stopIntel.place.rating.toFixed(1)}</i> : checked ? <i className="is-checked" aria-hidden="true">✓</i> : null}

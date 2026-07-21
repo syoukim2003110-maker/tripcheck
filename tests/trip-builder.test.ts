@@ -332,3 +332,43 @@ test("raises the crowd planning level by one step on weekends", () => {
   assert.equal(weekendCrowd.weekendUplift, 1);
   assert.equal(rank[weekendCrowd.level], rank[weekdayCrowd.level] + 1);
 });
+
+test("honors a stay-duration marker from the wishlist", () => {
+  const plan = buildTripFromWishlist("Senso-ji — stay 75 min\nTokyo Skytree", 1, "balanced", "en");
+  const adjusted = plan.days[0].stops.find((candidate) => candidate.stop.id === "sensoji");
+  const untouched = plan.days[0].stops.find((candidate) => candidate.stop.id !== "sensoji");
+
+  assert.equal(adjusted?.stop.planningDurationMinutes, 75);
+  assert.notEqual(untouched?.stop.planningDurationMinutes, 75);
+
+  const japanese = buildTripFromWishlist("浅草寺 — 滞在45分", 1, "balanced", "ja");
+  assert.equal(japanese.days[0].stops[0].stop.planningDurationMinutes, 45);
+});
+
+test("pins a bare requested time without treating it as a reservation", () => {
+  const plan = buildTripFromWishlist("Senso-ji — 15:00\nTokyo Skytree", 1, "balanced", "en");
+  const pinned = plan.days[0].stops.find((candidate) => candidate.stop.id === "sensoji");
+
+  assert.equal(pinned?.fixedTime, "15:00");
+  assert.equal(pinned?.isReservation, false);
+  assert.equal(pinned?.priority, "normal");
+  assert.ok((pinned?.arrival ?? "") >= "15:00");
+
+  const booked = buildTripFromWishlist("Senso-ji — 15:00 booked", 1, "balanced", "en").days[0].stops[0];
+  assert.equal(booked.isReservation, true);
+  assert.equal(booked.priority, "must");
+});
+
+test("keeps a stay marker that appears on a duplicate wishlist line", () => {
+  const plan = buildTripFromWishlist("Senso-ji\nSenso-ji — stay 75 min", 1, "balanced", "en");
+
+  assert.equal(plan.recognizedStopCount, 1);
+  assert.equal(plan.days[0].stops[0].stop.planningDurationMinutes, 75);
+});
+
+test("treats a time range as opening hours instead of pinning a visit time", () => {
+  const plan = buildTripFromWishlist("Senso-ji — 9:00-17:00", 1, "balanced", "en");
+
+  assert.equal(plan.days[0].stops[0].fixedTime, null);
+  assert.equal(plan.days[0].stops[0].isReservation, false);
+});

@@ -297,3 +297,37 @@ test("open-now state never changes future-meal popularity scoring", () => {
     foodPopularityScore({ ...common, openNow: false }),
   );
 });
+
+test("composes the one-line food reason only from returned Google evidence", async () => {
+  const { foodCandidateReason } = await import("../lib/food-recommendations-client.ts");
+  const base = {
+    id: "food-1",
+    name: "Sample Diner",
+    address: "1-2-3 Sample, Tokyo",
+    type: "Japanese restaurant",
+    googleMapsUrl: "https://maps.google.com/sample-diner",
+    distanceMeters: 400,
+    rating: 4.6,
+    userRatingCount: 1800,
+    openNow: null,
+    plannedOpen: true,
+    hours: [],
+    businessStatus: "OPERATIONAL",
+    paymentEvidence: [],
+    reviewSnippets: [],
+    websiteUrl: null,
+  };
+
+  const ja = foodCandidateReason(base, "ja");
+  assert.match(ja, /★4\.6・口コミ1,800件/);
+  assert.match(ja, /徒歩約5分/);
+  assert.doesNotMatch(ja, /名物|人気/);
+  assert.ok(ja.endsWith("。"));
+
+  const en = foodCandidateReason(base, "en");
+  assert.match(en, /★4\.6 across 1,800 reviews/);
+  assert.ok(/^[A-Z]/.test(en));
+
+  const bare = foodCandidateReason({ ...base, rating: null, userRatingCount: null, distanceMeters: null, plannedOpen: null }, "ja");
+  assert.equal(bare, base.address);
+});

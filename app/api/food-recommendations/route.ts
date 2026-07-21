@@ -4,7 +4,7 @@ const noStoreHeaders = { "Cache-Control": "no-store, max-age=0" };
 
 function sameOrigin(request: Request) {
   const origin = request.headers.get("Origin");
-  if (!origin) return true;
+  if (!origin) return process.env.NODE_ENV !== "production";
   try {
     return new URL(origin).origin === new URL(request.url).origin;
   } catch {
@@ -13,7 +13,7 @@ function sameOrigin(request: Request) {
 }
 
 export async function POST(request: Request) {
-  if (!sameOrigin(request)) {
+  if (!sameOrigin(request) || request.headers.get("Sec-Fetch-Site") === "cross-site") {
     return Response.json({ code: "forbidden" }, { status: 403, headers: noStoreHeaders });
   }
   const apiKey = process.env.GOOGLE_PLACES_API_KEY ?? process.env.GOOGLE_ROUTES_API_KEY;
