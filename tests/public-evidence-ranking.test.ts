@@ -62,3 +62,10 @@ test("risk evidence cannot accidentally promote the lower Google candidate", () 
   });
   assert.deepEqual(ranked.map((item) => item.id), ["a", "b"]);
 });
+
+test("source-only search results never change the Google shortlist order", () => {
+  const sourceOnly = fresh("social", "12,400 likes and a viral must-try");
+  sourceOnly.findings[0].evidenceLevel = "source_only";
+  assert.equal(foodPublicEvidenceScore(sourceOnly), 0);
+  assert.deepEqual(rankFoodWithPublicEvidence([candidate("a"), candidate("b")], { b: sourceOnly }).map((item) => item.id), ["a", "b"]);
+});

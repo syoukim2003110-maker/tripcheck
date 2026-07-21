@@ -1,4 +1,5 @@
 import {
+  FreshVoicesProviderError,
   fetchFreshVoices,
   parseFreshVoicesRequest,
   type FreshVoicesDepth,
@@ -122,7 +123,10 @@ export async function POST(request: Request) {
     settleQuota(reservation, result.searchCount);
     resultCache.set(key, { expiresAt: now + cacheTtlMs, result });
     return Response.json(result, { headers: { ...noStoreHeaders, "X-TripCheck-Cache": "miss" } });
-  } catch {
+  } catch (error) {
+    console.warn("fresh_voices_unavailable", {
+      reason: error instanceof FreshVoicesProviderError ? error.reason : "unknown",
+    });
     return Response.json({ code: "unavailable" }, { status: 502, headers: noStoreHeaders });
   }
 }

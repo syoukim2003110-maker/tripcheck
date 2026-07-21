@@ -65,6 +65,7 @@ export function deriveStopPlanningEvidence(
   }
 
   for (const finding of freshVoices?.findings ?? []) {
+    if (finding.evidenceLevel === "source_only") continue;
     const text = normalizeEvidenceText(`${finding.title} ${finding.note}`);
     const reasons = classify(text);
     if (reasons.length > 0) candidates.push({ reasons, source: "publicWeb", text });

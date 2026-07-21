@@ -37,6 +37,7 @@ test("uses one search for quick checks and intent-specific natural prompts", () 
   const hotel = buildFreshVoicesBody({ ...request, name: "旅館サンプル", intent: "hotel", depth: "deep" });
 
   assert.equal(food.tools[0].max_uses, 1);
+  assert.match(food.system, /hard budget of 1 web search/);
   assert.match(food.messages[0].content, /土地の名物/);
   assert.match(food.messages[0].content, /いいね・閲覧・リポスト数/);
   assert.equal(hotel.tools[0].max_uses, 2);
@@ -77,6 +78,7 @@ test("shows only cited search evidence and takes title and age from provider met
   assert.equal(result.findings[0].title, "浅草寺 混雑レポ");
   assert.equal(result.findings[0].age, "3 days ago");
   assert.equal(result.findings[0].sourceKind, "social");
+  assert.equal(result.findings[0].evidenceLevel, "cited_claim");
   assert.equal(result.findings[1].title, "浅草寺に行ってみた");
   assert.equal(result.searchCount, 2);
   assert.match(result.summary, /再確認/);
@@ -127,7 +129,7 @@ test("treats a web-search error inside an HTTP 200 response as unavailable", asy
   );
 });
 
-test("does not continue a paused turn beyond the two-search budget", async () => {
+test("uses returned sources from a paused turn without continuing past the search budget", async () => {
   let calls = 0;
   const fetcher = (async () => {
     calls += 1;
@@ -141,8 +143,39 @@ test("does not continue a paused turn beyond the two-search budget", async () =>
     });
   }) as typeof fetch;
 
-  await assert.rejects(() => fetchFreshVoices(request, "anthropic-key", fetcher), /fresh_voices_unavailable/);
+  const result = await fetchFreshVoices(request, "anthropic-key", fetcher);
   assert.equal(calls, 1);
+  assert.equal(result.findings.length, 1);
+  assert.equal(result.findings[0].url, "https://x.com/user/status/2");
+  assert.match(result.findings[0].note, /リンク先/);
+  assert.equal(result.findings[0].evidenceLevel, "source_only");
+});
+
+test("keeps a completed bounded search when Claude later reports max uses exceeded", async () => {
+  const result = await fetchFreshVoices(
+    { ...request, intent: "food", depth: "quick" },
+    "anthropic-key",
+    (async () => Response.json({
+      content: [
+        {
+          type: "web_search_tool_result",
+          tool_use_id: "tool_1",
+          content: [{ type: "web_search_result", url: "https://www.instagram.com/p/sample/", title: "浅草の新しい食べ歩き", page_age: "today" }],
+        },
+        {
+          type: "web_search_tool_result",
+          tool_use_id: "tool_2",
+          content: { type: "web_search_tool_result_error", error_code: "max_uses_exceeded" },
+        },
+      ],
+      usage: { server_tool_use: { web_search_requests: 1 } },
+      stop_reason: "end_turn",
+    })) as typeof fetch,
+  );
+
+  assert.equal(result.searchCount, 1);
+  assert.equal(result.findings.length, 1);
+  assert.equal(result.findings[0].sourceKind, "social");
 });
 
 test("fails when Claude does not execute a successful search or the provider is unavailable", async () => {

@@ -98,3 +98,12 @@ test("deduplicates identical evidence before computing the buffer", () => {
   assert.equal(result.evidenceCount, 1);
   assert.deepEqual(result.reasons, ["crowd"]);
 });
+
+test("does not turn a source-only search result into a schedule claim", () => {
+  const sourceOnly = freshWithNotes(["長い行列で売り切れたとの情報"]);
+  sourceOnly.findings[0].evidenceLevel = "source_only";
+  const result = deriveStopPlanningEvidence(null, sourceOnly);
+
+  assert.equal(result.bufferMinutes, 0);
+  assert.equal(result.evidenceCount, 0);
+});

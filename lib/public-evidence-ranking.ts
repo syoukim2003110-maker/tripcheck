@@ -30,6 +30,7 @@ function operationalRiskScore(text: string) {
 export function foodPublicEvidenceScore(result: FreshVoicesResult | null | undefined) {
   if (!result) return 0;
   return result.findings.reduce((score, finding) => {
+    if (finding.evidenceLevel === "source_only") return score;
     const text = `${finding.title} ${finding.note}`;
     return score + positivePopularityScore(text, finding.sourceKind === "social" ? "social" : "web") - operationalRiskScore(text);
   }, 0);
