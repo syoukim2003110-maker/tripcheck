@@ -45,8 +45,9 @@ test("builds a nationwide itinerary from fresh runtime place results", () => {
   assert.ok(plan.baseRecommendations.some((recommendation) => /奈良|京都/.test(recommendation.base.name)));
 });
 
-test("rejects oversized resolver batches", () => {
-  assert.equal(parsePlaceResolutionRequest({ queries: Array.from({ length: 13 }, (_, index) => `place ${index}`), hotelQuery: null, languageCode: "en" }), null);
+test("accepts an ordinary multi-day list but rejects oversized resolver batches", () => {
+  assert.ok(parsePlaceResolutionRequest({ queries: Array.from({ length: 18 }, (_, index) => `place ${index}`), hotelQuery: null, languageCode: "en" }));
+  assert.equal(parsePlaceResolutionRequest({ queries: Array.from({ length: 25 }, (_, index) => `place ${index}`), hotelQuery: null, languageCode: "en" }), null);
 });
 
 test("strips stay-duration and bare-time markers before querying Google", () => {

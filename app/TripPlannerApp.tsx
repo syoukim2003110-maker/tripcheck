@@ -26,7 +26,7 @@ import { PlaceResolutionError, requestPlaceResolution } from "../lib/place-resol
 import type { ResolvedInputStop, RouteStop } from "../lib/route-optimizer";
 import type { Pace } from "../lib/trip-analysis";
 import { buildTripFromWishlist, type AirportCode, type FoodRecommendationSlot, type MealPlan, type VisitWindow } from "../lib/trip-builder";
-import { parseWishlist, type ParsedWishlistPlace } from "../lib/wishlist-parser";
+import { formatWishlistLines, parseWishlist, type ParsedWishlistPlace } from "../lib/wishlist-parser";
 
 type PlannerLocale = "en" | "ja";
 type FoodState = {
@@ -52,6 +52,7 @@ type HotelState = {
 };
 type HotelStayMode = "single" | "nightly";
 type HotelStyleChoice = "recommended" | HotelStyle;
+type HotelPurpose = "balanced" | "nearest" | "rated" | "value" | "picked";
 type NightlyHotelNight = {
   area: string;
   fetchedAt: string;
@@ -69,6 +70,7 @@ type BuildProgress = {
   total: number;
   reviewCount: number;
   publicCount: number;
+  socialCount: number;
 };
 type Inspector = { kind: "stop"; stopId: string } | { kind: "food"; slotId: string; candidateId?: string } | { kind: "hotel" } | null;
 type SourcePreviewState = { status: "loading" | "ready" | "failed"; imageUrl: string | null };
@@ -100,9 +102,10 @@ function formatDistanceMeters(meters: number) {
 /* Axis winners are asserted only against the fetched candidate list, and only
  * when there is an actual comparison to make. */
 function hotelAxisWinners(candidates: HotelCandidate[]) {
-  if (candidates.length < 2) return { nearestId: null as string | null, topRatedId: null as string | null };
+  if (candidates.length < 2) return { nearestId: null as string | null, topRatedId: null as string | null, valueId: null as string | null };
   let nearest = candidates[0];
   let topRated: HotelCandidate | null = null;
+  let value: HotelCandidate | null = null;
   for (const candidate of candidates) {
     if (candidate.distanceMeters < nearest.distanceMeters) nearest = candidate;
     const count = candidate.userRatingCount ?? 0;
@@ -111,8 +114,9 @@ function hotelAxisWinners(candidates: HotelCandidate[]) {
       const bestCount = topRated?.userRatingCount ?? 0;
       if (candidate.rating > bestRating || (candidate.rating === bestRating && count > bestCount)) topRated = candidate;
     }
+    if (candidate.styles.includes("value") && (value === null || candidate.score > value.score)) value = candidate;
   }
-  return { nearestId: nearest.id, topRatedId: topRated?.id ?? null };
+  return { nearestId: nearest.id, topRatedId: topRated?.id ?? null, valueId: value?.id ?? null };
 }
 
 type ParsePreviewRow =
@@ -125,6 +129,7 @@ const initialBuildProgress: BuildProgress = {
   total: 0,
   reviewCount: 0,
   publicCount: 0,
+  socialCount: 0,
 };
 
 function defaultTripDate() {
@@ -194,8 +199,10 @@ const ui = {
     inputLabel: "行きたい場所",
     placeholder: "例）\n1日目\n浅草寺\nチームラボプラネッツ 15:30 予約\n2日目\n三鷹の森ジブリ美術館 必須\n渋谷スカイ 時間があれば",
     sample: "サンプルを見る",
-    parseHint: "1行に1か所。「1日目」の行で日を分けられます。時刻・「予約」「必須」「時間があれば」・「滞在90分」も読み取ります。",
-    previewHeading: "読み取り結果",
+    parseHint: "改行のほか「・」「／」でまとめて貼っても、場所ごとに分けます。「1日目」、時刻、予約、必須、滞在時間も読み取ります。",
+    previewHeading: (count: number) => `${count}か所として読み取り`,
+    previewFormat: "1件ずつに整える",
+    previewCheck: "違う場所があれば、上の入力欄で直せます",
     previewDay: (day: number) => `${day}日目`,
     previewUnparsed: "場所名として読み取れない行",
     previewStay: (minutes: number) => `滞在${minutes}分`,
@@ -233,7 +240,7 @@ const ui = {
     progressPlaces: (current: number, total: number) => `${current}/${total}か所を確認`,
     progressReviews: (count: number) => `口コミ ${count}件を確認`,
     progressFood: (current: number, total: number) => `食事エリア ${current}/${total}`,
-    progressPublic: (current: number, total: number, findings: number) => `公開検索 ${current}/${total} · 出典 ${findings}件`,
+    progressPublic: (current: number, total: number, findings: number, social: number) => `公開検索 ${current}/${total} · 出典 ${findings}件（SNS ${social}）`,
     progressRoutes: (current: number, total: number) => `実測できた移動 ${current}/${total}`,
     progressScheduling: "混雑の明示情報は余白時間として反映します",
     progressFinalize: (current: number, total: number) => `動いた食事候補を再確認 ${current}/${total}`,
@@ -276,9 +283,19 @@ const ui = {
     styleLuxury: "ラグジュアリー",
     styleValue: "お手頃で高評価",
     styleNote: "価格帯はGoogleの掲載区分です。",
-    hotelRankNote: "おすすめ順は、Googleの評価・口コミ量・行程からの近さ・名前の一致による採点です。距離は検索基準点からの直線距離。",
+    hotelRankNote: "総合は、Google評価32・口コミ量24・行程からの近さ24を中心に採点。ホテル名を指定した場合だけ名前の一致も加味します。距離は行程の中心からの直線距離です。",
     hotelReasonTop: "評価・口コミ量・行程からの近さの合計スコアで1位の候補です。",
+    hotelReasonNearest: "行程の中心に最も近く、ホテル往復を短くしやすい候補です。",
+    hotelReasonRated: "十分な口コミ数がある候補の中で、Google評価が最も高いホテルです。",
+    hotelReasonValue: "Googleの価格帯がお手頃で、評価4.1以上・口コミ100件以上の候補です。",
+    hotelReasonSpecified: "入力したホテル名に一致した候補です。行程の出発・帰着地点にも反映しています。",
     hotelReasonPicked: "切り替えて選んだ候補です。",
+    hotelPurposeHeading: "何を優先する？",
+    hotelPurposeBalanced: "総合",
+    hotelPurposeNearest: "移動を少なく",
+    hotelPurposeRated: "評価重視",
+    hotelPurposeValue: "コスパ",
+    hotelPurposeHelp: "同じ候補が複数の条件で1位になることがあります。",
     axisNearest: "行程に最寄り",
     axisTopRated: "最高評価",
     distanceFrom: (distance: string) => `中心から約${distance}`,
@@ -302,7 +319,7 @@ const ui = {
     excludedClosed: "休業・営業時間が合わない",
     excludedPace: "ペースに収まらない任意の場所",
     overCapacity: "1日に収まりきらない日があります。日数を増やすか、任意の場所を減らすと現実的になります。",
-    publicEvidenceFound: (count: number) => `公開SNS・記事 ${count}件を確認`,
+    publicEvidenceFound: (count: number, social: number) => social > 0 ? `公開情報 ${count}件（SNS ${social}件）` : `公開情報 ${count}件・SNS投稿は見つからず`,
     publicEvidenceMissing: "公開SNSは確認できず、Google情報で作成",
     routeEvidenceFound: (count: number) => `Google実測 ${count}区間`,
     routeEvidenceMissing: "移動は推定値。日付・経路を要確認",
@@ -353,8 +370,10 @@ const ui = {
     inputLabel: "Places you want to visit",
     placeholder: "Example\nDay 1\nSenso-ji\nteamLab Planets 15:30 booked\nDay 2\nGhibli Museum must\nShibuya Sky optional",
     sample: "Try a sample",
-    parseHint: "One place per line. A \"Day 1\" line starts that day's section. Times, booked / must / optional and \"stay 90 min\" are read automatically.",
-    previewHeading: "How we read it",
+    parseHint: "Paste one per line or use Japanese middle dots and slashes; we separate the places. Day headings, times, booked / must / optional and stay length are also read.",
+    previewHeading: (count: number) => `Read as ${count} place${count === 1 ? "" : "s"}`,
+    previewFormat: "Make one per line",
+    previewCheck: "If anything looks wrong, edit the field above",
     previewDay: (day: number) => `Day ${day}`,
     previewUnparsed: "Can't read this line as a place",
     previewStay: (minutes: number) => `Stay ${minutes} min`,
@@ -392,7 +411,7 @@ const ui = {
     progressPlaces: (current: number, total: number) => `${current}/${total} places confirmed`,
     progressReviews: (count: number) => `${count} reviews checked`,
     progressFood: (current: number, total: number) => `${current}/${total} meal areas`,
-    progressPublic: (current: number, total: number, findings: number) => `${current}/${total} public checks · ${findings} sources`,
+    progressPublic: (current: number, total: number, findings: number, social: number) => `${current}/${total} public checks · ${findings} sources (${social} social)`,
     progressRoutes: (current: number, total: number) => `${current}/${total} route legs verified`,
     progressScheduling: "Explicit crowd signals become schedule buffer",
     progressFinalize: (current: number, total: number) => `Rechecking moved meal picks ${current}/${total}`,
@@ -435,9 +454,19 @@ const ui = {
     styleLuxury: "Luxury",
     styleValue: "Value · high rated",
     styleNote: "Price bands come from Google's listing.",
-    hotelRankNote: "Ranking = Google rating, review volume, distance to your route and name match. Distances are straight-line from the search center.",
+    hotelRankNote: "Overall score weights Google rating up to 32, review volume up to 24 and route proximity up to 24. Name match is used only when you specify a hotel. Distance is straight-line from the route center.",
     hotelReasonTop: "Top combined score for rating, review volume and distance to your route.",
+    hotelReasonNearest: "Closest to the route center, so hotel round trips should be shorter.",
+    hotelReasonRated: "Highest Google rating among candidates backed by at least 50 reviews.",
+    hotelReasonValue: "Google lists a lower price band, with at least a 4.1 rating and 100 reviews.",
+    hotelReasonSpecified: "This matches the hotel you entered and is also used as the route's start and end base.",
     hotelReasonPicked: "Your pick from the alternatives.",
+    hotelPurposeHeading: "What matters most?",
+    hotelPurposeBalanced: "Overall",
+    hotelPurposeNearest: "Less travel",
+    hotelPurposeRated: "Top rated",
+    hotelPurposeValue: "Best value",
+    hotelPurposeHelp: "One hotel can win more than one category.",
     axisNearest: "Nearest to route",
     axisTopRated: "Top rated",
     distanceFrom: (distance: string) => `~${distance} from center`,
@@ -461,7 +490,7 @@ const ui = {
     excludedClosed: "closed or hours don't fit",
     excludedPace: "optional stop beyond this pace",
     overCapacity: "Some days hold more than this pace fits. Add a day or trim optional stops.",
-    publicEvidenceFound: (count: number) => `${count} public sources checked`,
+    publicEvidenceFound: (count: number, social: number) => social > 0 ? `${count} public sources · ${social} social` : `${count} public sources · no social post found`,
     publicEvidenceMissing: "Public social sources unavailable · built from Google evidence",
     routeEvidenceFound: (count: number) => `${count} Google-measured route legs`,
     routeEvidenceMissing: "Travel uses estimates · recheck date and route",
@@ -625,6 +654,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   const [hotelState, setHotelState] = useState<HotelState>(emptyHotelState);
   const [hotelStayMode, setHotelStayMode] = useState<HotelStayMode>("single");
   const [hotelStyle, setHotelStyle] = useState<HotelStyleChoice>("recommended");
+  const [hotelPurpose, setHotelPurpose] = useState<HotelPurpose>("balanced");
   const [nightlyHotels, setNightlyHotels] = useState<NightlyHotelState>(emptyNightlyHotelState);
   const [durationOverrides, setDurationOverrides] = useState<Record<string, number>>({});
   const [userStayMinutes, setUserStayMinutes] = useState<Record<string, number>>({});
@@ -761,6 +791,9 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     }
     return rows;
   }, [itinerary]);
+  const parsedPlaceCount = useMemo(() => parsePreviewRows.filter((row) => row.type === "place").length, [parsePreviewRows]);
+  const formattedItinerary = useMemo(() => formatWishlistLines(itinerary, locale), [itinerary, locale]);
+  const canNormalizeItinerary = parsedPlaceCount > 1 && formattedItinerary.trim() !== itinerary.trim();
   const measuredRouteCount = useMemo(() => new Set([
     ...Object.keys(liveTransit),
     ...Object.keys(liveWalking),
@@ -876,8 +909,9 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     return () => window.clearTimeout(timer);
   }, [hasPlan, isBuilding, locale, plan]);
 
-  function selectHotelCandidate(candidate: HotelCandidate) {
+  function selectHotelCandidate(candidate: HotelCandidate, purpose: HotelPurpose = "picked") {
     setHotelState((current) => ({ ...current, selectedId: candidate.id }));
+    setHotelPurpose(purpose);
     // The displayed hotel and the routing base must never diverge.
     setResolvedBase(hotelAsResolvedBase(candidate, hotelQuery, candidate.address.slice(0, 100) || candidate.name, new Date().toISOString()));
   }
@@ -892,7 +926,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   function applyHotelStyle(style: HotelStyleChoice) {
     setHotelStyle(style);
     const pick = styledBestCandidate(hotelState.candidates, style);
-    if (pick && pick.id !== hotelState.selectedId) selectHotelCandidate(pick);
+    if (pick && pick.id !== hotelState.selectedId) selectHotelCandidate(pick, style === "recommended" ? "balanced" : style === "value" ? "value" : "picked");
     setNightlyHotels((state) => state.status !== "ready" ? state : {
       ...state,
       nights: state.nights.map((night) => {
@@ -984,6 +1018,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     setHotelState(emptyHotelState);
     setHotelStayMode("single");
     setHotelStyle("recommended");
+    setHotelPurpose("balanced");
     setNightlyHotels(emptyNightlyHotelState);
     setDurationOverrides({});
     setUserStayMinutes({});
@@ -1020,6 +1055,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       setHotelState({ ...emptyHotelState, status: "loading" });
       setHotelStayMode("single");
       setHotelStyle("recommended");
+      setHotelPurpose("balanced");
       setNightlyHotels(emptyNightlyHotelState);
       setDurationOverrides({});
       setUserStayMinutes({});
@@ -1126,6 +1162,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     if (cancelled()) return;
     if (!commit(() => {
       setHotelState(localHotelState);
+      setHotelPurpose(shouldUseRecommendedHotel(hotelQuery) ? "balanced" : "picked");
       setResolvedBase(effectiveBase);
       setBuildProgress((current) => ({ ...current, current: 1, total: 1 }));
     })) return;
@@ -1286,17 +1323,19 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       return [{ ...target, depth: units === 2 ? "deep" as const : "quick" as const }];
     });
     let publicCount = 0;
-    if (!commit(() => setBuildProgress((current) => ({ ...current, stage: "public", current: 0, total: publicTargets.length, publicCount: 0 })))) return;
+    let socialCount = 0;
+    if (!commit(() => setBuildProgress((current) => ({ ...current, stage: "public", current: 0, total: publicTargets.length, publicCount: 0, socialCount: 0 })))) return;
     const publicResults = await mapWithConcurrency(publicTargets, 4, async (target) => {
       try {
         const result = await requestFreshVoices({ name: target.name, area: target.area }, locale, { intent: target.intent, depth: target.depth, signal: controller.signal });
         publicCount += result.findings.length;
+        socialCount += result.findings.filter((finding) => finding.sourceKind === "social").length;
         return { target, state: { status: "ready", result } satisfies FreshState };
       } catch {
         return { target, state: { status: "unavailable", result: null } satisfies FreshState };
       }
     }, (current, total) => {
-      commit(() => setBuildProgress((progress) => ({ ...progress, current, total, publicCount })));
+      commit(() => setBuildProgress((progress) => ({ ...progress, current, total, publicCount, socialCount })));
     }, cancelled);
     if (cancelled()) return;
     const localFreshVoices: Record<string, FreshState> = {};
@@ -1337,7 +1376,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     ), 0));
     if (!commit(() => {
       setPreviewStops(routeDraft.days.flatMap((candidate) => candidate.stops.map(({ stop }) => stop)));
-      setBuildProgress((current) => ({ ...current, stage: "routes", current: 0, total: plannedRouteLegs, reviewCount, publicCount }));
+      setBuildProgress((current) => ({ ...current, stage: "routes", current: 0, total: plannedRouteLegs, reviewCount, publicCount, socialCount }));
     })) return;
     let measuredTransit: Record<string, number> = {};
     let measuredWalking: Record<string, number> = {};
@@ -1386,6 +1425,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       total: 0,
       reviewCount,
       publicCount,
+      socialCount,
     })))) return;
 
     // Public queue/sell-out evidence and measured travel can move the stop
@@ -1485,12 +1525,13 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
           { intent: "food", depth: "quick", signal: controller.signal },
         );
         publicCount += result.findings.length;
+        socialCount += result.findings.filter((finding) => finding.sourceKind === "social").length;
         return { target, state: { status: "ready", result } satisfies FreshState };
       } catch {
         return { target, state: { status: "unavailable", result: null } satisfies FreshState };
       }
     }, (current) => {
-      commit(() => setBuildProgress((progress) => ({ ...progress, current: reanchorProgressBase + current, publicCount })));
+      commit(() => setBuildProgress((progress) => ({ ...progress, current: reanchorProgressBase + current, publicCount, socialCount })));
     }, cancelled);
     if (cancelled()) return;
     for (const { target, state } of reanchoredResults) {
@@ -1508,7 +1549,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     if (!commit(() => {
       attemptedLegKeysRef.current = attemptedRouteKeys;
       postBuildLegBudgetRef.current = 16;
-      setBuildProgress((current) => ({ ...current, stage: "scheduling", current: 0, total: 0, reviewCount, publicCount }));
+      setBuildProgress((current) => ({ ...current, stage: "scheduling", current: 0, total: 0, reviewCount, publicCount, socialCount }));
       setDurationOverrides(overrides);
       setEarlyVisitStopIds(earlyStops);
       setOpeningWindowsByDay(localOpeningWindows);
@@ -1546,6 +1587,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     setHotelState(emptyHotelState);
     setHotelStayMode("single");
     setHotelStyle("recommended");
+    setHotelPurpose("balanced");
     setNightlyHotels(emptyNightlyHotelState);
     setDurationOverrides({});
     setUserStayMinutes({});
@@ -1577,6 +1619,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     setHotelState(emptyHotelState);
     setHotelStayMode("single");
     setHotelStyle("recommended");
+    setHotelPurpose("balanced");
     setNightlyHotels(emptyNightlyHotelState);
     setDurationOverrides({});
     setUserStayMinutes({});
@@ -1690,7 +1733,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       : buildProgress.stage === "food"
         ? text.progressFood(buildProgress.current, buildProgress.total)
         : buildProgress.stage === "public"
-          ? text.progressPublic(buildProgress.current, buildProgress.total, buildProgress.publicCount)
+          ? text.progressPublic(buildProgress.current, buildProgress.total, buildProgress.publicCount, buildProgress.socialCount)
           : buildProgress.stage === "routes"
             ? text.progressRoutes(buildProgress.current, buildProgress.total)
           : buildProgress.stage === "scheduling"
@@ -1997,6 +2040,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
               </div>
             ) : null}
             {(() => {
+              if (hotelStayMode !== "nightly") return null;
               const nightCandidates = nightlyHotels.status === "ready" ? nightlyHotels.nights.flatMap((night) => night.candidates) : [];
               const styleAvailable = (style: HotelStyle) => hotelState.candidates.some((candidate) => candidate.styles.includes(style))
                 || nightCandidates.some((candidate) => candidate.styles.includes(style));
@@ -2063,8 +2107,39 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                 <p className="planner-food-note">{text.hotelRankNote} {text.styleNote} {text.hotelNoAvailability}</p>
               </div>
             ) : (<>
+            {shouldUseRecommendedHotel(hotelQuery) ? <div className="planner-hotel-purpose">
+              <b>{text.hotelPurposeHeading}</b>
+              <div role="group" aria-label={text.hotelPurposeHeading}>
+                {([
+                  { purpose: "balanced" as const, label: text.hotelPurposeBalanced, id: hotelState.candidates[0]?.id ?? null },
+                  { purpose: "nearest" as const, label: text.hotelPurposeNearest, id: hotelAxis.nearestId },
+                  { purpose: "rated" as const, label: text.hotelPurposeRated, id: hotelAxis.topRatedId },
+                  { purpose: "value" as const, label: text.hotelPurposeValue, id: hotelAxis.valueId },
+                ]).map((choice) => {
+                  const candidate = choice.id ? hotelState.candidates.find((item) => item.id === choice.id) ?? null : null;
+                  return (
+                    <button
+                      aria-pressed={hotelPurpose === choice.purpose}
+                      className={hotelPurpose === choice.purpose ? "is-active" : ""}
+                      disabled={!candidate}
+                      key={choice.purpose}
+                      onClick={() => candidate && selectHotelCandidate(candidate, choice.purpose)}
+                      type="button"
+                    >
+                      {choice.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <small>{text.hotelPurposeHelp}</small>
+            </div> : null}
             <p className="planner-hotel-reason">
-              {selectedHotel.id === hotelState.candidates[0]?.id ? text.hotelReasonTop : text.hotelReasonPicked}
+              {!shouldUseRecommendedHotel(hotelQuery) ? text.hotelReasonSpecified
+                : hotelPurpose === "nearest" ? text.hotelReasonNearest
+                : hotelPurpose === "rated" ? text.hotelReasonRated
+                  : hotelPurpose === "value" ? text.hotelReasonValue
+                    : hotelPurpose === "balanced" ? text.hotelReasonTop
+                      : text.hotelReasonPicked}
             </p>
             <a className="planner-hotel-hero" href={selectedHotel.googleMapsUrl} key={selectedHotel.id} rel="noreferrer" target="_blank">
               {selectedHotel.photo ? <>
@@ -2259,9 +2334,12 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
 
             {parsePreviewRows.length > 0 ? (
               <div className="planner-parse-preview">
-                <span className="planner-parse-title">{text.previewHeading}</span>
+                <div className="planner-parse-head">
+                  <span className="planner-parse-title">{text.previewHeading(parsedPlaceCount)}</span>
+                  {canNormalizeItinerary ? <button onClick={() => setItinerary(formattedItinerary)} type="button">{text.previewFormat}</button> : null}
+                </div>
                 <ul>
-                  {parsePreviewRows.slice(0, 14).map((row, index) => row.type === "day" ? (
+                  {parsePreviewRows.slice(0, 30).map((row, index) => row.type === "day" ? (
                     <li className="is-day" key={`row-${index}`}><b>{text.previewDay(row.day)}</b></li>
                   ) : row.type === "warn" ? (
                     <li className="is-warn" key={`row-${index}`}><span>{row.raw}</span><small>{text.previewUnparsed}</small></li>
@@ -2277,8 +2355,9 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                       </span>
                     </li>
                   ))}
-                  {parsePreviewRows.length > 14 ? <li className="is-more"><small>+{parsePreviewRows.length - 14}</small></li> : null}
+                  {parsePreviewRows.length > 30 ? <li className="is-more"><small>+{parsePreviewRows.length - 30}</small></li> : null}
                 </ul>
+                <small className="planner-parse-check">{text.previewCheck}</small>
               </div>
             ) : null}
 
@@ -2316,8 +2395,8 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
             </header>
 
             <div className="planner-evidence-summary" aria-label={locale === "ja" ? "予定に反映した根拠" : "Evidence used in this plan"}>
-              <span className={buildProgress.publicCount > 0 ? "is-good" : "is-muted"}>
-                {buildProgress.publicCount > 0 ? text.publicEvidenceFound(buildProgress.publicCount) : text.publicEvidenceMissing}
+              <span className={buildProgress.socialCount > 0 ? "is-good" : buildProgress.publicCount > 0 ? "is-warning" : "is-muted"}>
+                {buildProgress.publicCount > 0 ? text.publicEvidenceFound(buildProgress.publicCount, buildProgress.socialCount) : text.publicEvidenceMissing}
               </span>
               <span className={measuredRouteCount > 0 ? "is-good" : "is-warning"}>
                 {measuredRouteCount > 0 ? text.routeEvidenceFound(measuredRouteCount) : text.routeEvidenceMissing}

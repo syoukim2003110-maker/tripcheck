@@ -25,6 +25,7 @@ export type ParsedWishlistLine =
   | { kind: "place"; raw: string; places: ParsedWishlistPlace[] };
 
 const SEP = "\\s、,，・·()（）\\[\\]【】—–―:~\\-\\.。|｜";
+const EDGE_SEP = "\\s、,，・·—–―:~\\-\\.。|｜";
 const boundaryToken = (source: string) =>
   new RegExp(`(?:(?<=^)|(?<=[${SEP}]))(?:${source})(?=$|[${SEP}])`, "giu");
 
@@ -78,8 +79,11 @@ function tidyName(value: string) {
     // A whitespace-delimited run of nothing but separators is residue from a
     // removed marker ("… — · …"), never part of a name.
     .replace(/(?:^|\s)[—–―·・:~\-,、，.。|｜]+(?=\s|$)/gu, " ")
-    .replace(new RegExp(`^[${SEP}]+`, "u"), "")
-    .replace(new RegExp(`[${SEP}]+$`, "u"), "")
+    // Parentheses can carry a useful area qualifier. Do not trim them as if
+    // they were list punctuation; an unmatched trailing parenthesis made a
+    // pasted list such as "天橋立（丹後）" impossible to resolve.
+    .replace(new RegExp(`^[${EDGE_SEP}]+`, "u"), "")
+    .replace(new RegExp(`[${EDGE_SEP}]+$`, "u"), "")
     .replace(/\s{2,}/g, " ")
     .trim();
 }
@@ -88,21 +92,85 @@ function hasCjk(value: string) {
   return /[぀-ヿ㐀-鿿豈-﫿]/u.test(value);
 }
 
-/* Split one cleaned line into independent place names. Full-width commas
- * always split. An ASCII comma or a bare slash splits only when every segment
- * around it contains CJK text, so English "Name, Area" qualifiers and dates
- * like 7/23 stay together. "・" never splits — it appears inside many official
- * names (東京ミッドタウン・日比谷). */
-function splitPlaces(name: string) {
-  const segments = name.split(/[、，]/u).flatMap((part) => {
-    for (const separator of [",", "/", "／"]) {
-      if (!part.includes(separator)) continue;
-      const subParts = part.split(separator);
-      if (subParts.every((sub) => sub.trim() === "" || hasCjk(sub))) return subParts;
+function topLevelMiddleDotCount(value: string) {
+  let depth = 0;
+  let count = 0;
+  for (const character of value) {
+    if (character === "(" || character === "[" || character === "【") depth += 1;
+    else if (character === ")" || character === "]" || character === "】") depth = Math.max(0, depth - 1);
+    else if (depth === 0 && character === "・") count += 1;
+  }
+  return count;
+}
+
+/* Japanese users commonly paste a visual list separated by middle dots and
+ * slashes. Split those separators only at the top level so a group such as
+ * "嵐山（渡月橋・竹林）" stays intact long enough to keep its context. A
+ * single unspaced middle dot remains part of an official name (for example
+ * 東京ミッドタウン・日比谷); two or more on one line clearly indicate a
+ * pasted list. */
+function splitTopLevel(value: string, forceMiddleDot = false) {
+  const pieces: string[] = [];
+  let current = "";
+  let depth = 0;
+  const middleDotIsList = forceMiddleDot
+    || topLevelMiddleDotCount(value) >= 2
+    || /\s・|・\s/u.test(value);
+  const slashIsList = value.split(/[\/／]/u).filter(Boolean).every((part) => hasCjk(part));
+
+  const flush = () => {
+    const clean = tidyName(current);
+    if (clean) pieces.push(clean);
+    current = "";
+  };
+  for (const character of value) {
+    if (character === "(" || character === "[" || character === "【") {
+      depth += 1;
+      current += character;
+      continue;
     }
-    return [part];
-  });
-  return segments.map(tidyName).filter((segment) => segment.length > 0);
+    if (character === ")" || character === "]" || character === "】") {
+      depth = Math.max(0, depth - 1);
+      current += character;
+      continue;
+    }
+    const separator = depth === 0 && (
+      character === "、"
+      || character === "，"
+      || (character === "," && hasCjk(value))
+      || ((character === "/" || character === "／") && slashIsList)
+      || (character === "・" && middleDotIsList)
+    );
+    if (separator) flush();
+    else current += character;
+  }
+  flush();
+  return pieces;
+}
+
+const parentheticalLandmark = /(?:寺|神社|大社|城|橋|公園|庭園|竹林|市場|駅|タワー|ミュージアム|博物館|美術館|水族館|動物園|通天閣)$/u;
+
+function expandParentheticalPlace(value: string) {
+  const match = value.match(/^(.+?)\(([^()]*)\)$/u);
+  if (!match) return [value];
+  const base = tidyName(match[1]);
+  const detail = tidyName(match[2]);
+  if (!base || !detail) return [value];
+  const detailPieces = splitTopLevel(detail, true);
+  if (detailPieces.length > 1) {
+    return [base, ...detailPieces.map((piece) => piece.length <= 2 || piece === "竹林" ? `${base} ${piece}` : piece)];
+  }
+  if (parentheticalLandmark.test(detail)) return [base, detail];
+  // A short regional qualifier such as 天橋立（丹後） should guide Google,
+  // not become a second, vague stop of its own.
+  return [`${base} ${detail}`];
+}
+
+function splitPlaces(name: string) {
+  return splitTopLevel(name)
+    .flatMap(expandParentheticalPlace)
+    .map(tidyName)
+    .filter((segment) => segment.length > 0);
 }
 
 const headingLead = new RegExp(
@@ -223,4 +291,31 @@ export function parseWishlist(raw: string): ParsedWishlistLine[] {
 
 export function parsedWishlistPlaces(raw: string): ParsedWishlistPlace[] {
   return parseWishlist(raw).flatMap((line) => (line.kind === "place" ? line.places : []));
+}
+
+/* Convert a free-form paste into the strict one-place-per-line form shown by
+ * the UI. This is optional: the planner already consumes the parsed places,
+ * but making the normalized form visible gives the user an editable source of
+ * truth before any paid lookup begins. */
+export function formatWishlistLines(raw: string, languageCode: "ja" | "en") {
+  const output: string[] = [];
+  let visibleDay: number | null = null;
+  for (const line of parseWishlist(raw)) {
+    if (line.kind === "empty" || line.kind === "heading") continue;
+    if (line.kind === "unparsed") {
+      output.push(line.raw.trim());
+      continue;
+    }
+    for (const place of line.places) {
+      if (place.day !== null && place.day !== visibleDay) {
+        output.push(languageCode === "ja" ? `${place.day}日目` : `Day ${place.day}`);
+        visibleDay = place.day;
+      }
+      const markers = languageCode === "ja"
+        ? [place.time, place.isReservation ? "予約" : place.priority === "must" ? "必須" : null, place.priority === "optional" ? "時間があれば" : null, place.stayMinutes ? `滞在${place.stayMinutes}分` : null]
+        : [place.time, place.isReservation ? "booked" : place.priority === "must" ? "must" : null, place.priority === "optional" ? "optional" : null, place.stayMinutes ? `stay ${place.stayMinutes} min` : null];
+      output.push([place.name, ...markers.filter(Boolean)].join(" — "));
+    }
+  }
+  return output.join("\n");
 }

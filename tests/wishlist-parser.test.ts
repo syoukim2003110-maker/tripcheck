@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { buildPlaceResolutionPayload } from "../lib/place-resolution-client.ts";
 import { buildTripFromWishlist } from "../lib/trip-builder.ts";
-import { parsedWishlistPlaces, parseWishlist } from "../lib/wishlist-parser.ts";
+import { formatWishlistLines, parsedWishlistPlaces, parseWishlist } from "../lib/wishlist-parser.ts";
 
 test("a day heading with content keeps the place instead of dropping the line", () => {
   const [line] = parsedWishlistPlaces("1日目: 浅草寺");
@@ -22,6 +22,35 @@ test("a day heading binds the following lines to that day", () => {
 test("comma-separated places on one line become independent stops", () => {
   const places = parsedWishlistPlaces("浅草寺、東京スカイツリー、上野公園");
   assert.deepEqual(places.map((place) => place.name), ["浅草寺", "東京スカイツリー", "上野公園"]);
+});
+
+test("a pasted Japanese middle-dot and slash list becomes individual editable places", () => {
+  const input = "清水寺・伏見稲荷大社・金閣寺・嵐山（渡月橋・竹林）・祇園/花見小路・二条城・天橋立（丹後）\n大阪城・道頓堀/心斎橋・USJ・新世界（通天閣）・海遊館・万博記念公園";
+  assert.deepEqual(parsedWishlistPlaces(input).map((place) => place.name), [
+    "清水寺",
+    "伏見稲荷大社",
+    "金閣寺",
+    "嵐山",
+    "渡月橋",
+    "嵐山 竹林",
+    "祇園",
+    "花見小路",
+    "二条城",
+    "天橋立 丹後",
+    "大阪城",
+    "道頓堀",
+    "心斎橋",
+    "USJ",
+    "新世界",
+    "通天閣",
+    "海遊館",
+    "万博記念公園",
+  ]);
+  assert.equal(formatWishlistLines(input, "ja").split("\n").length, 18);
+});
+
+test("a single middle dot can remain part of an official place name", () => {
+  assert.deepEqual(parsedWishlistPlaces("東京ミッドタウン・日比谷").map((place) => place.name), ["東京ミッドタウン・日比谷"]);
 });
 
 test("an ASCII comma keeps an English area qualifier together", () => {

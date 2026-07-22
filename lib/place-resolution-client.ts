@@ -26,7 +26,10 @@ export function buildPlaceResolutionPayload(raw: string, hotelQuery: string, loc
     resolveKnownStops(name, locale).length > 0 ? [] : [name]
   ));
   return {
-    queries: [...new Set(queries)].slice(0, 12),
+    // A pasted three-to-five day trip regularly contains more than twelve
+    // places. Keep a firm cost ceiling, but do not silently discard the second
+    // half of an ordinary wishlist.
+    queries: [...new Set(queries)].slice(0, 24),
     hotelQuery: hotelQuery.trim() || null,
     languageCode: locale === "ja" ? "ja" as const : "en" as const,
   };

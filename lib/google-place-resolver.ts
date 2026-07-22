@@ -16,7 +16,7 @@ export function parsePlaceResolutionRequest(input: unknown): PlaceResolutionRequ
   if (!input || typeof input !== "object") return null;
   const candidate = input as Record<string, unknown>;
   if (candidate.languageCode !== "en" && candidate.languageCode !== "ja") return null;
-  if (!Array.isArray(candidate.queries) || candidate.queries.length > 12) return null;
+  if (!Array.isArray(candidate.queries) || candidate.queries.length > 24) return null;
   const queries = candidate.queries.map((query) => boundedText(query, 1, 120));
   if (queries.some((query) => query === null)) return null;
   const hotelQuery = candidate.hotelQuery === null || candidate.hotelQuery === ""
@@ -105,8 +105,8 @@ export async function fetchGooglePlaceResolutions(
 ) {
   const inputs = [...request.queries, ...(request.hotelQuery ? [request.hotelQuery] : [])];
   const results: Array<ResolvedInputStop | null> = [];
-  for (let index = 0; index < inputs.length; index += 4) {
-    const group = inputs.slice(index, index + 4);
+  for (let index = 0; index < inputs.length; index += 6) {
+    const group = inputs.slice(index, index + 6);
     results.push(...await Promise.all(group.map((input) => fetchGoogleResolvedPlace(input, request.languageCode, apiKey, fetcher))));
   }
   const places = results.slice(0, request.queries.length).filter((place): place is ResolvedInputStop => place !== null);

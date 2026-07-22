@@ -19,6 +19,8 @@ test("caps one field check at two localized public-web searches", () => {
   assert.match(body.messages[0].content, /浅草寺 \(浅草, Japan\)/);
   assert.match(body.system, /untrusted evidence/);
   assert.match(body.system, /Never infer/);
+  assert.match(body.system, /site:x\.com/);
+  assert.match(body.system, /site:instagram\.com/);
 });
 
 test("parses bounded intent and depth while preserving legacy defaults", () => {
