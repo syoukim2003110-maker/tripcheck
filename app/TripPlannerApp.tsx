@@ -26,6 +26,7 @@ import { PlaceResolutionError, requestPlaceResolution } from "../lib/place-resol
 import type { ResolvedInputStop, RouteStop } from "../lib/route-optimizer";
 import type { Pace } from "../lib/trip-analysis";
 import { buildTripFromWishlist, type AirportCode, type FoodRecommendationSlot, type MealPlan, type VisitWindow } from "../lib/trip-builder";
+import { parseWishlist, type ParsedWishlistPlace } from "../lib/wishlist-parser";
 
 type PlannerLocale = "en" | "ja";
 type FoodState = {
@@ -91,6 +92,33 @@ function styledBestCandidate(candidates: HotelCandidate[], style: HotelStyleChoi
   if (style === "recommended") return candidates[0] ?? null;
   return candidates.find((candidate) => candidate.styles.includes(style)) ?? null;
 }
+
+function formatDistanceMeters(meters: number) {
+  return meters < 950 ? `${Math.max(10, Math.round(meters / 10) * 10)}m` : `${(meters / 1000).toFixed(1)}km`;
+}
+
+/* Axis winners are asserted only against the fetched candidate list, and only
+ * when there is an actual comparison to make. */
+function hotelAxisWinners(candidates: HotelCandidate[]) {
+  if (candidates.length < 2) return { nearestId: null as string | null, topRatedId: null as string | null };
+  let nearest = candidates[0];
+  let topRated: HotelCandidate | null = null;
+  for (const candidate of candidates) {
+    if (candidate.distanceMeters < nearest.distanceMeters) nearest = candidate;
+    const count = candidate.userRatingCount ?? 0;
+    if (candidate.rating !== null && count >= 50) {
+      const bestRating = topRated?.rating ?? -1;
+      const bestCount = topRated?.userRatingCount ?? 0;
+      if (candidate.rating > bestRating || (candidate.rating === bestRating && count > bestCount)) topRated = candidate;
+    }
+  }
+  return { nearestId: nearest.id, topRatedId: topRated?.id ?? null };
+}
+
+type ParsePreviewRow =
+  | { type: "day"; day: number }
+  | { type: "warn"; raw: string }
+  | { type: "place"; place: ParsedWishlistPlace; showDay: boolean };
 const initialBuildProgress: BuildProgress = {
   stage: "resolving",
   current: 0,
@@ -164,8 +192,13 @@ const ui = {
     headline: "どこへ行きたい？",
     subhead: "行きたい場所を、思いつくまま入れてください。近い場所を同じ日にまとめて、地図に一日の流れを描きます。",
     inputLabel: "行きたい場所",
-    placeholder: "例）\n浅草寺\nチームラボプラネッツ — 1日目 15:30 予約\n三鷹の森ジブリ美術館 — 必須\n渋谷スカイ — 時間があれば",
+    placeholder: "例）\n1日目\n浅草寺\nチームラボプラネッツ 15:30 予約\n2日目\n三鷹の森ジブリ美術館 必須\n渋谷スカイ 時間があれば",
     sample: "サンプルを見る",
+    parseHint: "1行に1か所。「1日目」の行で日を分けられます。時刻・「予約」「必須」「時間があれば」・「滞在90分」も読み取ります。",
+    previewHeading: "読み取り結果",
+    previewDay: (day: number) => `${day}日目`,
+    previewUnparsed: "場所名として読み取れない行",
+    previewStay: (minutes: number) => `滞在${minutes}分`,
     days: "日数",
     date: "初日",
     hotel: "ホテル名・泊まりたいエリア",
@@ -243,6 +276,12 @@ const ui = {
     styleLuxury: "ラグジュアリー",
     styleValue: "お手頃で高評価",
     styleNote: "価格帯はGoogleの掲載区分です。",
+    hotelRankNote: "おすすめ順は、Googleの評価・口コミ量・行程からの近さ・名前の一致による採点です。距離は検索基準点からの直線距離。",
+    hotelReasonTop: "評価・口コミ量・行程からの近さの合計スコアで1位の候補です。",
+    hotelReasonPicked: "切り替えて選んだ候補です。",
+    axisNearest: "行程に最寄り",
+    axisTopRated: "最高評価",
+    distanceFrom: (distance: string) => `中心から約${distance}`,
     useThisHotel: "このホテルに切り替え",
     tonightHotel: (name: string) => `今夜の宿 · ${name}`,
     publicSources: "公開SNS・記事の出典",
@@ -312,8 +351,13 @@ const ui = {
     headline: "Where do you want to go?",
     subhead: "Drop in places as they come to mind. We group what's near, then draw each day on the map.",
     inputLabel: "Places you want to visit",
-    placeholder: "Example\nSenso-ji\nteamLab Planets — Day 1 15:30 booked\nGhibli Museum — must\nShibuya Sky — optional",
+    placeholder: "Example\nDay 1\nSenso-ji\nteamLab Planets 15:30 booked\nDay 2\nGhibli Museum must\nShibuya Sky optional",
     sample: "Try a sample",
+    parseHint: "One place per line. A \"Day 1\" line starts that day's section. Times, booked / must / optional and \"stay 90 min\" are read automatically.",
+    previewHeading: "How we read it",
+    previewDay: (day: number) => `Day ${day}`,
+    previewUnparsed: "Can't read this line as a place",
+    previewStay: (minutes: number) => `Stay ${minutes} min`,
     days: "Days",
     date: "First day",
     hotel: "Hotel or preferred area",
@@ -391,6 +435,12 @@ const ui = {
     styleLuxury: "Luxury",
     styleValue: "Value · high rated",
     styleNote: "Price bands come from Google's listing.",
+    hotelRankNote: "Ranking = Google rating, review volume, distance to your route and name match. Distances are straight-line from the search center.",
+    hotelReasonTop: "Top combined score for rating, review volume and distance to your route.",
+    hotelReasonPicked: "Your pick from the alternatives.",
+    axisNearest: "Nearest to route",
+    axisTopRated: "Top rated",
+    distanceFrom: (distance: string) => `~${distance} from center`,
     useThisHotel: "Switch to this hotel",
     tonightHotel: (name: string) => `Tonight · ${name}`,
     publicSources: "Public social and article sources",
@@ -683,6 +733,34 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   const selectedHotel = hotelState.selectedId
     ? hotelState.candidates.find((candidate) => candidate.id === hotelState.selectedId) ?? null
     : null;
+  const hotelAxis = useMemo(() => hotelAxisWinners(hotelState.candidates), [hotelState.candidates]);
+  const hotelAxisLabels = useCallback((candidate: HotelCandidate) => [
+    ...(candidate.id === hotelAxis.nearestId ? [text.axisNearest] : []),
+    ...(candidate.id === hotelAxis.topRatedId ? [text.axisTopRated] : []),
+  ], [hotelAxis, text]);
+  // Live per-line reading of the wishlist so a misread line is visible before
+  // the build starts, not after.
+  const parsePreviewRows = useMemo<ParsePreviewRow[]>(() => {
+    if (!itinerary.trim()) return [];
+    const rows: ParsePreviewRow[] = [];
+    let sectionDay: number | null = null;
+    for (const line of parseWishlist(itinerary)) {
+      if (line.kind === "empty") continue;
+      if (line.kind === "heading") {
+        sectionDay = line.day;
+        rows.push({ type: "day", day: line.day });
+        continue;
+      }
+      if (line.kind === "unparsed") {
+        rows.push({ type: "warn", raw: line.raw });
+        continue;
+      }
+      for (const place of line.places) {
+        rows.push({ type: "place", place, showDay: place.day !== null && place.day !== sectionDay });
+      }
+    }
+    return rows;
+  }, [itinerary]);
   const measuredRouteCount = useMemo(() => new Set([
     ...Object.keys(liveTransit),
     ...Object.keys(liveWalking),
@@ -1962,6 +2040,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                               {[
                                 selected.rating !== null ? `★ ${selected.rating.toFixed(1)}` : null,
                                 priceBand(selected.priceLevel),
+                                formatDistanceMeters(selected.distanceMeters),
                                 selected.styles.includes("luxury") ? text.styleLuxury : selected.styles.includes("value") ? text.styleValue : null,
                               ].filter(Boolean).join(" · ")}
                             </span>
@@ -1971,7 +2050,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                               {night.candidates.filter((candidate) => candidate.id !== selected.id).slice(0, 3).map((candidate) => (
                                 <button key={candidate.id} onClick={() => selectNightCandidate(nightIndex, candidate.id)} title={text.useThisHotel} type="button">
                                   <span>{candidate.name}</span>
-                                  <small>{[candidate.rating !== null ? `★ ${candidate.rating.toFixed(1)}` : null, priceBand(candidate.priceLevel)].filter(Boolean).join(" · ")}</small>
+                                  <small>{[candidate.rating !== null ? `★ ${candidate.rating.toFixed(1)}` : null, priceBand(candidate.priceLevel), formatDistanceMeters(candidate.distanceMeters)].filter(Boolean).join(" · ")}</small>
                                 </button>
                               ))}
                             </div>
@@ -1981,9 +2060,12 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                     </section>
                   );
                 }) : null}
-                <p className="planner-food-note">{text.styleNote} {text.hotelNoAvailability}</p>
+                <p className="planner-food-note">{text.hotelRankNote} {text.styleNote} {text.hotelNoAvailability}</p>
               </div>
             ) : (<>
+            <p className="planner-hotel-reason">
+              {selectedHotel.id === hotelState.candidates[0]?.id ? text.hotelReasonTop : text.hotelReasonPicked}
+            </p>
             <a className="planner-hotel-hero" href={selectedHotel.googleMapsUrl} key={selectedHotel.id} rel="noreferrer" target="_blank">
               {selectedHotel.photo ? <>
                 {/* Google place photos are proxied at request time and are not stored. */}
@@ -1995,6 +2077,8 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
             <div className="planner-hotel-facts">
               {selectedHotel.rating !== null ? <span className="is-rating">★ {selectedHotel.rating.toFixed(1)} · {selectedHotel.userRatingCount?.toLocaleString(locale === "ja" ? "ja-JP" : "en-US") ?? "—"}</span> : null}
               {priceBand(selectedHotel.priceLevel) !== null ? <span>{priceBand(selectedHotel.priceLevel)}</span> : null}
+              <span>{text.distanceFrom(formatDistanceMeters(selectedHotel.distanceMeters))}</span>
+              {hotelAxisLabels(selectedHotel).map((label) => <span className="is-axis" key={label}>{label}</span>)}
               {selectedHotel.styles.includes("luxury") ? <span>{text.styleLuxury}</span> : null}
               {selectedHotel.styles.includes("value") ? <span>{text.styleValue}</span> : null}
               {selectedHotel.payment?.cashOnly === true ? <span>{text.cashOnly}</span> : null}
@@ -2049,6 +2133,8 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                         {[
                           candidate.rating !== null ? `★ ${candidate.rating.toFixed(1)}` : null,
                           priceBand(candidate.priceLevel),
+                          formatDistanceMeters(candidate.distanceMeters),
+                          ...hotelAxisLabels(candidate),
                           candidate.styles.includes("luxury") ? text.styleLuxury : candidate.styles.includes("value") ? text.styleValue : null,
                         ].filter(Boolean).join(" · ")}
                       </small>
@@ -2058,7 +2144,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                 ))}
               </div>
             ) : null}
-            <p className="planner-food-note">{text.styleNote} {text.hotelNoAvailability}</p>
+            <p className="planner-food-note">{text.hotelRankNote} {text.styleNote} {text.hotelNoAvailability}</p>
             </>)}
           </aside>
         ) : null}
@@ -2169,6 +2255,32 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
               />
               <button onClick={loadDemo} type="button"><span aria-hidden="true"><Icon name="spark" size={13} /></span>{text.sample}</button>
             </label>
+            <p className="planner-parse-hint">{text.parseHint}</p>
+
+            {parsePreviewRows.length > 0 ? (
+              <div className="planner-parse-preview">
+                <span className="planner-parse-title">{text.previewHeading}</span>
+                <ul>
+                  {parsePreviewRows.slice(0, 14).map((row, index) => row.type === "day" ? (
+                    <li className="is-day" key={`row-${index}`}><b>{text.previewDay(row.day)}</b></li>
+                  ) : row.type === "warn" ? (
+                    <li className="is-warn" key={`row-${index}`}><span>{row.raw}</span><small>{text.previewUnparsed}</small></li>
+                  ) : (
+                    <li key={`row-${index}`}>
+                      <span>{row.place.name}</span>
+                      <span className="planner-parse-chips">
+                        {row.showDay && row.place.day !== null ? <i>{text.previewDay(row.place.day)}</i> : null}
+                        {row.place.time ? <i className="is-time">{row.place.time}{row.place.isReservation ? ` ${text.reservation}` : ""}</i> : row.place.isReservation ? <i className="is-time">{text.reservation}</i> : null}
+                        {row.place.priority === "must" && !row.place.isReservation ? <i className="is-must">{text.must}</i> : null}
+                        {row.place.priority === "optional" ? <i className="is-opt">{text.optional}</i> : null}
+                        {row.place.stayMinutes !== null ? <i>{text.previewStay(row.place.stayMinutes)}</i> : null}
+                      </span>
+                    </li>
+                  ))}
+                  {parsePreviewRows.length > 14 ? <li className="is-more"><small>+{parsePreviewRows.length - 14}</small></li> : null}
+                </ul>
+              </div>
+            ) : null}
 
             <div className="planner-primary-fields">
               <label><span>{text.days}</span><select onChange={(event) => setTripDays(Number(event.target.value))} value={tripDays}>{Array.from({ length: 10 }, (_, index) => index + 1).map((value) => <option key={value} value={value}>{locale === "ja" ? `${value}日` : `${value} day${value === 1 ? "" : "s"}`}</option>)}</select></label>

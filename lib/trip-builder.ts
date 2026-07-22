@@ -1,5 +1,6 @@
 import type { Locale } from "./i18n.ts";
 import type { Pace } from "./trip-analysis.ts";
+import { parseWishlist, type ParsedWishlistPlace } from "./wishlist-parser.ts";
 import {
   buildGoogleMapsUrl,
   optimizeKnownStopOrder,
@@ -162,10 +163,6 @@ export type BuiltTripPlan = {
   days: BuiltPlanDay[];
 };
 
-const headingPattern = /^(?:day\s*\d+|\d+\s*日目|\d+\s*일차|第?\s*\d+\s*天)(?:\s*[-–—:].*)?$/i;
-const mustPattern = /\bmust(?:-do)?\b|\bnon[- ]?negotiable\b|必須|絶対|필수|꼭|必去|必须/i;
-const optionalPattern = /\boptional\b|\bif\s+(?:there(?:'s| is)\s+)?time\b|任意|時間があれば|선택|시간(?:이|\s)?되면|可选|有时间/i;
-const reservationPattern = /\bbooked\b|\breserved\b|\breservation\b|\btimed ticket\b|予約|確定|예약|예매|预约|预订/i;
 const foodVenuePattern = /\b(?:restaurant|cafe|café|lunch|dinner|sushi|ramen|izakaya|bar)\b|レストラン|食堂|寿司|すし|鮨|ラーメン|居酒屋|カフェ|ランチ|ディナー|昼食|夕食|식당|레스토랑|카페|점심|저녁|스시|라멘|餐厅|餐館|咖啡|午餐|晚餐|寿司|拉面/i;
 
 const airportData = {
@@ -262,40 +259,14 @@ function openDayLabel(locale: Locale) {
   return "Open day";
 }
 
-function cleanEntry(line: string) {
-  return line
-    .replace(/^[-•*]\s*/, "")
-    .replace(/^\d{1,2}(?::|\.)\d{2}\s*(?:[-–—:]\s*)?/, "")
-    .trim();
-}
-
-function parseWishlistConstraint(line: string): WishlistStopConstraint {
-  const isReservation = reservationPattern.test(line) || /@\s*(?:[01]?\d|2[0-3]):[0-5]\d/.test(line);
-  const fixedDayMatch = line.match(/\bday\s*(\d{1,2})\b/i)
-    ?? line.match(/(\d{1,2})\s*日目/)
-    ?? line.match(/(\d{1,2})\s*일차/)
-    ?? line.match(/第?\s*(\d{1,2})\s*天/);
-  // "9:00-17:00" style pairs read as opening hours, not a requested visit
-  // time, so a range suppresses time pinning entirely.
-  const timeRangePattern = /(?:[01]?\d|2[0-3]):[0-5]\d\s*[-–—~〜]\s*(?:[01]?\d|2[0-3]):[0-5]\d/;
-  const timeMatch = timeRangePattern.test(line) ? null : line.match(/(?:@\s*|\b)((?:[01]?\d|2[0-3]):([0-5]\d))\b/);
-  // A bare time is a requested visit time; the reservation markers only add the
-  // stronger "booked" meaning on top of it.
-  const fixedTime = timeMatch ? timeMatch[1].padStart(5, "0") : null;
-  const stayMatch = line.match(/(?:滞在|\bstay)\s*(\d{1,3})\s*(?:分|min(?:ute)?s?\b)/i)
-    ?? line.match(/(\d{1,3})\s*分\s*滞在/);
-  const stayMinutes = stayMatch ? Math.min(480, Math.max(15, Number(stayMatch[1]))) : null;
-  const priority: StopPriority = mustPattern.test(line) || isReservation
-    ? "must"
-    : optionalPattern.test(line) ? "optional" : "normal";
-
+function constraintFromParsedPlace(place: ParsedWishlistPlace): WishlistStopConstraint {
   return {
-    priority,
-    fixedDay: fixedDayMatch ? Number(fixedDayMatch[1]) : null,
-    fixedTime,
-    fixedTimeMinutes: fixedTime ? clockMinutes(fixedTime) : null,
-    isReservation,
-    stayMinutes,
+    priority: place.priority,
+    fixedDay: place.day,
+    fixedTime: place.time,
+    fixedTimeMinutes: place.time ? clockMinutes(place.time) : null,
+    isReservation: place.isReservation,
+    stayMinutes: place.stayMinutes,
   };
 }
 
@@ -1040,26 +1011,26 @@ export function buildTripFromWishlist(
   const unknownEntries: string[] = [];
   const constraints = new Map<string, WishlistStopConstraint>();
 
-  for (const rawLine of raw.split("\n")) {
-    const line = rawLine.trim();
-    if (!line || headingPattern.test(line)) continue;
-    const entry = cleanEntry(line);
-    if (!entry) continue;
-    const parsedConstraint = parseWishlistConstraint(line);
-    const providerStop = context.resolvedStops?.find((candidate) => (
-      candidate.input === entry || entry.startsWith(candidate.input) || candidate.input.startsWith(entry)
-    ));
-    const userFoodReservation = resolveUserFoodReservation(entry, parsedConstraint, locale);
-    const resolved = providerStop
-      ? [{ ...providerStop, isAnchor: parsedConstraint.isReservation || parsedConstraint.priority === "must" }]
-      : userFoodReservation ? [userFoodReservation] : resolveKnownStops(entry, locale);
-    if (resolved.length === 0) {
-      unknownEntries.push(entry);
-      continue;
-    }
-    for (const stop of resolved) {
-      if (!knownStops.some((candidate) => candidate.id === stop.id)) knownStops.push(stop);
-      constraints.set(stop.id, mergeConstraints(constraints.get(stop.id), parsedConstraint));
+  for (const line of parseWishlist(raw)) {
+    if (line.kind !== "place") continue;
+    for (const place of line.places) {
+      const entry = place.name;
+      const parsedConstraint = constraintFromParsedPlace(place);
+      const providerStop = context.resolvedStops?.find((candidate) => (
+        candidate.input === entry || entry.startsWith(candidate.input) || candidate.input.startsWith(entry)
+      ));
+      const userFoodReservation = resolveUserFoodReservation(entry, parsedConstraint, locale);
+      const resolved = providerStop
+        ? [{ ...providerStop, isAnchor: parsedConstraint.isReservation || parsedConstraint.priority === "must" }]
+        : userFoodReservation ? [userFoodReservation] : resolveKnownStops(entry, locale);
+      if (resolved.length === 0) {
+        unknownEntries.push(entry);
+        continue;
+      }
+      for (const stop of resolved) {
+        if (!knownStops.some((candidate) => candidate.id === stop.id)) knownStops.push(stop);
+        constraints.set(stop.id, mergeConstraints(constraints.get(stop.id), parsedConstraint));
+      }
     }
   }
 
