@@ -1,9 +1,11 @@
 import type { Locale } from "./i18n.ts";
 import type { LiveRouteCoordinate, LiveRouteResult, LiveRouteTravelMode } from "./google-routes.ts";
 import { LiveRoutesError } from "./live-routes-client.ts";
+import { estimateTravelOptions, type TravelPreference } from "./time-feasibility.ts";
+import { straightLineDistanceKm, type RouteStop } from "./route-optimizer.ts";
 import { routeLegKey, type BuiltTripPlan } from "./trip-builder.ts";
 
-export type PlanningRouteMode = "transit" | "walk";
+export type PlanningRouteMode = "transit" | "walk" | "drive";
 
 export type PlanningRouteLeg = {
   id: string;
@@ -24,6 +26,7 @@ export type PlanningRoutePrefetch = {
   legs: PlanningRouteResult[];
   transitMinutes: Record<string, number>;
   walkingMinutes: Record<string, number>;
+  drivingMinutes: Record<string, number>;
   skippedLegCount: number;
 };
 
@@ -84,9 +87,6 @@ function timedPathForDay(plan: BuiltTripPlan, dayIndex: number) {
   const departureClocks = startBase
     ? [day.startTime, ...day.stops.map((stop) => stop.departure)]
     : day.stops.slice(0, -1).map((stop) => stop.departure);
-  const routeModes: PlanningRouteMode[] = startBase
-    ? ["transit", ...day.legs.map((leg) => leg.comparison.recommended.mode === "walk" ? "walk" as const : "transit" as const), "transit"]
-    : day.legs.map((leg) => leg.comparison.recommended.mode === "walk" ? "walk" as const : "transit" as const);
   let previousClock: number | null = null;
   let dayOffset = 0;
   return path.slice(0, -1).flatMap((origin, index): PlanningRouteLeg[] => {
@@ -98,14 +98,46 @@ function timedPathForDay(plan: BuiltTripPlan, dayIndex: number) {
     const localDate = addDays(day.date!, dayOffset);
     if (!localDate) return [];
     const destination = path[index + 1];
-    return [{
+    const shared = {
       id: routeLegKey(origin.id, destination.id),
       origin: { latitude: origin.latitude, longitude: origin.longitude },
       destination: { latitude: destination.latitude, longitude: destination.longitude },
       departureTime: `${localDate}T${localTime}:00+09:00`,
-      mode: routeModes[index] ?? "transit",
-    }];
+    };
+    // The mode the schedule actually uses (including a per-leg user pick) is
+    // always measured, even when the contender pruning would have skipped it.
+    const scheduledLeg = startBase ? day.legs[index - 1] : day.legs[index];
+    const scheduledMode: PlanningRouteMode[] = scheduledLeg
+      ? [scheduledLeg.comparison.recommended.mode === "walk" ? "walk" : scheduledLeg.comparison.recommended.mode === "taxi" ? "drive" : "transit"]
+      : [];
+    const modes = [...new Set([...contenderModes(origin, destination, plan.travelPreference), ...scheduledMode])];
+    return modes.map((mode) => ({ ...shared, mode }));
   });
+}
+
+/*
+ * Google-Maps-style shortest routing: instead of measuring only the mode our
+ * estimate already picked, measure every mode that could realistically win
+ * this leg and let the measured minutes decide. The estimate merely prunes
+ * hopeless contenders (a three-hour walk, a taxi for a five-minute hop) so the
+ * request budget stays sane.
+ */
+function contenderModes(
+  origin: RouteStop,
+  destination: RouteStop,
+  preference: TravelPreference,
+): PlanningRouteMode[] {
+  const comparison = estimateTravelOptions(origin, destination, preference);
+  const minutesOf = (mode: "walk" | "transit" | "taxi") =>
+    comparison.options.find((option) => option.mode === mode)!.minutes;
+  const distanceKm = straightLineDistanceKm(origin, destination);
+  if (preference === "car") {
+    return minutesOf("walk") <= 15 ? ["drive", "walk"] : ["drive"];
+  }
+  const modes: PlanningRouteMode[] = ["transit"];
+  if (minutesOf("walk") <= 35) modes.push("walk");
+  if (distanceKm >= 4 && minutesOf("taxi") <= minutesOf("transit") + 5) modes.push("drive");
+  return modes;
 }
 
 /**
@@ -193,7 +225,7 @@ async function requestBatch(
           departureTime: leg.departureTime,
         })),
         languageCode: localeLanguageCode(locale),
-        travelMode: (mode === "walk" ? "WALK" : "TRANSIT") satisfies LiveRouteTravelMode,
+        travelMode: (mode === "walk" ? "WALK" : mode === "drive" ? "DRIVE" : "TRANSIT") satisfies LiveRouteTravelMode,
       }),
       signal,
     });
@@ -232,11 +264,13 @@ export async function prefetchPlanningRouteDurations(
 ): Promise<PlanningRoutePrefetch> {
   const excluded = new Set(options.excludeKeys ?? []);
   const allLegs = buildPlanningRouteLegs(plan).filter((leg) => !excluded.has(planningRouteRequestKey(leg)));
-  const maxLegs = boundedInteger(options.maxLegs, 24, 24);
+  // The bound counts mode-contender requests, not physical legs, so the
+  // Google-Maps-style multi-mode comparison still fits a paid budget.
+  const maxLegs = boundedInteger(options.maxLegs, 36, 48);
   const legs = allLegs.slice(0, maxLegs);
   const tasks = options.modes
     ? ([...new Set(options.modes)] as PlanningRouteMode[]).flatMap((mode) => chunks(legs, 12).map((batch) => ({ mode, batch })))
-    : (["transit", "walk"] as const).flatMap((mode) => chunks(legs.filter((leg) => leg.mode === mode), 12).map((batch) => ({ mode, batch })));
+    : (["transit", "walk", "drive"] as const).flatMap((mode) => chunks(legs.filter((leg) => leg.mode === mode), 12).map((batch) => ({ mode, batch })));
   if (tasks.length === 0) {
     return {
       provider: "google_maps",
@@ -244,6 +278,7 @@ export async function prefetchPlanningRouteDurations(
       legs: [],
       transitMinutes: {},
       walkingMinutes: {},
+      drivingMinutes: {},
       skippedLegCount: Math.max(0, allLegs.length - legs.length),
     };
   }
@@ -256,9 +291,11 @@ export async function prefetchPlanningRouteDurations(
   const routeResults = batches.flatMap((batch) => batch.legs);
   const transitMinutes: Record<string, number> = {};
   const walkingMinutes: Record<string, number> = {};
+  const drivingMinutes: Record<string, number> = {};
   for (const leg of routeResults) {
     if (leg.status !== "ok" || leg.durationMinutes === null) continue;
     if (leg.mode === "walk") walkingMinutes[leg.id] ??= leg.durationMinutes;
+    else if (leg.mode === "drive") drivingMinutes[leg.id] ??= leg.durationMinutes;
     else transitMinutes[leg.id] ??= leg.durationMinutes;
   }
   const fetchedAt = batches.map((batch) => batch.fetchedAt).sort().at(-1) ?? null;
@@ -268,6 +305,7 @@ export async function prefetchPlanningRouteDurations(
     legs: routeResults,
     transitMinutes,
     walkingMinutes,
+    drivingMinutes,
     skippedLegCount: Math.max(0, allLegs.length - legs.length),
   };
 }

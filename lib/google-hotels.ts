@@ -458,14 +458,15 @@ export async function fetchGoogleHotelCandidates(
   apiKey: string,
   fetcher: typeof fetch = fetch,
 ): Promise<HotelCandidate[]> {
-  // A named hotel keeps one focused search. An area search adds a second,
-  // luxury-leaning query so both "great value" and "luxury" stays have a real
-  // Google-listed candidate to choose from.
+  // A named hotel keeps one focused search. An area search widens with a
+  // luxury-leaning and a budget-leaning query so "luxury" and "value · high
+  // rated" both have real Google-listed candidates — an area's top results
+  // alone often sit in one price band, which left the other style unpickable.
   const queries = request.query
     ? [`${request.query} ${request.area} Japan`]
     : request.languageCode === "ja"
-      ? [`${request.area} ホテル`, `${request.area} 高級ホテル`]
-      : [`${request.area} hotels`, `${request.area} luxury hotels`];
+      ? [`${request.area} ホテル`, `${request.area} 高級ホテル`, `${request.area} ビジネスホテル 格安`]
+      : [`${request.area} hotels`, `${request.area} luxury hotels`, `${request.area} budget business hotels`];
   const pages = await Promise.all(queries.map(async (textQuery, index) => {
     if (index === 0) return searchHotelText(textQuery, request, apiKey, fetcher);
     // The style-widening query is optional: its failure never hides the primary results.

@@ -16,7 +16,7 @@ export type LiveRoutesRequest = {
   travelMode: LiveRouteTravelMode;
 };
 
-export type LiveRouteTravelMode = "TRANSIT" | "WALK";
+export type LiveRouteTravelMode = "TRANSIT" | "WALK" | "DRIVE";
 
 export type LiveRouteResult = {
   id: string;
@@ -26,7 +26,7 @@ export type LiveRouteResult = {
 };
 
 const validLanguages = new Set(["en", "ja", "ko", "zh-CN"]);
-const validTravelModes = new Set<LiveRouteTravelMode>(["TRANSIT", "WALK"]);
+const validTravelModes = new Set<LiveRouteTravelMode>(["TRANSIT", "WALK", "DRIVE"]);
 
 function validCoordinate(value: unknown): value is LiveRouteCoordinate {
   if (!value || typeof value !== "object") return false;

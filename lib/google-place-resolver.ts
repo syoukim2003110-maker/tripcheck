@@ -1,4 +1,5 @@
 import type { ResolvedInputStop } from "./route-optimizer.ts";
+import { estimateStayMinutes } from "./stay-estimates.ts";
 
 export type PlaceResolutionRequest = {
   queries: string[];
@@ -53,7 +54,7 @@ export async function fetchGoogleResolvedPlace(
     headers: {
       "Content-Type": "application/json",
       "X-Goog-Api-Key": apiKey,
-      "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.location,places.googleMapsUri",
+      "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.location,places.googleMapsUri,places.primaryType,places.types",
     },
     body: JSON.stringify({
       textQuery: `${input} Japan`,
@@ -72,6 +73,8 @@ export async function fetchGoogleResolvedPlace(
       formattedAddress?: string;
       location?: { latitude?: number; longitude?: number };
       googleMapsUri?: string;
+      primaryType?: string;
+      types?: string[];
     }>;
   };
   const place = payload.places?.[0];
@@ -82,6 +85,10 @@ export async function fetchGoogleResolvedPlace(
   const sourceUrl = place?.googleMapsUri?.trim();
   if (!place?.id || !name || !sourceUrl || typeof latitude !== "number" || typeof longitude !== "number") return null;
   if (latitude < 20 || latitude > 46 || longitude < 122 || longitude > 154) return null;
+  const placeTypes = [
+    ...(typeof place.primaryType === "string" ? [place.primaryType] : []),
+    ...(Array.isArray(place.types) ? place.types.filter((type): type is string => typeof type === "string") : []),
+  ];
   return {
     id: `google-${place.id}`,
     input,
@@ -93,7 +100,9 @@ export async function fetchGoogleResolvedPlace(
     sourceUrl,
     verifiedAt: new Date().toISOString(),
     confidence: "medium",
-    planningDurationMinutes: 90,
+    // A theme park is a day, a shrine is an hour — the Google place type and
+    // well-known names size the visit instead of one flat 90-minute guess.
+    planningDurationMinutes: estimateStayMinutes(`${input} ${name}`, placeTypes, 90),
     isAnchor: false,
   };
 }

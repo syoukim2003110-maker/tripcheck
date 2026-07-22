@@ -3,14 +3,14 @@ import Link from "next/link";
 export default function PrivacyPage() {
   return (
     <main className="legal-page">
-      <header><p>TRIPCHECK / LEGAL / 001</p><h1>Privacy.</h1><span>Last updated July 21, 2026</span></header>
+      <header><p>TRIPCHECK / LEGAL / 001</p><h1>Privacy.</h1><span>Last updated July 23, 2026</span></header>
       <section>
         <h2>The short version</h2>
-        <p>Your pasted itinerary is analysed in your browser. TripCheck does not store it in a database or make it available for human review.</p>
+        <p>Your pasted itinerary is analysed in your browser. TripCheck does not store it in a server database or make it available for human review. The five most recent plans may be kept only in this browser so you can reopen them.</p>
       </section>
       <section>
         <h2>Planning-time routes</h2>
-        <p>Before a dated plan appears, TripCheck automatically sends only the origin and destination coordinates, route mode and planned departure time for each bounded route leg to a protected TripCheck endpoint. That endpoint requests transit or walking duration from Google Maps Platform. Walking requests do not send the departure time onward to Google. Your pasted notes, hotel text and reservation descriptions are not included.</p>
+        <p>Before a dated plan appears, TripCheck automatically sends only the origin and destination coordinates, route mode and planned departure time for each bounded route leg to a protected TripCheck endpoint. That endpoint requests transit, walking or driving duration from Google Maps Platform. Walking requests do not send the departure time onward to Google. Your pasted notes, hotel text and reservation descriptions are not included.</p>
         <p>The browser also sends route coordinates, modes and usable departure times directly to Google Maps Platform to draw the route line after the plan opens. Route responses are used in memory for the current page and are not stored by TripCheck. Google processes these requests under the <a href="https://policies.google.com/privacy" rel="noreferrer" target="_blank">Google Privacy Policy</a>.</p>
       </section>
       <section>
@@ -22,7 +22,11 @@ export default function PrivacyPage() {
       </section>
       <section>
         <h2>Device storage</h2>
-        <p>The current product stores only your interface language on your device. It does not store itinerary text, live route results, dates or hotel details in browser storage.</p>
+        <p>TripCheck stores your interface language and up to five recently generated plans in this browser&apos;s local storage. A recent-plan entry contains the form inputs needed to reopen that plan, including itinerary text, dates, hotel or area text and travel preferences. It does not contain live route responses, reviews or public-web results. You can remove each recent plan from the planner, and clearing this site&apos;s browser data removes all of them.</p>
+      </section>
+      <section>
+        <h2>Share links</h2>
+        <p>When you choose to copy a share link, the same form inputs are encoded in the URL fragment after the # symbol. Browsers do not send that fragment to TripCheck when opening the page, and TripCheck does not store the link. Anyone who receives the complete link can read and rebuild the shared trip, so treat it as containing your itinerary and do not share it more broadly than intended.</p>
       </section>
       <section>
         <h2>Operational data</h2>
@@ -30,7 +34,7 @@ export default function PrivacyPage() {
       </section>
       <section>
         <h2>Contact and changes</h2>
-        <p>This early product does not yet create user accounts. This policy will be updated before introducing saved trips, sharing, payments or any AI processing of itinerary text.</p>
+        <p>This early product does not yet create user accounts or process payments. The policy will be updated before introducing server-saved trips or any AI processing of full itinerary text.</p>
       </section>
       <footer><Link href="/">← Return to TripCheck</Link><Link href="/terms">Terms of use →</Link></footer>
     </main>

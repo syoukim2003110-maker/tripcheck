@@ -8,14 +8,22 @@ import {
 } from "../lib/planning-live-routes-client.ts";
 import { buildTripFromWishlist } from "../lib/trip-builder.ts";
 
-test("builds hotel and stop legs from a hidden draft using Japan-local departures", () => {
+test("builds hotel and stop legs with every mode contender that could win", () => {
   const draft = buildTripFromWishlist("Senso-ji\nTokyo Skytree", 1, "balanced", "en", {
     tripStartDate: "2026-09-14",
     hotelQuery: "Shinjuku",
   });
   const legs = buildPlanningRouteLegs(draft);
 
-  assert.equal(legs.length, 3);
+  const ids = new Set(legs.map((leg) => leg.id));
+  assert.equal(ids.size, 3, "three physical legs");
+  // Google-Maps-style comparison: transit is always measured; the short
+  // Senso-ji → Skytree hop also races walking; the longer hotel legs race a car.
+  for (const id of ids) {
+    assert.ok(legs.some((leg) => leg.id === id && leg.mode === "transit"), `${id} must include transit`);
+  }
+  assert.ok(legs.some((leg) => leg.mode === "walk"), "a short hop races walking");
+  assert.ok(legs.some((leg) => leg.mode === "drive"), "a long hotel leg races a car");
   assert.match(legs[0].id, /^base-shinjuku::(?:sensoji|tokyo-skytree)$/);
   assert.match(legs[0].departureTime, /^2026-09-14T\d{2}:\d{2}:00\+09:00$/);
   assert.deepEqual(Object.keys(legs[0]).sort(), ["departureTime", "destination", "id", "mode", "origin"]);
@@ -50,13 +58,15 @@ test("prefetches real transit and walking results through the existing endpoint"
 
   const result = await prefetchPlanningRouteDurations(draft, "en", { fetcher, concurrency: 1 });
 
-  assert.equal(capturedBodies.length, 2);
+  assert.equal(capturedBodies.length, 3);
   assert.ok(capturedBodies.some((body) => body.includes('"travelMode":"TRANSIT"')));
   assert.ok(capturedBodies.some((body) => body.includes('"travelMode":"WALK"')));
+  assert.ok(capturedBodies.some((body) => body.includes('"travelMode":"DRIVE"')));
   assert.doesNotMatch(capturedBodies.join("\n"), /Senso-ji|Tokyo Skytree|private hotel note/i);
   assert.equal(Object.values(result.transitMinutes)[0], 18);
   assert.equal(Object.values(result.walkingMinutes)[0], 42);
-  assert.equal(result.legs.length, 3);
+  assert.ok(Object.keys(result.drivingMinutes).length > 0);
+  assert.equal(result.legs.length, buildPlanningRouteLegs(draft).length);
   assert.equal(result.fetchedAt, "2026-07-21T00:00:01.000Z");
   assert.equal(result.skippedLegCount, 0);
 });

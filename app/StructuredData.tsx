@@ -8,7 +8,7 @@ const faqByLocale: Record<Locale, Array<{ question: string; answer: string }>> =
     { question: "How is TripCheck different from ChatGPT or Google Maps?", answer: "TripCheck turns an unordered wishlist into a multi-day workspace with one persistent map. Grouping, ordering and time estimates use reproducible algorithms; Google Maps supplies place and route data." },
     { question: "Can TripCheck check a finished itinerary?", answer: "Yes. Input with day headings and times switches to checker mode, where reservations remain anchors and route or timing conflicts are identified." },
     { question: "Are routes and place conditions live?", answer: "Before showing the schedule, TripCheck checks current Google listing evidence and cited public web signals for resolved stops. The active day is then drawn with Google route geometry when available; missing facts remain unknown." },
-    { question: "Who can see the itinerary I paste?", answer: "The itinerary is not stored or reviewed by a person. Google receives the names needed to resolve places; public-web search receives only resolved public names and areas, not the full itinerary or completed plan." },
+    { question: "Who can see the itinerary I paste?", answer: "TripCheck does not store it in a server database or make it available for human review. Up to five recent plans may stay only in your browser. Google receives the names needed to resolve places; public-web search receives only resolved public names and areas, not the full itinerary or completed plan." },
   ],
   ja: [
     { question: "TripCheck Japanは何を作りますか？", answer: "日本全国の行きたい場所を順不同で入れ、日数を選ぶだけで、近い場所の日別分類と訪問順を作り、Googleマップ上にまとめます。" },
@@ -17,7 +17,7 @@ const faqByLocale: Record<Locale, Array<{ question: string; answer: string }>> =
     { question: "ChatGPTやGoogle Mapsとの違いは？", answer: "順不同の行き先を、常に地図が見える日別ワークスペースへまとめます。日ごとの分類、順番、時間の目安は再現可能な計算で作り、場所と経路にはGoogle Mapsを使います。" },
     { question: "完成済みの旅程も検査できますか？", answer: "できます。日付見出しと時刻を含む入力は診断モードになり、予約を軸に経路と時間の衝突を探します。" },
     { question: "経路や現地情報は最新ですか？", answer: "予定を表示する前に、解決済みの各地点についてGoogle掲載情報と引用できた公開Web情報を確認します。その後、取得できる場合はGoogleの実経路を地図上に描き、不明な情報は推測しません。" },
-    { question: "貼り付けた旅程は誰に見られますか？", answer: "旅程は保存せず、人が閲覧することもありません。Googleには場所を特定するための名前を、公開Web検索には解決済みの公開名称とエリアだけを送り、旅程全文や完成した予定は送りません。" },
+    { question: "貼り付けた旅程は誰に見られますか？", answer: "旅程はサーバーのデータベースへ保存せず、人が閲覧することもありません。直近5件はこのブラウザ内だけに保存できます。Googleには場所を特定するための名前を、公開Web検索には解決済みの公開名称とエリアだけを送り、旅程全文や完成した予定は送りません。" },
   ],
   ko: [
     { question: "TripCheck Japan은 무엇을 만드나요?", answer: "도쿄 장소를 아무 순서로 넣고 날짜 수를 고르면 가까운 곳을 묶어 방문 순서를 만듭니다. 예약과 필수 장소를 지키고 선택 장소는 예비로 남기며 도보·전철·택시를 비교합니다." },

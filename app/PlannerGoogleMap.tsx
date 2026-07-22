@@ -128,8 +128,9 @@ type Chip = {
   setSelected: (selected: boolean) => void;
 };
 
-/* Same bed glyph as the in-app icon set, inlined because chips are plain DOM. */
+/* Same glyphs as the in-app icon set, inlined because chips are plain DOM. */
 const HOTEL_BADGE_SVG = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6.5v12"/><path d="M3 15h18"/><path d="M21 18.5v-5a3.5 3.5 0 0 0-3.5-3.5H10v5"/><rect x="5" y="10.9" width="4" height="2.6" rx="1.3"/></svg>`;
+const MEAL_BADGE_SVG = `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3.5v4.6a2.4 2.4 0 0 0 4.8 0V3.5"/><path d="M9.4 10.5V20.5"/><path d="M16.2 3.5c1.9 1.9 2.7 4.4 2.7 6.8 0 2.3-1.1 3.7-2.7 4.2v6"/></svg>`;
 
 function createChip(
   google: any,
@@ -151,6 +152,7 @@ function createChip(
     element.className = `planner-map-chip is-${options.kind}`;
     const badge = document.createElement("i");
     if (options.kind === "hotel") badge.innerHTML = HOTEL_BADGE_SVG;
+    else if (options.kind === "food" && options.badge === "F") badge.innerHTML = MEAL_BADGE_SVG;
     else badge.textContent = options.badge;
     const label = document.createElement("span");
     label.textContent = options.name;
@@ -474,7 +476,8 @@ export default function PlannerGoogleMap({
     foodChipsRef.current.forEach((chip) => chip.overlay.setMap(null));
     foodChipsRef.current = foodPins.map((pin) => createChip(google, map, {
       position: { lat: pin.latitude, lng: pin.longitude },
-      badge: String(pin.index + 1),
+      // index -1 marks a confirmed meal pick, drawn with the fork glyph.
+      badge: pin.index < 0 ? "F" : String(pin.index + 1),
       name: pin.name,
       kind: "food",
       stopId: `food-${pin.id}`,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import PlannerGoogleMap, { type FoodPin } from "./PlannerGoogleMap";
 import Icon from "./PlannerIcons";
 import {
@@ -25,8 +25,12 @@ import { rankFoodWithPublicEvidence } from "../lib/public-evidence-ranking";
 import { PlaceResolutionError, requestPlaceResolution } from "../lib/place-resolution-client";
 import type { ResolvedInputStop, RouteStop } from "../lib/route-optimizer";
 import type { Pace } from "../lib/trip-analysis";
-import { buildTripFromWishlist, type AirportCode, type FoodRecommendationSlot, type MealPlan, type VisitWindow } from "../lib/trip-builder";
-import { formatWishlistLines, parseWishlist, type ParsedWishlistPlace } from "../lib/wishlist-parser";
+import type { TransportMode, TravelPreference } from "../lib/time-feasibility";
+import { decodeTripShare, encodeTripShare, type ShareableTripInput } from "../lib/share-link";
+import { requestTripIdeas, TripIdeasError } from "../lib/trip-ideas-client";
+import { forgetRecentTrip, loadRecentTrips, rememberRecentTrip, type RecentTrip } from "../lib/recent-trips";
+import { buildTripFromWishlist, routeLegKey, type AirportCode, type FoodRecommendationSlot, type MealPlan, type VisitWindow } from "../lib/trip-builder";
+import { formatWishlistLines, parsedWishlistPlaces, parseWishlist, type ParsedWishlistPlace } from "../lib/wishlist-parser";
 
 type PlannerLocale = "en" | "ja";
 type FoodState = {
@@ -93,6 +97,37 @@ function priceBand(level: HotelPriceLevel | null) {
 function styledBestCandidate(candidates: HotelCandidate[], style: HotelStyleChoice) {
   if (style === "recommended") return candidates[0] ?? null;
   return candidates.find((candidate) => candidate.styles.includes(style)) ?? null;
+}
+
+const weekdayNames = {
+  ja: ["日", "月", "火", "水", "木", "金", "土"],
+  en: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
+} as const;
+
+function weekdayInfo(date: string | null | undefined, locale: PlannerLocale) {
+  if (!date) return null;
+  const parsed = new Date(`${date}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  const day = parsed.getUTCDay();
+  return { label: weekdayNames[locale][day], isWeekend: day === 0 || day === 6 };
+}
+
+function clampTripDays(value: number) {
+  return Math.min(10, Math.max(1, Math.round(value)));
+}
+
+/* "2泊3日" → 3, "3日" → 3, "3 days" → 3; null when the concept names no length. */
+function tripDaysFromConcept(concept: string): number | null {
+  const normalized = concept.normalize("NFKC");
+  const nights = normalized.match(/(\d{1,2})\s*泊\s*(\d{1,2})\s*日/);
+  if (nights) return clampTripDays(Number(nights[2]));
+  // Do not mistake a calendar date such as "8月3日から" for a three-day trip.
+  const daysJa = normalized.match(/(?:^|[^\d月])(\d{1,2})\s*日間/)
+    ?? normalized.match(/(?:^|[^\d月])(\d{1,2})\s*日(?!目|から|に|発)/);
+  if (daysJa) return clampTripDays(Number(daysJa[1]));
+  const daysEn = normalized.match(/(\d{1,2})\s*[- ]?days?\b/i);
+  if (daysEn) return clampTripDays(Number(daysEn[1]));
+  return null;
 }
 
 function formatDistanceMeters(meters: number) {
@@ -217,6 +252,35 @@ const ui = {
     departureTime: "出発時刻",
     pace: "旅のペース",
     meal: "食事の提案",
+    travelHeading: "移動手段",
+    travelAuto: "おまかせ（最短）",
+    travelCar: "レンタカー・車",
+    moveCar: "車",
+    timebandHeading: "1日の時間帯",
+    timebandEarly: "朝型 8:00〜",
+    timebandNormal: "標準 9:00〜",
+    timebandLate: "ゆっくり 10:30〜",
+    dayEndHeading: "1日の終わり",
+    dayEndNone: "指定なし",
+    curfewOver: (time: string) => `${time} までに収まっていません`,
+    conceptLabel: "コンセプトから作る",
+    conceptPlaceholder: "例：大阪 食い倒れ 2泊3日",
+    conceptRun: "たたき台を出す",
+    conceptRunning: "候補を考えています…",
+    conceptNote: "AIの提案はあくまで下書きです。実在するかはビルド時にGoogleで確認し、見つからない場所は外れます。",
+    conceptUnavailable: "いまは提案を作れませんでした。少し待って再試行してください。",
+    conceptNotConfigured: "AI提案は未設定です（サーバにANTHROPIC_API_KEYが必要）。",
+    conceptRateLimited: "提案の回数上限に達しました。しばらくしてからどうぞ。",
+    recentHeading: "最近の旅程",
+    recentNote: "この端末の中だけに保存されます",
+    recentDays: (days: number) => `${days}日間`,
+    recentDelete: "削除",
+    moveDay: "日を移動",
+    mealChoose: "この店にする",
+    mealChosen: "行程に入れました",
+    share: "共有リンク",
+    shareCopied: "コピーしました",
+    shareTitle: "この旅程を同じ設定で開けるリンクをコピーします。内容はリンクの中だけに入り、サーバには保存されません。",
     relaxed: "ゆったり",
     balanced: "標準",
     fast: "たくさん回る",
@@ -250,6 +314,11 @@ const ui = {
     planSummary: (days: number, stops: number) => `${days}日間 · ${stops}か所`,
     openMaps: "Google Mapsで開く",
     stay: "滞在",
+    backToPlan: "作成した計画にもどる",
+    hotelDepartRow: (mode: string, minutes: number) => `ホテルから ${mode} 約${minutes}分`,
+    hotelReturnRow: (mode: string, minutes: number) => `ホテルへ ${mode} 約${minutes}分`,
+    travelTotal: (minutes: number) => `移動 合計約${minutes}分`,
+    legModes: "この区間の移動手段。タップで固定、もう一度タップで自動に戻す",
     move: { walk: "徒歩", transit: "電車", taxi: "タクシー" },
     minutes: (value: number) => `${value}分`,
     legLive: "実測",
@@ -326,7 +395,7 @@ const ui = {
     walkingSafety: "徒歩経路はベータ版。安全状況は現地で確認してください。",
     deadlineOver: (time: string) => `空港へ向かう目安 ${time} を超えています`,
     language: "言語",
-    privacy: "旅程は保存されません",
+    privacy: "旅程はこの端末だけに保存",
     fieldCheck: "現地チェック",
     fieldChecking: "確認中…",
     fieldChecked: "確認済み",
@@ -388,6 +457,35 @@ const ui = {
     departureTime: "Departure time",
     pace: "Pace",
     meal: "Food ideas",
+    travelHeading: "Getting around",
+    travelAuto: "Best · fastest",
+    travelCar: "Rental car",
+    moveCar: "Drive",
+    timebandHeading: "Day rhythm",
+    timebandEarly: "Early 8:00",
+    timebandNormal: "Standard 9:00",
+    timebandLate: "Slow 10:30",
+    dayEndHeading: "Day ends by",
+    dayEndNone: "No limit",
+    curfewOver: (time: string) => `Runs past your ${time} target`,
+    conceptLabel: "Start from a concept",
+    conceptPlaceholder: "e.g. Osaka street food, 3 days",
+    conceptRun: "Draft a list",
+    conceptRunning: "Thinking…",
+    conceptNote: "AI suggestions are only a draft. Every place is verified on Google at build time; anything unfindable drops out.",
+    conceptUnavailable: "Couldn't draft ideas right now. Try again shortly.",
+    conceptNotConfigured: "AI drafts need ANTHROPIC_API_KEY on the server.",
+    conceptRateLimited: "Draft limit reached — try again later.",
+    recentHeading: "Recent trips",
+    recentNote: "Stored only on this device",
+    recentDays: (days: number) => `${days} days`,
+    recentDelete: "Remove",
+    moveDay: "Move to day",
+    mealChoose: "Pick this place",
+    mealChosen: "Added to the day",
+    share: "Copy share link",
+    shareCopied: "Copied",
+    shareTitle: "Copies a link that reopens this trip with the same inputs. Everything lives in the link itself; nothing is stored.",
     relaxed: "Relaxed",
     balanced: "Balanced",
     fast: "See more",
@@ -421,6 +519,11 @@ const ui = {
     planSummary: (days: number, stops: number) => `${days} days · ${stops} places`,
     openMaps: "Open in Google Maps",
     stay: "Stay",
+    backToPlan: "Back to your plan",
+    hotelDepartRow: (mode: string, minutes: number) => `From hotel · ${mode} ~${minutes} min`,
+    hotelReturnRow: (mode: string, minutes: number) => `To hotel · ${mode} ~${minutes} min`,
+    travelTotal: (minutes: number) => `~${minutes} min total travel`,
+    legModes: "Travel mode for this leg. Tap to pin, tap again for automatic",
     move: { walk: "Walk", transit: "Train", taxi: "Taxi" },
     minutes: (value: number) => `${value} min`,
     legLive: "live",
@@ -497,7 +600,7 @@ const ui = {
     walkingSafety: "Walking routes are beta. Check real-world safety conditions.",
     deadlineOver: (time: string) => `Runs past the ${time} airport cutoff`,
     language: "Language",
-    privacy: "Nothing is saved",
+    privacy: "Trips stay on this device",
     fieldCheck: "Reality check",
     fieldChecking: "Checking…",
     fieldChecked: "Checked",
@@ -540,8 +643,8 @@ function formatWindowClock(minutes: number) {
   return `${Math.floor(normalized / 60)}:${String(normalized % 60).padStart(2, "0")}`;
 }
 
-function modeIcon(mode: "walk" | "transit" | "taxi") {
-  return <Icon name={mode === "transit" ? "train" : mode} size={14} />;
+function modeIcon(mode: "walk" | "transit" | "taxi", carMode: boolean) {
+  return <Icon name={mode === "transit" ? "train" : mode === "taxi" && carMode ? "car" : mode} size={14} />;
 }
 
 function googleMapsSearchUrl(stop: RouteStop) {
@@ -647,6 +750,23 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   const [inspector, setInspector] = useState<Inspector>(null);
   const [liveTransit, setLiveTransit] = useState<Record<string, number>>({});
   const [liveWalking, setLiveWalking] = useState<Record<string, number>>({});
+  const [liveDriving, setLiveDriving] = useState<Record<string, number>>({});
+  const [travelPreference, setTravelPreference] = useState<TravelPreference>("auto");
+  const [legModeOverrides, setLegModeOverrides] = useState<Record<string, TransportMode>>({});
+  const [dayOverrides, setDayOverrides] = useState<Record<string, number>>({});
+  const [mealSelections, setMealSelections] = useState<Record<string, string>>({});
+  const [dayStartDefault, setDayStartDefault] = useState("09:00");
+  const [shareCopied, setShareCopied] = useState(false);
+  const [pendingSharedBuild, setPendingSharedBuild] = useState(false);
+  // Once a plan is built it stays available: "back to input" must never force
+  // a full (paid, slow) rebuild just to peek at the form again.
+  const [planReady, setPlanReady] = useState(false);
+  const [hintDismissed, setHintDismissed] = useState(false);
+  const [concept, setConcept] = useState("");
+  const [conceptLoading, setConceptLoading] = useState(false);
+  const [conceptError, setConceptError] = useState<"not_configured" | "rate_limited" | "unavailable" | null>(null);
+  const [dayEndTarget, setDayEndTarget] = useState("");
+  const [recentTrips, setRecentTrips] = useState<RecentTrip[]>([]);
   const [openingWindowsByDay, setOpeningWindowsByDay] = useState<Record<string, Record<number, VisitWindow[]>>>({});
   const [foodSearches, setFoodSearches] = useState<Record<string, FoodState>>({});
   const [intelligence, setIntelligence] = useState<Record<string, IntelligenceState>>({});
@@ -678,6 +798,53 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     document.documentElement.classList.remove("cursor-visible", "motion-ready");
     try { window.localStorage.setItem("tripcheck-locale", locale); } catch { /* optional */ }
   }, [locale]);
+
+  // Applies a self-contained trip code (share link or device-local history)
+  // to the form, then a follow-up effect builds it immediately.
+  const applySharedTripInput = useCallback((shared: ShareableTripInput) => {
+    setItinerary(shared.itinerary);
+    setTripDays(shared.tripDays);
+    if (shared.tripStartDate) setTripStartDate(shared.tripStartDate);
+    setHotelQuery(shared.hotelQuery);
+    setPace(shared.pace);
+    setMealPlan(shared.mealPlan);
+    setTravelPreference(shared.travelPreference);
+    setArrivalAirport(shared.arrivalAirport as AirportCode);
+    setArrivalTime(shared.arrivalTime);
+    setDepartureAirport(shared.departureAirport as AirportCode);
+    setDepartureTime(shared.departureTime);
+    setDayStartDefault(shared.dayStartDefault);
+    setDayEndTarget(shared.dayEndTarget);
+    setPendingSharedBuild(true);
+  }, []);
+
+  // A shared link carries the whole trip in its hash; opening it restores the
+  // inputs and builds immediately, so a companion lands on the finished plan.
+  const sharedHydrationRef = useRef(false);
+  useEffect(() => {
+    if (sharedHydrationRef.current) return;
+    sharedHydrationRef.current = true;
+    try {
+      setRecentTrips(loadRecentTrips(window.localStorage));
+    } catch { /* private-mode storage stays optional */ }
+    const match = window.location.hash.match(/^#t=([A-Za-z0-9_-]+)$/);
+    if (!match) return;
+    const shared = decodeTripShare(match[1]);
+    if (!shared) return;
+    applySharedTripInput(shared);
+  }, [applySharedTripInput]);
+
+  useEffect(() => {
+    if (!pendingSharedBuild) return;
+    setPendingSharedBuild(false);
+    void buildPlan();
+    // buildPlan reads the freshly hydrated state from this render on purpose.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingSharedBuild]);
+
+  useEffect(() => {
+    if (inspector !== null) setHintDismissed(true);
+  }, [inspector]);
 
   useEffect(() => {
     if (inspector?.kind !== "food" || !inspector.candidateId) return;
@@ -719,12 +886,26 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     earlyVisitStopIds,
     liveTransitMinutes: liveTransit,
     liveWalkingMinutes: liveWalking,
+    liveDrivingMinutes: liveDriving,
+    travelPreference,
+    legModeOverrides,
+    dayOverrides,
+    defaultDayStart: dayStartDefault,
+    dayEndTarget: dayEndTarget || undefined,
     openingWindowsByDay,
-  }) : null, [arrivalAirport, arrivalTime, dayStartTimes, departureAirport, departureTime, durationOverrides, earlyVisitStopIds, hasPlan, hotelQuery, itinerary, liveTransit, liveWalking, locale, mealPlan, nightBases, openingWindowsByDay, pace, resolvedBase, resolvedStops, tripDays, tripStartDate, userStayMinutes]);
+  }) : null, [arrivalAirport, arrivalTime, dayEndTarget, dayOverrides, dayStartDefault, dayStartTimes, departureAirport, departureTime, durationOverrides, earlyVisitStopIds, hasPlan, hotelQuery, itinerary, legModeOverrides, liveDriving, liveTransit, liveWalking, locale, mealPlan, nightBases, openingWindowsByDay, pace, resolvedBase, resolvedStops, travelPreference, tripDays, tripStartDate, userStayMinutes]);
 
   const day = plan?.days[activeDay] ?? null;
   const base = day ? day.startBase ?? plan?.selectedBase ?? null : null;
   const dayEndBase = day ? day.endBase ?? base : null;
+  const modeLabel = (mode: TransportMode | null) => mode === "taxi" && travelPreference === "car"
+    ? text.moveCar
+    : mode ? text.move[mode] : travelPreference === "car" ? text.moveCar : text.move.transit;
+  const dayTravelTotal = day
+    ? day.legs.reduce((sum, leg) => sum + leg.comparison.recommended.minutes, 0)
+      + (day.hotelOutboundMinutes ?? 0)
+      + (day.hotelInboundMinutes ?? 0)
+    : 0;
   const mapStops = useMemo(() => day ? day.stops.map(({ stop }) => stop) : [], [day]);
   const routeDepartureTimes = useMemo(() => {
     if (!day?.date || mapStops.length === 0) return [];
@@ -739,10 +920,17 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     return times.map((time) => `${day.date}T${time}:00+09:00`);
   }, [base, day, mapStops]);
   const routeModes = useMemo(() => {
-    if (!day || mapStops.length < 2) return base && mapStops.length === 1 ? ["transit" as const, "transit" as const] : [];
+    const fallbackBoundary = travelPreference === "car" ? "taxi" as const : "transit" as const;
+    if (!day || mapStops.length < 2) {
+      return base && mapStops.length === 1
+        ? [day?.hotelOutboundMode ?? fallbackBoundary, day?.hotelInboundMode ?? fallbackBoundary]
+        : [];
+    }
     const betweenStops = day.legs.map((leg) => leg.comparison.recommended.mode);
-    return base ? ["transit" as const, ...betweenStops, "transit" as const] : betweenStops;
-  }, [base, day, mapStops.length]);
+    return base
+      ? [day.hotelOutboundMode ?? fallbackBoundary, ...betweenStops, day.hotelInboundMode ?? fallbackBoundary]
+      : betweenStops;
+  }, [base, day, mapStops.length, travelPreference]);
 
   const daySlots = useMemo(
     () => plan?.foodRecommendationSlots.filter((slot) => slot.dayIndex === activeDay) ?? [],
@@ -801,13 +989,22 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   const displayedMapStops = isBuilding ? previewStops : mapStops;
   const displayedMapBase = hasPlan ? base : null;
   const foodPins = useMemo<FoodPin[]>(() => {
-    if (!activeFoodSlot || !activeFoodState || activeFoodState.status !== "ready") return [];
-    return activeFoodState.candidates.flatMap((candidate, index) => (
-      typeof candidate.latitude === "number" && typeof candidate.longitude === "number"
-        ? [{ id: candidate.id, name: candidate.name, latitude: candidate.latitude, longitude: candidate.longitude, index }]
-        : []
-    ));
-  }, [activeFoodSlot, activeFoodState]);
+    if (activeFoodSlot && activeFoodState && activeFoodState.status === "ready") {
+      return activeFoodState.candidates.flatMap((candidate, index) => (
+        typeof candidate.latitude === "number" && typeof candidate.longitude === "number"
+          ? [{ id: candidate.id, name: candidate.name, latitude: candidate.latitude, longitude: candidate.longitude, index }]
+          : []
+      ));
+    }
+    // Confirmed meal picks stay pinned on the map even with the panel closed.
+    return daySlots.flatMap((slot) => {
+      const selectedId = mealSelections[slot.id];
+      const candidate = selectedId ? foodSearches[slot.id]?.candidates.find((entry) => entry.id === selectedId) : undefined;
+      return candidate && typeof candidate.latitude === "number" && typeof candidate.longitude === "number"
+        ? [{ id: candidate.id, name: candidate.name, latitude: candidate.latitude, longitude: candidate.longitude, index: -1 }]
+        : [];
+    });
+  }, [activeFoodSlot, activeFoodState, daySlots, foodSearches, mealSelections]);
 
   const canBuild = itinerary.trim().length >= 3 && !isBuilding;
 
@@ -903,6 +1100,9 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
           if (Object.keys(measured.walkingMinutes).length > 0) {
             setLiveWalking((current) => ({ ...current, ...measured.walkingMinutes }));
           }
+          if (Object.keys(measured.drivingMinutes).length > 0) {
+            setLiveDriving((current) => ({ ...current, ...measured.drivingMinutes }));
+          }
         })
         .catch(() => { /* Estimates stay in place and are labeled as such. */ });
     }, 900);
@@ -914,6 +1114,132 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     setHotelPurpose(purpose);
     // The displayed hotel and the routing base must never diverge.
     setResolvedBase(hotelAsResolvedBase(candidate, hotelQuery, candidate.address.slice(0, 100) || candidate.name, new Date().toISOString()));
+  }
+
+  async function runConceptDraft() {
+    const trimmed = concept.trim();
+    if (trimmed.length < 2 || conceptLoading) return;
+    setConceptLoading(true);
+    setConceptError(null);
+    try {
+      const response = await requestTripIdeas(trimmed, locale);
+      const existing = new Set(parsedWishlistPlaces(itinerary).map((place) => place.name.normalize("NFKC").toLocaleLowerCase()));
+      const additions = response.places.filter((place) => !existing.has(place.normalize("NFKC").toLocaleLowerCase()));
+      setItinerary((current) => current.trim()
+        ? (additions.length > 0 ? `${current.replace(/\s+$/, "")}\n${additions.join("\n")}` : current)
+        : response.places.join("\n"));
+      const days = tripDaysFromConcept(trimmed);
+      if (days !== null) setTripDays(days);
+    } catch (error) {
+      setConceptError(error instanceof TripIdeasError ? error.code : "unavailable");
+    } finally {
+      setConceptLoading(false);
+    }
+  }
+
+  function openRecentTrip(entry: RecentTrip) {
+    const shared = decodeTripShare(entry.code);
+    if (!shared) {
+      setRecentTrips(forgetRecentTrip(window.localStorage, entry.code));
+      return;
+    }
+    applySharedTripInput(shared);
+  }
+
+  function moveStopToDay(stopId: string, dayIndex: number) {
+    if (dayIndex === activeDay) {
+      // Tapping the current day releases the stop back to automatic placement.
+      setDayOverrides((current) => {
+        if (!(stopId in current)) return current;
+        const next = { ...current };
+        delete next[stopId];
+        return next;
+      });
+      return;
+    }
+    setDayOverrides((current) => ({ ...current, [stopId]: dayIndex + 1 }));
+    setActiveDay(dayIndex);
+  }
+
+  // Confirmed meal picks appear inside the timeline: lunch after its anchor
+  // stop, dinner after the day's last stop, each opening its food panel.
+  function mealRowsAfter(stopId: string, isLastStop: boolean) {
+    return daySlots
+      .filter((slot) => {
+        const candidateId = mealSelections[slot.id];
+        if (!candidateId) return false;
+        return slot.kind === "lunch" ? slot.anchorStopId === stopId : isLastStop;
+      })
+      .sort((left, right) => (left.kind === right.kind ? 0 : left.kind === "lunch" ? -1 : 1))
+      .flatMap((slot) => {
+        const candidate = foodSearches[slot.id]?.candidates.find((entry) => entry.id === mealSelections[slot.id]);
+        if (!candidate) return [];
+        return [(
+          <li className="planner-meal-row" key={`meal-${slot.id}`}>
+            <button
+              className="planner-meal-stop"
+              onClick={() => setInspector({ kind: "food", slotId: slot.id, candidateId: candidate.id })}
+              type="button"
+            >
+              <time>{slot.window.split("–")[0]}</time>
+              <span className="planner-meal-dot" aria-hidden="true"><Icon name="fork" size={13} /></span>
+              <span className="planner-stop-main">
+                <b>{candidate.name}</b>
+                <small>{slot.kind === "lunch" ? text.lunchChip : text.dinnerChip} · {slot.window}</small>
+              </span>
+            </button>
+          </li>
+        )];
+      });
+  }
+
+  function toggleMealSelection(slotId: string, candidateId: string) {
+    setMealSelections((current) => {
+      if (current[slotId] === candidateId) {
+        const next = { ...current };
+        delete next[slotId];
+        return next;
+      }
+      return { ...current, [slotId]: candidateId };
+    });
+  }
+
+  async function copyShareLink() {
+    const code = encodeTripShare({
+      itinerary,
+      tripDays,
+      tripStartDate,
+      hotelQuery,
+      pace,
+      mealPlan,
+      travelPreference,
+      arrivalAirport,
+      arrivalTime,
+      departureAirport,
+      departureTime,
+      dayStartDefault,
+      dayEndTarget,
+    });
+    const url = `${window.location.origin}${locale === "ja" ? "/ja" : "/"}#t=${code}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setShareCopied(true);
+      window.setTimeout(() => setShareCopied(false), 2000);
+    } catch {
+      window.prompt(text.share, url);
+    }
+  }
+
+  function setLegMode(legKey: string, mode: TransportMode) {
+    setLegModeOverrides((current) => {
+      // Tapping the already-pinned mode releases the leg back to automatic.
+      if (current[legKey] === mode) {
+        const next = { ...current };
+        delete next[legKey];
+        return next;
+      }
+      return { ...current, [legKey]: mode };
+    });
   }
 
   function selectNightCandidate(nightIndex: number, candidateId: string) {
@@ -998,6 +1324,11 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     buildAbortRef.current = null;
     buildRunRef.current += 1;
     setItinerary(fullTripDemo.places[locale]);
+    setTravelPreference("auto");
+    setDayStartDefault("09:00");
+    setDayEndTarget("");
+    setConcept("");
+    setConceptError(null);
     setTripDays(fullTripDemo.tripDays);
     setTripStartDate(fullTripDemo.tripStartDate);
     setHotelQuery(fullTripDemo.hotelQuery[locale]);
@@ -1027,10 +1358,15 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     setPreviewStops([]);
     setLiveTransit({});
     setLiveWalking({});
+    setLiveDriving({});
+    setLegModeOverrides({});
+    setDayOverrides({});
+    setMealSelections({});
     setOpeningWindowsByDay({});
     setBuildProgress(initialBuildProgress);
     setIsBuilding(false);
     setHasPlan(false);
+    setPlanReady(false);
   }
 
   async function buildPlan() {
@@ -1048,6 +1384,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     if (!commit(() => {
       setIsBuilding(true);
       setHasPlan(false);
+      setPlanReady(false);
       setPlaceWarning(false);
       setFoodSearches({});
       setIntelligence({});
@@ -1064,6 +1401,10 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       setPreviewStops([]);
       setLiveTransit({});
       setLiveWalking({});
+      setLiveDriving({});
+      setLegModeOverrides({});
+      setDayOverrides({});
+      setMealSelections({});
       setOpeningWindowsByDay({});
       setInspector(null);
       setBuildProgress(initialBuildProgress);
@@ -1099,6 +1440,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       openings: Record<string, Record<number, VisitWindow[]>> = {},
       transit: Record<string, number> = {},
       walking: Record<string, number> = {},
+      driving: Record<string, number> = {},
     ) => ({
       tripStartDate,
       hotelQuery,
@@ -1108,6 +1450,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       departureTime,
       flightKind: "international" as const,
       mealPlan,
+      travelPreference,
       resolvedStops: places,
       resolvedBase: baseOverride,
       durationOverrides: overrides,
@@ -1115,6 +1458,9 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       openingWindowsByDay: openings,
       liveTransitMinutes: transit,
       liveWalkingMinutes: walking,
+      liveDrivingMinutes: driving,
+      defaultDayStart: dayStartDefault,
+      dayEndTarget: dayEndTarget || undefined,
     });
     let draft = buildTripFromWishlist(itinerary, tripDays, pace, locale, plannerContext(resolvedHotel));
     if (!commit(() => setPreviewStops(draft.days.flatMap((candidate) => candidate.stops.map(({ stop }) => stop))))) return;
@@ -1244,7 +1590,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     // fetched afterwards.
     const speculativeRoutesPromise = prefetchPlanningRouteDurations(draft, locale, {
       concurrency: 3,
-      maxLegs: 24,
+      maxLegs: 36,
       signal: controller.signal,
     }).catch(() => null);
 
@@ -1349,7 +1695,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     }
     for (const food of Object.values(localFoodSearches)) {
       const evidenceByCandidateId = Object.fromEntries(Object.entries(food.fresh).map(([candidateId, state]) => [candidateId, state.result]));
-      food.candidates = rankFoodWithPublicEvidence(food.candidates, evidenceByCandidateId).slice(0, 2);
+      food.candidates = rankFoodWithPublicEvidence(food.candidates, evidenceByCandidateId).slice(0, 3);
     }
     if (!commit(() => {
       setFreshVoices(localFreshVoices);
@@ -1380,6 +1726,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     })) return;
     let measuredTransit: Record<string, number> = {};
     let measuredWalking: Record<string, number> = {};
+    let measuredDriving: Record<string, number> = {};
     const attemptedRouteKeys = new Set<string>();
     const measuredOkKeys = new Set<string>();
     const measuredLegIds = new Set<string>();
@@ -1389,6 +1736,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       if (speculative) {
         measuredTransit = { ...speculative.transitMinutes };
         measuredWalking = { ...speculative.walkingMinutes };
+        measuredDriving = { ...speculative.drivingMinutes };
         for (const leg of speculative.legs) {
           attemptedRouteKeys.add(planningRouteRequestKey(leg));
           if (leg.status === "ok") {
@@ -1402,13 +1750,14 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       // route is requested here — usually zero or a handful of legs.
       const remaining = await prefetchPlanningRouteDurations(routeDraft, locale, {
         concurrency: 3,
-        maxLegs: 24,
+        maxLegs: 36,
         excludeKeys: measuredOkKeys,
         signal: controller.signal,
       });
       if (cancelled()) return;
       measuredTransit = { ...measuredTransit, ...remaining.transitMinutes };
       measuredWalking = { ...measuredWalking, ...remaining.walkingMinutes };
+      measuredDriving = { ...measuredDriving, ...remaining.drivingMinutes };
       for (const leg of remaining.legs) {
         attemptedRouteKeys.add(planningRouteRequestKey(leg));
         if (leg.status === "ok") measuredLegIds.add(leg.id);
@@ -1438,7 +1787,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       tripDays,
       pace,
       locale,
-      plannerContext(effectiveBase, overrides, earlyStops, localOpeningWindows, measuredTransit, measuredWalking),
+      plannerContext(effectiveBase, overrides, earlyStops, localOpeningWindows, measuredTransit, measuredWalking, measuredDriving),
     );
     const finalSlots = finalDraft.foodRecommendationSlots;
     const reconciliation = reconcileFoodRecommendationSlots(slots, finalSlots, 20);
@@ -1542,7 +1891,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     }
     for (const food of Object.values(finalFoodSearches)) {
       const evidenceByCandidateId = Object.fromEntries(Object.entries(food.fresh).map(([candidateId, state]) => [candidateId, state.result]));
-      food.candidates = rankFoodWithPublicEvidence(food.candidates, evidenceByCandidateId).slice(0, 2);
+      food.candidates = rankFoodWithPublicEvidence(food.candidates, evidenceByCandidateId).slice(0, 3);
     }
     if (!commit(() => setFoodSearches(finalFoodSearches))) return;
 
@@ -1554,14 +1903,43 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       setEarlyVisitStopIds(earlyStops);
       setOpeningWindowsByDay(localOpeningWindows);
       setLiveTransit(measuredTransit);
+      setLiveDriving(measuredDriving);
       setLiveWalking(measuredWalking);
       setResolvedStops(places);
       setResolvedBase(effectiveBase);
       setActiveDay(0);
       setHasPlan(true);
+      setPlanReady(true);
+      setHintDismissed(false);
       setPreviewStops([]);
       setIsBuilding(false);
       buildAbortRef.current = null;
+      // Device-local history: the same self-contained code a share link uses.
+      try {
+        setRecentTrips(rememberRecentTrip(window.localStorage, {
+          code: encodeTripShare({
+            itinerary,
+            tripDays,
+            tripStartDate,
+            hotelQuery,
+            pace,
+            mealPlan,
+            travelPreference,
+            arrivalAirport,
+            arrivalTime,
+            departureAirport,
+            departureTime,
+            dayStartDefault,
+            dayEndTarget,
+          }),
+          title: finalDraft.days.find((candidate) => candidate.stops.length > 0)?.theme
+            ?? itinerary.split("\n").find((line) => line.trim())?.trim()
+            ?? "Trip",
+          days: tripDays,
+          startDate: tripStartDate,
+          savedAt: new Date().toISOString(),
+        }));
+      } catch { /* private-mode storage stays optional */ }
     })) return;
   }
 
@@ -1570,6 +1948,11 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     buildAbortRef.current = null;
     buildRunRef.current += 1;
     setItinerary("");
+    setTravelPreference("auto");
+    setDayStartDefault("09:00");
+    setDayEndTarget("");
+    setConcept("");
+    setConceptError(null);
     setTripDays(3);
     setHotelQuery("");
     setTripStartDate(defaultTripDate());
@@ -1596,9 +1979,14 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     setPreviewStops([]);
     setLiveTransit({});
     setLiveWalking({});
+    setLiveDriving({});
+    setLegModeOverrides({});
+    setDayOverrides({});
+    setMealSelections({});
     setOpeningWindowsByDay({});
     setInspector(null);
     setHasPlan(false);
+    setPlanReady(false);
     setPlaceWarning(false);
     setActiveDay(0);
     setIsBuilding(false);
@@ -1611,6 +1999,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     buildRunRef.current += 1;
     setIsBuilding(false);
     setHasPlan(false);
+    setPlanReady(false);
     setResolvedStops([]);
     setResolvedBase(null);
     setFoodSearches({});
@@ -1628,6 +2017,10 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     setPreviewStops([]);
     setLiveTransit({});
     setLiveWalking({});
+    setLiveDriving({});
+    setLegModeOverrides({});
+    setDayOverrides({});
+    setMealSelections({});
     setOpeningWindowsByDay({});
     setPlaceWarning(false);
     setActiveDay(0);
@@ -1649,9 +2042,11 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     try {
       const response = await requestFoodRecommendations(slot, locale);
       if (stale()) return;
-      const next: FoodState = { status: "ready", query, candidates: response.candidates.slice(0, 2), notes: {}, fresh: {} };
+      const next: FoodState = { status: "ready", query, candidates: response.candidates.slice(0, 3), notes: {}, fresh: {} };
       setFoodSearches((current) => ({ ...current, [slot.id]: next }));
-      for (const candidate of next.candidates) {
+      // Public-evidence checks stay budgeted to the top two; the third pick
+      // remains visible on Google evidence alone.
+      for (const candidate of next.candidates.slice(0, 2)) {
         void requestFreshVoices({ name: candidate.name, area: candidate.address.slice(0, 100) || slot.area }, locale, { intent: "food", depth: "quick" })
           .then((result) => {
             if (stale()) return;
@@ -1865,6 +2260,25 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                 ))}
               </select>
             </label>
+            {plan && plan.days.length > 1 ? (
+              <div className="planner-day-move" role="group" aria-label={text.moveDay}>
+                <span>{text.moveDay}</span>
+                <div>
+                  {plan.days.map((_, dayIndex) => (
+                    <button
+                      aria-pressed={dayIndex === activeDay}
+                      className={dayIndex === activeDay ? "is-active" : ""}
+                      key={dayIndex}
+                      onClick={() => moveStopToDay(selectedBuiltStop.stop.id, dayIndex)}
+                      title={text.previewDay(dayIndex + 1)}
+                      type="button"
+                    >
+                      {dayIndex + 1}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             <div className="planner-inspector-actions">
               <button
                 className="planner-check-button"
@@ -2271,6 +2685,13 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                           {candidate.paymentEvidence[0] ? <span>{candidate.paymentEvidence[0].label}</span> : null}
                           {foodFresh?.findings.length ? <span className="is-fresh">{text.foodFresh(foodFresh.findings.length)}</span> : null}
                         </div>
+                        <button
+                          className={`planner-meal-choose${mealSelections[activeFoodSlot.id] === candidate.id ? " is-active" : ""}`}
+                          onClick={() => toggleMealSelection(activeFoodSlot.id, candidate.id)}
+                          type="button"
+                        >
+                          {mealSelections[activeFoodSlot.id] === candidate.id ? (<><Icon name="check" size={11} />{text.mealChosen}</>) : text.mealChoose}
+                        </button>
                         {candidate.reviewSnippets[0] ? <p className="planner-food-proof">“{candidate.reviewSnippets[0].text}” <a href={candidate.reviewSnippets[0].googleMapsUrl ?? candidate.googleMapsUrl} rel="noreferrer" target="_blank">{candidate.reviewSnippets[0].authorName} · {candidate.reviewSnippets[0].relativeTime} ↗</a></p> : null}
                         {candidate.photoAttribution ? (
                           <a className="planner-photo-credit" href={candidate.photoAttribution.uri} rel="noreferrer" target="_blank">{text.photoLabel} {candidate.photoAttribution.name}</a>
@@ -2317,6 +2738,35 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
             <div className="planner-intro">
               <h1>{text.headline}</h1>
               <p>{text.subhead}</p>
+            </div>
+
+            <div className="planner-concept">
+              <span>{text.conceptLabel}</span>
+              <div className="planner-concept-row">
+                <input
+                  onChange={(event) => setConcept(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      void runConceptDraft();
+                    }
+                  }}
+                  placeholder={text.conceptPlaceholder}
+                  value={concept}
+                />
+                <button disabled={concept.trim().length < 2 || conceptLoading} onClick={() => void runConceptDraft()} type="button">
+                  {conceptLoading ? text.conceptRunning : text.conceptRun}
+                </button>
+              </div>
+              <small className={conceptError ? "is-error" : ""}>
+                {conceptError === "not_configured"
+                  ? text.conceptNotConfigured
+                  : conceptError === "rate_limited"
+                    ? text.conceptRateLimited
+                    : conceptError === "unavailable"
+                      ? text.conceptUnavailable
+                      : text.conceptNote}
+              </small>
             </div>
 
             <label className="planner-composer">
@@ -2376,6 +2826,9 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                 <label><span>{text.departure}</span><select onChange={(event) => setDepartureAirport(event.target.value as AirportCode)} value={departureAirport}>{airportChoices.map((airport) => <option key={airport.value} value={airport.value}>{airport.label}</option>)}</select></label>
                 <label><span>{text.departureTime}</span><input disabled={departureAirport === "none"} onChange={(event) => setDepartureTime(event.target.value)} type="time" value={departureTime} /></label>
                 <div className="planner-choice"><span>{text.pace}</span><div className="planner-choice-chips" role="group" aria-label={text.pace}>{(["relaxed", "balanced", "fast"] as const).map((value) => <button aria-pressed={pace === value} className={pace === value ? "is-active" : ""} key={value} onClick={() => setPace(value)} type="button">{text[value]}</button>)}</div></div>
+                <div className="planner-choice"><span>{text.travelHeading}</span><div className="planner-choice-chips" role="group" aria-label={text.travelHeading}>{([["auto", text.travelAuto], ["car", text.travelCar]] as const).map(([value, label]) => <button aria-pressed={travelPreference === value} className={travelPreference === value ? "is-active" : ""} key={value} onClick={() => setTravelPreference(value)} type="button">{label}</button>)}</div></div>
+                <div className="planner-choice"><span>{text.timebandHeading}</span><div className="planner-choice-chips" role="group" aria-label={text.timebandHeading}>{([["08:00", text.timebandEarly], ["09:00", text.timebandNormal], ["10:30", text.timebandLate]] as const).map(([value, label]) => <button aria-pressed={dayStartDefault === value} className={dayStartDefault === value ? "is-active" : ""} key={value} onClick={() => setDayStartDefault(value)} type="button">{label}</button>)}</div></div>
+                <div className="planner-choice"><span>{text.dayEndHeading}</span><div className="planner-choice-chips" role="group" aria-label={text.dayEndHeading}>{([["", text.dayEndNone], ["19:30", "〜19:30"], ["21:30", "〜21:30"]] as const).map(([value, label]) => <button aria-pressed={dayEndTarget === value} className={dayEndTarget === value ? "is-active" : ""} key={value || "none"} onClick={() => setDayEndTarget(value)} type="button">{label}</button>)}</div></div>
                 <div className="planner-choice"><span>{text.meal}</span><div className="planner-choice-chips" role="group" aria-label={text.meal}>{([["all", text.allMeals], ["dinner", text.dinner], ["none", text.noMeals]] as const).map(([value, label]) => <button aria-pressed={mealPlan === value} className={mealPlan === value ? "is-active" : ""} key={value} onClick={() => setMealPlan(value)} type="button">{label}</button>)}</div></div>
               </div>
             </details>
@@ -2383,6 +2836,35 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
             <button className="planner-build-button" disabled={!canBuild} onClick={buildPlan} type="button">
               <span>{isBuilding ? text.building : text.build}</span><b aria-hidden="true"><Icon name="arrow" size={19} /></b>
             </button>
+            {planReady && !isBuilding ? (
+              <button className="planner-return-plan" onClick={() => setHasPlan(true)} type="button">
+                {text.backToPlan}<Icon name="arrow" size={15} />
+              </button>
+            ) : null}
+
+            {recentTrips.length > 0 ? (
+              <div className="planner-recent">
+                <span>{text.recentHeading}<small> · {text.recentNote}</small></span>
+                <ul>
+                  {recentTrips.map((entry) => (
+                    <li key={entry.code}>
+                      <button className="planner-recent-open" onClick={() => openRecentTrip(entry)} type="button">
+                        <b>{entry.title}</b>
+                        <small>{entry.startDate} · {text.recentDays(entry.days)}</small>
+                      </button>
+                      <button
+                        aria-label={text.recentDelete}
+                        className="planner-recent-remove"
+                        onClick={() => setRecentTrips(forgetRecentTrip(window.localStorage, entry.code))}
+                        type="button"
+                      >
+                        <Icon name="close" size={11} />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
           </div>
         ) : plan && day ? (
           <div className="planner-result-view">
@@ -2391,7 +2873,12 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                 <span>{text.planSummary(plan.requestedDays, plan.scheduledStopCount)}</span>
                 <h1>{day.theme}</h1>
               </div>
-              <button onClick={() => { setHasPlan(false); setInspector(null); }} type="button">{text.edit}</button>
+              <div className="planner-result-actions">
+                <button className={shareCopied ? "is-copied" : ""} onClick={() => void copyShareLink()} title={text.shareTitle} type="button">
+                  {shareCopied ? text.shareCopied : text.share}
+                </button>
+                <button onClick={() => { setHasPlan(false); setInspector(null); }} type="button">{text.edit}</button>
+              </div>
             </header>
 
             <div className="planner-evidence-summary" aria-label={locale === "ja" ? "予定に反映した根拠" : "Evidence used in this plan"}>
@@ -2404,20 +2891,27 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
             </div>
 
             <div className="planner-day-tabs" aria-label={locale === "ja" ? "日程を選ぶ" : "Choose a day"}>
-              {plan.days.map((candidate, index) => (
-                <button
-                  aria-pressed={activeDay === index}
-                  className={activeDay === index ? "is-active" : ""}
-                  key={candidate.label}
-                  onClick={() => switchDay(index)}
-                  type="button"
-                >
-                  <b>{index + 1}</b><span>{candidate.date ? candidate.date.slice(5).replace("-", "/") : candidate.label}</span>
-                </button>
-              ))}
+              {plan.days.map((candidate, index) => {
+                const weekday = weekdayInfo(candidate.date, locale);
+                return (
+                  <button
+                    aria-pressed={activeDay === index}
+                    className={`${activeDay === index ? "is-active" : ""}${weekday?.isWeekend ? " is-weekend" : ""}`}
+                    key={candidate.label}
+                    onClick={() => switchDay(index)}
+                    type="button"
+                  >
+                    <b>{index + 1}</b>
+                    <span>
+                      {candidate.date ? candidate.date.slice(5).replace("-", "/") : candidate.label}
+                      {weekday ? ` ${weekday.label}` : ""}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
 
-            {placeWarning ? <p className="planner-warning" role="status"><span aria-hidden="true">!</span>{text.placeFallback}</p> : null}
+            {placeWarning && plan.unknownEntries.length === 0 ? <p className="planner-warning" role="status"><span aria-hidden="true">!</span>{text.placeFallback}</p> : null}
             {hotelState.status === "unavailable" ? (
               <p className="planner-warning" role="status">
                 <span aria-hidden="true">!</span>
@@ -2446,8 +2940,15 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
 
             <section className="planner-day-summary">
               <div>
-                <span>{day.date || day.label}</span>
+                <span>
+                  {day.date
+                    ? locale === "ja"
+                      ? `${day.date}（${weekdayInfo(day.date, locale)?.label ?? ""}）`
+                      : `${day.date} (${weekdayInfo(day.date, locale)?.label ?? ""})`
+                    : day.label}
+                </span>
                 <b>{day.startTime}—{day.finishTime}</b>
+                {dayTravelTotal > 0 ? <small className="planner-day-total">{text.travelTotal(dayTravelTotal)}</small> : null}
               </div>
               <label className="planner-day-start">
                 <span>{text.dayStart}</span>
@@ -2468,7 +2969,9 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                   value={dayStartTimes[activeDay] ?? day.requestedStartTime}
                 />
               </label>
-              {day.deadlineOverrunMinutes > 0 && day.deadline ? <em>{text.deadlineOver(day.deadline)}</em> : <small>{measuredRouteCount > 0 ? text.walkingSafety : text.estimated}</small>}
+              {day.deadlineOverrunMinutes > 0 && day.deadline
+                ? <em>{day.deadlineKind === "curfew" ? text.curfewOver(day.deadline) : text.deadlineOver(day.deadline)}</em>
+                : <small>{measuredRouteCount > 0 ? text.walkingSafety : text.estimated}</small>}
             </section>
 
             {hotelStayMode === "nightly" && day.endBase ? (
@@ -2487,14 +2990,40 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                   const publicSignals = freshVoices[builtStop.stop.id]?.result?.findings.length ?? 0;
                   const isSelected = inspector?.kind === "stop" && inspector.stopId === builtStop.stop.id;
                   return (
-                    <li key={`${builtStop.stop.id}-${index}`}>
-                      {leg && recommended ? (
-                        <div className="planner-leg">
-                          <span aria-hidden="true">{modeIcon(recommended.mode)}</span>
-                          <b>{text.move[recommended.mode]} {text.minutes(recommended.minutes)}</b>
-                          {recommended.source === "live" ? <em>{text.legLive}</em> : null}
-                        </div>
-                      ) : null}
+                    <Fragment key={`${builtStop.stop.id}-${index}`}>
+                    {index === 0 && base && day.hotelOutboundMinutes !== null ? (
+                      <li className="planner-hotel-leg">
+                        <span aria-hidden="true"><Icon name="bed" size={12} /></span>
+                        <span>{text.hotelDepartRow(modeLabel(day.hotelOutboundMode), day.hotelOutboundMinutes)}</span>
+                      </li>
+                    ) : null}
+                    <li>
+                      {leg && recommended ? (() => {
+                        const legKey = routeLegKey(leg.from.id, leg.to.id);
+                        const modeLabel = (mode: TransportMode) => mode === "taxi" && travelPreference === "car" ? text.moveCar : text.move[mode];
+                        return (
+                          <div className="planner-leg">
+                            <div className="planner-leg-modes" role="group" aria-label={`${leg.from.name} → ${leg.to.name} · ${text.legModes}`}>
+                              {leg.comparison.options
+                                .filter((option) => option.mode !== "walk" || option.minutes <= 90)
+                                .map((option) => (
+                                  <button
+                                    aria-pressed={option.mode === recommended.mode}
+                                    className={option.mode === recommended.mode ? "is-active" : ""}
+                                    key={option.mode}
+                                    onClick={() => setLegMode(legKey, option.mode)}
+                                    title={`${modeLabel(option.mode)} · ${text.legModes}`}
+                                    type="button"
+                                  >
+                                    {modeIcon(option.mode, travelPreference === "car")}
+                                    <b>{text.minutes(option.minutes)}</b>
+                                  </button>
+                                ))}
+                            </div>
+                            {recommended.source === "live" ? <em>{text.legLive}</em> : null}
+                          </div>
+                        );
+                      })() : null}
                       <button
                         className={`planner-stop-row${isSelected ? " is-selected" : ""}`}
                         onClick={() => setInspector(isSelected ? null : { kind: "stop", stopId: builtStop.stop.id })}
@@ -2504,7 +3033,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                         <span className="planner-stop-dot">{index + 1}</span>
                         <span className="planner-stop-main">
                           <b>{builtStop.stop.name}</b>
-                          <small>{builtStop.stop.area}</small>
+                          <small>{builtStop.stop.area} · {text.previewStay(builtStop.stop.planningDurationMinutes)}</small>
                         </span>
                         <span className="planner-stop-flags">
                           {builtStop.fixedTime ? <i className="is-booked">{builtStop.fixedTime}</i> : null}
@@ -2518,12 +3047,20 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                         </span>
                       </button>
                     </li>
+                    {mealRowsAfter(builtStop.stop.id, index === day.stops.length - 1)}
+                    {index === day.stops.length - 1 && dayEndBase && day.hotelInboundMinutes !== null ? (
+                      <li className="planner-hotel-leg is-return">
+                        <span aria-hidden="true"><Icon name="bed" size={12} /></span>
+                        <span>{text.hotelReturnRow(modeLabel(day.hotelInboundMode), day.hotelInboundMinutes)}</span>
+                      </li>
+                    ) : null}
+                    </Fragment>
                   );
                 })}
               </ol>
             )}
 
-            <p className="planner-select-hint">{text.selectHint}</p>
+            {!hintDismissed ? <p className="planner-select-hint">{text.selectHint}</p> : null}
 
             {plan.unknownEntries.length > 0 ? (
               <details className="planner-unknown">

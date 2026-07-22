@@ -276,9 +276,10 @@ test("area searches widen with a luxury query, dedupe by id, and keep each style
   }) as typeof fetch;
 
   const results = await fetchGoogleHotelCandidates(validRequest, "secret", fetcher);
-  assert.equal(bodies.length, 2);
+  assert.equal(bodies.length, 3);
   assert.equal(bodies[0].textQuery, "Tokyo Station hotels");
   assert.equal(bodies[1].textQuery, "Tokyo Station luxury hotels");
+  assert.equal(bodies[2].textQuery, "Tokyo Station budget business hotels");
   assert.equal(new Set(results.map((candidate) => candidate.id)).size, results.length, "duplicate ids must merge");
   assert.ok(results.some((candidate) => candidate.styles.includes("luxury")), "the best luxury candidate stays reachable");
   assert.ok(results.some((candidate) => candidate.styles.includes("value")));

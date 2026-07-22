@@ -4,13 +4,14 @@ import test from "node:test";
 
 const appSourceUrl = new URL("../app/TripPlannerApp.tsx", import.meta.url);
 const privacySourceUrl = new URL("../app/privacy/page.tsx", import.meta.url);
+const recentTripsSourceUrl = new URL("../lib/recent-trips.ts", import.meta.url);
 const engineSourceUrls = [
   new URL("../lib/route-optimizer.ts", import.meta.url),
   new URL("../lib/time-feasibility.ts", import.meta.url),
   new URL("../lib/trip-builder.ts", import.meta.url),
 ];
 
-test("keeps the completed itinerary out of storage and direct network calls", async () => {
+test("keeps the completed itinerary out of direct client network calls", async () => {
   const source = await readFile(appSourceUrl, "utf8");
 
   assert.match(source, /buildTripFromWishlist\(itinerary, tripDays, pace, locale, \{/);
@@ -30,12 +31,21 @@ test("keeps deterministic route and time engines free of network calls", async (
   }
 });
 
-test("stores only the locale preference in the TripCheck app surface", async () => {
-  const source = await readFile(appSourceUrl, "utf8");
-  const storedKeys = [...source.matchAll(/localStorage\.setItem\("([^"]+)"/g)]
+test("keeps recent-plan device storage bounded and disclosed", async () => {
+  const [appSource, recentSource, privacySource] = await Promise.all([
+    readFile(appSourceUrl, "utf8"),
+    readFile(recentTripsSourceUrl, "utf8"),
+    readFile(privacySourceUrl, "utf8"),
+  ]);
+  const storedKeys = [...appSource.matchAll(/localStorage\.setItem\("([^"]+)"/g)]
     .map((match) => match[1]);
 
   assert.deepEqual([...new Set(storedKeys)], ["tripcheck-locale"]);
+  assert.match(recentSource, /STORAGE_KEY = "tripcheck-recent-trips"/);
+  assert.match(recentSource, /MAX_ENTRIES = 5/);
+  assert.match(privacySource, /up to five recently generated plans/);
+  assert.match(privacySource, /browser&apos;s local storage/);
+  assert.match(privacySource, /Share links/);
 });
 
 test("discloses the bounded planning-time public-web search", async () => {

@@ -25,7 +25,8 @@ test("accepts only bounded Japan coordinate routes in Google's transit date wind
   assert.deepEqual(Object.keys(parsed.legs[0]).sort(), ["departureTime", "destination", "id", "origin"]);
   assert.equal(parseLiveRoutesRequest({ ...request, legs: Array(25).fill(request.legs[0]) }, now), null);
   assert.equal(parseLiveRoutesRequest({ ...request, legs: [{ ...request.legs[0], departureTime: "2027-01-01T00:00:00Z" }] }, now), null);
-  assert.equal(parseLiveRoutesRequest({ ...request, travelMode: "DRIVE" }, now), null);
+  assert.equal(parseLiveRoutesRequest({ ...request, travelMode: "DRIVE" }, now)?.travelMode, "DRIVE");
+  assert.equal(parseLiveRoutesRequest({ ...request, travelMode: "BICYCLE" }, now), null);
 });
 
 test("requests only the minimum Google route fields and normalizes duration", async () => {

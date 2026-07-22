@@ -347,6 +347,32 @@ body:has(.trip-planner-app) {
 .planner-composer button:hover { border-color: var(--pl-ink); }
 .planner-composer button span { color: var(--pl-accent); display: inline-flex; }
 
+/* Concept → starter list: the zero-effort way in for people who freeze at a
+ * blank textarea. */
+.planner-concept { background: var(--pl-tile); border-radius: 16px; margin-bottom: 10px; padding: 13px 14px 12px; }
+.planner-concept > span { color: var(--pl-muted); display: block; font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; margin-bottom: 7px; }
+.planner-concept-row { display: flex; gap: 6px; }
+.planner-concept-row input { background: white; border: 0; border-radius: 10px; color: var(--pl-ink); flex: 1; font: inherit; font-size: 13px; font-weight: 600; min-height: 38px; min-width: 0; outline: 0; padding: 0 12px; }
+.planner-concept-row input:focus-visible { outline: 2px solid var(--pl-ink); }
+.planner-concept-row input::placeholder { color: #a2a2ab; font-weight: 450; }
+.planner-concept-row button { background: var(--pl-cta); border: 0; border-radius: 10px; color: white; flex: 0 0 auto; font-size: 12px; font-weight: 700; min-height: 38px; padding: 0 13px; }
+.planner-concept-row button:hover:not(:disabled) { background: var(--pl-cta-deep); }
+.planner-concept-row button:disabled { background: var(--pl-tile-deep); color: #a7a7b0; }
+.planner-concept > small { color: var(--pl-muted); display: block; font-size: 10.5px; line-height: 1.55; margin-top: 7px; }
+.planner-concept > small.is-error { color: var(--pl-warn-ink); }
+
+.planner-recent { border-top: 1px solid var(--pl-line); margin-top: 18px; padding-top: 14px; }
+.planner-recent > span { color: var(--pl-ink); display: block; font-size: 12px; font-weight: 800; margin-bottom: 6px; }
+.planner-recent > span small { color: var(--pl-muted); font-size: 10.5px; font-weight: 650; }
+.planner-recent ul { display: grid; gap: 2px; list-style: none; margin: 0; padding: 0; }
+.planner-recent li { align-items: center; display: flex; gap: 6px; }
+.planner-recent-open { background: transparent; border: 0; border-radius: 10px; color: var(--pl-ink); display: grid; flex: 1; min-width: 0; padding: 8px 8px; text-align: left; }
+.planner-recent-open:hover { background: var(--pl-tile); }
+.planner-recent-open b { font-size: 12.5px; font-weight: 750; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.planner-recent-open small { color: var(--pl-muted); font-size: 10.5px; }
+.planner-recent-remove { align-items: center; background: transparent; border: 0; border-radius: 8px; color: var(--pl-muted); display: flex; flex: 0 0 auto; height: 26px; justify-content: center; width: 26px; }
+.planner-recent-remove:hover { background: var(--pl-tile); color: var(--pl-ink); }
+
 .planner-parse-hint { color: var(--pl-muted); font-size: 11px; line-height: 1.6; margin: 8px 3px 0; }
 
 .planner-parse-preview { background: white; border: 1px solid var(--pl-line); border-radius: 14px; margin-top: 10px; padding: 10px 11px; }
@@ -429,6 +455,9 @@ body:has(.trip-planner-app) {
 .planner-build-button:active:not(:disabled) { transform: scale(0.99); }
 .planner-build-button:disabled { background: var(--pl-tile-deep); color: #a7a7b0; }
 
+.planner-return-plan { align-items: center; background: white; border: 1px solid var(--pl-line); border-radius: 14px; color: var(--pl-ink); display: flex; font-size: 13px; font-weight: 700; gap: 8px; justify-content: center; margin-top: 8px; min-height: 46px; width: 100%; }
+.planner-return-plan:hover { border-color: var(--pl-ink); }
+
 /* ---------- evidence-first build progress ---------- */
 
 .planner-building-view { min-height: 100%; }
@@ -465,6 +494,8 @@ body:has(.trip-planner-app) {
 .planner-result-header h1 { font-size: 24px; font-weight: 900; letter-spacing: -0.03em; line-height: 1.16; margin: 0; }
 .planner-result-header button { background: white; border: 1px solid var(--pl-line); border-radius: 10px; color: var(--pl-ink); flex: 0 0 auto; font-size: 11.5px; font-weight: 700; padding: 8px 12px; }
 .planner-result-header button:hover { border-color: var(--pl-ink); }
+.planner-result-actions { display: flex; flex: 0 0 auto; gap: 6px; }
+.planner-result-actions button.is-copied { background: var(--pl-good-soft); border-color: transparent; color: var(--pl-good); }
 .planner-evidence-summary { display: flex; flex-wrap: wrap; gap: 6px; margin: 13px 0 2px; }
 .planner-evidence-summary span { background: var(--pl-tile); border: 1px solid transparent; border-radius: 8px; color: var(--pl-ink-2); font-size: 10.5px; font-weight: 700; line-height: 1.2; padding: 6px 9px; }
 .planner-evidence-summary span.is-good { background: var(--pl-good-soft); color: var(--pl-good); }
@@ -487,6 +518,7 @@ body:has(.trip-planner-app) {
 .planner-day-tabs button b { color: var(--pl-ink); font-family: var(--pl-display); font-size: 15px; font-weight: 400; letter-spacing: 0.02em; line-height: 1; }
 .planner-day-tabs button span { font-size: 11.5px; font-variant-numeric: tabular-nums; font-weight: 650; }
 .planner-day-tabs button:hover { border-color: var(--pl-ink); }
+.planner-day-tabs button.is-weekend:not(.is-active) span { color: var(--pl-accent-deep); }
 .planner-day-tabs button.is-active { background: var(--pl-ink); border-color: var(--pl-ink); color: rgb(255 255 255 / 72%); }
 .planner-day-tabs button.is-active b { color: white; }
 
@@ -508,6 +540,7 @@ details.planner-excluded { display: block; }
 .planner-day-summary div { display: grid; flex: 0 0 auto; }
 .planner-day-summary span { color: var(--pl-muted); font-size: 11px; font-weight: 650; }
 .planner-day-summary b { font-family: var(--pl-display); font-size: 24px; font-weight: 400; letter-spacing: 0.025em; line-height: 1.05; margin-top: 3px; white-space: nowrap; }
+.planner-day-total { color: var(--pl-muted); font-size: 10.5px; font-weight: 650; margin-top: 3px; }
 .planner-day-start { background: var(--pl-tile); border-radius: 12px; display: grid; flex: 0 0 auto; padding: 7px 11px; transition: background 150ms, box-shadow 150ms; }
 .planner-day-start:focus-within { background: white; box-shadow: inset 0 0 0 2px var(--pl-ink); }
 .planner-day-start > span { color: var(--pl-muted); font-size: 10px; font-weight: 700; }
@@ -531,9 +564,17 @@ details.planner-excluded { display: block; }
 .planner-timeline > li:only-child::before { display: none; }
 
 .planner-leg { align-items: center; color: var(--pl-muted); display: flex; gap: 8px; margin-left: 50px; padding: 4px 0; position: relative; }
-.planner-leg > span { align-items: center; background: white; border: 1px solid var(--pl-line); border-radius: 9px; color: var(--pl-ink-2); display: flex; height: 26px; justify-content: center; width: 26px; }
-.planner-leg b { font-size: 11px; font-weight: 700; }
+/* Google-Maps-style mode tabs: every viable mode with its minutes, one tap to pin. */
+.planner-leg-modes { background: white; border: 1px solid var(--pl-line); border-radius: 10px; display: inline-flex; gap: 2px; padding: 2px; }
+.planner-leg-modes button { align-items: center; background: transparent; border: 0; border-radius: 8px; color: var(--pl-muted); display: inline-flex; gap: 5px; min-height: 24px; padding: 0 8px; transition: background 120ms, color 120ms; }
+.planner-leg-modes button b { font-size: 11px; font-variant-numeric: tabular-nums; font-weight: 700; }
+.planner-leg-modes button:hover { background: var(--pl-tile); color: var(--pl-ink); }
+.planner-leg-modes button.is-active { background: var(--pl-ink); color: white; }
 .planner-leg em { background: var(--pl-good-soft); border-radius: 999px; color: var(--pl-good); font-size: 10px; font-style: normal; font-weight: 750; padding: 3px 7px; }
+
+/* Hotel departure/return legs — the day's travel is complete, end to end. */
+.planner-hotel-leg { align-items: center; color: var(--pl-muted); display: flex; font-size: 11px; font-weight: 650; gap: 8px; margin-left: 50px; padding: 4px 0; position: relative; }
+.planner-hotel-leg > span:first-child { align-items: center; background: white; border: 1px solid var(--pl-line); border-radius: 9px; color: var(--pl-ink-2); display: flex; height: 26px; justify-content: center; width: 26px; }
 
 .planner-stop-row {
   align-items: start;
@@ -584,6 +625,38 @@ details.planner-excluded { display: block; }
 .planner-stop-flags .is-optional { background: var(--pl-tile); color: var(--pl-muted); }
 .planner-stop-flags .is-checked { background: var(--pl-good-soft); color: var(--pl-good); }
 .planner-stop-flags .is-checked svg { display: inline-block; vertical-align: -1px; }
+
+/* Confirmed meal picks live inside the day, not just in a side panel. */
+.planner-meal-row { position: relative; }
+.planner-meal-stop {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 14px;
+  color: inherit;
+  display: grid;
+  gap: 2px 10px;
+  grid-template-columns: 40px 26px minmax(0, 1fr);
+  padding: 9px 8px 9px 0;
+  text-align: left;
+  transition: background 130ms;
+  width: 100%;
+}
+.planner-meal-stop:hover { background: var(--pl-accent-soft); }
+.planner-meal-stop time { color: var(--pl-muted); font-size: 11px; font-variant-numeric: tabular-nums; font-weight: 650; }
+.planner-meal-dot { align-items: center; background: var(--pl-accent-soft); border-radius: 9px; color: var(--pl-accent-deep); display: flex; height: 26px; justify-content: center; position: relative; width: 26px; z-index: 1; }
+.planner-meal-stop .planner-stop-main b { font-size: 13.5px; }
+
+.planner-meal-choose { align-items: center; background: white; border: 1px solid var(--pl-line); border-radius: 9px; color: var(--pl-ink); display: inline-flex; font-size: 11px; font-weight: 700; gap: 5px; margin-top: 7px; min-height: 30px; padding: 0 11px; }
+.planner-meal-choose:hover { border-color: var(--pl-ink); }
+.planner-meal-choose.is-active { background: var(--pl-good-soft); border-color: transparent; color: var(--pl-good); }
+
+.planner-day-move { align-items: center; background: var(--pl-tile); border-radius: 12px; display: flex; gap: 10px; justify-content: space-between; margin-top: 8px; padding: 9px 12px; }
+.planner-day-move > span { color: var(--pl-muted); font-size: 11px; font-weight: 700; }
+.planner-day-move > div { display: flex; gap: 4px; }
+.planner-day-move button { background: white; border: 1px solid var(--pl-line); border-radius: 8px; color: var(--pl-ink); font-family: var(--pl-display); font-size: 12.5px; font-weight: 400; height: 28px; letter-spacing: 0.02em; width: 28px; }
+.planner-day-move button:hover { border-color: var(--pl-ink); }
+.planner-day-move button.is-active { background: var(--pl-ink); border-color: var(--pl-ink); color: white; }
 
 .planner-select-hint { color: var(--pl-muted); font-size: 11.5px; margin: 14px 2px 0; }
 

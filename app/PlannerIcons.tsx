@@ -7,6 +7,7 @@ export type IconName =
   | "arrow"
   | "bed"
   | "calendar"
+  | "car"
   | "check"
   | "close"
   | "external"
@@ -43,6 +44,15 @@ const paths: Record<IconName, React.ReactNode> = {
       <rect height="15" rx="2.5" width="16" x="4" y="5.5" />
       <path d="M4 10.5h16" />
       <path d="M8.5 3.5v4M15.5 3.5v4" />
+    </>
+  ),
+  car: (
+    <>
+      <path d="M4 16.4v-2.5c0-1 .7-1.9 1.7-2.1l1.7-3.2C8 7.6 9 7 10 7h4c1.1 0 2.1.6 2.6 1.6l1.7 3.2c1 .2 1.7 1.1 1.7 2.1v2.5" />
+      <path d="M4 16.4h16" />
+      <circle cx="8.1" cy="16.4" r="1.9" />
+      <circle cx="15.9" cy="16.4" r="1.9" />
+      <path d="M7.6 13h2M14.4 13h2" />
     </>
   ),
   check: <path d="M4.5 12.5 9.6 17.6 19.5 6.8" />,
