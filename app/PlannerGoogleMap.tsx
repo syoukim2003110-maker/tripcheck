@@ -128,6 +128,9 @@ type Chip = {
   setSelected: (selected: boolean) => void;
 };
 
+/* Same bed glyph as the in-app icon set, inlined because chips are plain DOM. */
+const HOTEL_BADGE_SVG = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6.5v12"/><path d="M3 15h18"/><path d="M21 18.5v-5a3.5 3.5 0 0 0-3.5-3.5H10v5"/><rect x="5" y="10.9" width="4" height="2.6" rx="1.3"/></svg>`;
+
 function createChip(
   google: any,
   map: any,
@@ -147,7 +150,8 @@ function createChip(
     element.type = "button";
     element.className = `planner-map-chip is-${options.kind}`;
     const badge = document.createElement("i");
-    badge.textContent = options.badge;
+    if (options.kind === "hotel") badge.innerHTML = HOTEL_BADGE_SVG;
+    else badge.textContent = options.badge;
     const label = document.createElement("span");
     label.textContent = options.name;
     element.append(badge, label);
@@ -327,7 +331,7 @@ export default function PlannerGoogleMap({
       ],
       strokeOpacity: 0,
       icons: [{
-        icon: { path: "M 0,-1 0,1", strokeOpacity: 0.5, strokeColor: "#8a8172", scale: 2.4 },
+        icon: { path: "M 0,-1 0,1", strokeOpacity: 0.5, strokeColor: "#9a9aa2", scale: 2.4 },
         offset: "0",
         repeat: "13px",
       }],

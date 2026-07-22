@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
+import "@fontsource/anton";
 import "./globals.css";
 import "./planner.css";
 

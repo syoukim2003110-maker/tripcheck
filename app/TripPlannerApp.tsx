@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import PlannerGoogleMap, { type FoodPin } from "./PlannerGoogleMap";
+import Icon from "./PlannerIcons";
 import {
   foodCandidateReason,
   foodRecommendationRequestKey,
@@ -461,9 +462,7 @@ function formatWindowClock(minutes: number) {
 }
 
 function modeIcon(mode: "walk" | "transit" | "taxi") {
-  if (mode === "walk") return "🚶";
-  if (mode === "taxi") return "🚕";
-  return "🚃";
+  return <Icon name={mode === "transit" ? "train" : mode} size={14} />;
 }
 
 function googleMapsSearchUrl(stop: RouteStop) {
@@ -1626,16 +1625,16 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     <main className="trip-planner-app">
       <header className="planner-topbar">
         <button className="planner-brand" onClick={resetTrip} type="button" aria-label="TripCheck home">
-          <span className="planner-brand-mark" aria-hidden="true"><i /><i /></span>
+          <span className="planner-brand-mark" aria-hidden="true"><Icon name="mark" size={19} /></span>
           <b>TripCheck</b><small>{text.brandNote}</small>
         </button>
         <div className="planner-top-actions">
-          <span className="planner-privacy"><i aria-hidden="true">✓</i>{text.privacy}</span>
+          <span className="planner-privacy"><i aria-hidden="true"><Icon name="check" size={10} /></i>{text.privacy}</span>
           <div className="planner-language" aria-label={text.language}>
             <button aria-pressed={locale === "ja"} className={locale === "ja" ? "is-active" : ""} onClick={() => changeLocale("ja")} type="button">日本語</button>
             <button aria-pressed={locale === "en"} className={locale === "en" ? "is-active" : ""} onClick={() => changeLocale("en")} type="button">EN</button>
           </div>
-          {hasPlan ? <button className="planner-new-trip" onClick={resetTrip} type="button"><span aria-hidden="true">＋</span>{text.newTrip}</button> : null}
+          {hasPlan ? <button className="planner-new-trip" onClick={resetTrip} type="button"><span aria-hidden="true"><Icon name="plus" size={14} /></span>{text.newTrip}</button> : null}
         </div>
       </header>
 
@@ -1659,7 +1658,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
           stops={displayedMapStops}
         />
 
-        {!day && !hasPlan && !isBuilding ? <div className="planner-map-empty"><span aria-hidden="true">⌖</span><p>{text.mapEmpty}</p></div> : null}
+        {!day && !hasPlan && !isBuilding ? <div className="planner-map-empty"><span aria-hidden="true"><Icon name="pin" size={16} /></span><p>{text.mapEmpty}</p></div> : null}
 
         {day ? (
           <div className="planner-map-bottom">
@@ -1669,7 +1668,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                 onClick={() => setInspector(inspector?.kind === "hotel" ? null : { kind: "hotel" })}
                 type="button"
               >
-                <span aria-hidden="true">H</span>{text.hotelChip}
+                <span aria-hidden="true"><Icon name="bed" size={15} /></span>{text.hotelChip}
               </button>
             ) : null}
             {daySlots.map((slot) => (
@@ -1679,13 +1678,13 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                 onClick={() => openFoodSlot(slot)}
                 type="button"
               >
-                <span aria-hidden="true">{slot.kind === "lunch" ? "☀️" : "🌙"}</span>
+                <span aria-hidden="true"><Icon name={slot.kind === "lunch" ? "sun" : "moon"} size={15} /></span>
                 {slot.kind === "lunch" ? text.lunchChip : text.dinnerChip}
               </button>
             ))}
             {day.googleMapsUrl ? (
               <a className="planner-open-maps" href={day.googleMapsUrl} rel="noreferrer" target="_blank">
-                {text.openMaps}<span aria-hidden="true">↗</span>
+                {text.openMaps}<span aria-hidden="true"><Icon name="external" size={14} /></span>
               </a>
             ) : null}
           </div>
@@ -1693,7 +1692,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
 
         {selectedBuiltStop ? (
           <aside className="planner-inspector" aria-label={selectedBuiltStop.stop.name}>
-            <button className="planner-inspector-close" onClick={() => setInspector(null)} type="button" aria-label={text.close}>✕</button>
+            <button className="planner-inspector-close" onClick={() => setInspector(null)} type="button" aria-label={text.close}><Icon name="close" size={13} /></button>
             <header className="planner-inspector-head">
               <span className="planner-inspector-num">{selectedStopIndex + 1}</span>
               <div>
@@ -1839,14 +1838,14 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
 
             {selectedFresh?.status === "loading" ? (
               <section className="planner-fresh-card is-loading" aria-live="polite">
-                <header><span aria-hidden="true">◎</span><div><h3>{text.freshHeading}</h3><small>{text.freshAiRole}</small></div></header>
+                <header><span aria-hidden="true"><Icon name="signal" size={15} /></span><div><h3>{text.freshHeading}</h3><small>{text.freshAiRole}</small></div></header>
                 <p className="planner-fresh-status"><i aria-hidden="true" />{text.freshLoading}</p>
               </section>
             ) : null}
 
             {selectedFresh?.status === "unavailable" ? (
               <section className="planner-fresh-card" aria-live="polite">
-                <header><span aria-hidden="true">◎</span><div><h3>{text.freshHeading}</h3><small>{text.freshAiRole}</small></div></header>
+                <header><span aria-hidden="true"><Icon name="signal" size={15} /></span><div><h3>{text.freshHeading}</h3><small>{text.freshAiRole}</small></div></header>
                 <p className="planner-fresh-empty">{text.freshUnavailable}</p>
               </section>
             ) : null}
@@ -1891,9 +1890,9 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
 
         {inspector?.kind === "hotel" && selectedHotel ? (
           <aside className="planner-inspector is-hotel" aria-label={selectedHotel.name}>
-            <button className="planner-inspector-close" onClick={() => setInspector(null)} type="button" aria-label={text.close}>✕</button>
+            <button className="planner-inspector-close" onClick={() => setInspector(null)} type="button" aria-label={text.close}><Icon name="close" size={13} /></button>
             <header className="planner-inspector-head">
-              <span className="planner-inspector-num is-food" aria-hidden="true">H</span>
+              <span className="planner-inspector-num is-hotel" aria-hidden="true"><Icon name="bed" size={17} /></span>
               <div>
                 <h2>{hotelStayMode === "nightly" ? text.stayNightly : selectedHotel.name}</h2>
                 <p>{text.hotelCandidate}</p>
@@ -1990,7 +1989,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                 {/* Google place photos are proxied at request time and are not stored. */}
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img alt={selectedHotel.name} onError={handlePhotoError} src={`/api/place-photo?name=${encodeURIComponent(selectedHotel.photo.name)}`} />
-              </> : <span aria-hidden="true">▣</span>}
+              </> : <span aria-hidden="true"><Icon name="bed" size={26} /></span>}
             </a>
             {selectedHotel.photo?.attribution ? <a className="planner-photo-credit" href={selectedHotel.photo.attribution.uri} rel="noreferrer" target="_blank">{text.photoLabel} {selectedHotel.photo.attribution.name} ↗</a> : null}
             <div className="planner-hotel-facts">
@@ -2066,9 +2065,9 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
 
         {activeFoodSlot && activeFoodState ? (
           <aside className="planner-inspector is-food" aria-label={text.mealIdeas}>
-            <button className="planner-inspector-close" onClick={() => setInspector(null)} type="button" aria-label={text.close}>✕</button>
+            <button className="planner-inspector-close" onClick={() => setInspector(null)} type="button" aria-label={text.close}><Icon name="close" size={13} /></button>
             <header className="planner-inspector-head">
-              <span className="planner-inspector-num is-food" aria-hidden="true">{activeFoodSlot.kind === "lunch" ? "☀️" : "🌙"}</span>
+              <span className="planner-inspector-num is-food" aria-hidden="true"><Icon name={activeFoodSlot.kind === "lunch" ? "sun" : "moon"} size={17} /></span>
               <div>
                 <h2>{text.mealIdeas}</h2>
                 <p>{activeFoodSlot.area} · {activeFoodSlot.window}</p>
@@ -2098,7 +2097,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                           {/* Google place photos are short-lived, server-proxied URLs and cannot use a static Next image allowlist. */}
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img alt={candidate.name} loading="lazy" onError={handlePhotoError} src={`/api/place-photo?name=${encodeURIComponent(candidate.photoName)}`} />
-                        </> : <span aria-hidden="true">🍽</span>}
+                        </> : <span aria-hidden="true"><Icon name="fork" size={20} /></span>}
                         <i className="planner-food-badge">{index + 1}</i>
                       </a>
                       <div>
@@ -2140,7 +2139,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                 const state = index < activeBuildIndex ? "is-complete" : index === activeBuildIndex ? "is-active" : "";
                 return (
                   <li className={state} key={stage}>
-                    <span className="planner-building-step-dot" aria-hidden="true">{index < activeBuildIndex ? "✓" : index + 1}</span>
+                    <span className="planner-building-step-dot" aria-hidden="true">{index < activeBuildIndex ? <Icon name="check" size={11} /> : index + 1}</span>
                     <span className="planner-building-step-copy">
                       <b>{text.buildSteps[stage]}</b>
                       {index === activeBuildIndex ? <small>{activeBuildDetail}</small> : null}
@@ -2168,7 +2167,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                 placeholder={text.placeholder}
                 value={itinerary}
               />
-              <button onClick={loadDemo} type="button"><span aria-hidden="true">✦</span>{text.sample}</button>
+              <button onClick={loadDemo} type="button"><span aria-hidden="true"><Icon name="spark" size={13} /></span>{text.sample}</button>
             </label>
 
             <div className="planner-primary-fields">
@@ -2179,7 +2178,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
             <label className="planner-hotel-field"><span>{text.hotel}</span><input onChange={(event) => setHotelQuery(event.target.value)} placeholder={text.hotelPlaceholder} value={hotelQuery} /></label>
 
             <details className="planner-details">
-              <summary>{text.details}<span aria-hidden="true">＋</span></summary>
+              <summary>{text.details}<span aria-hidden="true"><Icon name="plus" size={15} /></span></summary>
               <div className="planner-detail-grid">
                 <label><span>{text.arrival}</span><select onChange={(event) => setArrivalAirport(event.target.value as AirportCode)} value={arrivalAirport}>{airportChoices.map((airport) => <option key={airport.value} value={airport.value}>{airport.label}</option>)}</select></label>
                 <label><span>{text.arrivalTime}</span><input disabled={arrivalAirport === "none"} onChange={(event) => setArrivalTime(event.target.value)} type="time" value={arrivalTime} /></label>
@@ -2191,7 +2190,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
             </details>
 
             <button className="planner-build-button" disabled={!canBuild} onClick={buildPlan} type="button">
-              <span>{isBuilding ? text.building : text.build}</span><b aria-hidden="true">→</b>
+              <span>{isBuilding ? text.building : text.build}</span><b aria-hidden="true"><Icon name="arrow" size={19} /></b>
             </button>
           </div>
         ) : plan && day ? (
@@ -2283,7 +2282,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
 
             {hotelStayMode === "nightly" && day.endBase ? (
               <button className="planner-tonight" onClick={() => setInspector({ kind: "hotel" })} type="button">
-                <span aria-hidden="true">H</span>{text.tonightHotel(day.endBase.name)}
+                <span aria-hidden="true"><Icon name="bed" size={13} /></span>{text.tonightHotel(day.endBase.name)}
               </button>
             ) : null}
 
@@ -2351,7 +2350,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                 <ul>{plan.unknownEntries.map((entry) => <li key={entry}>{entry}</li>)}</ul>
               </details>
             ) : null}
-            <button className="planner-build-button" onClick={() => setHasPlan(false)} type="button"><span>{text.edit}</span><b aria-hidden="true">→</b></button>
+            <button className="planner-build-button" onClick={() => setHasPlan(false)} type="button"><span>{text.edit}</span><b aria-hidden="true"><Icon name="arrow" size={19} /></b></button>
           </div>
         )}
       </section>
