@@ -22,6 +22,8 @@ export type FoodPin = {
 type Props = {
   apiKey: string;
   base: RouteStop | null;
+  /** Tonight's hotel when it differs from the morning base (nightly hotel mode). */
+  endBase?: RouteStop | null;
   departureTimes: string[];
   drawRoute?: boolean;
   foodPins: FoodPin[];
@@ -47,21 +49,21 @@ declare global {
 
 const JAPAN_CENTER = { lat: 36.2048, lng: 138.2529 };
 
-/* Soft, decluttered basemap so the trip chips and route stay the loudest layer. */
+/* Neutral, decluttered basemap (ride-hail style) so pins and the route stay the loudest layer. */
 const warmMapStyle = [
-  { elementType: "geometry", stylers: [{ color: "#f6f1e7" }] },
-  { elementType: "labels.text.fill", stylers: [{ color: "#8a8172" }] },
-  { elementType: "labels.text.stroke", stylers: [{ color: "#fbf8f2" }] },
-  { featureType: "administrative", elementType: "geometry.stroke", stylers: [{ color: "#e3dbc9" }] },
+  { elementType: "geometry", stylers: [{ color: "#f4f4f5" }] },
+  { elementType: "labels.text.fill", stylers: [{ color: "#75757e" }] },
+  { elementType: "labels.text.stroke", stylers: [{ color: "#ffffff" }] },
+  { featureType: "administrative", elementType: "geometry.stroke", stylers: [{ color: "#e3e3e8" }] },
   { featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] },
-  { featureType: "poi.park", elementType: "geometry", stylers: [{ color: "#e0ecd4" }] },
+  { featureType: "poi.park", elementType: "geometry", stylers: [{ color: "#e0ecdf" }] },
   { featureType: "road", elementType: "geometry", stylers: [{ color: "#ffffff" }] },
-  { featureType: "road", elementType: "geometry.stroke", stylers: [{ color: "#efe7d8" }] },
+  { featureType: "road", elementType: "geometry.stroke", stylers: [{ color: "#ececf0" }] },
   { featureType: "road", elementType: "labels.icon", stylers: [{ visibility: "off" }] },
-  { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#f7e9d3" }] },
-  { featureType: "transit.line", elementType: "geometry", stylers: [{ color: "#ddd3bd" }] },
+  { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#f1f1f4" }] },
+  { featureType: "transit.line", elementType: "geometry", stylers: [{ color: "#dcdce2" }] },
   { featureType: "transit.station", elementType: "labels.icon", stylers: [{ visibility: "off" }] },
-  { featureType: "water", elementType: "geometry", stylers: [{ color: "#cfe2df" }] },
+  { featureType: "water", elementType: "geometry", stylers: [{ color: "#cdddea" }] },
 ];
 
 async function loadGoogleMaps(apiKey: string) {
@@ -186,6 +188,7 @@ function createChip(
 export default function PlannerGoogleMap({
   apiKey,
   base,
+  endBase = null,
   departureTimes,
   drawRoute = true,
   foodPins,
@@ -225,8 +228,9 @@ export default function PlannerGoogleMap({
     onLegDurationsRef.current = onLegDurations;
   });
 
-  const displayStops = base ? [base, ...stops] : stops;
-  const pathStops = base && stops.length > 0 ? [base, ...stops, base] : stops;
+  const finishBase = base && endBase && endBase.id !== base.id ? endBase : null;
+  const displayStops = base ? [base, ...stops, ...(finishBase ? [finishBase] : [])] : stops;
+  const pathStops = base && stops.length > 0 ? [base, ...stops, finishBase ?? base] : stops;
   const stopsSignature = `${locale}|${onSelectHotel ? "hotel-on" : "hotel-off"}|${displayStops.map((stop) => `${stop.id}@${stop.latitude.toFixed(5)},${stop.longitude.toFixed(5)}`).join("|")}`;
   const routeSignature = `${stopsSignature}|${drawRoute ? "route" : "pins"}|${routeModes.join(",")}|${departureTimes.join(",")}`;
   const foodSignature = foodPins.map((pin) => `${pin.id}@${pin.latitude.toFixed(5)},${pin.longitude.toFixed(5)}`).join("|");
@@ -252,7 +256,7 @@ export default function PlannerGoogleMap({
           streetViewControl: false,
           zoomControl: true,
           styles: warmMapStyle,
-          backgroundColor: "#f6f1e7",
+          backgroundColor: "#f4f4f5",
         });
         map.addListener("click", () => onSelectStopRef.current(null));
         engineRef.current = { google, map, maps: { core } };
@@ -286,7 +290,7 @@ export default function PlannerGoogleMap({
     routeLinesRef.current = [];
 
     chipsRef.current = displayStops.map((stop, index) => {
-      const isHotel = Boolean(base) && index === 0;
+      const isHotel = Boolean(base) && (index === 0 || (Boolean(finishBase) && index === displayStops.length - 1));
       const selectHotel = onSelectHotelRef.current;
       return createChip(google, map, {
         position: { lat: stop.latitude, lng: stop.longitude },

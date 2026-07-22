@@ -36,6 +36,9 @@ export type HotelPhoto = {
   attribution: { name: string; uri: string } | null;
 };
 
+export type HotelPriceLevel = "inexpensive" | "moderate" | "expensive" | "very_expensive";
+export type HotelStyle = "luxury" | "value";
+
 export type HotelCandidate = {
   id: string;
   name: string;
@@ -49,6 +52,8 @@ export type HotelCandidate = {
   distanceMeters: number;
   score: number;
   googleRelevanceRank: number;
+  priceLevel: HotelPriceLevel | null;
+  styles: HotelStyle[];
   photo: HotelPhoto | null;
   reviews: HotelReviewExcerpt[] | null;
   payment: HotelPaymentEvidence | null;
@@ -75,6 +80,7 @@ type RawGooglePlace = {
   location?: { latitude?: unknown; longitude?: unknown };
   rating?: unknown;
   userRatingCount?: unknown;
+  priceLevel?: unknown;
   photos?: Array<{
     name?: unknown;
     authorAttributions?: Array<{ displayName?: unknown; uri?: unknown }>;
@@ -101,6 +107,7 @@ const fieldMask = [
   "places.location",
   "places.rating",
   "places.userRatingCount",
+  "places.priceLevel",
   "places.photos",
   "places.reviews",
   "places.paymentOptions",
@@ -167,6 +174,33 @@ function numericRating(value: unknown) {
 
 function nonNegativeCount(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.floor(value) : null;
+}
+
+const priceLevelMap: Record<string, HotelPriceLevel> = {
+  PRICE_LEVEL_INEXPENSIVE: "inexpensive",
+  PRICE_LEVEL_MODERATE: "moderate",
+  PRICE_LEVEL_EXPENSIVE: "expensive",
+  PRICE_LEVEL_VERY_EXPENSIVE: "very_expensive",
+};
+
+function parsePriceLevel(value: unknown): HotelPriceLevel | null {
+  return typeof value === "string" ? priceLevelMap[value] ?? null : null;
+}
+
+/**
+ * Styles are asserted only from Google's own listing data: "luxury" needs an
+ * expensive price level, "value" needs a listed budget/moderate price level
+ * plus a strong, well-supported rating. No price level → no style claim.
+ */
+export function hotelStyles(priceLevel: HotelPriceLevel | null, rating: number | null, userRatingCount: number | null): HotelStyle[] {
+  const styles: HotelStyle[] = [];
+  if (priceLevel === "expensive" || priceLevel === "very_expensive") styles.push("luxury");
+  if (
+    (priceLevel === "inexpensive" || priceLevel === "moderate")
+    && rating !== null && rating >= 4.1
+    && userRatingCount !== null && userRatingCount >= 100
+  ) styles.push("value");
+  return styles;
 }
 
 function parseReviews(input: unknown): HotelReviewExcerpt[] | null {
@@ -384,16 +418,12 @@ function scoreCandidate(
   return Math.round((ratingPoints + reviewPoints + distancePoints + relevancePoints + exactNamePoints) * 100) / 100;
 }
 
-export async function fetchGoogleHotelCandidates(
+async function searchHotelText(
+  textQuery: string,
   request: HotelSearchRequest,
   apiKey: string,
-  fetcher: typeof fetch = fetch,
-): Promise<HotelCandidate[]> {
-  const textQuery = request.query
-    ? `${request.query} ${request.area} Japan`
-    : request.languageCode === "ja"
-      ? `${request.area} ホテル`
-      : `${request.area} hotels`;
+  fetcher: typeof fetch,
+): Promise<RawGooglePlace[]> {
   const response = await fetcher("https://places.googleapis.com/v1/places:searchText", {
     method: "POST",
     headers: {
@@ -419,40 +449,78 @@ export async function fetchGoogleHotelCandidates(
     signal: AbortSignal.timeout(8_000),
   });
   if (!response.ok) throw new Error("places_unavailable");
-
   const payload = await response.json() as { places?: RawGooglePlace[] };
-  const candidates = (payload.places ?? []).slice(0, 6).flatMap((place, apiIndex) => {
-    if (!isOperationalLodging(place)) return [];
-    const id = boundedText(place.id, 1, 300);
-    const name = boundedText(place.displayName?.text, 1, 200);
-    const googleMapsUrl = boundedText(place.googleMapsUri, 1, 500);
-    const latitude = place.location?.latitude;
-    const longitude = place.location?.longitude;
-    if (!id || !name || !googleMapsUrl || !finiteCoordinate(latitude, -90, 90) || !finiteCoordinate(longitude, -180, 180)) return [];
-    const distance = distanceMeters(request.latitude, request.longitude, latitude as number, longitude as number);
-    const rating = numericRating(place.rating);
-    const userRatingCount = nonNegativeCount(place.userRatingCount);
-    const reviews = parseReviews(place.reviews);
-    return [{
-      id,
-      name,
-      address: boundedText(place.formattedAddress, 0, 350) ?? "",
-      googleMapsUrl,
-      websiteUrl: boundedText(place.websiteUri, 1, 500),
-      latitude: latitude as number,
-      longitude: longitude as number,
-      rating,
-      userRatingCount,
-      distanceMeters: distance,
-      score: scoreCandidate(rating, userRatingCount, distance, apiIndex, name, request.query),
-      googleRelevanceRank: apiIndex + 1,
-      photo: parsePhoto(place.photos),
-      reviews,
-      payment: paymentEvidence(place, reviews, request.languageCode),
-    }];
+  return (payload.places ?? []).slice(0, 6);
+}
+
+export async function fetchGoogleHotelCandidates(
+  request: HotelSearchRequest,
+  apiKey: string,
+  fetcher: typeof fetch = fetch,
+): Promise<HotelCandidate[]> {
+  // A named hotel keeps one focused search. An area search adds a second,
+  // luxury-leaning query so both "great value" and "luxury" stays have a real
+  // Google-listed candidate to choose from.
+  const queries = request.query
+    ? [`${request.query} ${request.area} Japan`]
+    : request.languageCode === "ja"
+      ? [`${request.area} ホテル`, `${request.area} 高級ホテル`]
+      : [`${request.area} hotels`, `${request.area} luxury hotels`];
+  const pages = await Promise.all(queries.map(async (textQuery, index) => {
+    if (index === 0) return searchHotelText(textQuery, request, apiKey, fetcher);
+    // The style-widening query is optional: its failure never hides the primary results.
+    return searchHotelText(textQuery, request, apiKey, fetcher).catch(() => [] as RawGooglePlace[]);
+  }));
+
+  const seen = new Set<string>();
+  const candidates: HotelCandidate[] = [];
+  pages.forEach((places) => {
+    places.forEach((place, apiIndex) => {
+      if (!isOperationalLodging(place)) return;
+      const id = boundedText(place.id, 1, 300);
+      const name = boundedText(place.displayName?.text, 1, 200);
+      const googleMapsUrl = boundedText(place.googleMapsUri, 1, 500);
+      const latitude = place.location?.latitude;
+      const longitude = place.location?.longitude;
+      if (!id || !name || !googleMapsUrl || !finiteCoordinate(latitude, -90, 90) || !finiteCoordinate(longitude, -180, 180)) return;
+      if (seen.has(id)) return;
+      seen.add(id);
+      const distance = distanceMeters(request.latitude, request.longitude, latitude as number, longitude as number);
+      const rating = numericRating(place.rating);
+      const userRatingCount = nonNegativeCount(place.userRatingCount);
+      const priceLevel = parsePriceLevel(place.priceLevel);
+      const reviews = parseReviews(place.reviews);
+      candidates.push({
+        id,
+        name,
+        address: boundedText(place.formattedAddress, 0, 350) ?? "",
+        googleMapsUrl,
+        websiteUrl: boundedText(place.websiteUri, 1, 500),
+        latitude: latitude as number,
+        longitude: longitude as number,
+        rating,
+        userRatingCount,
+        distanceMeters: distance,
+        score: scoreCandidate(rating, userRatingCount, distance, apiIndex, name, request.query),
+        googleRelevanceRank: apiIndex + 1,
+        priceLevel,
+        styles: hotelStyles(priceLevel, rating, userRatingCount),
+        photo: parsePhoto(place.photos),
+        reviews,
+        payment: paymentEvidence(place, reviews, request.languageCode),
+      });
+    });
   });
 
-  return candidates
-    .sort((left, right) => right.score - left.score || left.googleRelevanceRank - right.googleRelevanceRank || left.name.localeCompare(right.name))
-    .slice(0, 3);
+  const ranked = candidates
+    .sort((left, right) => right.score - left.score || left.googleRelevanceRank - right.googleRelevanceRank || left.name.localeCompare(right.name));
+  const selected = ranked.slice(0, 3);
+  // Keep the best candidate of each style reachable even when the overall
+  // top three happen to share one price band.
+  for (const style of ["luxury", "value"] as const) {
+    if (selected.some((candidate) => candidate.styles.includes(style))) continue;
+    const best = ranked.find((candidate) => candidate.styles.includes(style));
+    if (best) selected.push(best);
+  }
+  return selected.slice(0, 5);
 }

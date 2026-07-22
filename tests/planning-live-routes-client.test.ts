@@ -3,6 +3,7 @@ import test from "node:test";
 import { LiveRoutesError } from "../lib/live-routes-client.ts";
 import {
   buildPlanningRouteLegs,
+  planningRouteRequestKey,
   prefetchPlanningRouteDurations,
 } from "../lib/planning-live-routes-client.ts";
 import { buildTripFromWishlist } from "../lib/trip-builder.ts";
@@ -86,4 +87,96 @@ test("a cancelled build aborts the route prefetch instead of substituting estima
     LiveRoutesError,
   );
   assert.equal(sawAbortedSignal, true);
+});
+
+test("already-measured legs are excluded from a follow-up prefetch", async () => {
+  const draft = buildTripFromWishlist("Senso-ji\nTokyo Skytree", 1, "balanced", "en", {
+    tripStartDate: "2026-09-14",
+    hotelQuery: "Shinjuku",
+  });
+  const allLegs = buildPlanningRouteLegs(draft);
+  const excludeKeys = allLegs.slice(0, 2).map(planningRouteRequestKey);
+  const requestedIds: string[] = [];
+  const fetcher: typeof fetch = async (_input, init) => {
+    const payload = JSON.parse(String(init?.body)) as { travelMode: "TRANSIT" | "WALK"; legs: Array<{ id: string }> };
+    requestedIds.push(...payload.legs.map((leg) => leg.id));
+    return Response.json({
+      provider: "google_maps",
+      fetchedAt: "2026-07-21T00:00:00.000Z",
+      travelMode: payload.travelMode,
+      legs: payload.legs.map((leg) => ({ id: leg.id, durationMinutes: 12, distanceMeters: 900, status: "ok" })),
+    });
+  };
+
+  const result = await prefetchPlanningRouteDurations(draft, "en", { fetcher, concurrency: 1, excludeKeys });
+  assert.equal(result.legs.length, allLegs.length - 2);
+  for (const excluded of excludeKeys) {
+    assert.equal(requestedIds.includes(excluded.split("|")[1]), false);
+  }
+
+  const nothingLeft = await prefetchPlanningRouteDurations(draft, "en", {
+    fetcher: async () => { throw new Error("must not fetch"); },
+    excludeKeys: allLegs.map(planningRouteRequestKey),
+  });
+  assert.equal(nothingLeft.legs.length, 0);
+  assert.equal(nothingLeft.fetchedAt, null);
+});
+
+test("a changed departure time is not excluded by an earlier speculative route", async () => {
+  const initial = buildTripFromWishlist("Senso-ji\nTokyo Skytree", 1, "balanced", "en", {
+    tripStartDate: "2026-09-14",
+    hotelQuery: "Shinjuku",
+    dayStartTimes: { 0: "09:00" },
+  });
+  const shifted = buildTripFromWishlist("Senso-ji\nTokyo Skytree", 1, "balanced", "en", {
+    tripStartDate: "2026-09-14",
+    hotelQuery: "Shinjuku",
+    dayStartTimes: { 0: "10:00" },
+  });
+  const initialKeys = buildPlanningRouteLegs(initial).map(planningRouteRequestKey);
+  const shiftedLegs = buildPlanningRouteLegs(shifted);
+  assert.ok(shiftedLegs.some((leg) => !initialKeys.includes(planningRouteRequestKey(leg))));
+
+  let requested = 0;
+  const fetcher: typeof fetch = async (_input, init) => {
+    const payload = JSON.parse(String(init?.body)) as { travelMode: "TRANSIT" | "WALK"; legs: Array<{ id: string }> };
+    requested += payload.legs.length;
+    return Response.json({
+      provider: "google_maps",
+      fetchedAt: "2026-07-21T00:00:00.000Z",
+      travelMode: payload.travelMode,
+      legs: payload.legs.map((leg) => ({ id: leg.id, durationMinutes: 14, distanceMeters: 1_000, status: "ok" })),
+    });
+  };
+  await prefetchPlanningRouteDurations(shifted, "en", { fetcher, excludeKeys: initialKeys });
+  assert.ok(requested > 0);
+});
+
+test("nightly bases produce distinct start and end hotel legs", () => {
+  const nightHotel = (id: string, name: string, latitude: number, longitude: number) => ({
+    id,
+    input: name,
+    name,
+    area: "Tokyo",
+    address: `1 ${name}`,
+    latitude,
+    longitude,
+    sourceUrl: `https://maps.google.com/${id}`,
+    verifiedAt: "2026-07-21T00:00:00Z",
+    confidence: "medium" as const,
+    planningDurationMinutes: 0,
+    isAnchor: false,
+  });
+  const draft = buildTripFromWishlist("Senso-ji\nTokyo Skytree\nMeiji Shrine\nShibuya Crossing\nUeno Park\nGinza", 3, "balanced", "en", {
+    tripStartDate: "2026-09-14",
+    hotelQuery: "Shinjuku",
+    nightBases: {
+      0: nightHotel("night-0", "Asakusa Stay", 35.711, 139.797),
+      1: nightHotel("night-1", "Shibuya Stay", 35.658, 139.7),
+    },
+  });
+  const legs = buildPlanningRouteLegs(draft);
+  const ids = legs.map((leg) => leg.id).join("\n");
+  assert.match(ids, /base-night-0::/);
+  assert.match(ids, /::base-night-1/);
 });

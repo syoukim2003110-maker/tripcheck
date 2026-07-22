@@ -12,14 +12,14 @@ import {
 import { requestLinkPreview } from "../lib/link-preview-client";
 import { defaultFoodDiscoveryQuery, type FoodCandidate } from "../lib/google-food";
 import { requestHotelRecommendations } from "../lib/hotel-recommendations-client";
-import type { HotelCandidate } from "../lib/google-hotels";
+import type { HotelCandidate, HotelPriceLevel, HotelStyle } from "../lib/google-hotels";
 import { fullTripDemo } from "../lib/mock-trip";
 import { requestFreshVoices, requestPlaceIntelligence } from "../lib/place-intelligence-client";
 import type { FreshVoicesResult } from "../lib/fresh-voices";
 import type { PlaceIntelligenceResult } from "../lib/place-intelligence";
 import { googleOpeningWindowsForDate } from "../lib/google-opening-hours";
 import { deriveStopPlanningEvidence } from "../lib/planning-evidence";
-import { prefetchPlanningRouteDurations } from "../lib/planning-live-routes-client";
+import { buildPlanningRouteLegs, planningRouteRequestKey, prefetchPlanningRouteDurations } from "../lib/planning-live-routes-client";
 import { rankFoodWithPublicEvidence } from "../lib/public-evidence-ranking";
 import { PlaceResolutionError, requestPlaceResolution } from "../lib/place-resolution-client";
 import type { ResolvedInputStop, RouteStop } from "../lib/route-optimizer";
@@ -48,6 +48,18 @@ type HotelState = {
   selectedId: string | null;
   fresh: FreshState;
 };
+type HotelStayMode = "single" | "nightly";
+type HotelStyleChoice = "recommended" | HotelStyle;
+type NightlyHotelNight = {
+  area: string;
+  fetchedAt: string;
+  candidates: HotelCandidate[];
+  selectedId: string | null;
+};
+type NightlyHotelState = {
+  status: "idle" | "loading" | "ready" | "unavailable";
+  nights: NightlyHotelNight[];
+};
 type BuildStage = "resolving" | "hotel" | "reviews" | "food" | "public" | "routes" | "scheduling";
 type BuildProgress = {
   stage: BuildStage;
@@ -61,6 +73,23 @@ type SourcePreviewState = { status: "loading" | "ready" | "failed"; imageUrl: st
 
 const emptyFreshState: FreshState = { status: "idle", result: null };
 const emptyHotelState: HotelState = { status: "idle", candidates: [], selectedId: null, fresh: emptyFreshState };
+const emptyNightlyHotelState: NightlyHotelState = { status: "idle", nights: [] };
+
+const priceBandSymbols: Record<HotelPriceLevel, string> = {
+  inexpensive: "¥",
+  moderate: "¥¥",
+  expensive: "¥¥¥",
+  very_expensive: "¥¥¥¥",
+};
+
+function priceBand(level: HotelPriceLevel | null) {
+  return level === null ? null : priceBandSymbols[level];
+}
+
+function styledBestCandidate(candidates: HotelCandidate[], style: HotelStyleChoice) {
+  if (style === "recommended") return candidates[0] ?? null;
+  return candidates.find((candidate) => candidate.styles.includes(style)) ?? null;
+}
 const initialBuildProgress: BuildProgress = {
   stage: "resolving",
   current: 0,
@@ -173,6 +202,7 @@ const ui = {
     progressPublic: (current: number, total: number, findings: number) => `公開検索 ${current}/${total} · 出典 ${findings}件`,
     progressRoutes: (current: number, total: number) => `実測できた移動 ${current}/${total}`,
     progressScheduling: "混雑の明示情報は余白時間として反映します",
+    progressFinalize: (current: number, total: number) => `動いた食事候補を再確認 ${current}/${total}`,
     mapReady: "Googleマップ",
     mapEmpty: "行き先を入れると、ここに旅が描かれます",
     edit: "入力にもどる",
@@ -201,6 +231,19 @@ const ui = {
     hotelNoAvailability: "料金・空室は宿泊サイトで最終確認してください。",
     hotelUnavailable: "ホテル候補を取得できませんでした。",
     hotelSearch: "Google Mapsでホテルを探す",
+    stayModeHeading: "泊まり方",
+    staySame: "同じホテルで通す",
+    stayNightly: "日ごとに変える",
+    nightLabel: (night: number) => `${night}泊目`,
+    nightlyLoading: "夜ごとの候補を探しています…",
+    nightlyUnavailable: "日ごとの候補を取得できませんでした。共通のホテルのまま計画しています。",
+    nightlyNightMissing: "この夜は候補を取得できず、共通のホテルのままです。",
+    styleRecommended: "おすすめ",
+    styleLuxury: "ラグジュアリー",
+    styleValue: "お手頃で高評価",
+    styleNote: "価格帯はGoogleの掲載区分です。",
+    useThisHotel: "このホテルに切り替え",
+    tonightHotel: (name: string) => `今夜の宿 · ${name}`,
     publicSources: "公開SNS・記事の出典",
     reviewReport: "口コミでの支払い報告",
     reservation: "予約",
@@ -307,6 +350,7 @@ const ui = {
     progressPublic: (current: number, total: number, findings: number) => `${current}/${total} public checks · ${findings} sources`,
     progressRoutes: (current: number, total: number) => `${current}/${total} route legs verified`,
     progressScheduling: "Explicit crowd signals become schedule buffer",
+    progressFinalize: (current: number, total: number) => `Rechecking moved meal picks ${current}/${total}`,
     mapReady: "Google Maps",
     mapEmpty: "Your trip will appear here",
     edit: "Back to input",
@@ -335,6 +379,19 @@ const ui = {
     hotelNoAvailability: "Confirm price and availability with a booking provider.",
     hotelUnavailable: "Hotel options didn't load.",
     hotelSearch: "Search hotels on Google Maps",
+    stayModeHeading: "Stay style",
+    staySame: "One hotel",
+    stayNightly: "Change nightly",
+    nightLabel: (night: number) => `Night ${night}`,
+    nightlyLoading: "Finding hotels for each night…",
+    nightlyUnavailable: "Nightly options didn't load. The plan keeps one hotel.",
+    nightlyNightMissing: "No option loaded for this night — the shared hotel stays.",
+    styleRecommended: "Best match",
+    styleLuxury: "Luxury",
+    styleValue: "Value · high rated",
+    styleNote: "Price bands come from Google's listing.",
+    useThisHotel: "Switch to this hotel",
+    tonightHotel: (name: string) => `Tonight · ${name}`,
     publicSources: "Public social and article sources",
     reviewReport: "Payment reported in a review",
     reservation: "Booked",
@@ -517,6 +574,9 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   const [intelligence, setIntelligence] = useState<Record<string, IntelligenceState>>({});
   const [freshVoices, setFreshVoices] = useState<Record<string, FreshState>>({});
   const [hotelState, setHotelState] = useState<HotelState>(emptyHotelState);
+  const [hotelStayMode, setHotelStayMode] = useState<HotelStayMode>("single");
+  const [hotelStyle, setHotelStyle] = useState<HotelStyleChoice>("recommended");
+  const [nightlyHotels, setNightlyHotels] = useState<NightlyHotelState>(emptyNightlyHotelState);
   const [durationOverrides, setDurationOverrides] = useState<Record<string, number>>({});
   const [userStayMinutes, setUserStayMinutes] = useState<Record<string, number>>({});
   const [earlyVisitStopIds, setEarlyVisitStopIds] = useState<string[]>([]);
@@ -526,6 +586,11 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   const [buildProgress, setBuildProgress] = useState<BuildProgress>(initialBuildProgress);
   const buildRunRef = useRef(0);
   const buildAbortRef = useRef<AbortController | null>(null);
+  // Mode, place-pair and departure-time keys already requested from Google,
+  // plus a small post-build
+  // allowance so hotel switches and nightly bases can still get measured legs.
+  const attemptedLegKeysRef = useRef<Set<string>>(new Set());
+  const postBuildLegBudgetRef = useRef(0);
   const text = ui[locale];
   const airportChoices = airportOptionsFor(locale);
 
@@ -545,6 +610,18 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     return () => window.cancelAnimationFrame(frame);
   }, [inspector]);
 
+  // Nightly hotel picks become per-night routing bases; nights without a
+  // usable candidate keep the trip-wide hotel.
+  const nightBases = useMemo(() => {
+    if (hotelStayMode !== "nightly" || nightlyHotels.status !== "ready") return undefined;
+    const record: Record<number, ResolvedInputStop | null> = {};
+    nightlyHotels.nights.forEach((night, index) => {
+      const selected = night.candidates.find((candidate) => candidate.id === night.selectedId) ?? null;
+      if (selected) record[index] = hotelAsResolvedBase(selected, "", night.area, night.fetchedAt);
+    });
+    return Object.keys(record).length > 0 ? record : undefined;
+  }, [hotelStayMode, nightlyHotels]);
+
   const plan = useMemo(() => hasPlan ? buildTripFromWishlist(itinerary, tripDays, pace, locale, {
     tripStartDate,
     hotelQuery,
@@ -556,6 +633,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     mealPlan,
     resolvedStops,
     resolvedBase,
+    nightBases,
     dayStartTimes,
     // Evidence buffers first, the user's explicit stay edits on top.
     durationOverrides: { ...durationOverrides, ...userStayMinutes },
@@ -563,10 +641,11 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     liveTransitMinutes: liveTransit,
     liveWalkingMinutes: liveWalking,
     openingWindowsByDay,
-  }) : null, [arrivalAirport, arrivalTime, dayStartTimes, departureAirport, departureTime, durationOverrides, earlyVisitStopIds, hasPlan, hotelQuery, itinerary, liveTransit, liveWalking, locale, mealPlan, openingWindowsByDay, pace, resolvedBase, resolvedStops, tripDays, tripStartDate, userStayMinutes]);
+  }) : null, [arrivalAirport, arrivalTime, dayStartTimes, departureAirport, departureTime, durationOverrides, earlyVisitStopIds, hasPlan, hotelQuery, itinerary, liveTransit, liveWalking, locale, mealPlan, nightBases, openingWindowsByDay, pace, resolvedBase, resolvedStops, tripDays, tripStartDate, userStayMinutes]);
 
   const day = plan?.days[activeDay] ?? null;
-  const base = day ? plan?.selectedBase ?? null : null;
+  const base = day ? day.startBase ?? plan?.selectedBase ?? null : null;
+  const dayEndBase = day ? day.endBase ?? base : null;
   const mapStops = useMemo(() => day ? day.stops.map(({ stop }) => stop) : [], [day]);
   const routeDepartureTimes = useMemo(() => {
     if (!day?.date || mapStops.length === 0) return [];
@@ -676,6 +755,114 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     setInspector({ kind: "food", slotId: activeFoodSlot.id, candidateId });
   }, [activeFoodSlot]);
 
+  // When a plan change introduces legs Google has not measured yet (switching
+  // hotels, nightly bases), fetch just those legs within a small post-build
+  // budget. Keys are place-pair based, so ordinary edits refetch nothing.
+  useEffect(() => {
+    if (!hasPlan || isBuilding || !plan || postBuildLegBudgetRef.current <= 0) return;
+    let missingCount = 0;
+    try {
+      missingCount = buildPlanningRouteLegs(plan)
+        .filter((leg) => !attemptedLegKeysRef.current.has(planningRouteRequestKey(leg))).length;
+    } catch {
+      return;
+    }
+    if (missingCount === 0) return;
+    const runId = buildRunRef.current;
+    const timer = window.setTimeout(() => {
+      const excludeKeys = new Set(attemptedLegKeysRef.current);
+      const budget = Math.min(postBuildLegBudgetRef.current, 12);
+      // Marked as attempted up-front so a failing leg is never retried in a loop.
+      let marked: string[] = [];
+      try {
+        marked = buildPlanningRouteLegs(plan)
+          .filter((leg) => !excludeKeys.has(planningRouteRequestKey(leg)))
+          .slice(0, budget)
+          .map(planningRouteRequestKey);
+      } catch {
+        return;
+      }
+      for (const key of marked) attemptedLegKeysRef.current.add(key);
+      postBuildLegBudgetRef.current = Math.max(0, postBuildLegBudgetRef.current - marked.length);
+      void prefetchPlanningRouteDurations(plan, locale, { concurrency: 2, maxLegs: budget, excludeKeys })
+        .then((measured) => {
+          if (buildRunRef.current !== runId) return;
+          if (Object.keys(measured.transitMinutes).length > 0) {
+            setLiveTransit((current) => ({ ...current, ...measured.transitMinutes }));
+          }
+          if (Object.keys(measured.walkingMinutes).length > 0) {
+            setLiveWalking((current) => ({ ...current, ...measured.walkingMinutes }));
+          }
+        })
+        .catch(() => { /* Estimates stay in place and are labeled as such. */ });
+    }, 900);
+    return () => window.clearTimeout(timer);
+  }, [hasPlan, isBuilding, locale, plan]);
+
+  function selectHotelCandidate(candidate: HotelCandidate) {
+    setHotelState((current) => ({ ...current, selectedId: candidate.id }));
+    // The displayed hotel and the routing base must never diverge.
+    setResolvedBase(hotelAsResolvedBase(candidate, hotelQuery, candidate.address.slice(0, 100) || candidate.name, new Date().toISOString()));
+  }
+
+  function selectNightCandidate(nightIndex: number, candidateId: string) {
+    setNightlyHotels((state) => state.status !== "ready" ? state : {
+      ...state,
+      nights: state.nights.map((night, index) => index === nightIndex ? { ...night, selectedId: candidateId } : night),
+    });
+  }
+
+  function applyHotelStyle(style: HotelStyleChoice) {
+    setHotelStyle(style);
+    const pick = styledBestCandidate(hotelState.candidates, style);
+    if (pick && pick.id !== hotelState.selectedId) selectHotelCandidate(pick);
+    setNightlyHotels((state) => state.status !== "ready" ? state : {
+      ...state,
+      nights: state.nights.map((night) => {
+        const nightPick = styledBestCandidate(night.candidates, style);
+        return nightPick ? { ...night, selectedId: nightPick.id } : night;
+      }),
+    });
+  }
+
+  async function enableNightlyHotels() {
+    setHotelStayMode("nightly");
+    if (nightlyHotels.status === "loading" || nightlyHotels.status === "ready") return;
+    if (!plan || plan.days.length < 2) return;
+    const runId = buildRunRef.current;
+    const stale = () => buildRunRef.current !== runId;
+    setNightlyHotels({ status: "loading", nights: [] });
+    // Night N should be handy for day N's evening and day N+1's morning, so it
+    // anchors on day N's stop centroid (falling back to the next morning or
+    // the trip-wide hotel).
+    const anchors = plan.days.slice(0, -1).map((planDay, index) => {
+      const stops = planDay.stops.map((built) => built.stop);
+      const fallback = plan.days[index + 1]?.stops[0]?.stop ?? planDay.endBase ?? plan.selectedBase;
+      if (stops.length === 0 && !fallback) return null;
+      const latitude = stops.length > 0 ? stops.reduce((sum, stop) => sum + stop.latitude, 0) / stops.length : fallback!.latitude;
+      const longitude = stops.length > 0 ? stops.reduce((sum, stop) => sum + stop.longitude, 0) / stops.length : fallback!.longitude;
+      const area = stops.at(-1)?.area ?? fallback?.area ?? "Japan";
+      return { latitude, longitude, area };
+    });
+    const styleAtRequest = hotelStyle;
+    const nights = await mapWithConcurrency(anchors, 2, async (anchor): Promise<NightlyHotelNight> => {
+      if (!anchor) return { area: "", fetchedAt: "", candidates: [], selectedId: null };
+      try {
+        const response = await requestHotelRecommendations(anchor, locale);
+        const pick = styledBestCandidate(response.candidates, styleAtRequest) ?? response.candidates[0] ?? null;
+        return { area: anchor.area, fetchedAt: response.fetchedAt, candidates: response.candidates, selectedId: pick?.id ?? null };
+      } catch {
+        return { area: anchor.area, fetchedAt: "", candidates: [], selectedId: null };
+      }
+    }, undefined, stale);
+    if (stale()) return;
+    if (nights.every((night) => night.candidates.length === 0)) {
+      setNightlyHotels({ status: "unavailable", nights: [] });
+      return;
+    }
+    setNightlyHotels({ status: "ready", nights });
+  }
+
   function changeLocale(next: PlannerLocale) {
     if (next === locale) return;
     // Switching language must not throw away the built plan or its evidence
@@ -718,6 +905,9 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     setIntelligence({});
     setFreshVoices({});
     setHotelState(emptyHotelState);
+    setHotelStayMode("single");
+    setHotelStyle("recommended");
+    setNightlyHotels(emptyNightlyHotelState);
     setDurationOverrides({});
     setUserStayMinutes({});
     setEarlyVisitStopIds([]);
@@ -751,6 +941,9 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       setIntelligence({});
       setFreshVoices({});
       setHotelState({ ...emptyHotelState, status: "loading" });
+      setHotelStayMode("single");
+      setHotelStyle("recommended");
+      setNightlyHotels(emptyNightlyHotelState);
       setDurationOverrides({});
       setUserStayMinutes({});
       setEarlyVisitStopIds([]);
@@ -930,6 +1123,17 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     const localFoodSearches = Object.fromEntries(foodEntries) as Record<string, FoodState>;
     if (!commit(() => setFoodSearches(localFoodSearches))) return;
 
+    // Route legs are keyed by place pair + mode, so most measurements from this
+    // draft stay valid even after evidence buffers shift departure times.
+    // Probing them now, in parallel with the public-evidence stage, removes the
+    // routes stage from the critical path; only legs that genuinely changed are
+    // fetched afterwards.
+    const speculativeRoutesPromise = prefetchPlanningRouteDurations(draft, locale, {
+      concurrency: 3,
+      maxLegs: 24,
+      signal: controller.signal,
+    }).catch(() => null);
+
     type PublicTarget = {
       key: string;
       name: string;
@@ -1060,17 +1264,40 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     })) return;
     let measuredTransit: Record<string, number> = {};
     let measuredWalking: Record<string, number> = {};
+    const attemptedRouteKeys = new Set<string>();
+    const measuredOkKeys = new Set<string>();
+    const measuredLegIds = new Set<string>();
     try {
-      const measured = await prefetchPlanningRouteDurations(routeDraft, locale, {
-        concurrency: 2,
+      const speculative = await speculativeRoutesPromise;
+      if (cancelled()) return;
+      if (speculative) {
+        measuredTransit = { ...speculative.transitMinutes };
+        measuredWalking = { ...speculative.walkingMinutes };
+        for (const leg of speculative.legs) {
+          attemptedRouteKeys.add(planningRouteRequestKey(leg));
+          if (leg.status === "ok") {
+            measuredOkKeys.add(planningRouteRequestKey(leg));
+            measuredLegIds.add(leg.id);
+          }
+        }
+        if (!commit(() => setBuildProgress((current) => ({ ...current, current: Math.min(measuredLegIds.size, plannedRouteLegs), total: plannedRouteLegs })))) return;
+      }
+      // Only the delta between the probed draft and the evidence-adjusted
+      // route is requested here — usually zero or a handful of legs.
+      const remaining = await prefetchPlanningRouteDurations(routeDraft, locale, {
+        concurrency: 3,
         maxLegs: 24,
+        excludeKeys: measuredOkKeys,
         signal: controller.signal,
       });
       if (cancelled()) return;
-      measuredTransit = measured.transitMinutes;
-      measuredWalking = measured.walkingMinutes;
-      const measuredCount = new Set(measured.legs.filter((leg) => leg.status === "ok").map((leg) => leg.id)).size;
-      if (!commit(() => setBuildProgress((current) => ({ ...current, current: measuredCount, total: plannedRouteLegs })))) return;
+      measuredTransit = { ...measuredTransit, ...remaining.transitMinutes };
+      measuredWalking = { ...measuredWalking, ...remaining.walkingMinutes };
+      for (const leg of remaining.legs) {
+        attemptedRouteKeys.add(planningRouteRequestKey(leg));
+        if (leg.status === "ok") measuredLegIds.add(leg.id);
+      }
+      if (!commit(() => setBuildProgress((current) => ({ ...current, current: Math.min(measuredLegIds.size, plannedRouteLegs), total: plannedRouteLegs })))) return;
     } catch {
       if (cancelled()) return;
     }
@@ -1079,7 +1306,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       ...current,
       stage: "scheduling",
       current: 0,
-      total: 1,
+      total: 0,
       reviewCount,
       publicCount,
     })))) return;
@@ -1098,6 +1325,10 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     );
     const finalSlots = finalDraft.foodRecommendationSlots;
     const reconciliation = reconcileFoodRecommendationSlots(slots, finalSlots, 20);
+    // The finalize stage can trigger real work (moved meal slots and their
+    // public re-checks); its progress stays visible so the build never looks
+    // stalled while Claude searches run.
+    if (!commit(() => setBuildProgress((current) => ({ ...current, total: reconciliation.refresh.length })))) return;
     const refreshEntries = await mapWithConcurrency(reconciliation.refresh, 4, async (slot) => {
       const query = defaultFoodDiscoveryQuery(locale);
       try {
@@ -1112,7 +1343,9 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       } catch {
         return [slot.id, { status: "unavailable", query, candidates: [], notes: {}, fresh: {} } satisfies FoodState] as const;
       }
-    }, undefined, cancelled);
+    }, (current) => {
+      commit(() => setBuildProgress((progress) => ({ ...progress, current })));
+    }, cancelled);
     if (cancelled()) return;
     const refreshedById = Object.fromEntries(refreshEntries) as Record<string, FoodState>;
     const finalFoodSearches = Object.fromEntries(finalSlots.map((slot) => [
@@ -1159,6 +1392,14 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     }
     const reanchorSearchUnits = reanchorSearchReserve + remainingSearchUnits;
     const reanchoredTargets = [...reanchoredTargetMap.values()].slice(0, reanchorSearchUnits);
+    const reanchorProgressBase = reconciliation.refresh.length;
+    if (reanchoredTargets.length > 0) {
+      if (!commit(() => setBuildProgress((current) => ({
+        ...current,
+        current: reanchorProgressBase,
+        total: reanchorProgressBase + reanchoredTargets.length,
+      })))) return;
+    }
     const reanchoredResults = await mapWithConcurrency(reanchoredTargets, 4, async (target) => {
       try {
         const result = await requestFreshVoices(
@@ -1171,7 +1412,9 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       } catch {
         return { target, state: { status: "unavailable", result: null } satisfies FreshState };
       }
-    }, undefined, cancelled);
+    }, (current) => {
+      commit(() => setBuildProgress((progress) => ({ ...progress, current: reanchorProgressBase + current, publicCount })));
+    }, cancelled);
     if (cancelled()) return;
     for (const { target, state } of reanchoredResults) {
       for (const slotId of target.refs) {
@@ -1186,7 +1429,9 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     if (!commit(() => setFoodSearches(finalFoodSearches))) return;
 
     if (!commit(() => {
-      setBuildProgress((current) => ({ ...current, stage: "scheduling", current: 1, total: 1, reviewCount, publicCount }));
+      attemptedLegKeysRef.current = attemptedRouteKeys;
+      postBuildLegBudgetRef.current = 16;
+      setBuildProgress((current) => ({ ...current, stage: "scheduling", current: 0, total: 0, reviewCount, publicCount }));
       setDurationOverrides(overrides);
       setEarlyVisitStopIds(earlyStops);
       setOpeningWindowsByDay(localOpeningWindows);
@@ -1222,6 +1467,9 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     setIntelligence({});
     setFreshVoices({});
     setHotelState(emptyHotelState);
+    setHotelStayMode("single");
+    setHotelStyle("recommended");
+    setNightlyHotels(emptyNightlyHotelState);
     setDurationOverrides({});
     setUserStayMinutes({});
     setEarlyVisitStopIds([]);
@@ -1250,6 +1498,9 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     setIntelligence({});
     setFreshVoices({});
     setHotelState(emptyHotelState);
+    setHotelStayMode("single");
+    setHotelStyle("recommended");
+    setNightlyHotels(emptyNightlyHotelState);
     setDurationOverrides({});
     setUserStayMinutes({});
     setEarlyVisitStopIds([]);
@@ -1366,7 +1617,9 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
           : buildProgress.stage === "routes"
             ? text.progressRoutes(buildProgress.current, buildProgress.total)
           : buildProgress.stage === "scheduling"
-            ? text.progressScheduling
+            ? buildProgress.total > 0
+              ? text.progressFinalize(buildProgress.current, buildProgress.total)
+              : text.progressScheduling
             : selectedHotel?.name ?? (locale === "ja" ? "旅程に合うホテルを検索中" : "Searching hotels that fit the route");
 
   return (
@@ -1390,6 +1643,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
         <PlannerGoogleMap
           apiKey={mapsApiKey}
           base={displayedMapBase}
+          endBase={hasPlan ? dayEndBase : null}
           departureTimes={routeDepartureTimes}
           drawRoute={hasPlan}
           foodPins={foodPins}
@@ -1641,10 +1895,96 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
             <header className="planner-inspector-head">
               <span className="planner-inspector-num is-food" aria-hidden="true">H</span>
               <div>
-                <h2>{selectedHotel.name}</h2>
+                <h2>{hotelStayMode === "nightly" ? text.stayNightly : selectedHotel.name}</h2>
                 <p>{text.hotelCandidate}</p>
               </div>
             </header>
+            {plan && plan.days.length >= 2 ? (
+              <div className="planner-stay-mode" role="group" aria-label={text.stayModeHeading}>
+                <button
+                  aria-pressed={hotelStayMode === "single"}
+                  className={hotelStayMode === "single" ? "is-active" : ""}
+                  onClick={() => setHotelStayMode("single")}
+                  type="button"
+                >
+                  {text.staySame}
+                </button>
+                <button
+                  aria-pressed={hotelStayMode === "nightly"}
+                  className={hotelStayMode === "nightly" ? "is-active" : ""}
+                  onClick={() => void enableNightlyHotels()}
+                  type="button"
+                >
+                  {text.stayNightly}
+                </button>
+              </div>
+            ) : null}
+            {(() => {
+              const nightCandidates = nightlyHotels.status === "ready" ? nightlyHotels.nights.flatMap((night) => night.candidates) : [];
+              const styleAvailable = (style: HotelStyle) => hotelState.candidates.some((candidate) => candidate.styles.includes(style))
+                || nightCandidates.some((candidate) => candidate.styles.includes(style));
+              if (!styleAvailable("luxury") && !styleAvailable("value")) return null;
+              const choices: Array<{ value: HotelStyleChoice; label: string; enabled: boolean }> = [
+                { value: "recommended", label: text.styleRecommended, enabled: true },
+                { value: "luxury", label: text.styleLuxury, enabled: styleAvailable("luxury") },
+                { value: "value", label: text.styleValue, enabled: styleAvailable("value") },
+              ];
+              return (
+                <div className="planner-hotel-styles" role="group" aria-label={text.styleNote}>
+                  {choices.map((choice) => (
+                    <button
+                      aria-pressed={hotelStyle === choice.value}
+                      className={hotelStyle === choice.value ? "is-active" : ""}
+                      disabled={!choice.enabled}
+                      key={choice.value}
+                      onClick={() => applyHotelStyle(choice.value)}
+                      type="button"
+                    >
+                      {choice.label}
+                    </button>
+                  ))}
+                </div>
+              );
+            })()}
+            {hotelStayMode === "nightly" ? (
+              <div className="planner-night-list">
+                {nightlyHotels.status === "loading" ? <p className="planner-food-status" role="status">{text.nightlyLoading}</p> : null}
+                {nightlyHotels.status === "unavailable" ? <p className="planner-food-status">{text.nightlyUnavailable}</p> : null}
+                {nightlyHotels.status === "ready" ? nightlyHotels.nights.map((night, nightIndex) => {
+                  const selected = night.candidates.find((candidate) => candidate.id === night.selectedId) ?? null;
+                  return (
+                    <section className="planner-night" key={`night-${nightIndex}`}>
+                      <header><b>{text.nightLabel(nightIndex + 1)}</b><small>{night.area}</small></header>
+                      {selected ? (
+                        <>
+                          <a className="planner-night-hotel" href={selected.googleMapsUrl} rel="noreferrer" target="_blank">
+                            <b>{selected.name}</b>
+                            <span>
+                              {[
+                                selected.rating !== null ? `★ ${selected.rating.toFixed(1)}` : null,
+                                priceBand(selected.priceLevel),
+                                selected.styles.includes("luxury") ? text.styleLuxury : selected.styles.includes("value") ? text.styleValue : null,
+                              ].filter(Boolean).join(" · ")}
+                            </span>
+                          </a>
+                          {night.candidates.length > 1 ? (
+                            <div className="planner-night-alts">
+                              {night.candidates.filter((candidate) => candidate.id !== selected.id).slice(0, 3).map((candidate) => (
+                                <button key={candidate.id} onClick={() => selectNightCandidate(nightIndex, candidate.id)} title={text.useThisHotel} type="button">
+                                  <span>{candidate.name}</span>
+                                  <small>{[candidate.rating !== null ? `★ ${candidate.rating.toFixed(1)}` : null, priceBand(candidate.priceLevel)].filter(Boolean).join(" · ")}</small>
+                                </button>
+                              ))}
+                            </div>
+                          ) : null}
+                        </>
+                      ) : <p className="planner-food-status">{text.nightlyNightMissing}</p>}
+                    </section>
+                  );
+                }) : null}
+                <p className="planner-food-note">{text.styleNote} {text.hotelNoAvailability}</p>
+              </div>
+            ) : (<>
             <a className="planner-hotel-hero" href={selectedHotel.googleMapsUrl} key={selectedHotel.id} rel="noreferrer" target="_blank">
               {selectedHotel.photo ? <>
                 {/* Google place photos are proxied at request time and are not stored. */}
@@ -1655,6 +1995,9 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
             {selectedHotel.photo?.attribution ? <a className="planner-photo-credit" href={selectedHotel.photo.attribution.uri} rel="noreferrer" target="_blank">{text.photoLabel} {selectedHotel.photo.attribution.name} ↗</a> : null}
             <div className="planner-hotel-facts">
               {selectedHotel.rating !== null ? <span className="is-rating">★ {selectedHotel.rating.toFixed(1)} · {selectedHotel.userRatingCount?.toLocaleString(locale === "ja" ? "ja-JP" : "en-US") ?? "—"}</span> : null}
+              {priceBand(selectedHotel.priceLevel) !== null ? <span>{priceBand(selectedHotel.priceLevel)}</span> : null}
+              {selectedHotel.styles.includes("luxury") ? <span>{text.styleLuxury}</span> : null}
+              {selectedHotel.styles.includes("value") ? <span>{text.styleValue}</span> : null}
               {selectedHotel.payment?.cashOnly === true ? <span>{text.cashOnly}</span> : null}
               {selectedHotel.payment?.acceptedMethods.includes("credit_card") ? <span>{text.cardsAccepted}</span> : null}
               {hotelState.fresh.result?.findings.length ? <span>{text.foodFresh(hotelState.fresh.result.findings.length)}</span> : null}
@@ -1699,10 +2042,25 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
             {hotelState.candidates.length > 1 ? (
               <div className="planner-hotel-alternatives">
                 <span>{text.hotelAlternatives}</span>
-                {hotelState.candidates.slice(1).map((candidate) => <a href={candidate.googleMapsUrl} key={candidate.id} rel="noreferrer" target="_blank"><span>{candidate.name}</span><b>{candidate.rating !== null ? `★ ${candidate.rating.toFixed(1)}` : "↗"}</b></a>)}
+                {hotelState.candidates.filter((candidate) => candidate.id !== selectedHotel.id).map((candidate) => (
+                  <div className="planner-hotel-alt" key={candidate.id}>
+                    <button onClick={() => selectHotelCandidate(candidate)} title={text.useThisHotel} type="button">
+                      <span>{candidate.name}</span>
+                      <small>
+                        {[
+                          candidate.rating !== null ? `★ ${candidate.rating.toFixed(1)}` : null,
+                          priceBand(candidate.priceLevel),
+                          candidate.styles.includes("luxury") ? text.styleLuxury : candidate.styles.includes("value") ? text.styleValue : null,
+                        ].filter(Boolean).join(" · ")}
+                      </small>
+                    </button>
+                    <a aria-label="Google Maps" href={candidate.googleMapsUrl} rel="noreferrer" target="_blank">↗</a>
+                  </div>
+                ))}
               </div>
             ) : null}
-            <p className="planner-food-note">{text.hotelNoAvailability}</p>
+            <p className="planner-food-note">{text.styleNote} {text.hotelNoAvailability}</p>
+            </>)}
           </aside>
         ) : null}
 
@@ -1827,8 +2185,8 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                 <label><span>{text.arrivalTime}</span><input disabled={arrivalAirport === "none"} onChange={(event) => setArrivalTime(event.target.value)} type="time" value={arrivalTime} /></label>
                 <label><span>{text.departure}</span><select onChange={(event) => setDepartureAirport(event.target.value as AirportCode)} value={departureAirport}>{airportChoices.map((airport) => <option key={airport.value} value={airport.value}>{airport.label}</option>)}</select></label>
                 <label><span>{text.departureTime}</span><input disabled={departureAirport === "none"} onChange={(event) => setDepartureTime(event.target.value)} type="time" value={departureTime} /></label>
-                <label><span>{text.pace}</span><select onChange={(event) => setPace(event.target.value as Pace)} value={pace}><option value="relaxed">{text.relaxed}</option><option value="balanced">{text.balanced}</option><option value="fast">{text.fast}</option></select></label>
-                <label><span>{text.meal}</span><select onChange={(event) => setMealPlan(event.target.value as MealPlan)} value={mealPlan}><option value="all">{text.allMeals}</option><option value="dinner">{text.dinner}</option><option value="none">{text.noMeals}</option></select></label>
+                <div className="planner-choice"><span>{text.pace}</span><div className="planner-choice-chips" role="group" aria-label={text.pace}>{(["relaxed", "balanced", "fast"] as const).map((value) => <button aria-pressed={pace === value} className={pace === value ? "is-active" : ""} key={value} onClick={() => setPace(value)} type="button">{text[value]}</button>)}</div></div>
+                <div className="planner-choice"><span>{text.meal}</span><div className="planner-choice-chips" role="group" aria-label={text.meal}>{([["all", text.allMeals], ["dinner", text.dinner], ["none", text.noMeals]] as const).map(([value, label]) => <button aria-pressed={mealPlan === value} className={mealPlan === value ? "is-active" : ""} key={value} onClick={() => setMealPlan(value)} type="button">{label}</button>)}</div></div>
               </div>
             </details>
 
@@ -1922,6 +2280,12 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
               </label>
               {day.deadlineOverrunMinutes > 0 && day.deadline ? <em>{text.deadlineOver(day.deadline)}</em> : <small>{measuredRouteCount > 0 ? text.walkingSafety : text.estimated}</small>}
             </section>
+
+            {hotelStayMode === "nightly" && day.endBase ? (
+              <button className="planner-tonight" onClick={() => setInspector({ kind: "hotel" })} type="button">
+                <span aria-hidden="true">H</span>{text.tonightHotel(day.endBase.name)}
+              </button>
+            ) : null}
 
             {day.stops.length === 0 ? <p className="planner-open-day">{text.openDay}</p> : (
               <ol className="planner-timeline">

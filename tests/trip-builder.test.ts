@@ -372,3 +372,68 @@ test("treats a time range as opening hours instead of pinning a visit time", () 
   assert.equal(plan.days[0].stops[0].fixedTime, null);
   assert.equal(plan.days[0].stops[0].isReservation, false);
 });
+
+test("nightly hotel bases split a day's start and end anchors", () => {
+  const nightHotel = (id: string, name: string, latitude: number, longitude: number) => ({
+    id,
+    input: name,
+    name,
+    area: "Tokyo",
+    address: `1 ${name}, Tokyo`,
+    latitude,
+    longitude,
+    sourceUrl: `https://maps.google.com/${id}`,
+    verifiedAt: "2026-07-21T00:00:00Z",
+    confidence: "medium" as const,
+    planningDurationMinutes: 0,
+    isAnchor: false,
+  });
+  const plan = buildTripFromWishlist(wishlist, 3, "balanced", "en", {
+    hotelQuery: "hotel near Shinjuku Station",
+    nightBases: {
+      0: nightHotel("night-0", "Asakusa Stay", 35.711, 139.797),
+      1: nightHotel("night-1", "Shibuya Stay", 35.658, 139.7),
+    },
+  });
+
+  // Day 1 checks into night 0's hotel; day 2 wakes there and moves on.
+  assert.equal(plan.days[0].startBase?.name, "Asakusa Stay");
+  assert.equal(plan.days[0].endBase?.name, "Asakusa Stay");
+  assert.equal(plan.days[1].startBase?.name, "Asakusa Stay");
+  assert.equal(plan.days[1].endBase?.name, "Shibuya Stay");
+  // The final day stays anchored to the last night's hotel.
+  assert.equal(plan.days[2].startBase?.name, "Shibuya Stay");
+  assert.equal(plan.days[2].endBase?.name, "Shibuya Stay");
+  // The trip-wide base is untouched for fallback display.
+  assert.equal(plan.selectedBase?.name, "Shinjuku area");
+});
+
+test("a missing night falls back to the trip-wide hotel and single-hotel plans are unchanged", () => {
+  const partial = buildTripFromWishlist(wishlist, 3, "balanced", "en", {
+    hotelQuery: "hotel near Shinjuku Station",
+    nightBases: {
+      1: {
+        id: "night-1",
+        input: "Shibuya Stay",
+        name: "Shibuya Stay",
+        area: "Shibuya",
+        address: "1 Shibuya, Tokyo",
+        latitude: 35.658,
+        longitude: 139.7,
+        sourceUrl: "https://maps.google.com/night-1",
+        verifiedAt: "2026-07-21T00:00:00Z",
+        confidence: "medium",
+        planningDurationMinutes: 0,
+        isAnchor: false,
+      },
+    },
+  });
+  assert.equal(partial.days[0].startBase?.name, "Shinjuku area");
+  assert.equal(partial.days[1].endBase?.name, "Shibuya Stay");
+
+  const single = buildTripFromWishlist(wishlist, 2, "balanced", "en", { hotelQuery: "hotel near Shinjuku Station" });
+  for (const day of single.days) {
+    assert.equal(day.startBase?.id, single.selectedBase?.id);
+    assert.equal(day.endBase?.id, single.selectedBase?.id);
+  }
+});

@@ -44,6 +44,9 @@ export type BuiltPlanDay = {
   startAdjustedByArrival: boolean;
   finishTime: string;
   hotelTravelMinutes: number | null;
+  /** Where this day begins (previous night's hotel) and ends (tonight's hotel). */
+  startBase: TripBase | null;
+  endBase: TripBase | null;
   deadline: string | null;
   deadlineOverrunMinutes: number;
   reservationConflictCount: number;
@@ -113,6 +116,11 @@ export type TripPlannerContext = {
   mealPlan?: MealPlan;
   resolvedStops?: ResolvedInputStop[];
   resolvedBase?: ResolvedInputStop | null;
+  /**
+   * Optional hotel per night (night N = where you sleep after day N).
+   * Missing nights fall back to the trip-wide base.
+   */
+  nightBases?: Record<number, ResolvedInputStop | null>;
 };
 
 export type TripBase = RouteStop & { query: string };
@@ -911,7 +919,8 @@ function buildDay(
   index: number,
   dayCount: number,
   locale: Locale,
-  base: TripBase | null,
+  startBase: TripBase | null,
+  endBase: TripBase | null,
   airportConstraints: AirportConstraint[],
   constraints: Map<string, WishlistStopConstraint>,
   earlyVisitStopIds: Set<string>,
@@ -930,7 +939,7 @@ function buildDay(
   const startMinutes = Math.max(requestedStartMinutes, arrivalReadyMinutes);
   const ordered = orderForReservations(
     stops,
-    base,
+    startBase,
     startMinutes,
     constraints,
     earlyVisitStopIds,
@@ -957,8 +966,8 @@ function buildDay(
   });
   let cursor = startMinutes;
   let hotelTravelMinutes: number | null = null;
-  if (base && ordered[0]) {
-    const outbound = routeComparison(base, ordered[0], liveTransitMinutes, liveWalkingMinutes).recommended.minutes;
+  if (startBase && ordered[0]) {
+    const outbound = routeComparison(startBase, ordered[0], liveTransitMinutes, liveWalkingMinutes).recommended.minutes;
     cursor += outbound + 10;
     hotelTravelMinutes = outbound;
   }
@@ -987,8 +996,9 @@ function buildDay(
       crowd: buildCrowdOutlook(date, arrival, stop),
     };
   });
-  if (base && ordered.at(-1)) {
-    const inbound = routeComparison(ordered.at(-1)!, base, liveTransitMinutes, liveWalkingMinutes).recommended.minutes;
+  const finishBase = endBase ?? startBase;
+  if (finishBase && ordered.at(-1)) {
+    const inbound = routeComparison(ordered.at(-1)!, finishBase, liveTransitMinutes, liveWalkingMinutes).recommended.minutes;
     cursor += inbound;
     hotelTravelMinutes = (hotelTravelMinutes ?? 0) + inbound;
   }
@@ -996,7 +1006,7 @@ function buildDay(
     ? clockMinutes(departureConstraint.cityTime)! + (departureConstraint.cityTimeDayOffset === -1 ? -1440 : 0)
     : null;
   const areas = [...new Set(ordered.map((stop) => stop.area))];
-  const mapStops = base ? [base, ...ordered, base] : ordered;
+  const mapStops = startBase ? [startBase, ...ordered, finishBase ?? startBase] : ordered;
   return {
     label: dayLabel(index + 1, locale),
     date,
@@ -1009,6 +1019,8 @@ function buildDay(
     startAdjustedByArrival: startMinutes > requestedStartMinutes,
     finishTime: clock(cursor),
     hotelTravelMinutes,
+    startBase,
+    endBase: finishBase,
     deadline: deadlineMinutes === null ? null : clock(deadlineMinutes),
     deadlineOverrunMinutes: deadlineMinutes === null ? 0 : Math.max(0, cursor - deadlineMinutes),
     reservationConflictCount: scheduledStops.filter((stop) => stop.reservationLateMinutes > 0).length,
@@ -1085,12 +1097,29 @@ export function buildTripFromWishlist(
   const baseRecommendations = recommendBases(scheduledKnownStops, fullClusters, locale, Boolean(context.resolvedStops?.length));
   const airportConstraints = buildAirportConstraints(context, selectedBase, locale);
   const earlyVisitStopIds = new Set(context.earlyVisitStopIds ?? []);
+  // Night N is where you sleep after day N; a day starts at the previous
+  // night's hotel and ends at tonight's. Clamping keeps day 0 and the final
+  // day anchored to the first/last night, and missing nights fall back to
+  // the trip-wide base — so a single-hotel trip behaves exactly as before.
+  const nightCount = Math.max(1, clusters.length - 1);
+  const nightBaseFor = (night: number): TripBase | null => {
+    const resolved = context.nightBases?.[Math.max(0, Math.min(nightCount - 1, night))];
+    if (!resolved) return selectedBase;
+    return {
+      ...resolved,
+      id: `base-${resolved.id}`,
+      planningDurationMinutes: 0,
+      isAnchor: false,
+      query: resolved.name,
+    };
+  };
   const days = clusters.map((cluster, index) => buildDay(
     cluster,
     index,
     clusters.length,
     locale,
-    selectedBase,
+    nightBaseFor(index - 1),
+    nightBaseFor(index),
     airportConstraints,
     constraints,
     earlyVisitStopIds,
@@ -1111,7 +1140,8 @@ export function buildTripFromWishlist(
         lastIndex,
         clusters.length,
         locale,
-        selectedBase,
+        nightBaseFor(lastIndex - 1),
+        nightBaseFor(lastIndex),
         airportConstraints,
         constraints,
         earlyVisitStopIds,

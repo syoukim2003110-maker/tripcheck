@@ -15,6 +15,7 @@ export type PlanningRouteLeg = {
 
 export type PlanningRouteResult = LiveRouteResult & {
   mode: PlanningRouteMode;
+  departureTime: string;
 };
 
 export type PlanningRoutePrefetch = {
@@ -30,6 +31,8 @@ export type PlanningRoutePrefetchOptions = {
   modes?: PlanningRouteMode[];
   concurrency?: number;
   maxLegs?: number;
+  /** Request keys that are already measured and must not be re-requested. */
+  excludeKeys?: Iterable<string>;
   fetcher?: typeof fetch;
   signal?: AbortSignal;
 };
@@ -69,16 +72,19 @@ function addDays(value: string, days: number) {
 function timedPathForDay(plan: BuiltTripPlan, dayIndex: number) {
   const day = plan.days[dayIndex];
   const scheduledStops = day.stops.map(({ stop }) => stop);
-  const path = plan.selectedBase
-    ? [plan.selectedBase, ...scheduledStops, plan.selectedBase]
+  // Days can start and end at different hotels when nightly bases are set.
+  const startBase = day.startBase ?? plan.selectedBase;
+  const endBase = day.endBase ?? startBase;
+  const path = startBase
+    ? [startBase, ...scheduledStops, endBase ?? startBase]
     : scheduledStops;
   if (path.length < 2) return [];
   if (!day.date) throw new LiveRoutesError("missing_date");
 
-  const departureClocks = plan.selectedBase
+  const departureClocks = startBase
     ? [day.startTime, ...day.stops.map((stop) => stop.departure)]
     : day.stops.slice(0, -1).map((stop) => stop.departure);
-  const routeModes: PlanningRouteMode[] = plan.selectedBase
+  const routeModes: PlanningRouteMode[] = startBase
     ? ["transit", ...day.legs.map((leg) => leg.comparison.recommended.mode === "walk" ? "walk" as const : "transit" as const), "transit"]
     : day.legs.map((leg) => leg.comparison.recommended.mode === "walk" ? "walk" as const : "transit" as const);
   let previousClock: number | null = null;
@@ -103,6 +109,17 @@ function timedPathForDay(plan: BuiltTripPlan, dayIndex: number) {
 }
 
 /**
+ * Transit duration depends on the requested departure time. Keeping the time
+ * in the key prevents an earlier draft's result from being reused after the
+ * schedule shifts.
+ */
+export function planningRouteRequestKey(
+  leg: Pick<PlanningRouteLeg, "mode" | "id" | "departureTime">,
+) {
+  return `${leg.mode}|${leg.id}|${leg.departureTime}`;
+}
+
+/**
  * Builds coordinate-only requests from a draft plan. It is safe to call before
  * the UI exposes that draft by setting `hasPlan`.
  */
@@ -110,7 +127,7 @@ export function buildPlanningRouteLegs(plan: BuiltTripPlan) {
   const unique = new Map<string, PlanningRouteLeg>();
   plan.days.forEach((_day, dayIndex) => {
     for (const leg of timedPathForDay(plan, dayIndex)) {
-      const key = `${leg.mode}|${leg.id}`;
+      const key = planningRouteRequestKey(leg);
       if (!unique.has(key)) unique.set(key, leg);
     }
   });
@@ -196,7 +213,11 @@ async function requestBatch(
   if (parsed.some((leg) => leg === null)) throw new LiveRoutesError("unavailable");
   return {
     fetchedAt: payload.fetchedAt,
-    legs: parsed.map((leg) => ({ ...leg!, mode } satisfies PlanningRouteResult)),
+    legs: parsed.map((leg, index) => ({
+      ...leg!,
+      mode,
+      departureTime: legs[index].departureTime,
+    } satisfies PlanningRouteResult)),
   };
 }
 
@@ -209,7 +230,8 @@ export async function prefetchPlanningRouteDurations(
   locale: Locale,
   options: PlanningRoutePrefetchOptions = {},
 ): Promise<PlanningRoutePrefetch> {
-  const allLegs = buildPlanningRouteLegs(plan);
+  const excluded = new Set(options.excludeKeys ?? []);
+  const allLegs = buildPlanningRouteLegs(plan).filter((leg) => !excluded.has(planningRouteRequestKey(leg)));
   const maxLegs = boundedInteger(options.maxLegs, 24, 24);
   const legs = allLegs.slice(0, maxLegs);
   const tasks = options.modes

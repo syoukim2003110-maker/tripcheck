@@ -5,7 +5,7 @@ import {
   HotelRecommendationsError,
   requestHotelRecommendations,
 } from "../lib/hotel-recommendations-client.ts";
-import { fetchGoogleHotelCandidates, parseHotelSearchRequest } from "../lib/google-hotels.ts";
+import { fetchGoogleHotelCandidates, hotelStyles, parseHotelSearchRequest } from "../lib/google-hotels.ts";
 
 const validRequest = {
   latitude: 35.6812,
@@ -228,6 +228,83 @@ test("payment reports keep QR and transit IC positive/negative separate and neut
   assert.deepEqual(results[0].payment?.acceptedMethods, ["transport_ic"]);
   assert.deepEqual(results[0].payment?.notAcceptedMethods, ["qr_code"]);
   assert.equal(results[0].payment?.cashOnly, null, "card rejection alone must never imply cash-only");
+});
+
+test("hotel styles are asserted only from Google's listed price level", () => {
+  assert.deepEqual(hotelStyles("very_expensive", null, null), ["luxury"]);
+  assert.deepEqual(hotelStyles("expensive", 4.8, 5_000), ["luxury"]);
+  assert.deepEqual(hotelStyles("moderate", 4.4, 800), ["value"]);
+  assert.deepEqual(hotelStyles("inexpensive", 4.1, 100), ["value"]);
+  assert.deepEqual(hotelStyles("moderate", 4.4, 50), [], "thin review support must not claim value");
+  assert.deepEqual(hotelStyles("moderate", 3.9, 800), [], "a low rating must not claim value");
+  assert.deepEqual(hotelStyles(null, 4.9, 10_000), [], "no listed price level means no style claim");
+});
+
+test("area searches widen with a luxury query, dedupe by id, and keep each style reachable", async () => {
+  const bodies: Array<Record<string, unknown>> = [];
+  const standardPlaces = Array.from({ length: 4 }, (_, index) => ({
+    id: `value-${index}`,
+    displayName: { text: `Value Hotel ${index}` },
+    formattedAddress: "Tokyo",
+    googleMapsUri: `https://maps.google.com/value-${index}`,
+    businessStatus: "OPERATIONAL",
+    types: ["hotel", "lodging"],
+    location: { latitude: 35.6812 + index * 0.001, longitude: 139.7671 },
+    rating: 4.5,
+    userRatingCount: 5_000,
+    priceLevel: "PRICE_LEVEL_MODERATE",
+  }));
+  const luxuryPlaces = [
+    standardPlaces[0],
+    {
+      id: "luxury-1",
+      displayName: { text: "Grand Luxury Tokyo" },
+      formattedAddress: "Tokyo",
+      googleMapsUri: "https://maps.google.com/luxury-1",
+      businessStatus: "OPERATIONAL",
+      types: ["hotel", "lodging"],
+      location: { latitude: 35.684, longitude: 139.765 },
+      rating: 4.7,
+      userRatingCount: 2_000,
+      priceLevel: "PRICE_LEVEL_VERY_EXPENSIVE",
+    },
+  ];
+  const fetcher = (async (_url: string | URL | Request, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    bodies.push(body);
+    return Response.json({ places: String(body.textQuery).includes("luxury") ? luxuryPlaces : standardPlaces });
+  }) as typeof fetch;
+
+  const results = await fetchGoogleHotelCandidates(validRequest, "secret", fetcher);
+  assert.equal(bodies.length, 2);
+  assert.equal(bodies[0].textQuery, "Tokyo Station hotels");
+  assert.equal(bodies[1].textQuery, "Tokyo Station luxury hotels");
+  assert.equal(new Set(results.map((candidate) => candidate.id)).size, results.length, "duplicate ids must merge");
+  assert.ok(results.some((candidate) => candidate.styles.includes("luxury")), "the best luxury candidate stays reachable");
+  assert.ok(results.some((candidate) => candidate.styles.includes("value")));
+  assert.equal(results.find((candidate) => candidate.id === "luxury-1")?.priceLevel, "very_expensive");
+});
+
+test("a failing luxury widening query never hides primary results", async () => {
+  const fetcher = (async (_url: string | URL | Request, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    if (String(body.textQuery).includes("luxury")) throw new Error("quota");
+    return Response.json({ places: [{
+      id: "only-hotel",
+      displayName: { text: "Only Hotel" },
+      formattedAddress: "Tokyo",
+      googleMapsUri: "https://maps.google.com/only-hotel",
+      businessStatus: "OPERATIONAL",
+      types: ["hotel", "lodging"],
+      location: { latitude: 35.6812, longitude: 139.7671 },
+      rating: 4.2,
+      userRatingCount: 1_000,
+    }] });
+  }) as typeof fetch;
+  const results = await fetchGoogleHotelCandidates(validRequest, "secret", fetcher);
+  assert.equal(results.length, 1);
+  assert.equal(results[0].id, "only-hotel");
+  assert.equal(results[0].styles.length, 0);
 });
 
 test("client payload contains only the hotel search anchor and optional query", () => {

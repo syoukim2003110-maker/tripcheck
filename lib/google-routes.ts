@@ -103,9 +103,9 @@ export async function fetchGoogleRoutes(
   request: LiveRoutesRequest,
   apiKey: string,
   fetcher: typeof fetch = fetch,
-  concurrency = 4,
+  concurrency = 6,
 ): Promise<LiveRouteResult[]> {
-  return mapWithConcurrency(request.legs, Math.min(4, concurrency), async (leg): Promise<LiveRouteResult> => {
+  return mapWithConcurrency(request.legs, Math.min(8, concurrency), async (leg): Promise<LiveRouteResult> => {
     try {
       const response = await fetcher("https://routes.googleapis.com/directions/v2:computeRoutes", {
         method: "POST",
