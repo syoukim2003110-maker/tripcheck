@@ -3374,7 +3374,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                     </li>
                   ))}
                 </ul>
-                {hotelUsesRecommendations && hotelStayMode === "single" ? (
+                {hotelUsesRecommendations && hotelStayMode === "single" && hotelPlanDirty ? (
                   <div className="planner-removed-refresh">
                     <p>{text.hotelRefreshHint}</p>
                     <button className="planner-hotel-refresh" disabled={hotelRefreshing} onClick={() => void refreshHotelRecommendations()} type="button">
