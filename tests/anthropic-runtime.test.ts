@@ -9,7 +9,7 @@ import {
 
 test("Claude requests require an exact explicit opt-in", () => {
   for (const value of [undefined, "", "false", "TRUE", "1"]) {
-    const env = { ANTHROPIC_API_KEY: "saved-key", ANTHROPIC_REQUESTS_ENABLED: value } as NodeJS.ProcessEnv;
+    const env = { ANTHROPIC_API_KEY: "saved-key", ANTHROPIC_REQUESTS_ENABLED: value };
     assert.equal(anthropicRequestsEnabled(env), false);
     assert.equal(enabledAnthropicApiKey(env), null);
   }

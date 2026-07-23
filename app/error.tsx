@@ -18,8 +18,8 @@ export default function TripCheckError({
         <b style={{ display: "block", fontSize: 14, marginBottom: 28 }}>TripCheck</b>
         <h1 style={{ fontSize: 28, letterSpacing: "-0.04em", lineHeight: 1.2, margin: "0 0 12px" }}>画面を読み直してください</h1>
         <p style={{ color: "#666", lineHeight: 1.7, margin: "0 0 24px" }}>
-          一時的に表示データがずれました。入力済みの旅はこの端末に残したまま、最新版を読み込みます。
-          <br />TripCheck needs a quick reload. Your saved trip stays on this device.
+          一時的に表示データがずれました。この端末に保存済みの旅は残したまま、最新版を読み込みます。
+          <br />TripCheck needs a quick reload. Trips already saved on this device will remain.
         </p>
         <button
           onClick={() => window.location.reload()}

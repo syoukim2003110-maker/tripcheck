@@ -1,4 +1,5 @@
 const anthropicMessagesUrl = "https://api.anthropic.com/v1/messages";
+type AnthropicEnvironment = Readonly<Record<string, string | undefined>>;
 
 export class AnthropicDisabledError extends Error {
   constructor() {
@@ -8,11 +9,11 @@ export class AnthropicDisabledError extends Error {
 }
 
 /** Claude access is fail-closed and requires an explicit server-side opt-in. */
-export function anthropicRequestsEnabled(env: NodeJS.ProcessEnv = process.env) {
+export function anthropicRequestsEnabled(env: AnthropicEnvironment = process.env) {
   return env.ANTHROPIC_REQUESTS_ENABLED === "true";
 }
 
-export function enabledAnthropicApiKey(env: NodeJS.ProcessEnv = process.env) {
+export function enabledAnthropicApiKey(env: AnthropicEnvironment = process.env) {
   const key = env.ANTHROPIC_API_KEY?.trim();
   return anthropicRequestsEnabled(env) && key ? key : null;
 }
