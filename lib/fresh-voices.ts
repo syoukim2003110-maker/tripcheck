@@ -1,4 +1,5 @@
 import type { PlaceIntelligenceRequest } from "./place-intelligence.ts";
+import { postAnthropicMessages } from "./anthropic-runtime.ts";
 
 export const FRESH_VOICES_MODEL = "claude-haiku-4-5-20251001";
 
@@ -193,14 +194,8 @@ async function callAnthropic(
   fetcher: typeof fetch,
   signal?: AbortSignal,
 ) {
-  const response = await fetcher("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "anthropic-version": "2023-06-01",
-      "x-api-key": apiKey,
-    },
-    body: JSON.stringify(body),
+  const response = await postAnthropicMessages(apiKey, body, {
+    fetcher,
     signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(20_000)]) : AbortSignal.timeout(20_000),
   });
   if (!response.ok) {

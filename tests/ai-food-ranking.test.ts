@@ -9,6 +9,8 @@ import {
 import { buildFoodRankingPayload } from "../lib/food-recommendations-client.ts";
 import type { FoodRecommendationSlot } from "../lib/trip-builder.ts";
 
+process.env.ANTHROPIC_REQUESTS_ENABLED = "true";
+
 const request = {
   area: "渋谷",
   mealKind: "dinner" as const,

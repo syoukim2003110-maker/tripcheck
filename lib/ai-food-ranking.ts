@@ -1,4 +1,5 @@
 import type { FoodCandidate } from "./google-food.ts";
+import { postAnthropicMessages } from "./anthropic-runtime.ts";
 
 export const FOOD_RANKING_MODEL = "claude-haiku-4-5-20251001";
 
@@ -95,14 +96,8 @@ export async function fetchAnthropicFoodRanking(
   apiKey: string,
   fetcher: typeof fetch = fetch,
 ): Promise<FoodRankingItem[]> {
-  const response = await fetcher("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "anthropic-version": "2023-06-01",
-      "x-api-key": apiKey,
-    },
-    body: JSON.stringify(buildAnthropicFoodRankingBody(request)),
+  const response = await postAnthropicMessages(apiKey, buildAnthropicFoodRankingBody(request), {
+    fetcher,
     signal: AbortSignal.timeout(4_000),
   });
   if (!response.ok) throw new Error("ai_ranking_unavailable");

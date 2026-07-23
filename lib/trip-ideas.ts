@@ -1,3 +1,5 @@
+import { postAnthropicMessages } from "./anthropic-runtime.ts";
+
 /*
  * Concept → starter wishlist. Claude proposes real, well-known places for a
  * trip concept; the proposals are only a draft. Everything still passes the
@@ -90,14 +92,8 @@ export async function fetchTripIdeas(
   fetcher: typeof fetch = fetch,
   signal?: AbortSignal,
 ): Promise<TripIdeasResult> {
-  const response = await fetcher("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "anthropic-version": "2023-06-01",
-      "x-api-key": apiKey,
-    },
-    body: JSON.stringify(buildTripIdeasBody(request)),
+  const response = await postAnthropicMessages(apiKey, buildTripIdeasBody(request), {
+    fetcher,
     signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(20_000)]) : AbortSignal.timeout(20_000),
   });
   if (!response.ok) {

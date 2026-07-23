@@ -4,6 +4,7 @@ import {
   parseTripIdeasRequest,
   type TripIdeasResult,
 } from "../../../lib/trip-ideas";
+import { enabledAnthropicApiKey } from "../../../lib/anthropic-runtime";
 
 const noStoreHeaders = { "Cache-Control": "private, no-store, max-age=0" };
 const cacheTtlMs = 60 * 60 * 1000;
@@ -51,7 +52,7 @@ export async function POST(request: Request) {
   if (!sameOrigin(request) || request.headers.get("Sec-Fetch-Site") === "cross-site") {
     return Response.json({ code: "forbidden" }, { status: 403, headers: noStoreHeaders });
   }
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = enabledAnthropicApiKey();
   if (!apiKey) return Response.json({ code: "not_configured" }, { status: 503, headers: noStoreHeaders });
 
   let body: unknown;

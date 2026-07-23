@@ -7,6 +7,8 @@ import {
   parseFreshVoicesRequest,
 } from "../lib/fresh-voices.ts";
 
+process.env.ANTHROPIC_REQUESTS_ENABLED = "true";
+
 const request = { name: "浅草寺", area: "浅草", languageCode: "ja" as const };
 
 test("caps one field check at two localized public-web searches", () => {

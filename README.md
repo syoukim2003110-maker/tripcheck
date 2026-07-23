@@ -30,6 +30,8 @@ Maps JavaScript and Maps Embed, and a server-only Places key for place
 resolution. A separate server-only Routes key is optional when the Places key
 is also allowed to call Routes. Set low daily quotas before use. Anthropic is
 used only for optional food comparison and on-demand cited public-web search.
+It remains fully paused unless `ANTHROPIC_REQUESTS_ENABLED=true` is set exactly;
+the API key can stay stored while this switch is absent or `false`.
 
 ## Verify
 

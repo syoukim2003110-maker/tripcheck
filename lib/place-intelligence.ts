@@ -1,4 +1,5 @@
 import { FOOD_RANKING_MODEL } from "./ai-food-ranking.ts";
+import { postAnthropicMessages } from "./anthropic-runtime.ts";
 
 export type PlaceIntelligenceRequest = {
   name: string;
@@ -352,21 +353,15 @@ async function fetchAnthropicAnalysis(
   const languageRule = languageCode === "ja"
     ? "自然な日本語で。要約は80文字以内、各詳細は70文字以内。"
     : "Use natural English. Keep the summary under 25 words and each detail under 20 words.";
-  const response = await fetcher("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "anthropic-version": "2023-06-01",
-      "x-api-key": apiKey,
-    },
-    body: JSON.stringify({
-      model: FOOD_RANKING_MODEL,
-      max_tokens: 440,
-      temperature: 0,
-      system: "Audit one travel stop using only the supplied evidence. The listing is platform data; reviews are individual reports, not confirmed facts. Identify only explicit evidence about hours, early closing, payment, crowds, closures or access friction. Prioritize evidence that reality differs from the listing: earlier last entry or sell-outs than posted hours, crowd cutoffs, irregular holidays, cash-only in practice, or detours to reach the place. Never infer missing facts. If evidence is absent, mark it unknown. Cite listing or review_N in every signal.",
-      messages: [{ role: "user", content: JSON.stringify({ task: languageRule, evidence }) }],
-      output_config: { format: { type: "json_schema", schema: analysisSchema } },
-    }),
+  const response = await postAnthropicMessages(apiKey, {
+    model: FOOD_RANKING_MODEL,
+    max_tokens: 440,
+    temperature: 0,
+    system: "Audit one travel stop using only the supplied evidence. The listing is platform data; reviews are individual reports, not confirmed facts. Identify only explicit evidence about hours, early closing, payment, crowds, closures or access friction. Prioritize evidence that reality differs from the listing: earlier last entry or sell-outs than posted hours, crowd cutoffs, irregular holidays, cash-only in practice, or detours to reach the place. Never infer missing facts. If evidence is absent, mark it unknown. Cite listing or review_N in every signal.",
+    messages: [{ role: "user", content: JSON.stringify({ task: languageRule, evidence }) }],
+    output_config: { format: { type: "json_schema", schema: analysisSchema } },
+  }, {
+    fetcher,
     signal: AbortSignal.timeout(5_000),
   });
   if (!response.ok) throw new Error("anthropic_unavailable");
