@@ -19,6 +19,14 @@ export type FoodPin = {
   index: number;
 };
 
+export type HotelPin = {
+  id: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+  priceLabel: string;
+};
+
 type Props = {
   apiKey: string;
   base: RouteStop | null;
@@ -27,14 +35,17 @@ type Props = {
   departureTimes: string[];
   drawRoute?: boolean;
   foodPins: FoodPin[];
+  hotelPins: HotelPin[];
   inspectorOpen: boolean;
   locale: MapLocale;
   onLegDurations: (minutes: Record<string, number>) => void;
   onSelectFood: (candidateId: string) => void;
   onSelectHotel?: () => void;
+  onSelectHotelCandidate: (candidateId: string) => void;
   onSelectStop: (stopId: string | null) => void;
   routeModes: TransportMode[];
   selectedFoodPinId: string | null;
+  selectedHotelPinId: string | null;
   selectedStopId: string | null;
   stops: RouteStop[];
 };
@@ -139,7 +150,7 @@ function createChip(
     position: { lat: number; lng: number };
     badge: string;
     name: string;
-    kind: "stop" | "hotel" | "food";
+    kind: "stop" | "hotel" | "hotel-option" | "food";
     stopId: string;
     onClick?: () => void;
   },
@@ -198,14 +209,17 @@ export default function PlannerGoogleMap({
   departureTimes,
   drawRoute = true,
   foodPins,
+  hotelPins,
   inspectorOpen,
   locale,
   onLegDurations,
   onSelectFood,
   onSelectHotel,
+  onSelectHotelCandidate,
   onSelectStop,
   routeModes,
   selectedFoodPinId,
+  selectedHotelPinId,
   selectedStopId,
   stops,
 }: Props) {
@@ -214,12 +228,14 @@ export default function PlannerGoogleMap({
   const chipsRef = useRef<Chip[]>([]);
   const routeLinesRef = useRef<any[]>([]);
   const foodChipsRef = useRef<Chip[]>([]);
+  const hotelChipsRef = useRef<Chip[]>([]);
   const legCacheRef = useRef<Map<string, { path: any[]; minutes: number | null }>>(new Map());
   const renderSeqRef = useRef(0);
   const departureTimesRef = useRef(departureTimes);
   const inspectorOpenRef = useRef(inspectorOpen);
   const onSelectFoodRef = useRef(onSelectFood);
   const onSelectHotelRef = useRef(onSelectHotel);
+  const onSelectHotelCandidateRef = useRef(onSelectHotelCandidate);
   const onSelectStopRef = useRef(onSelectStop);
   const onLegDurationsRef = useRef(onLegDurations);
   const [engineState, setEngineState] = useState<"loading" | "js" | "embed">(apiKey ? "loading" : "embed");
@@ -230,6 +246,7 @@ export default function PlannerGoogleMap({
     inspectorOpenRef.current = inspectorOpen;
     onSelectFoodRef.current = onSelectFood;
     onSelectHotelRef.current = onSelectHotel;
+    onSelectHotelCandidateRef.current = onSelectHotelCandidate;
     onSelectStopRef.current = onSelectStop;
     onLegDurationsRef.current = onLegDurations;
   });
@@ -240,6 +257,7 @@ export default function PlannerGoogleMap({
   const stopsSignature = `${locale}|${onSelectHotel ? "hotel-on" : "hotel-off"}|${displayStops.map((stop) => `${stop.id}@${stop.latitude.toFixed(5)},${stop.longitude.toFixed(5)}`).join("|")}`;
   const routeSignature = `${stopsSignature}|${drawRoute ? "route" : "pins"}|${routeModes.join(",")}|${departureTimes.join(",")}`;
   const foodSignature = foodPins.map((pin) => `${pin.id}@${pin.latitude.toFixed(5)},${pin.longitude.toFixed(5)}`).join("|");
+  const hotelSignature = hotelPins.map((pin) => `${pin.id}@${pin.latitude.toFixed(5)},${pin.longitude.toFixed(5)}:${pin.priceLabel}`).join("|");
 
   useEffect(() => {
     let cancelled = false;
@@ -278,6 +296,7 @@ export default function PlannerGoogleMap({
       cancelled = true;
       chipsRef.current.forEach((chip) => chip.overlay.setMap(null));
       foodChipsRef.current.forEach((chip) => chip.overlay.setMap(null));
+      hotelChipsRef.current.forEach((chip) => chip.overlay.setMap(null));
       routeLinesRef.current.forEach((line) => line.setMap(null));
       if (tilesListener) tilesListener.remove();
       engineRef.current = null;
@@ -437,6 +456,7 @@ export default function PlannerGoogleMap({
       const points = [
         ...displayStops.map((stop) => ({ lat: stop.latitude, lng: stop.longitude })),
         ...foodPins.map((pin) => ({ lat: pin.latitude, lng: pin.longitude })),
+        ...hotelPins.map((pin) => ({ lat: pin.latitude, lng: pin.longitude })),
       ];
       if (points.length === 0) return;
       if (points.length === 1) {
@@ -455,7 +475,7 @@ export default function PlannerGoogleMap({
     };
     // This effect changes only the camera framing; it deliberately does not refetch routes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engineState, stopsSignature, foodSignature, inspectorOpen]);
+  }, [engineState, stopsSignature, foodSignature, hotelSignature, inspectorOpen]);
 
   useEffect(() => {
     chipsRef.current.forEach((chip) => chip.setSelected(chip.stopId === selectedStopId));
@@ -491,6 +511,28 @@ export default function PlannerGoogleMap({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engineState, foodSignature]);
+
+  // Hotel alternatives are a comparison overlay only. Keeping them in a
+  // separate effect means opening the hotel panel never re-requests Routes.
+  useEffect(() => {
+    if (engineState !== "js" || !engineRef.current) return;
+    const { google, map } = engineRef.current;
+    hotelChipsRef.current.forEach((chip) => chip.overlay.setMap(null));
+    hotelChipsRef.current = hotelPins.map((pin) => createChip(google, map, {
+      position: { lat: pin.latitude, lng: pin.longitude },
+      badge: pin.priceLabel,
+      name: pin.name,
+      kind: "hotel-option",
+      stopId: `hotel-${pin.id}`,
+      onClick: () => onSelectHotelCandidateRef.current(pin.id),
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engineState, hotelSignature]);
+
+  useEffect(() => {
+    const selectedId = selectedHotelPinId ? `hotel-${selectedHotelPinId}` : null;
+    hotelChipsRef.current.forEach((chip) => chip.setSelected(chip.stopId === selectedId));
+  }, [selectedHotelPinId, hotelSignature]);
 
   useEffect(() => {
     const selectedId = selectedFoodPinId ? `food-${selectedFoodPinId}` : null;

@@ -21,9 +21,57 @@ test("accepts a bounded hotel search with an optional hotel name", () => {
     query: "Palace Hotel Tokyo",
   });
   assert.deepEqual(parseHotelSearchRequest({ ...validRequest, query: "   " }), validRequest);
+  const routePoints = [
+    { latitude: 35.0116, longitude: 135.7681 },
+    { latitude: 34.6851, longitude: 135.8048 },
+  ];
+  assert.deepEqual(parseHotelSearchRequest({ ...validRequest, routePoints }), { ...validRequest, routePoints });
+  assert.equal(parseHotelSearchRequest({ ...validRequest, routePoints: Array.from({ length: 11 }, () => routePoints[0]) }), null);
+  assert.equal(parseHotelSearchRequest({ ...validRequest, routePoints: [{ latitude: 80, longitude: 135 }] }), null);
   assert.equal(parseHotelSearchRequest({ ...validRequest, latitude: 80 }), null);
   assert.equal(parseHotelSearchRequest({ ...validRequest, query: 42 }), null);
   assert.equal(parseHotelSearchRequest({ ...validRequest, languageCode: "ko" }), null);
+});
+
+test("whole-itinerary access outranks closeness to the single search anchor", async () => {
+  const places = [
+    {
+      id: "anchor-near",
+      displayName: { text: "Anchor Near Hotel" },
+      formattedAddress: "Miyazu",
+      googleMapsUri: "https://maps.google.com/anchor-near",
+      businessStatus: "OPERATIONAL",
+      types: ["hotel", "lodging"],
+      location: { latitude: 35.535, longitude: 135.195 },
+      rating: 4.4,
+      userRatingCount: 1_000,
+    },
+    {
+      id: "route-central",
+      displayName: { text: "Route Central Hotel" },
+      formattedAddress: "Kyoto",
+      googleMapsUri: "https://maps.google.com/route-central",
+      businessStatus: "OPERATIONAL",
+      types: ["hotel", "lodging"],
+      location: { latitude: 35.0116, longitude: 135.7681 },
+      rating: 4.4,
+      userRatingCount: 1_000,
+    },
+  ];
+  const results = await fetchGoogleHotelCandidates({
+    latitude: 35.535,
+    longitude: 135.195,
+    area: "Kyoto",
+    languageCode: "en",
+    routePoints: [
+      { latitude: 35.0116, longitude: 135.7681 },
+      { latitude: 35.021, longitude: 135.755 },
+      { latitude: 34.995, longitude: 135.775 },
+    ],
+  }, "secret", (async () => Response.json({ places })) as typeof fetch);
+  assert.equal(results[0].id, "route-central");
+  assert.ok(results[0].routeAverageDistanceMeters < results[1].routeAverageDistanceMeters);
+  assert.ok(results[0].routeWorstDistanceMeters < results[1].routeWorstDistanceMeters);
 });
 
 test("requests live Google hotel evidence and returns a diverse deterministic shortlist", async () => {
@@ -310,17 +358,20 @@ test("a failing luxury widening query never hides primary results", async () => 
   assert.equal(results[0].styles.length, 0);
 });
 
-test("client payload contains only the hotel search anchor and optional query", () => {
+test("client payload contains the bounded hotel search anchor, day route points and optional query", () => {
+  const routePoints = [{ latitude: 35.0116, longitude: 135.7681 }];
   assert.deepEqual(buildHotelSearchPayload({
     latitude: 35.6812,
     longitude: 139.7671,
     area: "Tokyo Station",
     query: "  Palace Hotel Tokyo ",
+    routePoints,
   }, "en"), {
     latitude: 35.6812,
     longitude: 139.7671,
     area: "Tokyo Station",
     query: "Palace Hotel Tokyo",
+    routePoints,
     languageCode: "en",
   });
   assert.deepEqual(buildHotelSearchPayload({

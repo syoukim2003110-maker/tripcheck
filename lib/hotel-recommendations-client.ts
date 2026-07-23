@@ -6,6 +6,7 @@ export type HotelSearchInput = {
   longitude: number;
   area: string;
   query?: string;
+  routePoints?: Array<{ latitude: number; longitude: number }>;
 };
 
 export type HotelRecommendationsResponse = {
@@ -25,11 +26,13 @@ export class HotelRecommendationsError extends Error {
 
 export function buildHotelSearchPayload(input: HotelSearchInput, locale: Locale) {
   const query = input.query?.trim();
+  const routePoints = input.routePoints?.slice(0, 10).map(({ latitude, longitude }) => ({ latitude, longitude }));
   return {
     latitude: input.latitude,
     longitude: input.longitude,
     area: input.area,
     ...(query ? { query } : {}),
+    ...(routePoints?.length ? { routePoints } : {}),
     languageCode: locale === "ja" ? "ja" as const : "en" as const,
   };
 }

@@ -260,6 +260,12 @@ body:has(.trip-planner-app) {
 .planner-map-chip.is-food { padding: 3px 10px 3px 3px; }
 .planner-map-chip.is-food i { background: var(--pl-accent); font-size: 11px; height: 22px; width: 22px; }
 .planner-map-chip.is-food span { font-size: 11.5px; max-width: 120px; }
+.planner-map-chip.is-hotel-option { padding: 3px 10px 3px 3px; }
+.planner-map-chip.is-hotel-option i { background: var(--pl-good); font-family: inherit; font-size: 10.5px; font-weight: 800; height: 24px; min-width: 24px; padding: 0 7px; width: auto; }
+.planner-map-chip.is-hotel-option span { font-size: 11.5px; max-width: 112px; }
+.planner-map-chip.is-hotel-option.is-selected { border-color: var(--pl-good); }
+.planner-map-chip.is-hotel-option.is-selected::after { border-color: var(--pl-good); }
+.planner-map-chip.is-hotel-option.is-selected i { background: var(--pl-good); }
 
 /* ---------- bottom bar over the map ---------- */
 
@@ -851,6 +857,19 @@ details.planner-excluded { display: block; }
 
 /* ---------- real hotel panel ---------- */
 
+.planner-hotel-refresh-wrap { display: grid; gap: 7px; margin-top: 14px; }
+.planner-hotel-refresh-wrap.is-dirty { background: var(--pl-warn-bg); border: 1px solid var(--pl-warn-border); border-radius: 13px; padding: 10px; }
+.planner-hotel-refresh-wrap p { color: var(--pl-warn-ink); font-size: 11px; line-height: 1.5; margin: 0; }
+.planner-hotel-refresh-wrap small,
+.planner-removed-refresh small { color: var(--pl-accent-deep); font-size: 10.5px; line-height: 1.45; }
+.planner-hotel-refresh { align-items: center; background: var(--pl-ink); border: 0; border-radius: 11px; color: white; display: inline-flex; font-size: 11.5px; font-weight: 750; gap: 7px; justify-content: center; min-height: 38px; padding: 0 13px; }
+.planner-hotel-refresh:hover:not(:disabled) { background: #2b2b31; }
+.planner-hotel-refresh:disabled { cursor: wait; opacity: 0.55; }
+.planner-hotel-wide-note { align-items: start; background: #eef4fb; border-radius: 13px; color: #315d84; display: grid; gap: 8px; grid-template-columns: 20px minmax(0, 1fr); margin-top: 10px; padding: 10px 11px; }
+.planner-hotel-wide-note > svg { margin-top: 2px; }
+.planner-hotel-wide-note p { font-size: 11px; line-height: 1.5; margin: 0; }
+.planner-hotel-wide-note button { background: white; border: 0; border-radius: 8px; color: #315d84; font-size: 10.5px; font-weight: 750; grid-column: 2; justify-self: start; min-height: 29px; padding: 0 10px; }
+
 .planner-stay-mode { background: var(--pl-tile); border-radius: 12px; display: grid; gap: 3px; grid-template-columns: 1fr 1fr; margin-top: 14px; padding: 3px; }
 .planner-stay-mode button { background: transparent; border: 0; border-radius: 9px; color: var(--pl-muted); font-size: 12px; font-weight: 700; min-height: 36px; padding: 0 10px; }
 .planner-stay-mode button.is-active { background: white; box-shadow: 0 1px 3px rgb(11 11 14 / 10%); color: var(--pl-ink); }
@@ -873,9 +892,10 @@ details.planner-excluded { display: block; }
 .planner-hotel-reason { background: var(--pl-tile); border-radius: 12px; color: var(--pl-ink-2); font-size: 12px; line-height: 1.55; margin: 13px 0 0; padding: 10px 12px; }
 .planner-hotel-facts span.is-axis { background: var(--pl-good-soft); color: var(--pl-good); }
 
-.planner-hotel-hero { background: var(--pl-tile); border-radius: 14px; display: block; height: 154px; margin: 14px 0 0; overflow: hidden; }
+.planner-hotel-hero { background: var(--pl-tile); border-radius: 14px; display: block; height: 154px; margin: 14px 0 0; overflow: hidden; position: relative; }
 .planner-hotel-hero img { display: block; height: 100%; object-fit: cover; width: 100%; }
 .planner-hotel-hero span { align-items: center; color: var(--pl-muted); display: flex; height: 100%; justify-content: center; }
+.planner-hotel-hero > i { backdrop-filter: blur(10px); background: rgb(255 255 255 / 94%); border-radius: 9px; bottom: 10px; color: var(--pl-ink); font-size: 12px; font-style: normal; font-weight: 850; padding: 6px 9px; position: absolute; right: 10px; }
 .planner-hotel-facts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
 .planner-hotel-facts span { background: var(--pl-tile); border-radius: 8px; color: var(--pl-ink-2); font-size: 11px; font-weight: 650; padding: 5px 8px; }
 .planner-hotel-facts .is-rating { background: #fdf2d2; color: #7b5a13; }
@@ -887,21 +907,30 @@ details.planner-excluded { display: block; }
 .planner-hotel-facts .is-price { background: var(--pl-good-soft); color: var(--pl-good); font-weight: 750; }
 .planner-hotel-facts a.is-rakuten { background: #fdecec; border-radius: 8px; color: #b0272d; font-size: 11px; font-weight: 700; padding: 5px 8px; text-decoration: none; }
 
-/* Side-by-side hotel comparison: every pick with its rating, price, distance
- * and the axis it wins, so "why this hotel" answers itself. */
-.planner-hotel-compare { border-top: 1px solid var(--pl-line); display: grid; gap: 7px; margin-top: 14px; padding-top: 12px; }
-.planner-hotel-compare > span { color: var(--pl-muted); font-size: 10.5px; font-weight: 700; }
-.planner-hotel-card { align-items: center; border: 1px solid var(--pl-line); border-radius: 13px; display: flex; gap: 8px; padding: 4px 8px 4px 4px; transition: border-color 130ms, box-shadow 130ms; }
+/* Photo-first horizontal comparison keeps all picks visible without turning
+ * the already scrollable inspector into a long text list. */
+.planner-hotel-compare { border-top: 1px solid var(--pl-line); display: grid; gap: 8px; margin-top: 14px; padding-top: 12px; }
+.planner-hotel-compare > header { align-items: center; display: flex; justify-content: space-between; }
+.planner-hotel-compare > header span { color: var(--pl-muted); font-size: 10.5px; font-weight: 700; }
+.planner-hotel-compare > header small { align-items: center; background: var(--pl-tile); border-radius: 999px; color: var(--pl-muted); display: flex; font-size: 9.5px; font-weight: 800; height: 20px; justify-content: center; min-width: 20px; }
+.planner-hotel-compare-list { display: flex; gap: 9px; margin: 0 -2px; overflow-x: auto; padding: 2px 2px 8px; scroll-padding-inline: 2px; scroll-snap-type: x mandatory; scrollbar-color: #d3d3da transparent; scrollbar-width: thin; }
+.planner-hotel-card { border: 1px solid var(--pl-line); border-radius: 14px; flex: 0 0 236px; overflow: hidden; scroll-snap-align: start; transition: border-color 130ms, box-shadow 130ms, transform 130ms; }
+.planner-hotel-card:hover { transform: translateY(-1px); }
 .planner-hotel-card.is-selected { border-color: var(--pl-ink); box-shadow: 0 0 0 3px rgb(11 11 14 / 8%); }
-.planner-hotel-card > button { background: transparent; border: 0; border-radius: 10px; color: var(--pl-ink); display: grid; flex: 1; gap: 2px; min-width: 0; padding: 7px 8px; text-align: left; }
-.planner-hotel-card > button:hover { background: var(--pl-tile); }
-.planner-hotel-card b { font-size: 12.5px; font-weight: 750; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.planner-hotel-card small { color: var(--pl-muted); font-size: 10.5px; }
+.planner-hotel-card > button { background: white; border: 0; color: var(--pl-ink); display: block; padding: 0; text-align: left; width: 100%; }
+.planner-hotel-card-image { align-items: center; background: var(--pl-tile); color: var(--pl-muted); display: flex; height: 98px; justify-content: center; overflow: hidden; position: relative; width: 100%; }
+.planner-hotel-card-image img { display: block; height: 100%; object-fit: cover; width: 100%; }
+.planner-hotel-card-image.is-photo-fallback { background: repeating-linear-gradient(-45deg, rgb(11 11 14 / 4%) 0 2px, transparent 2px 9px), var(--pl-tile); }
+.planner-hotel-card-image em { backdrop-filter: blur(8px); background: rgb(255 255 255 / 94%); border-radius: 8px; bottom: 7px; color: var(--pl-ink); font-size: 11px; font-style: normal; font-weight: 850; padding: 5px 7px; position: absolute; right: 7px; }
+.planner-hotel-card-copy { display: grid; gap: 4px; padding: 9px 10px 10px; }
+.planner-hotel-card b { font-size: 12.5px; font-weight: 780; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.planner-hotel-card small { color: var(--pl-muted); font-size: 9.8px; line-height: 1.45; }
 .planner-hotel-card small.is-rakuten-line { color: #b0272d; font-weight: 650; }
-.planner-hotel-card-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
-.planner-hotel-card-tags i { background: var(--pl-good-soft); border-radius: 6px; color: var(--pl-good); font-size: 9.5px; font-style: normal; font-weight: 750; padding: 2px 6px; }
-.planner-hotel-card > a { align-items: center; background: var(--pl-tile); border-radius: 9px; color: var(--pl-ink); display: flex; flex: 0 0 auto; font-size: 12px; height: 28px; justify-content: center; text-decoration: none; width: 28px; }
-.planner-hotel-card > a:hover { background: var(--pl-tile-deep); }
+.planner-hotel-card-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 1px; }
+.planner-hotel-card-tags i { background: var(--pl-good-soft); border-radius: 6px; color: var(--pl-good); font-size: 9px; font-style: normal; font-weight: 750; padding: 2px 6px; }
+.planner-hotel-card > footer { align-items: center; border-top: 1px solid var(--pl-line); display: flex; gap: 8px; justify-content: space-between; min-height: 30px; padding: 0 9px; }
+.planner-hotel-card > footer a { color: var(--pl-muted); font-size: 8.5px; max-width: 165px; overflow: hidden; text-decoration: none; text-overflow: ellipsis; white-space: nowrap; }
+.planner-hotel-card > footer a:last-child { color: var(--pl-ink); flex: 0 0 auto; font-size: 9.5px; font-weight: 750; }
 
 .planner-remove-stop { align-items: center; background: transparent; border: 1px solid var(--pl-line); border-radius: 12px; color: var(--pl-muted); display: flex; font-size: 11.5px; font-weight: 700; gap: 6px; justify-content: center; margin-top: 8px; min-height: 36px; width: 100%; }
 .planner-remove-stop:hover { border-color: var(--pl-accent-deep); color: var(--pl-accent-deep); }
@@ -909,6 +938,9 @@ details.planner-excluded { display: block; }
 .planner-removed li { align-items: center; display: flex; gap: 8px; justify-content: space-between; }
 .planner-removed li button { background: white; border: 1px solid var(--pl-line); border-radius: 8px; color: var(--pl-ink); font-size: 10.5px; font-weight: 700; padding: 4px 9px; }
 .planner-removed li button:hover { border-color: var(--pl-ink); }
+.planner-removed-refresh { background: var(--pl-warn-bg); border: 1px solid var(--pl-warn-border); border-radius: 12px; display: grid; gap: 7px; margin-top: 10px; padding: 10px; }
+.planner-removed-refresh p { color: var(--pl-warn-ink); font-size: 10.5px; line-height: 1.45; margin: 0; }
+.planner-removed-refresh .planner-hotel-refresh { width: 100%; }
 
 .planner-hotel-alternatives { border-top: 1px solid var(--pl-line); margin-top: 14px; padding-top: 12px; }
 .planner-hotel-alternatives > span { color: var(--pl-muted); display: block; font-size: 10.5px; font-weight: 700; margin-bottom: 7px; }
@@ -1028,6 +1060,7 @@ details.planner-excluded { display: block; }
   .planner-primary-fields { grid-template-columns: 1fr; }
   .planner-detail-grid { grid-template-columns: 1fr 1fr; }
   .planner-map-chip span { max-width: 96px; }
+  .planner-hotel-card { flex-basis: 218px; }
   .planner-food-results > article { grid-template-columns: 76px minmax(0, 1fr) 40px; }
   .planner-food-map { font-size: 0; }
   .planner-food-map span { font-size: 14px; }

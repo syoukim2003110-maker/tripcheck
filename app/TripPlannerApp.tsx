@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import PlannerGoogleMap, { type FoodPin } from "./PlannerGoogleMap";
+import PlannerGoogleMap, { type FoodPin, type HotelPin } from "./PlannerGoogleMap";
 import Icon from "./PlannerIcons";
 import {
   foodCandidateReason,
@@ -29,7 +29,7 @@ import type { TransportMode, TravelPreference } from "../lib/time-feasibility";
 import { decodeTripShare, encodeTripShare, type ShareableTripInput } from "../lib/share-link";
 import { requestTripIdeas, TripIdeasError } from "../lib/trip-ideas-client";
 import { forgetRecentTrip, loadRecentTrips, rememberRecentTrip, type RecentTrip } from "../lib/recent-trips";
-import { buildTripFromWishlist, centroidWithOutlierPull, hotelAnchorForDraft, routeLegKey, type AirportCode, type FoodRecommendationSlot, type MealPlan, type VisitWindow } from "../lib/trip-builder";
+import { balancedGeoCenter, buildTripFromWishlist, hotelRouteContextForDraft, routeLegKey, type AirportCode, type BuiltTripPlan, type FoodRecommendationSlot, type MealPlan, type VisitWindow } from "../lib/trip-builder";
 import { formatWishlistLines, parsedWishlistPlaces, parseWishlist, type ParsedWishlistPlace } from "../lib/wishlist-parser";
 
 type PlannerLocale = "en" | "ja";
@@ -142,7 +142,10 @@ function hotelAxisWinners(candidates: HotelCandidate[]) {
   let topRated: HotelCandidate | null = null;
   let value: HotelCandidate | null = null;
   for (const candidate of candidates) {
-    if (candidate.distanceMeters < nearest.distanceMeters) nearest = candidate;
+    if (
+      candidate.routeBurdenMeters < nearest.routeBurdenMeters
+      || (candidate.routeBurdenMeters === nearest.routeBurdenMeters && candidate.routeWorstDistanceMeters < nearest.routeWorstDistanceMeters)
+    ) nearest = candidate;
     const count = candidate.userRatingCount ?? 0;
     if (candidate.rating !== null && count >= 50) {
       const bestRating = topRated?.rating ?? -1;
@@ -152,6 +155,15 @@ function hotelAxisWinners(candidates: HotelCandidate[]) {
     if (candidate.styles.includes("value") && (value === null || candidate.score > value.score)) value = candidate;
   }
   return { nearestId: nearest.id, topRatedId: topRated?.id ?? null, valueId: value?.id ?? null };
+}
+
+/* Stop order can change when the route is optimized, so the hotel becomes
+ * stale only when a day's actual set of destinations changes. */
+export function hotelPlanSignature(plan: BuiltTripPlan | null) {
+  if (!plan) return "";
+  return plan.days.map((day, dayIndex) => (
+    `${dayIndex}:${day.stops.map(({ stop }) => stop.id).sort().join(",")}`
+  )).join("|");
 }
 
 type ParsePreviewRow =
@@ -344,6 +356,11 @@ const ui = {
     hotelNoAvailability: "料金・空室は宿泊サイトで最終確認してください。",
     hotelUnavailable: "ホテル候補を取得できませんでした。",
     hotelSearch: "Google Mapsでホテルを探す",
+    hotelRefresh: "ホテルを再検索",
+    hotelRefreshChanged: "変更後の行程でホテルを再検索",
+    hotelRefreshing: "ホテルを探し直しています…",
+    hotelRefreshHint: "行き先が変わったため、ホテル候補も更新できます。",
+    hotelRefreshFailed: "再検索できませんでした。今のホテルはそのまま残しています。",
     stayModeHeading: "泊まり方",
     staySame: "同じホテルで通す",
     stayNightly: "日ごとに変える",
@@ -355,13 +372,13 @@ const ui = {
     styleLuxury: "ラグジュアリー",
     styleValue: "お手頃で高評価",
     styleNote: "価格帯はGoogleの掲載区分です。",
-    hotelRankNote: "総合は、Google評価32・口コミ量24・行程からの近さ24を中心に採点。ホテル名を指定した場合だけ名前の一致も加味します。距離は行程の中心からの直線距離です。",
+    hotelRankNote: "各日の行き先を1日1票で比較し、平均距離と最も遠い日の負担が小さいホテルを優先。そこへGoogle評価と口コミ量を加えて総合順位を決めます。",
     hotelCompareHeading: "候補を比べる（タップで切り替え）",
     priceUnlisted: "価格未掲載",
     rakutenTag: (average: number, count: number) => `楽天トラベル ★${average.toFixed(1)}（${count.toLocaleString("ja-JP")}件）`,
     hotelPriceNote: "¥価格は楽天トラベル掲載の参考最安（日付未指定）です。",
-    hotelReasonTop: "評価・口コミ量・行程からの近さの合計スコアで1位の候補です。",
-    hotelReasonNearest: "行程の中心に最も近く、ホテル往復を短くしやすい候補です。",
+    hotelReasonTop: "全日程への行きやすさ・評価・口コミ量の合計で1位の候補です。",
+    hotelReasonNearest: "各日の行き先への距離負担が最も小さい候補です。",
     hotelReasonRated: "十分な口コミ数がある候補の中で、Google評価が最も高いホテルです。",
     hotelReasonValue: "Googleの価格帯がお手頃で、評価4.1以上・口コミ100件以上の候補です。",
     hotelReasonSpecified: "入力したホテル名に一致した候補です。行程の出発・帰着地点にも反映しています。",
@@ -372,9 +389,10 @@ const ui = {
     hotelPurposeRated: "評価重視",
     hotelPurposeValue: "コスパ",
     hotelPurposeHelp: "同じ候補が複数の条件で1位になることがあります。",
-    axisNearest: "行程に最寄り",
+    axisNearest: "全日程に行きやすい",
     axisTopRated: "最高評価",
-    distanceFrom: (distance: string) => `中心から約${distance}`,
+    distanceFrom: (distance: string) => `各日の中心へ平均約${distance}`,
+    hotelWideTrip: "行き先が広範囲です。1つのホテルでは長距離移動が残るため、日ごとに変える方が楽です。",
     useThisHotel: "このホテルに切り替え",
     tonightHotel: (name: string) => `今夜の宿 · ${name}`,
     publicSources: "公開SNS・記事の出典",
@@ -556,6 +574,11 @@ const ui = {
     hotelNoAvailability: "Confirm price and availability with a booking provider.",
     hotelUnavailable: "Hotel options didn't load.",
     hotelSearch: "Search hotels on Google Maps",
+    hotelRefresh: "Search hotels again",
+    hotelRefreshChanged: "Re-search for the changed itinerary",
+    hotelRefreshing: "Searching for a better base…",
+    hotelRefreshHint: "Your destinations changed, so the hotel options can be updated too.",
+    hotelRefreshFailed: "The re-search failed. Your current hotel has been kept.",
     stayModeHeading: "Stay style",
     staySame: "One hotel",
     stayNightly: "Change nightly",
@@ -567,13 +590,13 @@ const ui = {
     styleLuxury: "Luxury",
     styleValue: "Value · high rated",
     styleNote: "Price bands come from Google's listing.",
-    hotelRankNote: "Overall score weights Google rating up to 32, review volume up to 24 and route proximity up to 24. Name match is used only when you specify a hotel. Distance is straight-line from the route center.",
+    hotelRankNote: "Every day gets one equal vote. Hotels with a lower average and worst-day distance rank higher, then Google rating and review strength are added.",
     hotelCompareHeading: "Compare picks — tap to switch",
     priceUnlisted: "No listed price",
     rakutenTag: (average: number, count: number) => `Rakuten Travel ★${average.toFixed(1)} (${count.toLocaleString("en-US")})`,
     hotelPriceNote: "¥ prices are Rakuten Travel's reference minimum (dateless).",
-    hotelReasonTop: "Top combined score for rating, review volume and distance to your route.",
-    hotelReasonNearest: "Closest to the route center, so hotel round trips should be shorter.",
+    hotelReasonTop: "Top combined score for whole-trip access, rating and review strength.",
+    hotelReasonNearest: "Lowest distance burden across each day's destinations.",
     hotelReasonRated: "Highest Google rating among candidates backed by at least 50 reviews.",
     hotelReasonValue: "Google lists a lower price band, with at least a 4.1 rating and 100 reviews.",
     hotelReasonSpecified: "This matches the hotel you entered and is also used as the route's start and end base.",
@@ -584,9 +607,10 @@ const ui = {
     hotelPurposeRated: "Top rated",
     hotelPurposeValue: "Best value",
     hotelPurposeHelp: "One hotel can win more than one category.",
-    axisNearest: "Nearest to route",
+    axisNearest: "Best whole-trip access",
     axisTopRated: "Top rated",
-    distanceFrom: (distance: string) => `~${distance} from center`,
+    distanceFrom: (distance: string) => `~${distance} average to each day`,
+    hotelWideTrip: "Your destinations cover a wide area. One hotel still leaves a long travel day; changing hotels nightly will be easier.",
     useThisHotel: "Switch to this hotel",
     tonightHotel: (name: string) => `Tonight · ${name}`,
     publicSources: "Public social and article sources",
@@ -787,6 +811,9 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   const [intelligence, setIntelligence] = useState<Record<string, IntelligenceState>>({});
   const [freshVoices, setFreshVoices] = useState<Record<string, FreshState>>({});
   const [hotelState, setHotelState] = useState<HotelState>(emptyHotelState);
+  const [hotelSearchSignature, setHotelSearchSignature] = useState("");
+  const [hotelRefreshing, setHotelRefreshing] = useState(false);
+  const [hotelRefreshFailed, setHotelRefreshFailed] = useState(false);
   const [hotelStayMode, setHotelStayMode] = useState<HotelStayMode>("single");
   const [hotelStyle, setHotelStyle] = useState<HotelStyleChoice>("recommended");
   const [hotelPurpose, setHotelPurpose] = useState<HotelPurpose>("balanced");
@@ -800,6 +827,8 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   const [buildProgress, setBuildProgress] = useState<BuildProgress>(initialBuildProgress);
   const buildRunRef = useRef(0);
   const buildAbortRef = useRef<AbortController | null>(null);
+  const hotelRefreshAbortRef = useRef<AbortController | null>(null);
+  const hotelPlanSignatureRef = useRef("");
   // Mode, place-pair and departure-time keys already requested from Google,
   // plus a small post-build
   // allowance so hotel switches and nightly bases can still get measured legs.
@@ -911,6 +940,17 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     openingWindowsByDay,
   }) : null, [arrivalAirport, arrivalTime, dayEndTarget, dayOverrides, dayStartDefault, dayStartTimes, departureAirport, departureTime, durationOverrides, earlyVisitStopIds, hasPlan, hotelQuery, itinerary, legModeOverrides, liveDriving, liveTransit, liveWalking, locale, mealPlan, nightBases, openingWindowsByDay, pace, removedStops, resolvedBase, resolvedStops, travelPreference, tripDays, tripStartDate, userStayMinutes]);
 
+  const currentHotelPlanSignature = useMemo(() => hotelPlanSignature(plan), [plan]);
+  const hotelRouteContext = useMemo(() => plan ? hotelRouteContextForDraft(plan) : null, [plan]);
+  const hotelPlanDirty = Boolean(
+    currentHotelPlanSignature
+    && hotelSearchSignature
+    && currentHotelPlanSignature !== hotelSearchSignature,
+  );
+  useEffect(() => {
+    hotelPlanSignatureRef.current = currentHotelPlanSignature;
+  }, [currentHotelPlanSignature]);
+
   const day = plan?.days[activeDay] ?? null;
   const base = day ? day.startBase ?? plan?.selectedBase ?? null : null;
   const dayEndBase = day ? day.endBase ?? base : null;
@@ -978,6 +1018,21 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     ...(candidate.id === hotelAxis.nearestId ? [text.axisNearest] : []),
     ...(candidate.id === hotelAxis.topRatedId ? [text.axisTopRated] : []),
   ], [hotelAxis, text]);
+  const hotelPins = useMemo<HotelPin[]>(() => (
+    inspector?.kind === "hotel" && hotelStayMode === "single"
+      ? hotelState.candidates
+        .filter((candidate) => candidate.id !== selectedHotel?.id)
+        .map((candidate) => ({
+          id: candidate.id,
+          name: candidate.name,
+          latitude: candidate.latitude,
+          longitude: candidate.longitude,
+          priceLabel: candidate.rakuten?.minCharge
+            ? `¥${candidate.rakuten.minCharge.toLocaleString(locale === "ja" ? "ja-JP" : "en-US")}`
+            : priceBand(candidate.priceLevel) ?? "H",
+        }))
+      : []
+  ), [hotelState.candidates, hotelStayMode, inspector?.kind, locale, selectedHotel?.id]);
   // Live per-line reading of the wishlist so a misread line is visible before
   // the build starts, not after.
   const parsePreviewRows = useMemo<ParsePreviewRow[]>(() => {
@@ -1138,6 +1193,79 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     setResolvedBase(hotelAsResolvedBase(candidate, hotelQuery, candidate.address.slice(0, 100) || candidate.name, new Date().toISOString()));
   }
 
+  async function refreshHotelRecommendations() {
+    if (!plan || hotelRefreshing || !shouldUseRecommendedHotel(hotelQuery)) return;
+    const routeContext = hotelRouteContextForDraft(plan);
+    if (!routeContext) return;
+    const signatureAtStart = hotelPlanSignature(plan);
+    const areaWasRequested = Boolean(hotelQuery.trim() && isAreaLikeHotelQuery(hotelQuery));
+    const searchAnchor = areaWasRequested && resolvedBase
+      ? { latitude: resolvedBase.latitude, longitude: resolvedBase.longitude, area: hotelQuery.trim() }
+      : routeContext;
+    hotelRefreshAbortRef.current?.abort();
+    const controller = new AbortController();
+    hotelRefreshAbortRef.current = controller;
+    setHotelRefreshing(true);
+    setHotelRefreshFailed(false);
+    try {
+      const response = await requestHotelRecommendations({
+        latitude: searchAnchor.latitude,
+        longitude: searchAnchor.longitude,
+        area: searchAnchor.area,
+        routePoints: routeContext.routePoints,
+      }, locale, controller.signal);
+      if (controller.signal.aborted || hotelPlanSignatureRef.current !== signatureAtStart) return;
+      const axes = hotelAxisWinners(response.candidates);
+      const selected = hotelStyle !== "recommended"
+        ? styledBestCandidate(response.candidates, hotelStyle) ?? response.candidates[0] ?? null
+        : hotelPurpose === "nearest"
+          ? response.candidates.find((candidate) => candidate.id === axes.nearestId) ?? response.candidates[0] ?? null
+          : hotelPurpose === "rated"
+            ? response.candidates.find((candidate) => candidate.id === axes.topRatedId) ?? response.candidates[0] ?? null
+            : hotelPurpose === "value"
+              ? response.candidates.find((candidate) => candidate.id === axes.valueId) ?? response.candidates[0] ?? null
+              : response.candidates[0] ?? null;
+      if (!selected) throw new Error("no_hotel_candidates");
+      setHotelState({
+        status: "ready",
+        candidates: response.candidates,
+        selectedId: selected.id,
+        fresh: { status: "loading", result: null },
+      });
+      setResolvedBase(hotelAsResolvedBase(selected, hotelQuery, selected.address.slice(0, 100) || searchAnchor.area, response.fetchedAt));
+      setHotelSearchSignature(signatureAtStart);
+      setHotelStayMode("single");
+      setNightlyHotels(emptyNightlyHotelState);
+      postBuildLegBudgetRef.current = Math.max(postBuildLegBudgetRef.current, 16);
+      setInspector({ kind: "hotel" });
+
+      // The route decision is deterministic; the optional public-source check
+      // follows in the background and never blocks or changes the hotel rank.
+      void requestFreshVoices(
+        { name: selected.name, area: selected.address.slice(0, 100) || searchAnchor.area },
+        locale,
+        { intent: "hotel", depth: "quick", signal: controller.signal },
+      ).then((result) => {
+        if (controller.signal.aborted || hotelPlanSignatureRef.current !== signatureAtStart) return;
+        setHotelState((current) => current.selectedId === selected.id
+          ? { ...current, fresh: { status: "ready", result } }
+          : current);
+      }).catch(() => {
+        if (controller.signal.aborted) return;
+        setHotelState((current) => current.selectedId === selected.id
+          ? { ...current, fresh: { status: "unavailable", result: null } }
+          : current);
+      });
+    } catch {
+      if (!controller.signal.aborted) setHotelRefreshFailed(true);
+    } finally {
+      if (hotelRefreshAbortRef.current === controller) {
+        hotelRefreshAbortRef.current = null;
+        setHotelRefreshing(false);
+      }
+    }
+  }
+
   async function runConceptDraft() {
     const trimmed = concept.trim();
     if (trimmed.length < 2 || conceptLoading) return;
@@ -1237,6 +1365,61 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     });
   }
 
+  function renderHotelComparison() {
+    if (!selectedHotel || hotelState.candidates.length <= 1) return null;
+    return (
+      <section className="planner-hotel-compare">
+        <header><span>{text.hotelCompareHeading}</span><small>{hotelState.candidates.length}</small></header>
+        <div className="planner-hotel-compare-list">
+          {hotelState.candidates.map((candidate) => {
+            const tags = [
+              ...hotelAxisLabels(candidate),
+              ...(candidate.styles.includes("luxury") ? [text.styleLuxury] : []),
+              ...(candidate.styles.includes("value") ? [text.styleValue] : []),
+            ];
+            return (
+              <article className={`planner-hotel-card${candidate.id === selectedHotel.id ? " is-selected" : ""}`} key={candidate.id}>
+                <button onClick={() => selectHotelCandidate(candidate)} title={text.useThisHotel} type="button">
+                  <span className="planner-hotel-card-image">
+                    {candidate.photo ? <>
+                      {/* Google photo names are fetched at request time and never persisted. */}
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img alt={candidate.name} loading="lazy" onError={handlePhotoError} src={`/api/place-photo?name=${encodeURIComponent(candidate.photo.name)}`} />
+                    </> : <span aria-hidden="true"><Icon name="bed" size={22} /></span>}
+                    <em>{hotelPriceLabel(candidate)}</em>
+                  </span>
+                  <span className="planner-hotel-card-copy">
+                    <b>{candidate.name}</b>
+                    <small>
+                      {[
+                        candidate.rating !== null ? `★ ${candidate.rating.toFixed(1)}（${candidate.userRatingCount?.toLocaleString(locale === "ja" ? "ja-JP" : "en-US") ?? "—"}）` : null,
+                        text.distanceFrom(formatDistanceMeters(candidate.routeAverageDistanceMeters)),
+                      ].filter(Boolean).join(" · ")}
+                    </small>
+                    {tags.length > 0 ? (
+                      <span className="planner-hotel-card-tags">
+                        {tags.map((tag) => <i key={tag}>{tag}</i>)}
+                      </span>
+                    ) : null}
+                    {candidate.rakuten?.reviewAverage ? (
+                      <small className="is-rakuten-line">{text.rakutenTag(candidate.rakuten.reviewAverage, candidate.rakuten.reviewCount ?? 0)}</small>
+                    ) : null}
+                  </span>
+                </button>
+                <footer>
+                  {candidate.photo?.attribution
+                    ? <a href={candidate.photo.attribution.uri} rel="noreferrer" target="_blank">{text.photoLabel} {candidate.photo.attribution.name}</a>
+                    : <span />}
+                  <a href={candidate.rakuten?.url ?? candidate.googleMapsUrl} rel="noreferrer" target="_blank">{candidate.rakuten ? "Rakuten" : "Maps"} ↗</a>
+                </footer>
+              </article>
+            );
+          })}
+        </div>
+      </section>
+    );
+  }
+
   async function copyShareLink() {
     const code = encodeTripShare({
       itinerary,
@@ -1309,11 +1492,16 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       const stops = planDay.stops.map((built) => built.stop);
       const fallback = plan.days[index + 1]?.stops[0]?.stop ?? planDay.endBase ?? plan.selectedBase;
       if (stops.length === 0 && !fallback) return null;
-      const pulled = centroidWithOutlierPull(stops);
-      const latitude = pulled?.latitude ?? fallback!.latitude;
-      const longitude = pulled?.longitude ?? fallback!.longitude;
+      const center = balancedGeoCenter(stops);
+      const latitude = center?.latitude ?? fallback!.latitude;
+      const longitude = center?.longitude ?? fallback!.longitude;
       const area = stops.at(-1)?.area ?? fallback?.area ?? "Japan";
-      return { latitude, longitude, area };
+      return {
+        latitude,
+        longitude,
+        area,
+        routePoints: center ? [center] : fallback ? [{ latitude: fallback.latitude, longitude: fallback.longitude }] : [],
+      };
     });
     const styleAtRequest = hotelStyle;
     const nights = await mapWithConcurrency(anchors, 2, async (anchor): Promise<NightlyHotelNight> => {
@@ -1356,6 +1544,8 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   function loadDemo() {
     buildAbortRef.current?.abort();
     buildAbortRef.current = null;
+    hotelRefreshAbortRef.current?.abort();
+    hotelRefreshAbortRef.current = null;
     buildRunRef.current += 1;
     setItinerary(fullTripDemo.places[locale]);
     setTravelPreference("auto");
@@ -1381,6 +1571,9 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     setIntelligence({});
     setFreshVoices({});
     setHotelState(emptyHotelState);
+    setHotelSearchSignature("");
+    setHotelRefreshing(false);
+    setHotelRefreshFailed(false);
     setHotelStayMode("single");
     setHotelStyle("recommended");
     setHotelPurpose("balanced");
@@ -1407,6 +1600,8 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   async function buildPlan() {
     if (!canBuild) return;
     buildAbortRef.current?.abort();
+    hotelRefreshAbortRef.current?.abort();
+    hotelRefreshAbortRef.current = null;
     const controller = new AbortController();
     buildAbortRef.current = controller;
     const runId = ++buildRunRef.current;
@@ -1425,6 +1620,9 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       setIntelligence({});
       setFreshVoices({});
       setHotelState({ ...emptyHotelState, status: "loading" });
+      setHotelSearchSignature("");
+      setHotelRefreshing(false);
+      setHotelRefreshFailed(false);
       setHotelStayMode("single");
       setHotelStyle("recommended");
       setHotelPurpose("balanced");
@@ -1502,10 +1700,12 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     if (!commit(() => setPreviewStops(draft.days.flatMap((candidate) => candidate.stops.map(({ stop }) => stop))))) return;
 
     if (!commit(() => setBuildProgress((current) => ({ ...current, stage: "hotel", current: 0, total: 1 })))) return;
-    // Search anchor honors every day equally and pulls toward a far outlier
-    // stop, instead of parking the hotel inside the densest cluster.
+    // Every day gets one route point. A distant excursion no longer drags the
+    // hotel halfway toward itself, and every returned candidate is measured
+    // against the whole trip.
+    const draftHotelContext = hotelRouteContextForDraft(draft);
     const hotelAnchor = resolvedHotel
-      ?? hotelAnchorForDraft(draft)
+      ?? draftHotelContext
       ?? draft.baseRecommendations[0]?.base
       ?? draft.days.flatMap((candidate) => candidate.stops.map(({ stop }) => stop))[0]
       ?? null;
@@ -1516,8 +1716,9 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
         const hotelResponse = await requestHotelRecommendations({
           latitude: hotelAnchor.latitude,
           longitude: hotelAnchor.longitude,
-          area: hotelAnchor.area,
-          ...(hotelQuery.trim() ? { query: hotelQuery } : {}),
+          area: hotelQuery.trim() && isAreaLikeHotelQuery(hotelQuery) ? hotelQuery.trim() : hotelAnchor.area,
+          ...(!shouldUseRecommendedHotel(hotelQuery) ? { query: hotelQuery } : {}),
+          ...(draftHotelContext?.routePoints.length ? { routePoints: draftHotelContext.routePoints } : {}),
         }, locale, controller.signal);
         if (cancelled()) return;
         const recommended = hotelResponse.candidates[0] ?? null;
@@ -1946,6 +2147,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       setLiveWalking(measuredWalking);
       setResolvedStops(places);
       setResolvedBase(effectiveBase);
+      setHotelSearchSignature(hotelPlanSignature(finalDraft));
       setActiveDay(0);
       setHasPlan(true);
       setPlanReady(true);
@@ -1985,6 +2187,8 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   function resetTrip() {
     buildAbortRef.current?.abort();
     buildAbortRef.current = null;
+    hotelRefreshAbortRef.current?.abort();
+    hotelRefreshAbortRef.current = null;
     buildRunRef.current += 1;
     setItinerary("");
     setTravelPreference("auto");
@@ -2007,6 +2211,9 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     setIntelligence({});
     setFreshVoices({});
     setHotelState(emptyHotelState);
+    setHotelSearchSignature("");
+    setHotelRefreshing(false);
+    setHotelRefreshFailed(false);
     setHotelStayMode("single");
     setHotelStyle("recommended");
     setHotelPurpose("balanced");
@@ -2036,6 +2243,8 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   function cancelBuild() {
     buildAbortRef.current?.abort();
     buildAbortRef.current = null;
+    hotelRefreshAbortRef.current?.abort();
+    hotelRefreshAbortRef.current = null;
     buildRunRef.current += 1;
     setIsBuilding(false);
     setHasPlan(false);
@@ -2046,6 +2255,9 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     setIntelligence({});
     setFreshVoices({});
     setHotelState(emptyHotelState);
+    setHotelSearchSignature("");
+    setHotelRefreshing(false);
+    setHotelRefreshFailed(false);
     setHotelStayMode("single");
     setHotelStyle("recommended");
     setHotelPurpose("balanced");
@@ -2203,14 +2415,20 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
           departureTimes={routeDepartureTimes}
           drawRoute={hasPlan}
           foodPins={foodPins}
+          hotelPins={hotelPins}
           inspectorOpen={Boolean(inspector)}
           locale={locale}
           onLegDurations={handleLegDurations}
           onSelectFood={handleSelectFoodPin}
           onSelectHotel={selectedHotel ? () => setInspector({ kind: "hotel" }) : undefined}
+          onSelectHotelCandidate={(candidateId) => {
+            const candidate = hotelState.candidates.find((entry) => entry.id === candidateId);
+            if (candidate) selectHotelCandidate(candidate);
+          }}
           onSelectStop={handleSelectStop}
           routeModes={routeModes}
           selectedFoodPinId={inspector?.kind === "food" ? inspector.candidateId ?? null : null}
+          selectedHotelPinId={selectedHotel?.id ?? null}
           selectedStopId={inspector?.kind === "stop" ? inspector.stopId : inspector?.kind === "hotel" ? displayedMapBase?.id ?? null : null}
           stops={displayedMapStops}
         />
@@ -2477,6 +2695,23 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                 <p>{text.hotelCandidate}</p>
               </div>
             </header>
+            {shouldUseRecommendedHotel(hotelQuery) ? (
+              <div className={`planner-hotel-refresh-wrap${hotelPlanDirty ? " is-dirty" : ""}`}>
+                {hotelPlanDirty ? <p>{text.hotelRefreshHint}</p> : null}
+                <button className="planner-hotel-refresh" disabled={hotelRefreshing || !plan} onClick={() => void refreshHotelRecommendations()} type="button">
+                  <Icon name="search" size={14} />
+                  {hotelRefreshing ? text.hotelRefreshing : hotelPlanDirty ? text.hotelRefreshChanged : text.hotelRefresh}
+                </button>
+                {hotelRefreshFailed ? <small role="status">{text.hotelRefreshFailed}</small> : null}
+              </div>
+            ) : null}
+            {hotelRouteContext && hotelRouteContext.spreadKm >= 70 ? (
+              <div className="planner-hotel-wide-note">
+                <Icon name="train" size={15} />
+                <p>{text.hotelWideTrip}</p>
+                <button onClick={() => void enableNightlyHotels()} type="button">{text.stayNightly}</button>
+              </div>
+            ) : null}
             {plan && plan.days.length >= 2 ? (
               <div className="planner-stay-mode" role="group" aria-label={text.stayModeHeading}>
                 <button
@@ -2542,7 +2777,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                               {[
                                 selected.rating !== null ? `★ ${selected.rating.toFixed(1)}` : null,
                                 hotelPriceLabel(selected),
-                                formatDistanceMeters(selected.distanceMeters),
+                                formatDistanceMeters(selected.routeAverageDistanceMeters),
                                 selected.styles.includes("luxury") ? text.styleLuxury : selected.styles.includes("value") ? text.styleValue : null,
                               ].filter(Boolean).join(" · ")}
                             </span>
@@ -2552,7 +2787,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                               {night.candidates.filter((candidate) => candidate.id !== selected.id).slice(0, 3).map((candidate) => (
                                 <button key={candidate.id} onClick={() => selectNightCandidate(nightIndex, candidate.id)} title={text.useThisHotel} type="button">
                                   <span>{candidate.name}</span>
-                                  <small>{[candidate.rating !== null ? `★ ${candidate.rating.toFixed(1)}` : null, hotelPriceLabel(candidate), formatDistanceMeters(candidate.distanceMeters)].filter(Boolean).join(" · ")}</small>
+                                  <small>{[candidate.rating !== null ? `★ ${candidate.rating.toFixed(1)}` : null, hotelPriceLabel(candidate), formatDistanceMeters(candidate.routeAverageDistanceMeters)].filter(Boolean).join(" · ")}</small>
                                 </button>
                               ))}
                             </div>
@@ -2591,6 +2826,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
               </div>
               <small>{text.hotelPurposeHelp}</small>
             </div> : null}
+            {renderHotelComparison()}
             <p className="planner-hotel-reason">
               {!shouldUseRecommendedHotel(hotelQuery) ? text.hotelReasonSpecified
                 : hotelPurpose === "nearest" ? text.hotelReasonNearest
@@ -2605,12 +2841,13 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img alt={selectedHotel.name} onError={handlePhotoError} src={`/api/place-photo?name=${encodeURIComponent(selectedHotel.photo.name)}`} />
               </> : <span aria-hidden="true"><Icon name="bed" size={26} /></span>}
+              <i>{hotelPriceLabel(selectedHotel)}</i>
             </a>
             {selectedHotel.photo?.attribution ? <a className="planner-photo-credit" href={selectedHotel.photo.attribution.uri} rel="noreferrer" target="_blank">{text.photoLabel} {selectedHotel.photo.attribution.name} ↗</a> : null}
             <div className="planner-hotel-facts">
               {selectedHotel.rating !== null ? <span className="is-rating">★ {selectedHotel.rating.toFixed(1)} · {selectedHotel.userRatingCount?.toLocaleString(locale === "ja" ? "ja-JP" : "en-US") ?? "—"}</span> : null}
               <span className={selectedHotel.rakuten?.minCharge ? "is-price" : ""}>{hotelPriceLabel(selectedHotel)}</span>
-              <span>{text.distanceFrom(formatDistanceMeters(selectedHotel.distanceMeters))}</span>
+              <span>{text.distanceFrom(formatDistanceMeters(selectedHotel.routeAverageDistanceMeters))}</span>
               {hotelAxisLabels(selectedHotel).map((label) => <span className="is-axis" key={label}>{label}</span>)}
               {selectedHotel.styles.includes("luxury") ? <span>{text.styleLuxury}</span> : null}
               {selectedHotel.styles.includes("value") ? <span>{text.styleValue}</span> : null}
@@ -2659,41 +2896,6 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                   ))}
                 </div>
               </details>
-            ) : null}
-            {hotelState.candidates.length > 1 ? (
-              <div className="planner-hotel-compare">
-                <span>{text.hotelCompareHeading}</span>
-                {hotelState.candidates.map((candidate) => {
-                  const tags = [
-                    ...hotelAxisLabels(candidate),
-                    ...(candidate.styles.includes("luxury") ? [text.styleLuxury] : []),
-                    ...(candidate.styles.includes("value") ? [text.styleValue] : []),
-                  ];
-                  return (
-                    <div className={`planner-hotel-card${candidate.id === selectedHotel.id ? " is-selected" : ""}`} key={candidate.id}>
-                      <button onClick={() => selectHotelCandidate(candidate)} title={text.useThisHotel} type="button">
-                        <b>{candidate.name}</b>
-                        <small>
-                          {[
-                            candidate.rating !== null ? `★ ${candidate.rating.toFixed(1)}（${candidate.userRatingCount?.toLocaleString(locale === "ja" ? "ja-JP" : "en-US") ?? "—"}）` : null,
-                            hotelPriceLabel(candidate),
-                            text.distanceFrom(formatDistanceMeters(candidate.distanceMeters)),
-                          ].filter(Boolean).join(" · ")}
-                        </small>
-                        {tags.length > 0 ? (
-                          <span className="planner-hotel-card-tags">
-                            {tags.map((tag) => <i key={tag}>{tag}</i>)}
-                          </span>
-                        ) : null}
-                        {candidate.rakuten?.reviewAverage ? (
-                          <small className="is-rakuten-line">{text.rakutenTag(candidate.rakuten.reviewAverage, candidate.rakuten.reviewCount ?? 0)}</small>
-                        ) : null}
-                      </button>
-                      <a aria-label={candidate.rakuten ? "Rakuten Travel" : "Google Maps"} href={candidate.rakuten?.url ?? candidate.googleMapsUrl} rel="noreferrer" target="_blank">↗</a>
-                    </div>
-                  );
-                })}
-              </div>
             ) : null}
             <p className="planner-food-note">
               {text.hotelRankNote} {hasRakutenHotelEvidence ? `${text.hotelPriceNote} ` : ""}{text.styleNote} {text.hotelNoAvailability}
@@ -3137,6 +3339,16 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                     </li>
                   ))}
                 </ul>
+                {shouldUseRecommendedHotel(hotelQuery) ? (
+                  <div className="planner-removed-refresh">
+                    <p>{text.hotelRefreshHint}</p>
+                    <button className="planner-hotel-refresh" disabled={hotelRefreshing} onClick={() => void refreshHotelRecommendations()} type="button">
+                      <Icon name="search" size={13} />
+                      {hotelRefreshing ? text.hotelRefreshing : text.hotelRefreshChanged}
+                    </button>
+                    {hotelRefreshFailed ? <small role="status">{text.hotelRefreshFailed}</small> : null}
+                  </div>
+                ) : null}
               </details>
             ) : null}
 

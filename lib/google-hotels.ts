@@ -3,6 +3,7 @@ export type HotelSearchRequest = {
   longitude: number;
   area: string;
   query?: string;
+  routePoints?: Array<{ latitude: number; longitude: number }>;
   languageCode: "en" | "ja";
 };
 
@@ -57,7 +58,14 @@ export type HotelCandidate = {
   longitude: number;
   rating: number | null;
   userRatingCount: number | null;
+  /** Straight-line distance from the Google hotel-search anchor. */
   distanceMeters: number;
+  /** Average distance to each day's route center (each day has equal weight). */
+  routeAverageDistanceMeters: number;
+  /** Longest distance to a day's route center. */
+  routeWorstDistanceMeters: number;
+  /** Stable comparison metric: 70% average + 30% longest-day distance. */
+  routeBurdenMeters: number;
   score: number;
   googleRelevanceRank: number;
   priceLevel: HotelPriceLevel | null;
@@ -155,11 +163,25 @@ export function parseHotelSearchRequest(input: unknown): HotelSearchRequest | nu
     }
   }
 
+  let routePoints: HotelSearchRequest["routePoints"];
+  if (source.routePoints !== undefined && source.routePoints !== null) {
+    if (!Array.isArray(source.routePoints) || source.routePoints.length > 10) return null;
+    const parsedPoints = source.routePoints.map((point) => {
+      if (!point || typeof point !== "object") return null;
+      const candidate = point as Record<string, unknown>;
+      if (!finiteCoordinate(candidate.latitude, 20, 46) || !finiteCoordinate(candidate.longitude, 122, 154)) return null;
+      return { latitude: candidate.latitude as number, longitude: candidate.longitude as number };
+    });
+    if (parsedPoints.some((point) => point === null)) return null;
+    if (parsedPoints.length > 0) routePoints = parsedPoints as NonNullable<HotelSearchRequest["routePoints"]>;
+  }
+
   return {
     latitude: source.latitude as number,
     longitude: source.longitude as number,
     area,
     ...(query ? { query } : {}),
+    ...(routePoints ? { routePoints } : {}),
     languageCode: source.languageCode as HotelSearchRequest["languageCode"],
   };
 }
@@ -414,17 +436,35 @@ function normalized(value: string) {
 function scoreCandidate(
   rating: number | null,
   userRatingCount: number | null,
-  distance: number,
+  routeBurden: number,
+  routeWorstDistance: number,
   apiIndex: number,
   name: string,
   query?: string,
 ) {
   const ratingPoints = rating === null ? 0 : Math.max(0, Math.min(32, (rating - 3) * 16));
   const reviewPoints = userRatingCount === null ? 0 : Math.min(24, Math.log10(userRatingCount + 1) * 7);
-  const distancePoints = Math.max(0, 24 - distance / 500);
+  // Absolute route fit remains meaningful on compact and multi-city trips;
+  // unlike a linear cutoff it does not collapse every candidate to zero just
+  // because one excursion day is far away.
+  const routePoints = 18 / (1 + routeBurden / 12_000) + 8 / (1 + routeWorstDistance / 25_000);
   const relevancePoints = query ? Math.max(5, 35 - apiIndex * 6) : Math.max(0, 5 - apiIndex);
   const exactNamePoints = query && normalized(name).includes(normalized(query)) ? 18 : 0;
-  return Math.round((ratingPoints + reviewPoints + distancePoints + relevancePoints + exactNamePoints) * 100) / 100;
+  return Math.round((ratingPoints + reviewPoints + routePoints + relevancePoints + exactNamePoints) * 100) / 100;
+}
+
+function routeDistanceSummary(request: HotelSearchRequest, latitude: number, longitude: number) {
+  const points = request.routePoints?.length
+    ? request.routePoints
+    : [{ latitude: request.latitude, longitude: request.longitude }];
+  const distances = points.map((point) => distanceMeters(latitude, longitude, point.latitude, point.longitude));
+  const average = Math.round(distances.reduce((sum, value) => sum + value, 0) / distances.length);
+  const worst = Math.max(...distances);
+  return {
+    average,
+    worst,
+    burden: Math.round(average * 0.7 + worst * 0.3),
+  };
 }
 
 async function searchHotelText(
@@ -496,6 +536,7 @@ export async function fetchGoogleHotelCandidates(
       if (seen.has(id)) return;
       seen.add(id);
       const distance = distanceMeters(request.latitude, request.longitude, latitude as number, longitude as number);
+      const routeDistance = routeDistanceSummary(request, latitude as number, longitude as number);
       const rating = numericRating(place.rating);
       const userRatingCount = nonNegativeCount(place.userRatingCount);
       const priceLevel = parsePriceLevel(place.priceLevel);
@@ -511,7 +552,10 @@ export async function fetchGoogleHotelCandidates(
         rating,
         userRatingCount,
         distanceMeters: distance,
-        score: scoreCandidate(rating, userRatingCount, distance, apiIndex, name, request.query),
+        routeAverageDistanceMeters: routeDistance.average,
+        routeWorstDistanceMeters: routeDistance.worst,
+        routeBurdenMeters: routeDistance.burden,
+        score: scoreCandidate(rating, userRatingCount, routeDistance.burden, routeDistance.worst, apiIndex, name, request.query),
         googleRelevanceRank: apiIndex + 1,
         priceLevel,
         styles: hotelStyles(priceLevel, rating, userRatingCount),
@@ -523,7 +567,24 @@ export async function fetchGoogleHotelCandidates(
     });
   });
 
-  const ranked = candidates
+  // Google's locationBias is intentionally soft. For an area recommendation,
+  // keep far-away text matches out when a usable local pool exists; an exact
+  // named-hotel search is never clipped.
+  const nearby = request.query ? candidates : candidates.filter((candidate) => candidate.distanceMeters <= 25_000);
+  const eligible = nearby.length >= Math.min(3, candidates.length) ? nearby : candidates;
+  const routeOrder = [...eligible].sort((left, right) => (
+    left.routeBurdenMeters - right.routeBurdenMeters
+    || left.routeWorstDistanceMeters - right.routeWorstDistanceMeters
+    || left.name.localeCompare(right.name)
+  ));
+  const routeRank = new Map(routeOrder.map((candidate, index) => [candidate.id, index]));
+  for (const candidate of eligible) {
+    // Relative route rank keeps convenience decisive even when every hotel is
+    // many kilometres from one excursion day.
+    candidate.score = Math.round((candidate.score + Math.max(0, 24 - (routeRank.get(candidate.id) ?? 6) * 4)) * 100) / 100;
+  }
+
+  const ranked = eligible
     .sort((left, right) => right.score - left.score || left.googleRelevanceRank - right.googleRelevanceRank || left.name.localeCompare(right.name));
   // The shortlist is a comparison, not a top-N: best overall, closest to the
   // route, best rated, best value band and best luxury band each get a seat,
@@ -533,7 +594,7 @@ export async function fetchGoogleHotelCandidates(
     if (candidate && !selected.some((existing) => existing.id === candidate.id)) selected.push(candidate);
   };
   addPick(ranked[0]);
-  addPick([...ranked].sort((left, right) => left.distanceMeters - right.distanceMeters)[0]);
+  addPick([...ranked].sort((left, right) => left.routeBurdenMeters - right.routeBurdenMeters || left.routeWorstDistanceMeters - right.routeWorstDistanceMeters)[0]);
   addPick([...ranked]
     .filter((candidate) => candidate.rating !== null && (candidate.userRatingCount ?? 0) >= 50)
     .sort((left, right) => (right.rating ?? 0) - (left.rating ?? 0) || (right.userRatingCount ?? 0) - (left.userRatingCount ?? 0))[0]);

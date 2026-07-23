@@ -609,6 +609,16 @@ function recommendBases(stops: RouteStop[], clusters: RouteStop[][], locale: Loc
 
 type GeoPoint = { latitude: number; longitude: number };
 
+export type HotelRoutePoint = GeoPoint;
+
+export type HotelRouteContext = {
+  latitude: number;
+  longitude: number;
+  area: string;
+  routePoints: HotelRoutePoint[];
+  spreadKm: number;
+};
+
 function meanPoint(points: GeoPoint[]): GeoPoint | null {
   if (points.length === 0) return null;
   return {
@@ -622,42 +632,73 @@ function geoDistanceKm(from: GeoPoint, to: GeoPoint) {
 }
 
 /*
- * A plain centroid lets one far-away stop be ignored: with four stops packed
- * together and one 20 km out, the mean sits inside the packed group. But the
- * packed group is walkable from anywhere nearby — the expensive legs are the
- * ones to the outlier. So when the farthest point is well outside the group,
- * the anchor moves halfway toward it: a hotel between the cluster and the
- * outlier shortens the worst commute without hurting the easy ones much.
+ * Geometric median: the point that minimizes the sum of distances to every
+ * input. Unlike a mean (and the old "pull halfway to the farthest stop"
+ * heuristic), one distant excursion cannot drag the hotel away from the days
+ * where the traveller spends most of the trip.
  */
-export function centroidWithOutlierPull(points: GeoPoint[]): GeoPoint | null {
-  const center = meanPoint(points);
-  if (!center) return null;
-  const farthest = [...points].sort((left, right) => geoDistanceKm(center, right) - geoDistanceKm(center, left))[0];
-  if (!farthest || geoDistanceKm(center, farthest) <= 6) return center;
-  return {
-    latitude: (center.latitude + farthest.latitude) / 2,
-    longitude: (center.longitude + farthest.longitude) / 2,
-  };
+export function balancedGeoCenter(points: GeoPoint[]): GeoPoint | null {
+  let current = meanPoint(points);
+  if (!current) return null;
+  if (points.length <= 2) return current;
+
+  for (let iteration = 0; iteration < 48; iteration += 1) {
+    const coincident = points.find((point) => geoDistanceKm(current!, point) < 0.001);
+    if (coincident) return { latitude: coincident.latitude, longitude: coincident.longitude };
+    let latitude = 0;
+    let longitude = 0;
+    let weightTotal = 0;
+    for (const point of points) {
+      const weight = 1 / Math.max(0.001, geoDistanceKm(current, point));
+      latitude += point.latitude * weight;
+      longitude += point.longitude * weight;
+      weightTotal += weight;
+    }
+    const next = { latitude: latitude / weightTotal, longitude: longitude / weightTotal };
+    if (geoDistanceKm(current, next) < 0.001) return next;
+    current = next;
+  }
+  return current;
+}
+
+/** @deprecated Kept for older callers; no outlier pull is applied anymore. */
+export const centroidWithOutlierPull = balancedGeoCenter;
+
+function maximumPairDistanceKm(points: GeoPoint[]) {
+  let maximum = 0;
+  for (let left = 0; left < points.length; left += 1) {
+    for (let right = left + 1; right < points.length; right += 1) {
+      maximum = Math.max(maximum, geoDistanceKm(points[left], points[right]));
+    }
+  }
+  return maximum;
 }
 
 /*
- * Hotel search anchor for a built draft: every day pulls equally (a one-day
- * excursion far away counts as much as a packed city day), then the farthest
- * scheduled stop applies the outlier pull above.
+ * One route point per day gives every travel day one vote, regardless of how
+ * many POIs were entered that day. Candidate hotels can then be compared
+ * against the whole trip rather than only against one synthetic coordinate.
  */
-export function hotelAnchorForDraft(plan: BuiltTripPlan): { latitude: number; longitude: number; area: string } | null {
-  const dayCentroids = plan.days
-    .map((day) => meanPoint(day.stops.map(({ stop }) => stop)))
+export function hotelRouteContextForDraft(plan: BuiltTripPlan): HotelRouteContext | null {
+  const routePoints = plan.days
+    .map((day) => balancedGeoCenter(day.stops.map(({ stop }) => stop)))
     .filter((point): point is GeoPoint => point !== null);
-  const base = meanPoint(dayCentroids);
-  if (!base) return null;
+  const center = balancedGeoCenter(routePoints);
+  if (!center) return null;
   const scheduled = plan.days.flatMap((day) => day.stops.map(({ stop }) => stop));
-  const farthest = [...scheduled].sort((left, right) => geoDistanceKm(base, right) - geoDistanceKm(base, left))[0];
-  const anchor = farthest && geoDistanceKm(base, farthest) > 6
-    ? { latitude: (base.latitude + farthest.latitude) / 2, longitude: (base.longitude + farthest.longitude) / 2 }
-    : base;
-  const nearest = [...scheduled].sort((left, right) => geoDistanceKm(anchor, left) - geoDistanceKm(anchor, right))[0];
-  return { latitude: anchor.latitude, longitude: anchor.longitude, area: nearest?.area ?? "Japan" };
+  const nearest = [...scheduled].sort((left, right) => geoDistanceKm(center, left) - geoDistanceKm(center, right))[0];
+  return {
+    latitude: center.latitude,
+    longitude: center.longitude,
+    area: nearest?.area ?? "Japan",
+    routePoints,
+    spreadKm: maximumPairDistanceKm(routePoints),
+  };
+}
+
+export function hotelAnchorForDraft(plan: BuiltTripPlan): { latitude: number; longitude: number; area: string } | null {
+  const context = hotelRouteContextForDraft(plan);
+  return context ? { latitude: context.latitude, longitude: context.longitude, area: context.area } : null;
 }
 
 function airportStop(code: Exclude<AirportCode, "none">, locale: Locale): RouteStop {

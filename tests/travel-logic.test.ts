@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { applyLiveTransitMinutes, estimateTravelOptions } from "../lib/time-feasibility.ts";
 import { estimateStayMinutes, isDayAnchorStay } from "../lib/stay-estimates.ts";
-import { buildTripFromWishlist, centroidWithOutlierPull, hotelAnchorForDraft, routeLegKey } from "../lib/trip-builder.ts";
+import { balancedGeoCenter, buildTripFromWishlist, hotelAnchorForDraft, hotelRouteContextForDraft, routeLegKey } from "../lib/trip-builder.ts";
 import { buildPlanningRouteLegs, prefetchPlanningRouteDurations } from "../lib/planning-live-routes-client.ts";
 import type { ResolvedInputStop } from "../lib/route-optimizer.ts";
 
@@ -162,28 +162,30 @@ test("removing a stop rebuilds the plan without it", () => {
   assert.equal(removed.recognizedStopCount, 2);
 });
 
-test("the hotel anchor pulls toward a far outlier instead of ignoring it", () => {
-  // Four packed stops (Namba-ish) and USJ ~10 km west.
-  const cluster = [
-    stopAt("d1", 34.6687, 135.5013),
-    stopAt("d2", 34.6660, 135.5040),
-    stopAt("d3", 34.6700, 135.5060),
-    stopAt("d4", 34.6650, 135.5000),
+test("the hotel anchor gives every day one vote and resists a distant excursion", () => {
+  const kyotoDays = [
+    stopAt("kyoto-1", 35.0116, 135.7681),
+    stopAt("kyoto-2", 35.0210, 135.7550),
+    stopAt("kyoto-3", 34.9950, 135.7750),
+    stopAt("kyoto-4", 35.0300, 135.7400),
   ];
-  const outlier = stopAt("usj", 34.6654, 135.4323);
-  const plan = buildTripFromWishlist("d1\nd2\nd3\nd4\nusj", 1, "fast", "ja", {
+  const miyazu = stopAt("miyazu", 35.5350, 135.1950);
+  const stops = [...kyotoDays, miyazu];
+  const plan = buildTripFromWishlist(stops.map((stop) => stop.id).join("\n"), 5, "balanced", "ja", {
     tripStartDate: "2026-09-14",
-    resolvedStops: [...cluster, outlier],
+    resolvedStops: stops,
+    dayOverrides: Object.fromEntries(stops.map((stop, index) => [stop.id, index + 1])),
   });
   const anchor = hotelAnchorForDraft(plan);
-  assert.ok(anchor);
-  // The anchor must sit clearly between the cluster (~135.50) and USJ (135.43),
-  // not inside the cluster.
-  assert.ok(anchor.longitude < 135.49 && anchor.longitude > 135.44, `expected in-between, got ${anchor.longitude}`);
+  const context = hotelRouteContextForDraft(plan);
+  assert.ok(anchor && context);
+  assert.ok(anchor.latitude < 35.10, `one Miyazu day must not drag the hotel north: ${anchor.latitude}`);
+  assert.ok(anchor.longitude > 135.68, `one Miyazu day must not drag the hotel west: ${anchor.longitude}`);
+  assert.equal(context.routePoints.length, 5, "each scheduled day contributes exactly one route point");
+  assert.ok(context.spreadKm > 60, "the UI can disclose that one-hotel travel remains wide");
 
-  // Without an outlier the anchor is simply the centroid.
-  const tight = centroidWithOutlierPull(cluster.map(({ latitude, longitude }) => ({ latitude, longitude })));
-  assert.ok(tight && Math.abs(tight.longitude - 135.5028) < 0.01);
+  const balanced = balancedGeoCenter(stops.map(({ latitude, longitude }) => ({ latitude, longitude })));
+  assert.ok(balanced && balanced.latitude < 35.10 && balanced.longitude > 135.68);
 });
 
 test("hotel departure and return legs are exposed separately for the timeline", () => {
