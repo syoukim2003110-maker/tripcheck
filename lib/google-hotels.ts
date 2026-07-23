@@ -409,18 +409,23 @@ function paymentEvidence(place: RawGooglePlace, reviews: HotelReviewExcerpt[] | 
 
 const lodgingTypes = new Set([
   "bed_and_breakfast",
+  "budget_japanese_inn",
   "cottage",
   "extended_stay_hotel",
   "farmstay",
   "guest_house",
   "hostel",
   "hotel",
+  "inn",
+  "japanese_inn",
   "lodging",
   "motel",
   "private_guest_room",
   "resort_hotel",
   "ryokan",
 ]);
+
+const nearbyLodgingTypes = [...lodgingTypes].filter((type) => type !== "ryokan");
 
 function isOperationalLodging(place: RawGooglePlace) {
   if (place.businessStatus !== "OPERATIONAL") return false;
@@ -502,25 +507,58 @@ async function searchHotelText(
   return (payload.places ?? []).slice(0, 6);
 }
 
+async function searchHotelsNearRouteCenter(
+  request: HotelSearchRequest,
+  apiKey: string,
+  fetcher: typeof fetch,
+): Promise<RawGooglePlace[]> {
+  const response = await fetcher("https://places.googleapis.com/v1/places:searchNearby", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Goog-Api-Key": apiKey,
+      "X-Goog-FieldMask": fieldMask,
+    },
+    body: JSON.stringify({
+      includedTypes: nearbyLodgingTypes,
+      maxResultCount: 20,
+      languageCode: request.languageCode,
+      regionCode: "JP",
+      rankPreference: "POPULARITY",
+      locationRestriction: {
+        circle: {
+          center: { latitude: request.latitude, longitude: request.longitude },
+          radius: 25_000,
+        },
+      },
+    }),
+    signal: AbortSignal.timeout(8_000),
+  });
+  if (!response.ok) throw new Error("places_unavailable");
+  const payload = await response.json() as { places?: RawGooglePlace[] };
+  return (payload.places ?? []).slice(0, 20);
+}
+
 export async function fetchGoogleHotelCandidates(
   request: HotelSearchRequest,
   apiKey: string,
   fetcher: typeof fetch = fetch,
 ): Promise<HotelCandidate[]> {
-  // A named hotel keeps one focused search. An area search widens with a
-  // luxury-leaning and a budget-leaning query so "luxury" and "value · high
-  // rated" both have real Google-listed candidates — an area's top results
-  // alone often sit in one price band, which left the other style unpickable.
-  const queries = request.query
-    ? [`${request.query} ${request.area} Japan`]
-    : request.languageCode === "ja"
-      ? [`${request.area} ホテル`, `${request.area} 高級ホテル`, `${request.area} ビジネスホテル 格安`]
-      : [`${request.area} hotels`, `${request.area} luxury hotels`, `${request.area} budget business hotels`];
-  const pages = await Promise.all(queries.map(async (textQuery, index) => {
-    if (index === 0) return searchHotelText(textQuery, request, apiKey, fetcher);
-    // The style-widening query is optional: its failure never hides the primary results.
-    return searchHotelText(textQuery, request, apiKey, fetcher).catch(() => [] as RawGooglePlace[]);
-  }));
+  // Named hotels keep one focused text search. Recommendations start with a
+  // coordinate-restricted category search instead: an explicit area name in a
+  // text query can override Google's location bias and pull the whole candidate
+  // pool toward one excursion. Generic, coordinate-biased style searches are
+  // optional additions so luxury and value remain comparable.
+  const pages = request.query
+    ? [await searchHotelText(`${request.query} ${request.area} Japan`, request, apiKey, fetcher)]
+    : await Promise.all([
+      searchHotelsNearRouteCenter(request, apiKey, fetcher)
+        .catch(() => searchHotelText(request.languageCode === "ja" ? "ホテル" : "hotels", request, apiKey, fetcher)),
+      searchHotelText(request.languageCode === "ja" ? "高級ホテル" : "luxury hotels", request, apiKey, fetcher)
+        .catch(() => [] as RawGooglePlace[]),
+      searchHotelText(request.languageCode === "ja" ? "ビジネスホテル 格安" : "budget business hotels", request, apiKey, fetcher)
+        .catch(() => [] as RawGooglePlace[]),
+    ]);
 
   const seen = new Set<string>();
   const candidates: HotelCandidate[] = [];

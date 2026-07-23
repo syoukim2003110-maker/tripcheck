@@ -169,6 +169,7 @@ function createChip(
     label.textContent = options.name;
     element.append(badge, label);
     element.title = options.name;
+    element.setAttribute("aria-label", `${options.name} ${options.badge}`);
     if (options.onClick) {
       element.addEventListener("click", (event) => {
         event.stopPropagation();

@@ -260,9 +260,9 @@ body:has(.trip-planner-app) {
 .planner-map-chip.is-food { padding: 3px 10px 3px 3px; }
 .planner-map-chip.is-food i { background: var(--pl-accent); font-size: 11px; height: 22px; width: 22px; }
 .planner-map-chip.is-food span { font-size: 11.5px; max-width: 120px; }
-.planner-map-chip.is-hotel-option { padding: 3px 10px 3px 3px; }
+.planner-map-chip.is-hotel-option { padding: 3px; }
 .planner-map-chip.is-hotel-option i { background: var(--pl-good); font-family: inherit; font-size: 10.5px; font-weight: 800; height: 24px; min-width: 24px; padding: 0 7px; width: auto; }
-.planner-map-chip.is-hotel-option span { font-size: 11.5px; max-width: 112px; }
+.planner-map-chip.is-hotel-option span { display: none; }
 .planner-map-chip.is-hotel-option.is-selected { border-color: var(--pl-good); }
 .planner-map-chip.is-hotel-option.is-selected::after { border-color: var(--pl-good); }
 .planner-map-chip.is-hotel-option.is-selected i { background: var(--pl-good); }

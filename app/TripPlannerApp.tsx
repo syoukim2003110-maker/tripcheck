@@ -372,7 +372,7 @@ const ui = {
     styleLuxury: "ラグジュアリー",
     styleValue: "お手頃で高評価",
     styleNote: "価格帯はGoogleの掲載区分です。",
-    hotelRankNote: "各日の行き先を1日1票で比較し、平均距離と最も遠い日の負担が小さいホテルを優先。そこへGoogle評価と口コミ量を加えて総合順位を決めます。",
+    hotelRankNote: "各日の行き先を1日1票で比較し、直線距離の平均と最も遠い日の負担が小さいホテルを優先。そこへGoogle評価と口コミ量を加えて総合順位を決めます。実際の所要時間は地図の経路で確認します。",
     hotelCompareHeading: "候補を比べる（タップで切り替え）",
     priceUnlisted: "価格未掲載",
     rakutenTag: (average: number, count: number) => `楽天トラベル ★${average.toFixed(1)}（${count.toLocaleString("ja-JP")}件）`,
@@ -389,9 +389,9 @@ const ui = {
     hotelPurposeRated: "評価重視",
     hotelPurposeValue: "コスパ",
     hotelPurposeHelp: "同じ候補が複数の条件で1位になることがあります。",
-    axisNearest: "全日程に行きやすい",
+    axisNearest: "全日程に行きやすい目安",
     axisTopRated: "最高評価",
-    distanceFrom: (distance: string) => `各日の中心へ平均約${distance}`,
+    distanceFrom: (distance: string) => `各日の中心へ直線平均約${distance}`,
     hotelWideTrip: "行き先が広範囲です。1つのホテルでは長距離移動が残るため、日ごとに変える方が楽です。",
     useThisHotel: "このホテルに切り替え",
     tonightHotel: (name: string) => `今夜の宿 · ${name}`,
@@ -590,7 +590,7 @@ const ui = {
     styleLuxury: "Luxury",
     styleValue: "Value · high rated",
     styleNote: "Price bands come from Google's listing.",
-    hotelRankNote: "Every day gets one equal vote. Hotels with a lower average and worst-day distance rank higher, then Google rating and review strength are added.",
+    hotelRankNote: "Every day gets one equal vote. Hotels with a lower average and worst-day straight-line distance rank higher, then Google rating and review strength are added. Confirm actual travel time on the mapped routes.",
     hotelCompareHeading: "Compare picks — tap to switch",
     priceUnlisted: "No listed price",
     rakutenTag: (average: number, count: number) => `Rakuten Travel ★${average.toFixed(1)} (${count.toLocaleString("en-US")})`,
@@ -607,9 +607,9 @@ const ui = {
     hotelPurposeRated: "Top rated",
     hotelPurposeValue: "Best value",
     hotelPurposeHelp: "One hotel can win more than one category.",
-    axisNearest: "Best whole-trip access",
+    axisNearest: "Best access estimate",
     axisTopRated: "Top rated",
-    distanceFrom: (distance: string) => `~${distance} average to each day`,
+    distanceFrom: (distance: string) => `~${distance} straight-line average`,
     hotelWideTrip: "Your destinations cover a wide area. One hotel still leaves a long travel day; changing hotels nightly will be easier.",
     useThisHotel: "Switch to this hotel",
     tonightHotel: (name: string) => `Tonight · ${name}`,
@@ -1187,14 +1187,36 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   }, [hasPlan, isBuilding, locale, plan]);
 
   function selectHotelCandidate(candidate: HotelCandidate, purpose: HotelPurpose = "picked") {
-    setHotelState((current) => ({ ...current, selectedId: candidate.id }));
+    const changed = hotelState.selectedId !== candidate.id;
+    if (changed) hotelRefreshAbortRef.current?.abort();
+    setHotelState((current) => ({
+      ...current,
+      selectedId: candidate.id,
+      ...(changed ? { fresh: { status: "loading", result: null } satisfies FreshState } : {}),
+    }));
     setHotelPurpose(purpose);
     // The displayed hotel and the routing base must never diverge.
     setResolvedBase(hotelAsResolvedBase(candidate, hotelQuery, candidate.address.slice(0, 100) || candidate.name, new Date().toISOString()));
+    if (!changed) return;
+    // Public evidence belongs to one hotel only. Switching a photo card or map
+    // pin must never leave the previous hotel's findings attached to this one.
+    void requestFreshVoices(
+      { name: candidate.name, area: candidate.address.slice(0, 100) || candidate.name },
+      locale,
+      { intent: "hotel", depth: "quick" },
+    ).then((result) => {
+      setHotelState((current) => current.selectedId === candidate.id
+        ? { ...current, fresh: { status: "ready", result } }
+        : current);
+    }).catch(() => {
+      setHotelState((current) => current.selectedId === candidate.id
+        ? { ...current, fresh: { status: "unavailable", result: null } }
+        : current);
+    });
   }
 
   async function refreshHotelRecommendations() {
-    if (!plan || hotelRefreshing || !shouldUseRecommendedHotel(hotelQuery)) return;
+    if (!plan || hotelRefreshing || hotelStayMode !== "single" || !shouldUseRecommendedHotel(hotelQuery)) return;
     const routeContext = hotelRouteContextForDraft(plan);
     if (!routeContext) return;
     const signatureAtStart = hotelPlanSignature(plan);
@@ -1234,7 +1256,6 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       });
       setResolvedBase(hotelAsResolvedBase(selected, hotelQuery, selected.address.slice(0, 100) || searchAnchor.area, response.fetchedAt));
       setHotelSearchSignature(signatureAtStart);
-      setHotelStayMode("single");
       setNightlyHotels(emptyNightlyHotelState);
       postBuildLegBudgetRef.current = Math.max(postBuildLegBudgetRef.current, 16);
       setInspector({ kind: "hotel" });
@@ -2695,7 +2716,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                 <p>{text.hotelCandidate}</p>
               </div>
             </header>
-            {shouldUseRecommendedHotel(hotelQuery) ? (
+            {shouldUseRecommendedHotel(hotelQuery) && hotelStayMode === "single" ? (
               <div className={`planner-hotel-refresh-wrap${hotelPlanDirty ? " is-dirty" : ""}`}>
                 {hotelPlanDirty ? <p>{text.hotelRefreshHint}</p> : null}
                 <button className="planner-hotel-refresh" disabled={hotelRefreshing || !plan} onClick={() => void refreshHotelRecommendations()} type="button">
@@ -3339,7 +3360,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                     </li>
                   ))}
                 </ul>
-                {shouldUseRecommendedHotel(hotelQuery) ? (
+                {shouldUseRecommendedHotel(hotelQuery) && hotelStayMode === "single" ? (
                   <div className="planner-removed-refresh">
                     <p>{text.hotelRefreshHint}</p>
                     <button className="planner-hotel-refresh" disabled={hotelRefreshing} onClick={() => void refreshHotelRecommendations()} type="button">

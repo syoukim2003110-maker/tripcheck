@@ -196,10 +196,14 @@ test("requests live Google hotel evidence and returns a diverse deterministic sh
 
 test("a named hotel query is included and Google relevance remains a ranking signal", async () => {
   let body: Record<string, unknown> = {};
+  let requestedUrl = "";
+  let requestCount = 0;
   const results = await fetchGoogleHotelCandidates(
     { ...validRequest, query: "Palace Hotel Tokyo" },
     "secret",
-    (async (_url, init) => {
+    (async (url, init) => {
+      requestedUrl = String(url);
+      requestCount += 1;
       body = JSON.parse(String(init?.body));
       return Response.json({ places: [
         {
@@ -227,6 +231,8 @@ test("a named hotel query is included and Google relevance remains a ranking sig
       ] });
     }) as typeof fetch,
   );
+  assert.equal(requestCount, 1);
+  assert.equal(requestedUrl, "https://places.googleapis.com/v1/places:searchText");
   assert.equal(body.textQuery, "Palace Hotel Tokyo Tokyo Station Japan");
   assert.equal(results[0].id, "exact");
 });
@@ -290,15 +296,17 @@ test("hotel styles are asserted only from Google's listed price level", () => {
   assert.deepEqual(hotelStyles(null, 4.9, 10_000), [], "no listed price level means no style claim");
 });
 
-test("area searches widen with a luxury query, dedupe by id, and keep each style reachable", async () => {
+test("area searches start from the route-center coordinates, widen by style, dedupe, and keep each style reachable", async () => {
   const bodies: Array<Record<string, unknown>> = [];
+  const urls: string[] = [];
   const standardPlaces = Array.from({ length: 4 }, (_, index) => ({
     id: `value-${index}`,
     displayName: { text: `Value Hotel ${index}` },
     formattedAddress: "Tokyo",
     googleMapsUri: `https://maps.google.com/value-${index}`,
     businessStatus: "OPERATIONAL",
-    types: ["hotel", "lodging"],
+    primaryType: index === 0 ? "japanese_inn" : "hotel",
+    types: index === 0 ? ["japanese_inn", "lodging"] : ["hotel", "lodging"],
     location: { latitude: 35.6812 + index * 0.001, longitude: 139.7671 },
     rating: 4.5,
     userRatingCount: 5_000,
@@ -319,18 +327,33 @@ test("area searches widen with a luxury query, dedupe by id, and keep each style
       priceLevel: "PRICE_LEVEL_VERY_EXPENSIVE",
     },
   ];
-  const fetcher = (async (_url: string | URL | Request, init?: RequestInit) => {
+  const fetcher = (async (url: string | URL | Request, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    urls.push(String(url));
     bodies.push(body);
     return Response.json({ places: String(body.textQuery).includes("luxury") ? luxuryPlaces : standardPlaces });
   }) as typeof fetch;
 
   const results = await fetchGoogleHotelCandidates(validRequest, "secret", fetcher);
   assert.equal(bodies.length, 3);
-  assert.equal(bodies[0].textQuery, "Tokyo Station hotels");
-  assert.equal(bodies[1].textQuery, "Tokyo Station luxury hotels");
-  assert.equal(bodies[2].textQuery, "Tokyo Station budget business hotels");
+  assert.deepEqual(urls, [
+    "https://places.googleapis.com/v1/places:searchNearby",
+    "https://places.googleapis.com/v1/places:searchText",
+    "https://places.googleapis.com/v1/places:searchText",
+  ]);
+  assert.ok((bodies[0].includedTypes as string[]).includes("hotel"));
+  assert.ok((bodies[0].includedTypes as string[]).includes("japanese_inn"));
+  assert.equal(bodies[0].maxResultCount, 20);
+  assert.equal("textQuery" in bodies[0], false);
+  assert.deepEqual((bodies[0].locationRestriction as { circle: { center: unknown } }).circle.center, {
+    latitude: validRequest.latitude,
+    longitude: validRequest.longitude,
+  });
+  assert.equal(bodies[1].textQuery, "luxury hotels");
+  assert.equal(bodies[2].textQuery, "budget business hotels");
+  assert.equal(JSON.stringify(bodies).includes(validRequest.area), false, "an area label must not override the route-center coordinates");
   assert.equal(new Set(results.map((candidate) => candidate.id)).size, results.length, "duplicate ids must merge");
+  assert.ok(results.some((candidate) => candidate.id === "value-0"), "Japanese inns stay in the lodging comparison");
   assert.ok(results.some((candidate) => candidate.styles.includes("luxury")), "the best luxury candidate stays reachable");
   assert.ok(results.some((candidate) => candidate.styles.includes("value")));
   assert.equal(results.find((candidate) => candidate.id === "luxury-1")?.priceLevel, "very_expensive");
