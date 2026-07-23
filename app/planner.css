@@ -884,6 +884,32 @@ details.planner-excluded { display: block; }
 .planner-hotel-review p { margin: 0; }
 .planner-hotel-review footer { align-items: center; color: var(--pl-muted); display: flex; font-size: 10px; justify-content: space-between; margin-top: 7px; }
 .planner-hotel-review a { color: var(--pl-accent-deep); text-decoration: none; }
+.planner-hotel-facts .is-price { background: var(--pl-good-soft); color: var(--pl-good); font-weight: 750; }
+.planner-hotel-facts a.is-rakuten { background: #fdecec; border-radius: 8px; color: #b0272d; font-size: 11px; font-weight: 700; padding: 5px 8px; text-decoration: none; }
+
+/* Side-by-side hotel comparison: every pick with its rating, price, distance
+ * and the axis it wins, so "why this hotel" answers itself. */
+.planner-hotel-compare { border-top: 1px solid var(--pl-line); display: grid; gap: 7px; margin-top: 14px; padding-top: 12px; }
+.planner-hotel-compare > span { color: var(--pl-muted); font-size: 10.5px; font-weight: 700; }
+.planner-hotel-card { align-items: center; border: 1px solid var(--pl-line); border-radius: 13px; display: flex; gap: 8px; padding: 4px 8px 4px 4px; transition: border-color 130ms, box-shadow 130ms; }
+.planner-hotel-card.is-selected { border-color: var(--pl-ink); box-shadow: 0 0 0 3px rgb(11 11 14 / 8%); }
+.planner-hotel-card > button { background: transparent; border: 0; border-radius: 10px; color: var(--pl-ink); display: grid; flex: 1; gap: 2px; min-width: 0; padding: 7px 8px; text-align: left; }
+.planner-hotel-card > button:hover { background: var(--pl-tile); }
+.planner-hotel-card b { font-size: 12.5px; font-weight: 750; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.planner-hotel-card small { color: var(--pl-muted); font-size: 10.5px; }
+.planner-hotel-card small.is-rakuten-line { color: #b0272d; font-weight: 650; }
+.planner-hotel-card-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+.planner-hotel-card-tags i { background: var(--pl-good-soft); border-radius: 6px; color: var(--pl-good); font-size: 9.5px; font-style: normal; font-weight: 750; padding: 2px 6px; }
+.planner-hotel-card > a { align-items: center; background: var(--pl-tile); border-radius: 9px; color: var(--pl-ink); display: flex; flex: 0 0 auto; font-size: 12px; height: 28px; justify-content: center; text-decoration: none; width: 28px; }
+.planner-hotel-card > a:hover { background: var(--pl-tile-deep); }
+
+.planner-remove-stop { align-items: center; background: transparent; border: 1px solid var(--pl-line); border-radius: 12px; color: var(--pl-muted); display: flex; font-size: 11.5px; font-weight: 700; gap: 6px; justify-content: center; margin-top: 8px; min-height: 36px; width: 100%; }
+.planner-remove-stop:hover { border-color: var(--pl-accent-deep); color: var(--pl-accent-deep); }
+
+.planner-removed li { align-items: center; display: flex; gap: 8px; justify-content: space-between; }
+.planner-removed li button { background: white; border: 1px solid var(--pl-line); border-radius: 8px; color: var(--pl-ink); font-size: 10.5px; font-weight: 700; padding: 4px 9px; }
+.planner-removed li button:hover { border-color: var(--pl-ink); }
+
 .planner-hotel-alternatives { border-top: 1px solid var(--pl-line); margin-top: 14px; padding-top: 12px; }
 .planner-hotel-alternatives > span { color: var(--pl-muted); display: block; font-size: 10.5px; font-weight: 700; margin-bottom: 7px; }
 .planner-hotel-alt { align-items: center; display: flex; gap: 8px; }

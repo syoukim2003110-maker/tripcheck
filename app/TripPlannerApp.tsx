@@ -29,7 +29,7 @@ import type { TransportMode, TravelPreference } from "../lib/time-feasibility";
 import { decodeTripShare, encodeTripShare, type ShareableTripInput } from "../lib/share-link";
 import { requestTripIdeas, TripIdeasError } from "../lib/trip-ideas-client";
 import { forgetRecentTrip, loadRecentTrips, rememberRecentTrip, type RecentTrip } from "../lib/recent-trips";
-import { buildTripFromWishlist, routeLegKey, type AirportCode, type FoodRecommendationSlot, type MealPlan, type VisitWindow } from "../lib/trip-builder";
+import { buildTripFromWishlist, centroidWithOutlierPull, hotelAnchorForDraft, routeLegKey, type AirportCode, type FoodRecommendationSlot, type MealPlan, type VisitWindow } from "../lib/trip-builder";
 import { formatWishlistLines, parsedWishlistPlaces, parseWishlist, type ParsedWishlistPlace } from "../lib/wishlist-parser";
 
 type PlannerLocale = "en" | "ja";
@@ -314,6 +314,9 @@ const ui = {
     planSummary: (days: number, stops: number) => `${days}日間 · ${stops}か所`,
     openMaps: "Google Mapsで開く",
     stay: "滞在",
+    removeStop: "この行き先を予定から外す",
+    removedHeading: "自分で外した場所",
+    restoreStop: "もどす",
     backToPlan: "作成した計画にもどる",
     hotelDepartRow: (mode: string, minutes: number) => `ホテルから ${mode} 約${minutes}分`,
     hotelReturnRow: (mode: string, minutes: number) => `ホテルへ ${mode} 約${minutes}分`,
@@ -353,6 +356,10 @@ const ui = {
     styleValue: "お手頃で高評価",
     styleNote: "価格帯はGoogleの掲載区分です。",
     hotelRankNote: "総合は、Google評価32・口コミ量24・行程からの近さ24を中心に採点。ホテル名を指定した場合だけ名前の一致も加味します。距離は行程の中心からの直線距離です。",
+    hotelCompareHeading: "候補を比べる（タップで切り替え）",
+    priceUnlisted: "価格未掲載",
+    rakutenTag: (average: number, count: number) => `楽天トラベル ★${average.toFixed(1)}（${count.toLocaleString("ja-JP")}件）`,
+    hotelPriceNote: "¥価格は楽天トラベル掲載の参考最安（日付未指定）です。",
     hotelReasonTop: "評価・口コミ量・行程からの近さの合計スコアで1位の候補です。",
     hotelReasonNearest: "行程の中心に最も近く、ホテル往復を短くしやすい候補です。",
     hotelReasonRated: "十分な口コミ数がある候補の中で、Google評価が最も高いホテルです。",
@@ -519,6 +526,9 @@ const ui = {
     planSummary: (days: number, stops: number) => `${days} days · ${stops} places`,
     openMaps: "Open in Google Maps",
     stay: "Stay",
+    removeStop: "Remove from the plan",
+    removedHeading: "Removed by you",
+    restoreStop: "Put back",
     backToPlan: "Back to your plan",
     hotelDepartRow: (mode: string, minutes: number) => `From hotel · ${mode} ~${minutes} min`,
     hotelReturnRow: (mode: string, minutes: number) => `To hotel · ${mode} ~${minutes} min`,
@@ -558,6 +568,10 @@ const ui = {
     styleValue: "Value · high rated",
     styleNote: "Price bands come from Google's listing.",
     hotelRankNote: "Overall score weights Google rating up to 32, review volume up to 24 and route proximity up to 24. Name match is used only when you specify a hotel. Distance is straight-line from the route center.",
+    hotelCompareHeading: "Compare picks — tap to switch",
+    priceUnlisted: "No listed price",
+    rakutenTag: (average: number, count: number) => `Rakuten Travel ★${average.toFixed(1)} (${count.toLocaleString("en-US")})`,
+    hotelPriceNote: "¥ prices are Rakuten Travel's reference minimum (dateless).",
     hotelReasonTop: "Top combined score for rating, review volume and distance to your route.",
     hotelReasonNearest: "Closest to the route center, so hotel round trips should be shorter.",
     hotelReasonRated: "Highest Google rating among candidates backed by at least 50 reviews.",
@@ -767,6 +781,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   const [conceptError, setConceptError] = useState<"not_configured" | "rate_limited" | "unavailable" | null>(null);
   const [dayEndTarget, setDayEndTarget] = useState("");
   const [recentTrips, setRecentTrips] = useState<RecentTrip[]>([]);
+  const [removedStops, setRemovedStops] = useState<Array<{ id: string; name: string }>>([]);
   const [openingWindowsByDay, setOpeningWindowsByDay] = useState<Record<string, Record<number, VisitWindow[]>>>({});
   const [foodSearches, setFoodSearches] = useState<Record<string, FoodState>>({});
   const [intelligence, setIntelligence] = useState<Record<string, IntelligenceState>>({});
@@ -892,8 +907,9 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     dayOverrides,
     defaultDayStart: dayStartDefault,
     dayEndTarget: dayEndTarget || undefined,
+    excludedStopIds: removedStops.map((entry) => entry.id),
     openingWindowsByDay,
-  }) : null, [arrivalAirport, arrivalTime, dayEndTarget, dayOverrides, dayStartDefault, dayStartTimes, departureAirport, departureTime, durationOverrides, earlyVisitStopIds, hasPlan, hotelQuery, itinerary, legModeOverrides, liveDriving, liveTransit, liveWalking, locale, mealPlan, nightBases, openingWindowsByDay, pace, resolvedBase, resolvedStops, travelPreference, tripDays, tripStartDate, userStayMinutes]);
+  }) : null, [arrivalAirport, arrivalTime, dayEndTarget, dayOverrides, dayStartDefault, dayStartTimes, departureAirport, departureTime, durationOverrides, earlyVisitStopIds, hasPlan, hotelQuery, itinerary, legModeOverrides, liveDriving, liveTransit, liveWalking, locale, mealPlan, nightBases, openingWindowsByDay, pace, removedStops, resolvedBase, resolvedStops, travelPreference, tripDays, tripStartDate, userStayMinutes]);
 
   const day = plan?.days[activeDay] ?? null;
   const base = day ? day.startBase ?? plan?.selectedBase ?? null : null;
@@ -952,6 +968,12 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     ? hotelState.candidates.find((candidate) => candidate.id === hotelState.selectedId) ?? null
     : null;
   const hotelAxis = useMemo(() => hotelAxisWinners(hotelState.candidates), [hotelState.candidates]);
+  const hasRakutenHotelEvidence = hotelState.candidates.some((candidate) => candidate.rakuten !== null);
+  const hotelPriceLabel = useCallback((candidate: HotelCandidate) => (
+    candidate.rakuten?.minCharge
+      ? `¥${candidate.rakuten.minCharge.toLocaleString(locale === "ja" ? "ja-JP" : "en-US")}〜`
+      : priceBand(candidate.priceLevel) ?? text.priceUnlisted
+  ), [locale, text]);
   const hotelAxisLabels = useCallback((candidate: HotelCandidate) => [
     ...(candidate.id === hotelAxis.nearestId ? [text.axisNearest] : []),
     ...(candidate.id === hotelAxis.topRatedId ? [text.axisTopRated] : []),
@@ -1146,6 +1168,17 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     applySharedTripInput(shared);
   }
 
+  function removeStopFromPlan(stop: RouteStop) {
+    setRemovedStops((current) => current.some((entry) => entry.id === stop.id)
+      ? current
+      : [...current, { id: stop.id, name: stop.name }]);
+    setInspector(null);
+  }
+
+  function restoreRemovedStop(stopId: string) {
+    setRemovedStops((current) => current.filter((entry) => entry.id !== stopId));
+  }
+
   function moveStopToDay(stopId: string, dayIndex: number) {
     if (dayIndex === activeDay) {
       // Tapping the current day releases the stop back to automatic placement.
@@ -1276,8 +1309,9 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       const stops = planDay.stops.map((built) => built.stop);
       const fallback = plan.days[index + 1]?.stops[0]?.stop ?? planDay.endBase ?? plan.selectedBase;
       if (stops.length === 0 && !fallback) return null;
-      const latitude = stops.length > 0 ? stops.reduce((sum, stop) => sum + stop.latitude, 0) / stops.length : fallback!.latitude;
-      const longitude = stops.length > 0 ? stops.reduce((sum, stop) => sum + stop.longitude, 0) / stops.length : fallback!.longitude;
+      const pulled = centroidWithOutlierPull(stops);
+      const latitude = pulled?.latitude ?? fallback!.latitude;
+      const longitude = pulled?.longitude ?? fallback!.longitude;
       const area = stops.at(-1)?.area ?? fallback?.area ?? "Japan";
       return { latitude, longitude, area };
     });
@@ -1362,6 +1396,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     setLegModeOverrides({});
     setDayOverrides({});
     setMealSelections({});
+    setRemovedStops([]);
     setOpeningWindowsByDay({});
     setBuildProgress(initialBuildProgress);
     setIsBuilding(false);
@@ -1405,6 +1440,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       setLegModeOverrides({});
       setDayOverrides({});
       setMealSelections({});
+      setRemovedStops([]);
       setOpeningWindowsByDay({});
       setInspector(null);
       setBuildProgress(initialBuildProgress);
@@ -1466,7 +1502,10 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     if (!commit(() => setPreviewStops(draft.days.flatMap((candidate) => candidate.stops.map(({ stop }) => stop))))) return;
 
     if (!commit(() => setBuildProgress((current) => ({ ...current, stage: "hotel", current: 0, total: 1 })))) return;
+    // Search anchor honors every day equally and pulls toward a far outlier
+    // stop, instead of parking the hotel inside the densest cluster.
     const hotelAnchor = resolvedHotel
+      ?? hotelAnchorForDraft(draft)
       ?? draft.baseRecommendations[0]?.base
       ?? draft.days.flatMap((candidate) => candidate.stops.map(({ stop }) => stop))[0]
       ?? null;
@@ -1983,6 +2022,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     setLegModeOverrides({});
     setDayOverrides({});
     setMealSelections({});
+    setRemovedStops([]);
     setOpeningWindowsByDay({});
     setInspector(null);
     setHasPlan(false);
@@ -2021,6 +2061,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     setLegModeOverrides({});
     setDayOverrides({});
     setMealSelections({});
+    setRemovedStops([]);
     setOpeningWindowsByDay({});
     setPlaceWarning(false);
     setActiveDay(0);
@@ -2279,6 +2320,9 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                 </div>
               </div>
             ) : null}
+            <button className="planner-remove-stop" onClick={() => removeStopFromPlan(selectedBuiltStop.stop)} type="button">
+              <Icon name="close" size={11} />{text.removeStop}
+            </button>
             <div className="planner-inspector-actions">
               <button
                 className="planner-check-button"
@@ -2497,7 +2541,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                             <span>
                               {[
                                 selected.rating !== null ? `★ ${selected.rating.toFixed(1)}` : null,
-                                priceBand(selected.priceLevel),
+                                hotelPriceLabel(selected),
                                 formatDistanceMeters(selected.distanceMeters),
                                 selected.styles.includes("luxury") ? text.styleLuxury : selected.styles.includes("value") ? text.styleValue : null,
                               ].filter(Boolean).join(" · ")}
@@ -2508,7 +2552,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                               {night.candidates.filter((candidate) => candidate.id !== selected.id).slice(0, 3).map((candidate) => (
                                 <button key={candidate.id} onClick={() => selectNightCandidate(nightIndex, candidate.id)} title={text.useThisHotel} type="button">
                                   <span>{candidate.name}</span>
-                                  <small>{[candidate.rating !== null ? `★ ${candidate.rating.toFixed(1)}` : null, priceBand(candidate.priceLevel), formatDistanceMeters(candidate.distanceMeters)].filter(Boolean).join(" · ")}</small>
+                                  <small>{[candidate.rating !== null ? `★ ${candidate.rating.toFixed(1)}` : null, hotelPriceLabel(candidate), formatDistanceMeters(candidate.distanceMeters)].filter(Boolean).join(" · ")}</small>
                                 </button>
                               ))}
                             </div>
@@ -2565,11 +2609,16 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
             {selectedHotel.photo?.attribution ? <a className="planner-photo-credit" href={selectedHotel.photo.attribution.uri} rel="noreferrer" target="_blank">{text.photoLabel} {selectedHotel.photo.attribution.name} ↗</a> : null}
             <div className="planner-hotel-facts">
               {selectedHotel.rating !== null ? <span className="is-rating">★ {selectedHotel.rating.toFixed(1)} · {selectedHotel.userRatingCount?.toLocaleString(locale === "ja" ? "ja-JP" : "en-US") ?? "—"}</span> : null}
-              {priceBand(selectedHotel.priceLevel) !== null ? <span>{priceBand(selectedHotel.priceLevel)}</span> : null}
+              <span className={selectedHotel.rakuten?.minCharge ? "is-price" : ""}>{hotelPriceLabel(selectedHotel)}</span>
               <span>{text.distanceFrom(formatDistanceMeters(selectedHotel.distanceMeters))}</span>
               {hotelAxisLabels(selectedHotel).map((label) => <span className="is-axis" key={label}>{label}</span>)}
               {selectedHotel.styles.includes("luxury") ? <span>{text.styleLuxury}</span> : null}
               {selectedHotel.styles.includes("value") ? <span>{text.styleValue}</span> : null}
+              {selectedHotel.rakuten?.reviewAverage ? (
+                <a className="is-rakuten" href={selectedHotel.rakuten.url} rel="noreferrer" target="_blank">
+                  {text.rakutenTag(selectedHotel.rakuten.reviewAverage, selectedHotel.rakuten.reviewCount ?? 0)} ↗
+                </a>
+              ) : null}
               {selectedHotel.payment?.cashOnly === true ? <span>{text.cashOnly}</span> : null}
               {selectedHotel.payment?.acceptedMethods.includes("credit_card") ? <span>{text.cardsAccepted}</span> : null}
               {hotelState.fresh.result?.findings.length ? <span>{text.foodFresh(hotelState.fresh.result.findings.length)}</span> : null}
@@ -2612,28 +2661,43 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
               </details>
             ) : null}
             {hotelState.candidates.length > 1 ? (
-              <div className="planner-hotel-alternatives">
-                <span>{text.hotelAlternatives}</span>
-                {hotelState.candidates.filter((candidate) => candidate.id !== selectedHotel.id).map((candidate) => (
-                  <div className="planner-hotel-alt" key={candidate.id}>
-                    <button onClick={() => selectHotelCandidate(candidate)} title={text.useThisHotel} type="button">
-                      <span>{candidate.name}</span>
-                      <small>
-                        {[
-                          candidate.rating !== null ? `★ ${candidate.rating.toFixed(1)}` : null,
-                          priceBand(candidate.priceLevel),
-                          formatDistanceMeters(candidate.distanceMeters),
-                          ...hotelAxisLabels(candidate),
-                          candidate.styles.includes("luxury") ? text.styleLuxury : candidate.styles.includes("value") ? text.styleValue : null,
-                        ].filter(Boolean).join(" · ")}
-                      </small>
-                    </button>
-                    <a aria-label="Google Maps" href={candidate.googleMapsUrl} rel="noreferrer" target="_blank">↗</a>
-                  </div>
-                ))}
+              <div className="planner-hotel-compare">
+                <span>{text.hotelCompareHeading}</span>
+                {hotelState.candidates.map((candidate) => {
+                  const tags = [
+                    ...hotelAxisLabels(candidate),
+                    ...(candidate.styles.includes("luxury") ? [text.styleLuxury] : []),
+                    ...(candidate.styles.includes("value") ? [text.styleValue] : []),
+                  ];
+                  return (
+                    <div className={`planner-hotel-card${candidate.id === selectedHotel.id ? " is-selected" : ""}`} key={candidate.id}>
+                      <button onClick={() => selectHotelCandidate(candidate)} title={text.useThisHotel} type="button">
+                        <b>{candidate.name}</b>
+                        <small>
+                          {[
+                            candidate.rating !== null ? `★ ${candidate.rating.toFixed(1)}（${candidate.userRatingCount?.toLocaleString(locale === "ja" ? "ja-JP" : "en-US") ?? "—"}）` : null,
+                            hotelPriceLabel(candidate),
+                            text.distanceFrom(formatDistanceMeters(candidate.distanceMeters)),
+                          ].filter(Boolean).join(" · ")}
+                        </small>
+                        {tags.length > 0 ? (
+                          <span className="planner-hotel-card-tags">
+                            {tags.map((tag) => <i key={tag}>{tag}</i>)}
+                          </span>
+                        ) : null}
+                        {candidate.rakuten?.reviewAverage ? (
+                          <small className="is-rakuten-line">{text.rakutenTag(candidate.rakuten.reviewAverage, candidate.rakuten.reviewCount ?? 0)}</small>
+                        ) : null}
+                      </button>
+                      <a aria-label={candidate.rakuten ? "Rakuten Travel" : "Google Maps"} href={candidate.rakuten?.url ?? candidate.googleMapsUrl} rel="noreferrer" target="_blank">↗</a>
+                    </div>
+                  );
+                })}
               </div>
             ) : null}
-            <p className="planner-food-note">{text.hotelRankNote} {text.styleNote} {text.hotelNoAvailability}</p>
+            <p className="planner-food-note">
+              {text.hotelRankNote} {hasRakutenHotelEvidence ? `${text.hotelPriceNote} ` : ""}{text.styleNote} {text.hotelNoAvailability}
+            </p>
             </>)}
           </aside>
         ) : null}
@@ -3061,6 +3125,20 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
             )}
 
             {!hintDismissed ? <p className="planner-select-hint">{text.selectHint}</p> : null}
+
+            {removedStops.length > 0 ? (
+              <details className="planner-unknown planner-removed" open>
+                <summary>{text.removedHeading} · {removedStops.length}</summary>
+                <ul>
+                  {removedStops.map((entry) => (
+                    <li key={entry.id}>
+                      {entry.name}
+                      <button onClick={() => restoreRemovedStop(entry.id)} type="button">{text.restoreStop}</button>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            ) : null}
 
             {plan.unknownEntries.length > 0 ? (
               <details className="planner-unknown">

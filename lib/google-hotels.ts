@@ -39,6 +39,14 @@ export type HotelPhoto = {
 export type HotelPriceLevel = "inexpensive" | "moderate" | "expensive" | "very_expensive";
 export type HotelStyle = "luxury" | "value";
 
+/** Listing facts from Rakuten Travel, attached when the server has an app id. */
+export type RakutenHotelEvidence = {
+  minCharge: number | null;
+  reviewAverage: number | null;
+  reviewCount: number | null;
+  url: string;
+};
+
 export type HotelCandidate = {
   id: string;
   name: string;
@@ -57,6 +65,7 @@ export type HotelCandidate = {
   photo: HotelPhoto | null;
   reviews: HotelReviewExcerpt[] | null;
   payment: HotelPaymentEvidence | null;
+  rakuten: RakutenHotelEvidence | null;
 };
 
 type RawGoogleReview = {
@@ -509,19 +518,30 @@ export async function fetchGoogleHotelCandidates(
         photo: parsePhoto(place.photos),
         reviews,
         payment: paymentEvidence(place, reviews, request.languageCode),
+        rakuten: null,
       });
     });
   });
 
   const ranked = candidates
     .sort((left, right) => right.score - left.score || left.googleRelevanceRank - right.googleRelevanceRank || left.name.localeCompare(right.name));
-  const selected = ranked.slice(0, 3);
-  // Keep the best candidate of each style reachable even when the overall
-  // top three happen to share one price band.
-  for (const style of ["luxury", "value"] as const) {
-    if (selected.some((candidate) => candidate.styles.includes(style))) continue;
-    const best = ranked.find((candidate) => candidate.styles.includes(style));
-    if (best) selected.push(best);
+  // The shortlist is a comparison, not a top-N: best overall, closest to the
+  // route, best rated, best value band and best luxury band each get a seat,
+  // so the picks spread across price bands instead of clustering in one.
+  const selected: HotelCandidate[] = [];
+  const addPick = (candidate: HotelCandidate | undefined) => {
+    if (candidate && !selected.some((existing) => existing.id === candidate.id)) selected.push(candidate);
+  };
+  addPick(ranked[0]);
+  addPick([...ranked].sort((left, right) => left.distanceMeters - right.distanceMeters)[0]);
+  addPick([...ranked]
+    .filter((candidate) => candidate.rating !== null && (candidate.userRatingCount ?? 0) >= 50)
+    .sort((left, right) => (right.rating ?? 0) - (left.rating ?? 0) || (right.userRatingCount ?? 0) - (left.userRatingCount ?? 0))[0]);
+  addPick(ranked.find((candidate) => candidate.styles.includes("value")));
+  addPick(ranked.find((candidate) => candidate.styles.includes("luxury")));
+  for (const candidate of ranked) {
+    if (selected.length >= 5) break;
+    addPick(candidate);
   }
   return selected.slice(0, 5);
 }

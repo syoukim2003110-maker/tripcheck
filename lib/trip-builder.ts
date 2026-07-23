@@ -130,6 +130,8 @@ export type TripPlannerContext = {
   defaultDayStart?: string;
   /** Soft end-of-day target ("21:30"); overruns are flagged, never hidden. */
   dayEndTarget?: string;
+  /** Stops the user removed from the plan ("not realistic after all"). */
+  excludedStopIds?: string[];
   openingWindowsByDay?: Record<string, Record<number, VisitWindow[]>>;
   mealPlan?: MealPlan;
   resolvedStops?: ResolvedInputStop[];
@@ -603,6 +605,59 @@ function recommendBases(stops: RouteStop[], clusters: RouteStop[][], locale: Loc
     })
     .sort((a, b) => a.routeDistanceKm - b.routeDistanceKm)
     .slice(0, 3);
+}
+
+type GeoPoint = { latitude: number; longitude: number };
+
+function meanPoint(points: GeoPoint[]): GeoPoint | null {
+  if (points.length === 0) return null;
+  return {
+    latitude: points.reduce((sum, point) => sum + point.latitude, 0) / points.length,
+    longitude: points.reduce((sum, point) => sum + point.longitude, 0) / points.length,
+  };
+}
+
+function geoDistanceKm(from: GeoPoint, to: GeoPoint) {
+  return straightLineDistanceKm(from as RouteStop, to as RouteStop);
+}
+
+/*
+ * A plain centroid lets one far-away stop be ignored: with four stops packed
+ * together and one 20 km out, the mean sits inside the packed group. But the
+ * packed group is walkable from anywhere nearby — the expensive legs are the
+ * ones to the outlier. So when the farthest point is well outside the group,
+ * the anchor moves halfway toward it: a hotel between the cluster and the
+ * outlier shortens the worst commute without hurting the easy ones much.
+ */
+export function centroidWithOutlierPull(points: GeoPoint[]): GeoPoint | null {
+  const center = meanPoint(points);
+  if (!center) return null;
+  const farthest = [...points].sort((left, right) => geoDistanceKm(center, right) - geoDistanceKm(center, left))[0];
+  if (!farthest || geoDistanceKm(center, farthest) <= 6) return center;
+  return {
+    latitude: (center.latitude + farthest.latitude) / 2,
+    longitude: (center.longitude + farthest.longitude) / 2,
+  };
+}
+
+/*
+ * Hotel search anchor for a built draft: every day pulls equally (a one-day
+ * excursion far away counts as much as a packed city day), then the farthest
+ * scheduled stop applies the outlier pull above.
+ */
+export function hotelAnchorForDraft(plan: BuiltTripPlan): { latitude: number; longitude: number; area: string } | null {
+  const dayCentroids = plan.days
+    .map((day) => meanPoint(day.stops.map(({ stop }) => stop)))
+    .filter((point): point is GeoPoint => point !== null);
+  const base = meanPoint(dayCentroids);
+  if (!base) return null;
+  const scheduled = plan.days.flatMap((day) => day.stops.map(({ stop }) => stop));
+  const farthest = [...scheduled].sort((left, right) => geoDistanceKm(base, right) - geoDistanceKm(base, left))[0];
+  const anchor = farthest && geoDistanceKm(base, farthest) > 6
+    ? { latitude: (base.latitude + farthest.latitude) / 2, longitude: (base.longitude + farthest.longitude) / 2 }
+    : base;
+  const nearest = [...scheduled].sort((left, right) => geoDistanceKm(anchor, left) - geoDistanceKm(anchor, right))[0];
+  return { latitude: anchor.latitude, longitude: anchor.longitude, area: nearest?.area ?? "Japan" };
 }
 
 function airportStop(code: Exclude<AirportCode, "none">, locale: Locale): RouteStop {
@@ -1120,6 +1175,13 @@ export function buildTripFromWishlist(
     if (effectiveDuration !== null) knownStops[index] = { ...stop, planningDurationMinutes: effectiveDuration };
   }
 
+  // One tap on "外す" removes a stop the user decided against; the rest of the
+  // plan recomputes around the gap.
+  const excludedStopIds = new Set(context.excludedStopIds ?? []);
+  const activeStops = excludedStopIds.size > 0
+    ? knownStops.filter((stop) => !excludedStopIds.has(stop.id))
+    : knownStops;
+
   const travelInputs: TravelInputs = {
     preference: context.travelPreference ?? "auto",
     transit: context.liveTransitMinutes,
@@ -1128,7 +1190,7 @@ export function buildTripFromWishlist(
     overrides: context.legModeOverrides,
   };
   const paceCapacity = pace === "relaxed" ? 3 : pace === "fast" ? 5 : 4;
-  const initialClusters = knownStops.length > 0 ? clusterStops(knownStops, requestedDays) : [];
+  const initialClusters = activeStops.length > 0 ? clusterStops(activeStops, requestedDays) : [];
   const fixedClusters = applyFixedDays(initialClusters, constraints);
   const openingAssignment = applyOpeningDays(fixedClusters, constraints, context.openingWindowsByDay ?? {}, paceCapacity);
   const fullClusters = openingAssignment.assigned;
@@ -1254,7 +1316,7 @@ export function buildTripFromWishlist(
   const foodRecommendationSlots = buildFoodRecommendationSlots(days, context.mealPlan ?? "none", locale);
   return {
     requestedDays,
-    recognizedStopCount: knownStops.length,
+    recognizedStopCount: activeStops.length,
     scheduledStopCount,
     mealBreakCount: 0,
     unknownEntries: [...new Set(unknownEntries)],

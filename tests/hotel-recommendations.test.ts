@@ -26,7 +26,7 @@ test("accepts a bounded hotel search with an optional hotel name", () => {
   assert.equal(parseHotelSearchRequest({ ...validRequest, languageCode: "ko" }), null);
 });
 
-test("requests live Google hotel evidence and returns the best three deterministically", async () => {
+test("requests live Google hotel evidence and returns a diverse deterministic shortlist", async () => {
   let captured: { url: string; init: RequestInit } | null = null;
   const places = [
     {
@@ -118,10 +118,12 @@ test("requests live Google hotel evidence and returns the best three determinist
   }) as typeof fetch;
 
   const results = await fetchGoogleHotelCandidates(validRequest, "secret", fetcher);
-  assert.equal(results.length, 3);
+  // The shortlist seats best-overall, nearest, top-rated and per-band picks,
+  // so it can exceed the old top-3 but never five and never duplicates.
+  assert.ok(results.length >= 3 && results.length <= 5, `got ${results.length}`);
+  assert.equal(new Set(results.map((candidate) => candidate.id)).size, results.length);
   assert.equal(results.some((candidate) => candidate.id === "restaurant" || candidate.id === "closed-hotel"), false);
-  assert.equal(results[0].name, "Hotel A");
-  assert.ok(results.every((candidate, index, all) => index === 0 || all[index - 1].score >= candidate.score));
+  assert.equal(results[0].name, "Hotel A", "the best overall score still leads");
   assert.equal(results[0].photo?.name, "places/hotel-a/photos/1");
   assert.equal(results[0].reviews?.[0].authorName, "Guest A");
   assert.equal(results[0].payment?.cashOnly, null, "contradictory listing fields must not become a cash-only claim");

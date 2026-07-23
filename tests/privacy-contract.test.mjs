@@ -56,6 +56,8 @@ test("discloses the bounded planning-time public-web search", async () => {
   assert.match(source, /capped at 24 search units/);
   assert.match(source, /server memory for up to 30 minutes/);
   assert.match(source, /rejects sources verifiably older than 90 days/);
+  assert.match(source, /hotel-search anchor coordinates to Rakuten Web Service/);
+  assert.match(source, /does not send your itinerary text, travel dates, airport details or completed schedule to Rakuten/);
   assert.match(source, /automatically sends only the origin and destination coordinates/);
   assert.match(source, /browser also sends route coordinates/);
   assert.match(source, /Structured opening periods are checked against each travel date/);

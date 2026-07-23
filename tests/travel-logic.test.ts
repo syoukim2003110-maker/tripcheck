@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { applyLiveTransitMinutes, estimateTravelOptions } from "../lib/time-feasibility.ts";
 import { estimateStayMinutes, isDayAnchorStay } from "../lib/stay-estimates.ts";
-import { buildTripFromWishlist, routeLegKey } from "../lib/trip-builder.ts";
+import { buildTripFromWishlist, centroidWithOutlierPull, hotelAnchorForDraft, routeLegKey } from "../lib/trip-builder.ts";
 import { buildPlanningRouteLegs, prefetchPlanningRouteDurations } from "../lib/planning-live-routes-client.ts";
 import type { ResolvedInputStop } from "../lib/route-optimizer.ts";
 
@@ -144,6 +144,46 @@ test("a day-end curfew flags overruns without hiding them; a flight cutoff wins 
     dayEndTarget: "23:00",
   });
   assert.equal(flightWins.days[0].deadlineKind, "airport");
+});
+
+test("removing a stop rebuilds the plan without it", () => {
+  const stops = [
+    stopAt("a", 34.66, 135.50),
+    stopAt("b", 34.67, 135.51),
+    stopAt("c", 34.68, 135.50),
+  ];
+  const removed = buildTripFromWishlist("a\nb\nc", 1, "balanced", "ja", {
+    tripStartDate: "2026-09-14",
+    resolvedStops: stops,
+    excludedStopIds: ["b"],
+  });
+  const names = removed.days.flatMap((day) => day.stops.map(({ stop }) => stop.id));
+  assert.deepEqual(names.sort(), ["a", "c"]);
+  assert.equal(removed.recognizedStopCount, 2);
+});
+
+test("the hotel anchor pulls toward a far outlier instead of ignoring it", () => {
+  // Four packed stops (Namba-ish) and USJ ~10 km west.
+  const cluster = [
+    stopAt("d1", 34.6687, 135.5013),
+    stopAt("d2", 34.6660, 135.5040),
+    stopAt("d3", 34.6700, 135.5060),
+    stopAt("d4", 34.6650, 135.5000),
+  ];
+  const outlier = stopAt("usj", 34.6654, 135.4323);
+  const plan = buildTripFromWishlist("d1\nd2\nd3\nd4\nusj", 1, "fast", "ja", {
+    tripStartDate: "2026-09-14",
+    resolvedStops: [...cluster, outlier],
+  });
+  const anchor = hotelAnchorForDraft(plan);
+  assert.ok(anchor);
+  // The anchor must sit clearly between the cluster (~135.50) and USJ (135.43),
+  // not inside the cluster.
+  assert.ok(anchor.longitude < 135.49 && anchor.longitude > 135.44, `expected in-between, got ${anchor.longitude}`);
+
+  // Without an outlier the anchor is simply the centroid.
+  const tight = centroidWithOutlierPull(cluster.map(({ latitude, longitude }) => ({ latitude, longitude })));
+  assert.ok(tight && Math.abs(tight.longitude - 135.5028) < 0.01);
 });
 
 test("hotel departure and return legs are exposed separately for the timeline", () => {

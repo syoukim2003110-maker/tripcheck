@@ -1,4 +1,5 @@
 import { fetchGoogleHotelCandidates, parseHotelSearchRequest } from "../../../lib/google-hotels";
+import { fetchRakutenHotelFacts, matchRakutenFact } from "../../../lib/rakuten-hotels";
 
 const noStoreHeaders = { "Cache-Control": "no-store, max-age=0" };
 
@@ -29,7 +30,28 @@ export async function POST(request: Request) {
   if (!parsed) return Response.json({ code: "invalid_request" }, { status: 400, headers: noStoreHeaders });
 
   try {
-    const candidates = await fetchGoogleHotelCandidates(parsed, apiKey);
+    let candidates = await fetchGoogleHotelCandidates(parsed, apiKey);
+    // Optional price/review evidence from Rakuten Travel. Its absence or
+    // failure never hides the Google candidates.
+    const rakutenApplicationId = process.env.RAKUTEN_APPLICATION_ID ?? process.env.RAKUTEN_APP_ID;
+    const rakutenAccessKey = process.env.RAKUTEN_ACCESS_KEY;
+    if (rakutenApplicationId && rakutenAccessKey) {
+      try {
+        const facts = await fetchRakutenHotelFacts(parsed.latitude, parsed.longitude, rakutenApplicationId, rakutenAccessKey);
+        candidates = candidates.map((candidate) => {
+          const fact = matchRakutenFact(candidate, facts);
+          return fact ? {
+            ...candidate,
+            rakuten: {
+              minCharge: fact.minCharge,
+              reviewAverage: fact.reviewAverage,
+              reviewCount: fact.reviewCount,
+              url: fact.url,
+            },
+          } : candidate;
+        });
+      } catch { /* evidence stays Google-only */ }
+    }
     return Response.json({
       provider: "google_maps",
       fetchedAt: new Date().toISOString(),
