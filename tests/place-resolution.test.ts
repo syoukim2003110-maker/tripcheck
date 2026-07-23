@@ -24,10 +24,13 @@ test("requests minimal route-building fields from Google Places", async () => {
       formattedAddress: "日本、奈良県奈良市雑司町406-1",
       location: { latitude: 34.689, longitude: 135.8398 },
       googleMapsUri: "https://maps.google.com/example",
+      primaryType: "train_station",
+      types: ["train_station", "transit_station"],
     }] });
   });
   assert.ok(place);
   assert.equal(place.area, "奈良県奈良市");
+  assert.deepEqual(place.placeTypes, ["train_station", "transit_station"]);
   assert.match(fields, /places\.location/);
   assert.doesNotMatch(fields, /rating|openingHours|websiteUri/);
 });

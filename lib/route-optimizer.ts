@@ -17,6 +17,8 @@ export type RouteStop = {
 export type ResolvedInputStop = RouteStop & {
   input: string;
   address: string;
+  /** Google place types retained so a hotel-field result can be classified as lodging or an area anchor. */
+  placeTypes?: string[];
 };
 
 export type OptimizedRouteDay = {

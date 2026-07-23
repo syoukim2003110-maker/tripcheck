@@ -427,6 +427,10 @@ const lodgingTypes = new Set([
 
 const nearbyLodgingTypes = [...lodgingTypes].filter((type) => type !== "ryokan");
 
+export function placeTypesIncludeLodging(placeTypes: readonly string[] | undefined) {
+  return Boolean(placeTypes?.some((type) => lodgingTypes.has(type)));
+}
+
 function isOperationalLodging(place: RawGooglePlace) {
   if (place.businessStatus !== "OPERATIONAL") return false;
   const types = Array.isArray(place.types) ? place.types.filter((type): type is string => typeof type === "string") : [];

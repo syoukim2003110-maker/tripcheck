@@ -85,10 +85,10 @@ export async function fetchGoogleResolvedPlace(
   const sourceUrl = place?.googleMapsUri?.trim();
   if (!place?.id || !name || !sourceUrl || typeof latitude !== "number" || typeof longitude !== "number") return null;
   if (latitude < 20 || latitude > 46 || longitude < 122 || longitude > 154) return null;
-  const placeTypes = [
+  const placeTypes = [...new Set([
     ...(typeof place.primaryType === "string" ? [place.primaryType] : []),
     ...(Array.isArray(place.types) ? place.types.filter((type): type is string => typeof type === "string") : []),
-  ];
+  ])];
   return {
     id: `google-${place.id}`,
     input,
@@ -104,6 +104,7 @@ export async function fetchGoogleResolvedPlace(
     // well-known names size the visit instead of one flat 90-minute guess.
     planningDurationMinutes: estimateStayMinutes(`${input} ${name}`, placeTypes, 90),
     isAnchor: false,
+    placeTypes,
   };
 }
 

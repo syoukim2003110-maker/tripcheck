@@ -5,7 +5,7 @@ import {
   HotelRecommendationsError,
   requestHotelRecommendations,
 } from "../lib/hotel-recommendations-client.ts";
-import { fetchGoogleHotelCandidates, hotelStyles, parseHotelSearchRequest } from "../lib/google-hotels.ts";
+import { fetchGoogleHotelCandidates, hotelStyles, parseHotelSearchRequest, placeTypesIncludeLodging } from "../lib/google-hotels.ts";
 
 const validRequest = {
   latitude: 35.6812,
@@ -13,6 +13,12 @@ const validRequest = {
   area: "Tokyo Station",
   languageCode: "en" as const,
 };
+
+test("distinguishes an actual lodging result from a station or area typed in the hotel field", () => {
+  assert.equal(placeTypesIncludeLodging(["hotel", "lodging"]), true);
+  assert.equal(placeTypesIncludeLodging(["japanese_inn", "lodging"]), true);
+  assert.equal(placeTypesIncludeLodging(["train_station", "transit_station"]), false);
+});
 
 test("accepts a bounded hotel search with an optional hotel name", () => {
   assert.deepEqual(parseHotelSearchRequest(validRequest), validRequest);

@@ -13,7 +13,7 @@ import {
 import { requestLinkPreview } from "../lib/link-preview-client";
 import { defaultFoodDiscoveryQuery, type FoodCandidate } from "../lib/google-food";
 import { requestHotelRecommendations } from "../lib/hotel-recommendations-client";
-import type { HotelCandidate, HotelPriceLevel, HotelStyle } from "../lib/google-hotels";
+import { placeTypesIncludeLodging, type HotelCandidate, type HotelPriceLevel, type HotelStyle } from "../lib/google-hotels";
 import { fullTripDemo } from "../lib/mock-trip";
 import { requestFreshVoices, requestPlaceIntelligence } from "../lib/place-intelligence-client";
 import type { FreshVoicesResult } from "../lib/fresh-voices";
@@ -814,6 +814,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   const [hotelSearchSignature, setHotelSearchSignature] = useState("");
   const [hotelRefreshing, setHotelRefreshing] = useState(false);
   const [hotelRefreshFailed, setHotelRefreshFailed] = useState(false);
+  const [hotelUsesRecommendations, setHotelUsesRecommendations] = useState(true);
   const [hotelStayMode, setHotelStayMode] = useState<HotelStayMode>("single");
   const [hotelStyle, setHotelStyle] = useState<HotelStyleChoice>("recommended");
   const [hotelPurpose, setHotelPurpose] = useState<HotelPurpose>("balanced");
@@ -850,6 +851,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     setTripDays(shared.tripDays);
     if (shared.tripStartDate) setTripStartDate(shared.tripStartDate);
     setHotelQuery(shared.hotelQuery);
+    setHotelUsesRecommendations(shouldUseRecommendedHotel(shared.hotelQuery));
     setPace(shared.pace);
     setMealPlan(shared.mealPlan);
     setTravelPreference(shared.travelPreference);
@@ -1216,11 +1218,11 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   }
 
   async function refreshHotelRecommendations() {
-    if (!plan || hotelRefreshing || hotelStayMode !== "single" || !shouldUseRecommendedHotel(hotelQuery)) return;
+    if (!plan || hotelRefreshing || hotelStayMode !== "single" || !hotelUsesRecommendations) return;
     const routeContext = hotelRouteContextForDraft(plan);
     if (!routeContext) return;
     const signatureAtStart = hotelPlanSignature(plan);
-    const areaWasRequested = Boolean(hotelQuery.trim() && isAreaLikeHotelQuery(hotelQuery));
+    const areaWasRequested = Boolean(hotelQuery.trim() && hotelUsesRecommendations);
     const searchAnchor = areaWasRequested && resolvedBase
       ? { latitude: resolvedBase.latitude, longitude: resolvedBase.longitude, area: hotelQuery.trim() }
       : routeContext;
@@ -1595,6 +1597,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     setHotelSearchSignature("");
     setHotelRefreshing(false);
     setHotelRefreshFailed(false);
+    setHotelUsesRecommendations(shouldUseRecommendedHotel(fullTripDemo.hotelQuery[locale]));
     setHotelStayMode("single");
     setHotelStyle("recommended");
     setHotelPurpose("balanced");
@@ -1644,6 +1647,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       setHotelSearchSignature("");
       setHotelRefreshing(false);
       setHotelRefreshFailed(false);
+      setHotelUsesRecommendations(shouldUseRecommendedHotel(hotelQuery));
       setHotelStayMode("single");
       setHotelStyle("recommended");
       setHotelPurpose("balanced");
@@ -1667,11 +1671,18 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
 
     let places: ResolvedInputStop[] = [];
     let resolvedHotel: ResolvedInputStop | null = null;
+    let useRecommendedHotelForBuild = shouldUseRecommendedHotel(hotelQuery);
     try {
       const response = await requestPlaceResolution(itinerary, hotelQuery, locale, controller.signal);
       if (cancelled()) return;
       places = response.places;
       resolvedHotel = response.hotel;
+      // The field accepts either a hotel or an area. Google place types settle
+      // ambiguous plain inputs such as "新宿駅" or "Nara": non-lodging results
+      // become an area anchor, while an actual hotel name remains fixed.
+      if (!useRecommendedHotelForBuild && resolvedHotel?.placeTypes?.length) {
+        useRecommendedHotelForBuild = !placeTypesIncludeLodging(resolvedHotel.placeTypes);
+      }
       if (!commit(() => {
         setResolvedStops(places);
         setResolvedBase(resolvedHotel);
@@ -1687,6 +1698,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       })) return;
     }
     if (cancelled()) return;
+    if (!commit(() => setHotelUsesRecommendations(useRecommendedHotelForBuild))) return;
 
     const plannerContext = (
       baseOverride: ResolvedInputStop | null,
@@ -1737,8 +1749,8 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
         const hotelResponse = await requestHotelRecommendations({
           latitude: hotelAnchor.latitude,
           longitude: hotelAnchor.longitude,
-          area: hotelQuery.trim() && isAreaLikeHotelQuery(hotelQuery) ? hotelQuery.trim() : hotelAnchor.area,
-          ...(!shouldUseRecommendedHotel(hotelQuery) ? { query: hotelQuery } : {}),
+          area: hotelQuery.trim() && useRecommendedHotelForBuild ? hotelQuery.trim() : hotelAnchor.area,
+          ...(!useRecommendedHotelForBuild ? { query: hotelQuery } : {}),
           ...(draftHotelContext?.routePoints.length ? { routePoints: draftHotelContext.routePoints } : {}),
         }, locale, controller.signal);
         if (cancelled()) return;
@@ -1748,14 +1760,14 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
         // only when place resolution failed — once a resolved hotel is the
         // routing base, the displayed hotel must never diverge from it.
         const normalizedQuery = normalizeHotelName(hotelQuery);
-        const matchedByQuery = !shouldUseRecommendedHotel(hotelQuery) && !resolvedHotel && normalizedQuery.length >= 3
+        const matchedByQuery = !useRecommendedHotelForBuild && !resolvedHotel && normalizedQuery.length >= 3
           ? hotelResponse.candidates.find((candidate) => {
             const candidateName = normalizeHotelName(candidate.name);
             return candidateName.length >= 3 && (candidateName.includes(normalizedQuery) || normalizedQuery.includes(candidateName));
           }) ?? null
           : null;
-        const selected = shouldUseRecommendedHotel(hotelQuery) ? recommended : matchedExact ?? matchedByQuery;
-        if (selected && (shouldUseRecommendedHotel(hotelQuery) || !resolvedHotel)) {
+        const selected = useRecommendedHotelForBuild ? recommended : matchedExact ?? matchedByQuery;
+        if (selected && (useRecommendedHotelForBuild || !resolvedHotel)) {
           effectiveBase = hotelAsResolvedBase(selected, hotelQuery, hotelAnchor.area, hotelResponse.fetchedAt);
         }
         const candidates = selected
@@ -1769,7 +1781,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     if (cancelled()) return;
     if (!commit(() => {
       setHotelState(localHotelState);
-      setHotelPurpose(shouldUseRecommendedHotel(hotelQuery) ? "balanced" : "picked");
+      setHotelPurpose(useRecommendedHotelForBuild ? "balanced" : "picked");
       setResolvedBase(effectiveBase);
       setBuildProgress((current) => ({ ...current, current: 1, total: 1 }));
     })) return;
@@ -2235,6 +2247,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     setHotelSearchSignature("");
     setHotelRefreshing(false);
     setHotelRefreshFailed(false);
+    setHotelUsesRecommendations(true);
     setHotelStayMode("single");
     setHotelStyle("recommended");
     setHotelPurpose("balanced");
@@ -2279,6 +2292,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     setHotelSearchSignature("");
     setHotelRefreshing(false);
     setHotelRefreshFailed(false);
+    setHotelUsesRecommendations(true);
     setHotelStayMode("single");
     setHotelStyle("recommended");
     setHotelPurpose("balanced");
@@ -2716,7 +2730,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                 <p>{text.hotelCandidate}</p>
               </div>
             </header>
-            {shouldUseRecommendedHotel(hotelQuery) && hotelStayMode === "single" ? (
+            {hotelUsesRecommendations && hotelStayMode === "single" ? (
               <div className={`planner-hotel-refresh-wrap${hotelPlanDirty ? " is-dirty" : ""}`}>
                 {hotelPlanDirty ? <p>{text.hotelRefreshHint}</p> : null}
                 <button className="planner-hotel-refresh" disabled={hotelRefreshing || !plan} onClick={() => void refreshHotelRecommendations()} type="button">
@@ -2821,7 +2835,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                 <p className="planner-food-note">{text.hotelRankNote} {text.styleNote} {text.hotelNoAvailability}</p>
               </div>
             ) : (<>
-            {shouldUseRecommendedHotel(hotelQuery) ? <div className="planner-hotel-purpose">
+            {hotelUsesRecommendations ? <div className="planner-hotel-purpose">
               <b>{text.hotelPurposeHeading}</b>
               <div role="group" aria-label={text.hotelPurposeHeading}>
                 {([
@@ -2849,7 +2863,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
             </div> : null}
             {renderHotelComparison()}
             <p className="planner-hotel-reason">
-              {!shouldUseRecommendedHotel(hotelQuery) ? text.hotelReasonSpecified
+              {!hotelUsesRecommendations ? text.hotelReasonSpecified
                 : hotelPurpose === "nearest" ? text.hotelReasonNearest
                 : hotelPurpose === "rated" ? text.hotelReasonRated
                   : hotelPurpose === "value" ? text.hotelReasonValue
@@ -3360,7 +3374,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                     </li>
                   ))}
                 </ul>
-                {shouldUseRecommendedHotel(hotelQuery) && hotelStayMode === "single" ? (
+                {hotelUsesRecommendations && hotelStayMode === "single" ? (
                   <div className="planner-removed-refresh">
                     <p>{text.hotelRefreshHint}</p>
                     <button className="planner-hotel-refresh" disabled={hotelRefreshing} onClick={() => void refreshHotelRecommendations()} type="button">
