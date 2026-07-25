@@ -1,6 +1,6 @@
 import type { Locale } from "./i18n.ts";
 import type { Pace } from "./trip-analysis.ts";
-import { parseWishlist, type ParsedWishlistPlace } from "./wishlist-parser.ts";
+import { parseWishlist, type ParsedWishlistPlace, type WishlistTimeOfDay } from "./wishlist-parser.ts";
 import {
   buildGoogleMapsUrl,
   optimizeKnownStopOrder,
@@ -10,7 +10,7 @@ import {
   type RouteStop,
 } from "./route-optimizer.ts";
 import { applyLiveTransitMinutes, estimateTravelOptions, type ModeComparison, type TransportMode, type TravelPreference } from "./time-feasibility.ts";
-import { isDayAnchorStay } from "./stay-estimates.ts";
+import { isDayAnchorStay, isFoodPlaceTypes } from "./stay-estimates.ts";
 
 export type BuiltPlanStop = {
   stop: RouteStop;
@@ -22,7 +22,7 @@ export type BuiltPlanStop = {
   fixedTime: string | null;
   isReservation: boolean;
   reservationLateMinutes: number;
-  openingStatus: "verified_open" | "unknown" | "conflict";
+  openingStatus: "verified_open" | "unknown" | "conflict" | "closed_day";
   crowd: CrowdOutlook | null;
 };
 
@@ -99,6 +99,7 @@ export type WishlistStopConstraint = {
   fixedDay: number | null;
   fixedTime: string | null;
   fixedTimeMinutes: number | null;
+  timeOfDay: WishlistTimeOfDay | null;
   isReservation: boolean;
   stayMinutes: number | null;
 };
@@ -285,6 +286,7 @@ function constraintFromParsedPlace(place: ParsedWishlistPlace): WishlistStopCons
     fixedDay: place.day,
     fixedTime: place.time,
     fixedTimeMinutes: place.time ? clockMinutes(place.time) : null,
+    timeOfDay: place.timeOfDay,
     isReservation: place.isReservation,
     stayMinutes: place.stayMinutes,
   };
@@ -298,6 +300,7 @@ function mergeConstraints(current: WishlistStopConstraint | undefined, next: Wis
     fixedDay: next.fixedDay ?? current.fixedDay,
     fixedTime: next.fixedTime ?? current.fixedTime,
     fixedTimeMinutes: next.fixedTimeMinutes ?? current.fixedTimeMinutes,
+    timeOfDay: next.timeOfDay ?? current.timeOfDay,
     isReservation: current.isReservation || next.isReservation,
     stayMinutes: next.stayMinutes ?? current.stayMinutes,
   };
@@ -804,6 +807,7 @@ const defaultConstraint: WishlistStopConstraint = {
   fixedDay: null,
   fixedTime: null,
   fixedTimeMinutes: null,
+  timeOfDay: null,
   isReservation: false,
   stayMinutes: null,
 };
@@ -905,6 +909,10 @@ function clusterDistanceKm(stop: RouteStop, cluster: RouteStop[]) {
 
 function fitVisitToWindow(cursor: number, duration: number, windows: VisitWindow[] | undefined) {
   if (windows === undefined) return { start: cursor, status: "unknown" as const };
+  // Google returned a schedule for this weekday and it is empty: the place is
+  // listed as closed on the planned day. This is a louder fact than a mere
+  // timing conflict and gets its own status.
+  if (windows.length === 0) return { start: cursor, status: "closed_day" as const };
   for (const window of windows) {
     if (!Number.isFinite(window.openMinutes) || !Number.isFinite(window.closeMinutes) || window.closeMinutes <= window.openMinutes) continue;
     const start = Math.max(cursor, window.openMinutes);
@@ -919,6 +927,7 @@ function scheduleOrderScore(
   startMinutes: number,
   constraints: Map<string, WishlistStopConstraint>,
   earlyVisitStopIds: Set<string>,
+  foodStopIds: Set<string>,
   openingWindows: Record<string, VisitWindow[]>,
   travelInputs: TravelInputs = defaultTravel,
 ) {
@@ -932,18 +941,37 @@ function scheduleOrderScore(
     cursor += travel;
   }
   ordered.forEach((stop, index) => {
-    const fixed = constraints.get(stop.id)?.fixedTimeMinutes;
+    const constraint = constraints.get(stop.id);
+    const fixed = constraint?.fixedTimeMinutes;
     if (fixed !== null && fixed !== undefined) {
       lateMinutes += Math.max(0, cursor - fixed);
       cursor = Math.max(cursor, fixed);
     }
     const fitted = fitVisitToWindow(cursor, stop.planningDurationMinutes, openingWindows[stop.id]);
-    if (fitted.status === "conflict") lateMinutes += 24 * 60;
+    if (fitted.status === "conflict" || fitted.status === "closed_day") lateMinutes += 24 * 60;
     else cursor = fitted.start;
-    if (earlyVisitStopIds.has(stop.id)) {
+    const wish = constraint?.timeOfDay ?? null;
+    if (earlyVisitStopIds.has(stop.id) && wish !== "evening" && wish !== "night") {
       // Explicit sell-out, early-cutoff or queue evidence is a soft preference,
-      // never a replacement for a reservation or verified opening time.
+      // never a replacement for a reservation or verified opening time. A
+      // written "at sunset" outranks it: the user's wish wins over a nudge.
       earlyVisitPenalty += index * 90 + Math.max(0, cursor - 12 * 60);
+    }
+    // A written time-of-day wish ("at sunset", "朝イチ") biases the order the
+    // same soft way: sunset stops drift late, morning stops drift early.
+    if (wish === "morning") {
+      earlyVisitPenalty += index * 90 + Math.max(0, cursor - 12 * 60);
+    } else if (wish === "evening") {
+      earlyVisitPenalty += Math.max(0, 16 * 60 - cursor);
+    } else if (wish === "night") {
+      earlyVisitPenalty += Math.max(0, 18 * 60 - cursor);
+    }
+    // An unpinned meal stop belongs to a meal window, not to 9:40 in the
+    // morning; penalize the distance to the nearest lunch or dinner slot.
+    if (fixed == null && foodStopIds.has(stop.id)) {
+      const lunchDistance = cursor < 11 * 60 ? 11 * 60 - cursor : Math.max(0, cursor - (14 * 60 + 30));
+      const dinnerDistance = cursor < 17 * 60 + 30 ? (17 * 60 + 30) - cursor : Math.max(0, cursor - 21 * 60);
+      earlyVisitPenalty += Math.min(lunchDistance, dinnerDistance);
     }
     cursor += stop.planningDurationMinutes;
     if (ordered[index + 1]) {
@@ -966,6 +994,7 @@ function orderForReservations(
   startMinutes: number,
   constraints: Map<string, WishlistStopConstraint>,
   earlyVisitStopIds: Set<string>,
+  foodStopIds: Set<string>,
   openingWindows: Record<string, VisitWindow[]>,
   travelInputs: TravelInputs = defaultTravel,
 ) {
@@ -973,7 +1002,8 @@ function orderForReservations(
   const hasTimedConstraint = stops.some((stop) => constraints.get(stop.id)?.fixedTimeMinutes != null);
   const hasEarlyPreference = stops.some((stop) => earlyVisitStopIds.has(stop.id));
   const hasOpeningConstraint = stops.some((stop) => openingWindows[stop.id] !== undefined);
-  if (stops.length <= 1 || (!hasTimedConstraint && !hasEarlyPreference && !hasOpeningConstraint)) return geographic;
+  const hasTimeWish = stops.some((stop) => constraints.get(stop.id)?.timeOfDay != null || foodStopIds.has(stop.id));
+  if (stops.length <= 1 || (!hasTimedConstraint && !hasEarlyPreference && !hasOpeningConstraint && !hasTimeWish)) return geographic;
   if (stops.length > 8) {
     return [...geographic].sort((a, b) => {
       const earlyDifference = Number(earlyVisitStopIds.has(b.id)) - Number(earlyVisitStopIds.has(a.id));
@@ -989,12 +1019,12 @@ function orderForReservations(
   }
 
   let best = geographic;
-  let bestScore = scheduleOrderScore(best, base, startMinutes, constraints, earlyVisitStopIds, openingWindows, travelInputs);
+  let bestScore = scheduleOrderScore(best, base, startMinutes, constraints, earlyVisitStopIds, foodStopIds, openingWindows, travelInputs);
   const used = new Set<string>();
   const candidate: RouteStop[] = [];
   const visit = () => {
     if (candidate.length === stops.length) {
-      const score = scheduleOrderScore(candidate, base, startMinutes, constraints, earlyVisitStopIds, openingWindows, travelInputs);
+      const score = scheduleOrderScore(candidate, base, startMinutes, constraints, earlyVisitStopIds, foodStopIds, openingWindows, travelInputs);
       if (score < bestScore) {
         best = [...candidate];
         bestScore = score;
@@ -1024,6 +1054,7 @@ function buildDay(
   airportConstraints: AirportConstraint[],
   constraints: Map<string, WishlistStopConstraint>,
   earlyVisitStopIds: Set<string>,
+  foodStopIds: Set<string>,
   openingWindows: Record<string, VisitWindow[]>,
   requestedStart?: string,
   startDate?: string,
@@ -1045,6 +1076,7 @@ function buildDay(
     startMinutes,
     constraints,
     earlyVisitStopIds,
+    foodStopIds,
     openingWindows,
     // The prefetch covers the selected draft legs, not an all-pairs matrix.
     // Keep its order stable and use measured durations only for the clock.
@@ -1090,8 +1122,12 @@ function buildDay(
   const scheduledStops = ordered.map((stop, stopIndex): BuiltPlanStop => {
     const constraint = constraints.get(stop.id) ?? defaultConstraint;
     if (constraint.fixedTimeMinutes !== null) cursor = Math.max(cursor, constraint.fixedTimeMinutes);
+    // "At sunset" / "at night" written by the user floors the visit into the
+    // evening; a written clock time still wins over the vaguer wish.
+    if (constraint.fixedTimeMinutes === null && constraint.timeOfDay === "evening") cursor = Math.max(cursor, 16 * 60);
+    if (constraint.fixedTimeMinutes === null && constraint.timeOfDay === "night") cursor = Math.max(cursor, 18 * 60);
     const opening = fitVisitToWindow(cursor, stop.planningDurationMinutes, openingWindows[stop.id]);
-    if (opening.status !== "conflict") cursor = opening.start;
+    if (opening.status !== "conflict" && opening.status !== "closed_day") cursor = opening.start;
     const reservationLateMinutes = constraint.fixedTimeMinutes === null ? 0 : Math.max(0, cursor - constraint.fixedTimeMinutes);
     const arrival = clock(cursor);
     cursor += stop.planningDurationMinutes;
@@ -1156,7 +1192,7 @@ function buildDay(
     deadlineKind,
     deadlineOverrunMinutes: deadlineMinutes === null ? 0 : Math.max(0, cursor - deadlineMinutes),
     reservationConflictCount: scheduledStops.filter((stop) => stop.reservationLateMinutes > 0).length,
-    openingConflictCount: scheduledStops.filter((stop) => stop.openingStatus === "conflict").length,
+    openingConflictCount: scheduledStops.filter((stop) => stop.openingStatus === "conflict" || stop.openingStatus === "closed_day").length,
     googleMapsUrl: ordered.length > 0 ? buildGoogleMapsUrl(mapStops) : null,
   };
 }
@@ -1297,6 +1333,13 @@ export function buildTripFromWishlist(
   const baseRecommendations = recommendBases(scheduledKnownStops, fullClusters, locale, Boolean(context.resolvedStops?.length));
   const airportConstraints = buildAirportConstraints(context, selectedBase, locale);
   const earlyVisitStopIds = new Set(context.earlyVisitStopIds ?? []);
+  // Resolved stops carry their Google placeTypes at runtime; a restaurant or
+  // cafe schedules toward meal windows instead of opening the day.
+  const foodStopIds = new Set(
+    activeStops
+      .filter((stop) => isFoodPlaceTypes((stop as { placeTypes?: string[] }).placeTypes ?? []))
+      .map((stop) => stop.id),
+  );
   // Night N is where you sleep after day N; a day starts at the previous
   // night's hotel and ends at tonight's. Clamping keeps day 0 and the final
   // day anchored to the first/last night, and missing nights fall back to
@@ -1323,6 +1366,7 @@ export function buildTripFromWishlist(
     airportConstraints,
     constraints,
     earlyVisitStopIds,
+    foodStopIds,
     Object.fromEntries(cluster.map((stop) => [stop.id, context.openingWindowsByDay?.[stop.id]?.[index]]).filter((entry) => entry[1] !== undefined)) as Record<string, VisitWindow[]>,
     context.dayStartTimes?.[index] ?? context.defaultDayStart,
     context.tripStartDate,
@@ -1345,6 +1389,7 @@ export function buildTripFromWishlist(
         airportConstraints,
         constraints,
         earlyVisitStopIds,
+        foodStopIds,
         Object.fromEntries(clusters[lastIndex].map((stop) => [stop.id, context.openingWindowsByDay?.[stop.id]?.[lastIndex]]).filter((entry) => entry[1] !== undefined)) as Record<string, VisitWindow[]>,
         context.dayStartTimes?.[lastIndex] ?? context.defaultDayStart,
         context.tripStartDate,

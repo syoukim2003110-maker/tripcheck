@@ -114,3 +114,32 @@ test("existing dash-marker style still parses exactly as before", () => {
   assert.equal(place.isReservation, true);
   assert.equal(place.priority, "must");
 });
+
+test("parenthesized markers set flags without polluting the place name", () => {
+  const [must] = parsedWishlistPlaces("Senso-ji temple (must!)");
+  assert.equal(must.name, "Senso-ji temple");
+  assert.equal(must.priority, "must");
+
+  const [ticketed] = parsedWishlistPlaces("Ghibli Museum (need tickets)");
+  assert.equal(ticketed.name, "Ghibli Museum");
+  assert.equal(ticketed.isReservation, true);
+});
+
+test("a written time-of-day wish becomes a scheduling hint, not part of the name", () => {
+  const [sunset] = parsedWishlistPlaces("Shibuya Sky at sunset");
+  assert.equal(sunset.name, "Shibuya Sky");
+  assert.equal(sunset.timeOfDay, "evening");
+
+  const [morning] = parsedWishlistPlaces("豊洲市場 朝イチ");
+  assert.equal(morning.name, "豊洲市場");
+  assert.equal(morning.timeOfDay, "morning");
+
+  const [night] = parsedWishlistPlaces("渋谷スカイ 夜景");
+  assert.equal(night.name, "渋谷スカイ");
+  assert.equal(night.timeOfDay, "night");
+
+  // An explicit clock time wins; the vaguer wish is not double-read.
+  const [timed] = parsedWishlistPlaces("teamLab Planets 10:00");
+  assert.equal(timed.time, "10:00");
+  assert.equal(timed.timeOfDay, null);
+});

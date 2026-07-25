@@ -437,3 +437,47 @@ test("a missing night falls back to the trip-wide hotel and single-hotel plans a
     assert.equal(day.endBase?.id, single.selectedBase?.id);
   }
 });
+
+test("a day-pinned stop listed closed that day is flagged closed_day, not a vague conflict", () => {
+  const plan = buildTripFromWishlist("Senso-ji — Day 1", 1, "balanced", "en", {
+    openingWindowsByDay: { sensoji: { 0: [] } },
+  });
+  const stop = plan.days[0].stops[0];
+  assert.equal(stop.openingStatus, "closed_day");
+  assert.equal(plan.days[0].openingConflictCount, 1);
+});
+
+test("an 'at sunset' wish schedules the stop into the evening", () => {
+  const plan = buildTripFromWishlist("Senso-ji\nTokyo Skytree at sunset", 1, "balanced", "en");
+  const skytree = plan.days[0].stops.find(({ stop }) => stop.id === "tokyo-skytree" || stop.name.includes("Skytree"));
+  assert.ok(skytree, "Skytree stop should be planned");
+  assert.ok(skytree.arrival >= "16:00", `arrival ${skytree.arrival} should be 16:00 or later`);
+});
+
+test("meal-typed stops drift toward meal windows instead of opening the day", () => {
+  const resolved = (id, name, latitude, longitude, placeTypes, minutes) => ({
+    id,
+    input: name,
+    name,
+    area: "Shibuya",
+    address: `${name}, Tokyo`,
+    latitude,
+    longitude,
+    sourceUrl: `https://maps.google.com/${id}`,
+    verifiedAt: "2026-07-21T00:00:00Z",
+    confidence: "high",
+    planningDurationMinutes: minutes,
+    isAnchor: false,
+    placeTypes,
+  });
+  const plan = buildTripFromWishlist("Ichiran Shibuya\nMeiji Jingu\nYoyogi Park", 1, "balanced", "en", {
+    resolvedStops: [
+      resolved("ichiran-shibuya", "Ichiran Shibuya", 35.661, 139.700, ["ramen_restaurant", "restaurant"], 45),
+      resolved("meiji-jingu-r", "Meiji Jingu", 35.676, 139.699, ["shinto_shrine"], 60),
+      resolved("yoyogi-park-r", "Yoyogi Park", 35.671, 139.696, ["park"], 75),
+    ],
+  });
+  const ichiran = plan.days[0].stops.find(({ stop }) => stop.id === "ichiran-shibuya");
+  assert.ok(ichiran, "Ichiran should be planned");
+  assert.ok(ichiran.arrival >= "11:00", `a ramen stop should not open the day (arrival ${ichiran.arrival})`);
+});

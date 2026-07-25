@@ -9,10 +9,13 @@
 
 export type WishlistPriority = "must" | "optional" | "normal";
 
+export type WishlistTimeOfDay = "morning" | "evening" | "night";
+
 export type ParsedWishlistPlace = {
   name: string;
   day: number | null;
   time: string | null;
+  timeOfDay: WishlistTimeOfDay | null;
   isReservation: boolean;
   priority: WishlistPriority;
   stayMinutes: number | null;
@@ -24,8 +27,8 @@ export type ParsedWishlistLine =
   | { kind: "unparsed"; raw: string }
   | { kind: "place"; raw: string; places: ParsedWishlistPlace[] };
 
-const SEP = "\\s、,，・·()（）\\[\\]【】—–―:~\\-\\.。|｜";
-const EDGE_SEP = "\\s、,，・·—–―:~\\-\\.。|｜";
+const SEP = "\\s、,，・·()（）\\[\\]【】—–―:~\\-\\.。|｜!！?？";
+const EDGE_SEP = "\\s、,，・·—–―:~\\-\\.。|｜!！?？";
 const boundaryToken = (source: string) =>
   new RegExp(`(?:(?<=^)|(?<=[${SEP}]))(?:${source})(?=$|[${SEP}])`, "giu");
 
@@ -38,8 +41,15 @@ const mustTokenSource = "must(?:-do)?|non[- ]?negotiable|絶対に?行きたい|
 const optionalAnywhere = /\boptional\b|\bif\s+(?:there(?:'s| is)\s+)?time\b|時間があれば|時間が余れば|余裕があれば|できれば|任意|선택|시간(?:이|\s)?되면|可选|有时间/i;
 const optionalTokenSource = "optional|if\\s+(?:there(?:'s| is)\\s+)?time|時間があれば|時間が余れば|余裕があれば|できれば|任意|선택|可选|有时间";
 
-const reservationAnywhere = /\bbooked\b|\breserved\b|\breservation\b|\btimed ticket\b|予約済み?|要予約|予約|確定|チケット(?:購入|確保)済み?|예약|예매|预约|预订/i;
-const reservationTokenSource = "booked|reserved|reservation|timed ticket|予約済み?|要予約|予約|確定|チケット(?:購入|確保)済み?|예약|예매|预约|预订";
+const reservationAnywhere = /\bbooked\b|\breserved\b|\breservation\b|\btimed ticket\b|\bneed tickets?\b|\btickets? (?:required|needed)\b|\badvance tickets?\b|予約済み?|要予約|予約|確定|要チケット|チケット必要|チケット(?:購入|確保)済み?|예약|예매|预约|预订/i;
+const reservationTokenSource = "booked|reserved|reservation|timed ticket|need\\s+tickets?|tickets?\\s+(?:required|needed)|advance\\s+tickets?|予約済み?|要予約|予約|確定|要チケット|チケット必要|チケット(?:購入|確保)済み?|예약|예매|预约|预订";
+
+/* A traveller's time-of-day wish ("Shibuya Sky at sunset", "豊洲市場 朝イチ")
+ * is a scheduling constraint, not part of the place name. Detected only on
+ * safe boundaries so names that merely contain these words survive. */
+const eveningTokenSource = "at\\s+sunset|sunset|at\\s+dusk|dusk|in\\s+the\\s+evening|evening|夕方|夕暮れ|夕日|サンセット";
+const nightTokenSource = "at\\s+night|night\\s+view|night|夜景|ナイト|夜";
+const morningTokenSource = "early\\s+morning|morning|朝イチ|朝一番?|午前中|朝ごはん|朝食|朝";
 
 const colonTimeSource = "(?:[01]?\\d|2[0-3]):[0-5]\\d";
 const kanjiTimeSource = "(?:[01]?\\d|2[0-3])\\s*時(?!間)(?:\\s*(?:半|[0-5]?\\d\\s*分))?";
@@ -74,7 +84,9 @@ function stripBullet(line: string) {
 
 function tidyName(value: string) {
   return value
-    .replace(/[（(]\s*[)）]/g, "")
+    // A parenthesis group left holding only punctuation is residue from a
+    // removed marker ("(must!)" → "(!)"), never a real qualifier.
+    .replace(/[（(][\s!！?？。.、,，・·—–―:~\-|｜]*[)）]/gu, "")
     .replace(/[「『]\s*[」』]/g, "")
     // A whitespace-delimited run of nothing but separators is residue from a
     // removed marker ("… — · …"), never part of a name.
@@ -264,6 +276,23 @@ export function parseWishlist(raw: string): ParsedWishlistLine[] {
     const isReservation = reservationAnywhere.test(text) || timeWasReservation;
     const isMust = mustAnywhere.test(text);
     const isOptional = !isMust && optionalAnywhere.test(text);
+
+    let timeOfDay: WishlistTimeOfDay | null = null;
+    if (time === null) {
+      for (const [source, value] of [
+        [eveningTokenSource, "evening"],
+        [nightTokenSource, "night"],
+        [morningTokenSource, "morning"],
+      ] as const) {
+        const token = boundaryToken(source);
+        if (token.test(text)) {
+          timeOfDay = value;
+          text = text.replace(boundaryToken(source), " ");
+          break;
+        }
+      }
+    }
+
     text = text
       .replace(boundaryToken(reservationTokenSource), " ")
       .replace(boundaryToken(mustTokenSource), " ")
@@ -274,6 +303,7 @@ export function parseWishlist(raw: string): ParsedWishlistLine[] {
     const shared = {
       day,
       time,
+      timeOfDay,
       isReservation,
       priority: (isMust || isReservation ? "must" : isOptional ? "optional" : "normal") as WishlistPriority,
       stayMinutes,
@@ -311,9 +341,12 @@ export function formatWishlistLines(raw: string, languageCode: "ja" | "en") {
         output.push(languageCode === "ja" ? `${place.day}日目` : `Day ${place.day}`);
         visibleDay = place.day;
       }
+      const timeOfDayLabel = place.timeOfDay === null ? null : languageCode === "ja"
+        ? { morning: "朝", evening: "夕方", night: "夜" }[place.timeOfDay]
+        : place.timeOfDay;
       const markers = languageCode === "ja"
-        ? [place.time, place.isReservation ? "予約" : place.priority === "must" ? "必須" : null, place.priority === "optional" ? "時間があれば" : null, place.stayMinutes ? `滞在${place.stayMinutes}分` : null]
-        : [place.time, place.isReservation ? "booked" : place.priority === "must" ? "must" : null, place.priority === "optional" ? "optional" : null, place.stayMinutes ? `stay ${place.stayMinutes} min` : null];
+        ? [place.time ?? timeOfDayLabel, place.isReservation ? "予約" : place.priority === "must" ? "必須" : null, place.priority === "optional" ? "時間があれば" : null, place.stayMinutes ? `滞在${place.stayMinutes}分` : null]
+        : [place.time ?? timeOfDayLabel, place.isReservation ? "booked" : place.priority === "must" ? "must" : null, place.priority === "optional" ? "optional" : null, place.stayMinutes ? `stay ${place.stayMinutes} min` : null];
       output.push([place.name, ...markers.filter(Boolean)].join(" — "));
     }
   }

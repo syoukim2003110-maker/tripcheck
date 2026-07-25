@@ -15,7 +15,8 @@ import { defaultFoodDiscoveryQuery, type FoodCandidate } from "../lib/google-foo
 import { requestHotelRecommendations } from "../lib/hotel-recommendations-client";
 import { placeTypesIncludeLodging, type HotelCandidate, type HotelPriceLevel, type HotelStyle } from "../lib/google-hotels";
 import { fullTripDemo } from "../lib/mock-trip";
-import { requestFreshVoices, requestPlaceIntelligence } from "../lib/place-intelligence-client";
+import { requestFreshVoices, requestPlaceIntelligence, PlaceIntelligenceError } from "../lib/place-intelligence-client";
+import { requestAiStatus } from "../lib/ai-status-client";
 import type { FreshVoicesResult } from "../lib/fresh-voices";
 import type { PlaceIntelligenceResult } from "../lib/place-intelligence";
 import { googleOpeningWindowsForDate } from "../lib/google-opening-hours";
@@ -45,7 +46,7 @@ type IntelligenceState = {
   result: PlaceIntelligenceResult | null;
 };
 type FreshState = {
-  status: "idle" | "loading" | "ready" | "unavailable";
+  status: "idle" | "loading" | "ready" | "unavailable" | "paused";
   result: FreshVoicesResult | null;
 };
 type HotelState = {
@@ -303,6 +304,7 @@ const ui = {
     building: "場所を確認しています…",
     buildingTitle: "予定をつくっています",
     buildingBody: "口コミと公開SNSまで確認してから、最後にルートを確定します。",
+    buildingBodyNoSocial: "営業時間・口コミ・実経路をGoogleで確認してから、ルートを確定します。",
     buildingCancel: "入力にもどる",
     buildSteps: {
       resolving: "場所を地図で確認",
@@ -409,6 +411,8 @@ const ui = {
     estimated: "移動時間は目安。Googleの実測が届くと自動でなじみます。",
     openingAdjusted: "営業時間に合わせて訪問時刻を調整",
     openingConflict: "営業時間と予約時刻を再確認",
+    openingClosedDay: "この日は休業の可能性 — 日の移動を検討",
+    openingUnknown: "営業時間 未確認",
     excludedHeading: "予定から外した場所",
     excludedClosed: "休業・営業時間が合わない",
     excludedPace: "ペースに収まらない任意の場所",
@@ -442,6 +446,7 @@ const ui = {
     freshLoading: "公開情報を探しています…",
     freshEmpty: "90日以内と確認できる公開情報は見つかりませんでした。日付不明の情報も無理に最新扱いしません。",
     freshUnavailable: "いまは最新情報を確認できませんでした。Google Mapsや公式情報も確認してください。",
+    freshPaused: "公開SNSチェックはいま休止中です。Googleの営業情報・口コミだけで表示しています。",
     freshSource: { social: "SNS", news: "ニュース", blog: "体験記", web: "公開情報" },
     freshAgeUnknown: "更新日不明",
     freshCheckedAt: "確認",
@@ -521,6 +526,7 @@ const ui = {
     building: "Checking your places…",
     buildingTitle: "Building your trip",
     buildingBody: "We check reviews and public social sources before locking the route.",
+    buildingBodyNoSocial: "We verify hours, reviews and real routes on Google before locking the route.",
     buildingCancel: "Back to input",
     buildSteps: {
       resolving: "Confirm every place on the map",
@@ -627,6 +633,8 @@ const ui = {
     estimated: "Times are estimates — live Google routes blend in automatically.",
     openingAdjusted: "Timed to verified opening hours",
     openingConflict: "Recheck opening hours and booking time",
+    openingClosedDay: "Likely closed this day — consider moving it",
+    openingUnknown: "Hours unverified",
     excludedHeading: "Left out of this plan",
     excludedClosed: "closed or hours don't fit",
     excludedPace: "optional stop beyond this pace",
@@ -660,6 +668,7 @@ const ui = {
     freshLoading: "Searching public sources…",
     freshEmpty: "No public source could be verified as updated within 90 days. Undated pages are not presented as recent.",
     freshUnavailable: "Fresh sources are unavailable right now. Recheck Google Maps and the official source.",
+    freshPaused: "Public social checks are paused for now. Showing Google hours and reviews only.",
     freshSource: { social: "Social", news: "News", blog: "Firsthand", web: "Web" },
     freshAgeUnknown: "Date unknown",
     freshCheckedAt: "Checked",
@@ -826,6 +835,10 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   const [sourcePreviews, setSourcePreviews] = useState<Record<string, SourcePreviewState>>({});
   const [previewStops, setPreviewStops] = useState<RouteStop[]>([]);
   const [buildProgress, setBuildProgress] = useState<BuildProgress>(initialBuildProgress);
+  // Whether the server accepts Claude-backed requests. While paused, the AI
+  // surfaces (concept drafts, social checks) are hidden instead of failing.
+  const [aiEnabled, setAiEnabled] = useState(true);
+  const aiEnabledRef = useRef(true);
   const buildRunRef = useRef(0);
   const buildAbortRef = useRef<AbortController | null>(null);
   const hotelRefreshAbortRef = useRef<AbortController | null>(null);
@@ -891,6 +904,16 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   useEffect(() => {
     if (inspector !== null) setHintDismissed(true);
   }, [inspector]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void requestAiStatus().then((enabled) => {
+      if (cancelled) return;
+      aiEnabledRef.current = enabled;
+      setAiEnabled(enabled);
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     if (inspector?.kind !== "food" || !inspector.candidateId) return;
@@ -1059,6 +1082,20 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     return rows;
   }, [itinerary]);
   const parsedPlaceCount = useMemo(() => parsePreviewRows.filter((row) => row.type === "place").length, [parsePreviewRows]);
+  // "Day 5" in the pasted text quietly outgrowing a 3-day selector produced a
+  // plan that contradicted the paste; the selector now follows the headings.
+  const maxParsedDay = useMemo(() => parsePreviewRows.reduce((max, row) => {
+    if (row.type === "day") return Math.max(max, row.day);
+    if (row.type === "place" && row.place.day !== null) return Math.max(max, row.place.day);
+    return max;
+  }, 0), [parsePreviewRows]);
+  const autoBumpedDaysRef = useRef(0);
+  useEffect(() => {
+    if (maxParsedDay <= tripDays || maxParsedDay > 10) return;
+    if (autoBumpedDaysRef.current === maxParsedDay) return;
+    autoBumpedDaysRef.current = maxParsedDay;
+    setTripDays(maxParsedDay);
+  }, [maxParsedDay, tripDays]);
   const formattedItinerary = useMemo(() => formatWishlistLines(itinerary, locale), [itinerary, locale]);
   const canNormalizeItinerary = parsedPlaceCount > 1 && formattedItinerary.trim() !== itinerary.trim();
   const measuredRouteCount = useMemo(() => new Set([
@@ -1200,6 +1237,12 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     // The displayed hotel and the routing base must never diverge.
     setResolvedBase(hotelAsResolvedBase(candidate, hotelQuery, candidate.address.slice(0, 100) || candidate.name, new Date().toISOString()));
     if (!changed) return;
+    if (!aiEnabledRef.current) {
+      setHotelState((current) => current.selectedId === candidate.id
+        ? { ...current, fresh: { status: "paused", result: null } }
+        : current);
+      return;
+    }
     // Public evidence belongs to one hotel only. Switching a photo card or map
     // pin must never leave the previous hotel's findings attached to this one.
     void requestFreshVoices(
@@ -1262,6 +1305,12 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       postBuildLegBudgetRef.current = Math.max(postBuildLegBudgetRef.current, 16);
       setInspector({ kind: "hotel" });
 
+      if (!aiEnabledRef.current) {
+        setHotelState((current) => current.selectedId === selected.id
+          ? { ...current, fresh: { status: "paused", result: null } }
+          : current);
+        return;
+      }
       // The route decision is deterministic; the optional public-source check
       // follows in the background and never blocks or changes the hotel rank.
       void requestFreshVoices(
@@ -1934,6 +1983,18 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     // checked against a cited public source.
     const reanchorSearchReserve = Math.min(6, slots.length * 2);
     let remainingSearchUnits = 24 - reanchorSearchReserve;
+    let publicCount = 0;
+    let socialCount = 0;
+    const localFreshVoices: Record<string, FreshState> = {};
+    if (!aiEnabledRef.current) {
+      // Social checks are paused server-side. Skip the stage honestly instead
+      // of running checks that are guaranteed to fail one by one.
+      const pausedState: FreshState = { status: "paused", result: null };
+      for (const target of targetMap.values()) {
+        for (const stopId of target.stopIds) localFreshVoices[stopId] = pausedState;
+      }
+      if (!commit(() => setFreshVoices(localFreshVoices))) return;
+    } else {
     const publicTargets = [...targetMap.values()].flatMap((target) => {
       if (remainingSearchUnits <= 0) return [];
       const preferredUnits = target.intent === "hotel" ? 2 : 1;
@@ -1941,8 +2002,6 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       remainingSearchUnits -= units;
       return [{ ...target, depth: units === 2 ? "deep" as const : "quick" as const }];
     });
-    let publicCount = 0;
-    let socialCount = 0;
     if (!commit(() => setBuildProgress((current) => ({ ...current, stage: "public", current: 0, total: publicTargets.length, publicCount: 0, socialCount: 0 })))) return;
     const publicResults = await mapWithConcurrency(publicTargets, 4, async (target) => {
       try {
@@ -1950,14 +2009,14 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
         publicCount += result.findings.length;
         socialCount += result.findings.filter((finding) => finding.sourceKind === "social").length;
         return { target, state: { status: "ready", result } satisfies FreshState };
-      } catch {
-        return { target, state: { status: "unavailable", result: null } satisfies FreshState };
+      } catch (error) {
+        const paused = error instanceof PlaceIntelligenceError && error.code === "not_configured";
+        return { target, state: { status: paused ? "paused" : "unavailable", result: null } satisfies FreshState };
       }
     }, (current, total) => {
       commit(() => setBuildProgress((progress) => ({ ...progress, current, total, publicCount, socialCount })));
     }, cancelled);
     if (cancelled()) return;
-    const localFreshVoices: Record<string, FreshState> = {};
     for (const { target, state } of publicResults) {
       for (const stopId of target.stopIds) localFreshVoices[stopId] = state;
       for (const { slotId, candidateId } of target.foodRefs) {
@@ -1975,6 +2034,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       setFoodSearches({ ...localFoodSearches });
       setHotelState(localHotelState);
     })) return;
+    }
 
     const overrides: Record<string, number> = {};
     const earlyStops: string[] = [];
@@ -2130,7 +2190,9 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       }
     }
     const reanchorSearchUnits = reanchorSearchReserve + remainingSearchUnits;
-    const reanchoredTargets = [...reanchoredTargetMap.values()].slice(0, reanchorSearchUnits);
+    const reanchoredTargets = aiEnabledRef.current
+      ? [...reanchoredTargetMap.values()].slice(0, reanchorSearchUnits)
+      : [];
     const reanchorProgressBase = reconciliation.refresh.length;
     if (reanchoredTargets.length > 0) {
       if (!commit(() => setBuildProgress((current) => ({
@@ -2334,7 +2396,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       setFoodSearches((current) => ({ ...current, [slot.id]: next }));
       // Public-evidence checks stay budgeted to the top two; the third pick
       // remains visible on Google evidence alone.
-      for (const candidate of next.candidates.slice(0, 2)) {
+      for (const candidate of aiEnabledRef.current ? next.candidates.slice(0, 2) : []) {
         void requestFreshVoices({ name: candidate.name, area: candidate.address.slice(0, 100) || slot.area }, locale, { intent: "food", depth: "quick" })
           .then((result) => {
             if (stale()) return;
@@ -2371,7 +2433,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     const cachedIntel = intelligence[stop.id];
     const cachedFresh = freshVoices[stop.id];
     if (cachedIntel?.status === "loading" || cachedFresh?.status === "loading") return;
-    if (cachedIntel?.status === "ready" && cachedFresh?.status === "ready") return;
+    if (cachedIntel?.status === "ready" && (cachedFresh?.status === "ready" || cachedFresh?.status === "paused")) return;
 
     let placeResult = cachedIntel?.status === "ready" ? cachedIntel.result : null;
     if (!placeResult) {
@@ -2388,6 +2450,10 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     }
 
     if (cachedFresh?.status === "ready") return;
+    if (!aiEnabledRef.current) {
+      setFreshVoices((current) => ({ ...current, [stop.id]: { status: "paused", result: null } }));
+      return;
+    }
     setFreshVoices((current) => ({ ...current, [stop.id]: { status: "loading", result: null } }));
     try {
       // One search per ordinary target; only the selected hotel earns a deeper check.
@@ -2397,18 +2463,21 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       }, locale, { intent: "place", depth: "quick" });
       if (stale()) return;
       setFreshVoices((current) => ({ ...current, [stop.id]: { status: "ready", result } }));
-    } catch {
+    } catch (error) {
       if (stale()) return;
-      setFreshVoices((current) => ({ ...current, [stop.id]: { status: "unavailable", result: null } }));
+      const paused = error instanceof PlaceIntelligenceError && error.code === "not_configured";
+      setFreshVoices((current) => ({ ...current, [stop.id]: { status: paused ? "paused" : "unavailable", result: null } }));
     }
   }
 
   const selectedIntel = selectedBuiltStop ? intelligence[selectedBuiltStop.stop.id] : undefined;
   const selectedFresh = selectedBuiltStop ? freshVoices[selectedBuiltStop.stop.id] : undefined;
   const selectedCheckLoading = selectedIntel?.status === "loading" || selectedFresh?.status === "loading";
-  const selectedCheckReady = selectedIntel?.status === "ready" && selectedFresh?.status === "ready";
+  // While social checks are paused, Google evidence alone completes a check.
+  const selectedCheckReady = selectedIntel?.status === "ready" && (selectedFresh?.status === "ready" || selectedFresh?.status === "paused");
   const selectedCheckRetry = selectedIntel?.status === "unavailable" || selectedFresh?.status === "unavailable";
-  const activeBuildIndex = buildStageOrder.indexOf(buildProgress.stage);
+  const visibleBuildStages = aiEnabled ? buildStageOrder : buildStageOrder.filter((stage) => stage !== "public");
+  const activeBuildIndex = visibleBuildStages.indexOf(buildProgress.stage);
   const activeBuildDetail = buildProgress.stage === "resolving"
     ? text.progressPlaces(buildProgress.current, buildProgress.total)
     : buildProgress.stage === "reviews"
@@ -2518,6 +2587,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
               {selectedBuiltStop.priority === "optional" ? <span className="is-optional">{text.optional}</span> : null}
               {selectedBuiltStop.openingStatus === "verified_open" ? <span>{text.openingAdjusted}</span> : null}
               {selectedBuiltStop.openingStatus === "conflict" ? <span className="is-booked">{text.openingConflict}</span> : null}
+              {selectedBuiltStop.openingStatus === "closed_day" ? <span className="is-booked">{text.openingClosedDay}</span> : null}
               {selectedBuiltStop.crowd ? (
                 <span className="is-crowd">
                   {text.crowd[selectedBuiltStop.crowd.level]}{selectedBuiltStop.crowd.isWeekend ? text.crowdWeekend : ""}{text.crowdForecast}
@@ -2679,6 +2749,13 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
               <section className="planner-fresh-card" aria-live="polite">
                 <header><span aria-hidden="true"><Icon name="signal" size={15} /></span><div><h3>{text.freshHeading}</h3><small>{text.freshAiRole}</small></div></header>
                 <p className="planner-fresh-empty">{text.freshUnavailable}</p>
+              </section>
+            ) : null}
+
+            {selectedFresh?.status === "paused" ? (
+              <section className="planner-fresh-card">
+                <header><span aria-hidden="true"><Icon name="signal" size={15} /></span><div><h3>{text.freshHeading}</h3></div></header>
+                <p className="planner-fresh-empty">{text.freshPaused}</p>
               </section>
             ) : null}
 
@@ -3015,10 +3092,10 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
           <div className="planner-building-view" aria-live="polite">
             <header className="planner-building-head">
               <span className="planner-building-orbit" aria-hidden="true" />
-              <div><h1>{text.buildingTitle}</h1><p>{text.buildingBody}</p></div>
+              <div><h1>{text.buildingTitle}</h1><p>{aiEnabled ? text.buildingBody : text.buildingBodyNoSocial}</p></div>
             </header>
             <ol className="planner-building-steps">
-              {buildStageOrder.map((stage, index) => {
+              {visibleBuildStages.map((stage, index) => {
                 const state = index < activeBuildIndex ? "is-complete" : index === activeBuildIndex ? "is-active" : "";
                 return (
                   <li className={state} key={stage}>
@@ -3041,7 +3118,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
               <p>{text.subhead}</p>
             </div>
 
-            <div className="planner-concept">
+            {aiEnabled ? <div className="planner-concept">
               <span>{text.conceptLabel}</span>
               <div className="planner-concept-row">
                 <input
@@ -3068,7 +3145,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                       ? text.conceptUnavailable
                       : text.conceptNote}
               </small>
-            </div>
+            </div> : null}
 
             <label className="planner-composer">
               <span>{text.inputLabel}</span>
@@ -3345,6 +3422,8 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                           {publicSignals > 0 ? <i className="is-must">SNS {publicSignals}</i> : null}
                           {builtStop.openingStatus === "verified_open" ? <i className="is-checked">{text.openingAdjusted}</i> : null}
                           {builtStop.openingStatus === "conflict" ? <i className="is-booked">{text.openingConflict}</i> : null}
+                          {builtStop.openingStatus === "closed_day" ? <i className="is-booked">{text.openingClosedDay}</i> : null}
+                          {builtStop.openingStatus === "unknown" && stopIntel?.place.rating != null ? <i>{text.openingUnknown}</i> : null}
                         </span>
                       </button>
                     </li>

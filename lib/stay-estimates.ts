@@ -31,8 +31,21 @@ const typeDurations: Array<[types: string[], minutes: number]> = [
   [["beach"], 120],
   [["church", "hindu_temple", "mosque", "synagogue", "buddhist_temple", "shinto_shrine", "place_of_worship"], 60],
   [["observation_deck", "lookout", "scenic_point"], 60],
-  [["landmark", "historical_landmark", "monument", "tourist_attraction"], 75],
 ];
+
+/* Checked after the specific venue table so a food market or a food hall keeps
+ * its venue-scale stay, but before the generic tourist_attraction bucket that
+ * Google attaches to any famous restaurant. */
+const foodVenueTypes = new Set([
+  "restaurant", "cafe", "coffee_shop", "bakery", "dessert_shop", "tea_house",
+  "bar", "izakaya", "food_court", "meal_takeaway", "meal_delivery",
+]);
+
+const genericLandmarkTypes = ["landmark", "historical_landmark", "monument", "tourist_attraction"];
+
+export function isFoodPlaceTypes(types: string[] = []) {
+  return types.some((type) => type.endsWith("_restaurant") || foodVenueTypes.has(type));
+}
 
 export function estimateStayMinutes(name: string, types: string[] = [], fallback = 90) {
   for (const [pattern, minutes] of namePatterns) {
@@ -42,6 +55,9 @@ export function estimateStayMinutes(name: string, types: string[] = [], fallback
   for (const [candidates, minutes] of typeDurations) {
     if (candidates.some((type) => typeSet.has(type))) return minutes;
   }
+  // A meal is 45 minutes, not a museum visit.
+  if (isFoodPlaceTypes(types)) return 45;
+  if (genericLandmarkTypes.some((type) => typeSet.has(type))) return 75;
   return fallback;
 }
 
