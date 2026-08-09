@@ -41,7 +41,12 @@ export const PAID_API_KILL_SWITCHES = Object.freeze({
 
 const SESSION_COOKIE = "tc_paid_session";
 const DEFAULT_MAX_LEDGER_ENTRIES = 10_000;
-const processSalt = randomUUID();
+let processSalt: string | undefined;
+
+function getProcessSalt(): string {
+  processSalt ??= randomUUID();
+  return processSalt;
+}
 
 type Environment = Readonly<Record<string, string | undefined>>;
 
@@ -102,7 +107,7 @@ function utcDay(now: number) {
 }
 
 function stableSubjectHash(value: string) {
-  return createHash("sha256").update(processSalt).update("\0").update(value).digest("hex").slice(0, 32);
+  return createHash("sha256").update(getProcessSalt()).update("\0").update(value).digest("hex").slice(0, 32);
 }
 
 /**
