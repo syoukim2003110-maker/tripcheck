@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { PROVIDER_QUOTA_SCHEMA_SQL } from "../db/provider-quota-schema.ts";
 import {
+  DURABLE_PROVIDER_QUOTA_POLICIES,
   createDurableProviderQuotaEnforcer,
   enforceDurableProviderQuota,
   type D1DatabaseLike,
@@ -142,6 +143,7 @@ const baseRequest: DurableProviderQuotaRequest = {
 
 function policies(overrides: Partial<DurableQuotaPolicies["live_routes"]> = {}): DurableQuotaPolicies {
   return {
+    ...DURABLE_PROVIDER_QUOTA_POLICIES,
     live_routes: {
       provider: "google",
       maxPerRequest: 1,

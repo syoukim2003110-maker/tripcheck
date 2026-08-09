@@ -224,3 +224,10 @@ Tokyo Skytree`);
     { name: "Tokyo Skytree", day: 4 },
   ]);
 });
+
+test("a system recommendation can be pinned to its evaluated meal or gap time", () => {
+  const [place] = parsedWishlistPlaces("TripCheck recommendation lunch 1 — optional — 11:30");
+  assert.equal(place?.time, "11:30");
+  assert.equal(place?.priority, "optional");
+  assert.equal(place?.isReservation, false);
+});

@@ -119,19 +119,41 @@ test("discloses bounded AI enrichment and on-demand public-web search", async ()
   assert.match(source, /Structured opening periods are checked against each travel date/);
 });
 
-test("discloses along-route discovery and keeps it opt-in", async () => {
-  const [privacySource, routeSource] = await Promise.all([
+test("discloses automatic core recommendations and their paid-provider controls", async () => {
+  const [privacySource, hotelSource, foodSource, routeSource, gateSource] = await Promise.all([
     readFile(privacySourceUrl, "utf8"),
+    readFile(new URL("../app/api/hotel-recommendations/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/food-recommendations/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/route-recommendations/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/server/non-core-api-gate.ts", import.meta.url), "utf8"),
   ]);
 
-  assert.match(privacySource, /When you choose &ldquo;Near today&apos;s plan,&rdquo;/);
-  assert.match(privacySource, /selected lodging is the day&apos;s base/);
-  assert.match(privacySource, /does not send your itinerary lines, hotel text, dates, reservation notes or completed schedule/);
-  assert.match(privacySource, /never added automatically/);
-  assert.match(routeSource, /process\.env\.GOOGLE_PLACES_API_KEY/);
-  assert.match(routeSource, /ROUTE_RECOMMENDATIONS_DAILY_LIMIT/);
-  assert.match(routeSource, /Cache-Control": "no-store/);
+  assert.match(privacySource, /automatically looks up bounded hotel and meal shortlists/);
+  assert.match(privacySource, /completed day has a 30&ndash;120 minute gap/);
+  assert.match(privacySource, /up to twelve sampled coordinates/);
+  assert.match(privacySource, /Google receives the bounded location, category or query and language\/region fields, not that travel date or time/);
+  assert.match(privacySource, /do not send Google your raw itinerary lines, raw hotel text, travel dates, reservation notes, airport details or completed schedule/);
+  assert.match(privacySource, /Food and gap-fill suggestions stay in page memory and are never automatically accepted/);
+  assert.match(privacySource, /require same-origin requests/);
+  assert.match(privacySource, /individual hotel, food and route feature kill switches/);
+  assert.match(privacySource, /Production requests fail closed when the durable quota store is unavailable/);
+  assert.match(privacySource, /only opaque subject hashes plus provider, operation, scope, time bucket and counts/);
+
+  const routes = [
+    [hotelSource, "hotel_recommendations"],
+    [foodSource, "food_recommendations"],
+    [routeSource, "route_recommendations"],
+  ];
+  for (const [source, feature] of routes) {
+    assert.match(source, /paidProviderGateway\.preflight\(request, "google"\)/);
+    assert.match(source, new RegExp(`coreRecommendationApiGate\\("${feature}"\\)`));
+    assert.match(source, /paidProviderGateway\.reserve\(preflight,/);
+    assert.match(source, /Cache-Control": "no-store/);
+  }
+  assert.match(gateSource, /hotel_recommendations: "HOTEL_RECOMMENDATIONS_ENABLED"/);
+  assert.match(gateSource, /food_recommendations: "FOOD_RECOMMENDATIONS_ENABLED"/);
+  assert.match(gateSource, /route_recommendations: "ROUTE_RECOMMENDATIONS_ENABLED"/);
+  assert.doesNotMatch(routeSource, /ROUTE_RECOMMENDATIONS_DAILY_LIMIT/);
 });
 
 test("discloses optional concept drafting and avoids caching the raw concept", async () => {

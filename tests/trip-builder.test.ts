@@ -121,6 +121,73 @@ test("compares walking, transit and taxi without claiming live routing", () => {
   assert.match(plan.days[0].legs[0].googleMapsUrls.taxi, /travelmode=driving/);
 });
 
+test("mountain access keeps the summit in the itinerary and route evidence conditional", () => {
+  const resolvedStops = [
+    {
+      id: "zermatt",
+      input: "Zermatt",
+      inputIndex: 0,
+      name: "Zermatt",
+      area: "Zermatt",
+      address: "Zermatt, Switzerland",
+      latitude: 46.0207,
+      longitude: 7.7491,
+      sourceUrl: "https://example.com/zermatt",
+      verifiedAt: "2026-08-09T00:00:00Z",
+      confidence: "medium" as const,
+      planningDurationMinutes: 60,
+      isAnchor: false,
+      countryCode: "CH",
+    },
+    {
+      id: "gornergrat",
+      input: "Gornergrat",
+      inputIndex: 1,
+      name: "Gornergrat",
+      area: "Zermatt",
+      address: "Gornergrat, Switzerland",
+      latitude: 45.9834,
+      longitude: 7.7847,
+      sourceUrl: "https://example.com/gornergrat",
+      verifiedAt: "2026-08-09T00:00:00Z",
+      confidence: "medium" as const,
+      planningDurationMinutes: 120,
+      isAnchor: false,
+      countryCode: "CH",
+    },
+  ];
+  const context = {
+    tripStartDate: "2026-09-14",
+    resolvedStops,
+    lockedOrderByDay: { 0: ["zermatt", "gornergrat"] },
+    transferBufferMinutes: 0 as const,
+  };
+  const initial = buildTripFromWishlist("Zermatt\nGornergrat", 1, "balanced", "en", context);
+  const leg = initial.days[0].legs[0];
+
+  assert.deepEqual(initial.days[0].stops.map(({ stop }) => [stop.id, stop.latitude, stop.longitude]), [
+    ["zermatt", 46.0207, 7.7491],
+    ["gornergrat", 45.9834, 7.7847],
+  ]);
+  assert.deepEqual(leg.comparison.options.map((option) => option.mode), ["transit"]);
+  assert.equal(leg.routeEvidenceScope, "access_node");
+  assert.equal(leg.accessAssumptions?.[0].accessNodeId, "didok-8501690");
+  assert.equal(leg.googleMapsUrls.walk, "");
+  assert.equal(leg.googleMapsUrls.taxi, "");
+  assert.match(leg.googleMapsUrls.transit, /destination=46\.023889%2C7\.748889/);
+
+  const key = routeLegKey("zermatt", "gornergrat");
+  const withPartialProviderEvidence = buildTripFromWishlist("Zermatt\nGornergrat", 1, "balanced", "en", {
+    ...context,
+    liveTransitMinutes: { [key]: 1 },
+    liveTransitTransferCounts: { [key]: 3 },
+  });
+  const conditionalLeg = withPartialProviderEvidence.days[0].legs[0];
+  assert.notEqual(conditionalLeg.comparison.recommended.minutes, 1, "access-node minutes are not claimed as the full summit journey");
+  assert.equal(conditionalLeg.comparison.recommended.source, "estimate");
+  assert.equal(conditionalLeg.transferCount, null, "partial access-node transfers do not prove the full leg burden");
+});
+
 test("keeps unsupported entries visible for later map resolution", () => {
   const plan = buildTripFromWishlist(`Senso-ji\nA tiny cafe my friend recommended\nShibuya`, 2, "relaxed");
 

@@ -16,6 +16,8 @@ export type RouteRecommendationRequest = {
 
 export type RouteRecommendation = {
   id: string;
+  /** Raw Google Place ID. Unlike `id`, this is safe for exact Place Details. */
+  providerRef: string;
   name: string;
   address: string;
   type: string;
@@ -272,7 +274,7 @@ function parseCandidate(raw: RawPlace, request: RouteRecommendationRequest): Rou
   if (!placeTypes.some((type) => allowedRecommendationTypes.has(type))) return null;
   const excludedIds = new Set(request.excludedPlaceIds);
   const excludedNames = new Set(request.excludedNames.map(normalizedName));
-  if (excludedIds.has(id) || excludedNames.has(normalizedName(name))) return null;
+  if (excludedIds.has(id) || excludedIds.has(providerId) || excludedNames.has(normalizedName(name))) return null;
   const routeDistance = routeDistanceMeters({ latitude, longitude }, request.routePoints);
   // Search Along Route is a relevance bias, not a geometric guarantee. A
   // deterministic cap prevents a high-rated but distant result becoming a
@@ -290,6 +292,7 @@ function parseCandidate(raw: RawPlace, request: RouteRecommendationRequest): Rou
     : null;
   return {
     id,
+    providerRef: providerId,
     name,
     address: boundedString(raw.formattedAddress, 1, 300) ?? "",
     type: boundedString(raw.primaryTypeDisplayName?.text, 1, 100)

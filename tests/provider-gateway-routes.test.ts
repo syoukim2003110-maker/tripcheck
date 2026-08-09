@@ -19,9 +19,22 @@ const { POST: postLiveRoutes } = await import(new URL("../app/api/live-routes/ro
 const { POST: postPlaceResolution } = await import(new URL("../app/api/place-resolution/route.ts", import.meta.url).href) as { POST: PostHandler };
 const { POST: postPlaceIntelligence } = await import(new URL("../app/api/place-intelligence/route.ts", import.meta.url).href) as { POST: PostHandler };
 const { POST: postFreshVoices } = await import(new URL("../app/api/place-intelligence/fresh/route.ts", import.meta.url).href) as { POST: PostHandler };
+const { POST: postHotelRecommendations } = await import(new URL("../app/api/hotel-recommendations/route.ts", import.meta.url).href) as { POST: PostHandler };
+const { POST: postFoodRecommendations } = await import(new URL("../app/api/food-recommendations/route.ts", import.meta.url).href) as { POST: PostHandler };
+const { POST: postFoodRanking } = await import(new URL("../app/api/food-recommendations/ai/route.ts", import.meta.url).href) as { POST: PostHandler };
+const { POST: postRouteRecommendations } = await import(new URL("../app/api/route-recommendations/route.ts", import.meta.url).href) as { POST: PostHandler };
 routeHooks.deregister();
 
-const handlers = [postLiveRoutes, postPlaceResolution, postPlaceIntelligence, postFreshVoices];
+const googleHandlers = [
+  postLiveRoutes,
+  postPlaceResolution,
+  postPlaceIntelligence,
+  postHotelRecommendations,
+  postFoodRecommendations,
+  postRouteRecommendations,
+];
+const anthropicHandlers = [postFreshVoices, postFoodRanking];
+const handlers = [...googleHandlers, ...anthropicHandlers];
 
 function post(path: string, body: unknown, headers: Record<string, string> = {}) {
   return new Request(`https://tripcheck.test${path}`, {
@@ -68,14 +81,16 @@ test("provider switches independently block Google and Anthropic route families"
   process.env.TRIPCHECK_GOOGLE_API_DISABLED = "true";
   process.env.TRIPCHECK_ANTHROPIC_API_DISABLED = "true";
   try {
-    for (const handler of [postLiveRoutes, postPlaceResolution, postPlaceIntelligence]) {
+    for (const handler of googleHandlers) {
       const response = await handler(post("/api/test", {}));
       assert.equal(response.status, 503);
       assert.equal((await response.json() as { code: string }).code, "provider_disabled");
     }
-    const anthropic = await postFreshVoices(post("/api/test", {}));
-    assert.equal(anthropic.status, 503);
-    assert.equal((await anthropic.json() as { code: string }).code, "provider_disabled");
+    for (const handler of anthropicHandlers) {
+      const anthropic = await handler(post("/api/test", {}));
+      assert.equal(anthropic.status, 503);
+      assert.equal((await anthropic.json() as { code: string }).code, "provider_disabled");
+    }
   } finally {
     restore("TRIPCHECK_GOOGLE_API_DISABLED", originalGoogle);
     restore("TRIPCHECK_ANTHROPIC_API_DISABLED", originalAnthropic);
@@ -162,6 +177,82 @@ test("an entirely unavailable live-route batch is retryable at the Worker bounda
   } finally {
     restore("GOOGLE_ROUTES_API_KEY", originalRoutesKey);
     restore("GOOGLE_PLACES_API_KEY", originalPlacesKey);
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("food discovery reserves its two-call sparse-area ceiling and uses the parent request signal", async () => {
+  const originalKey = process.env.GOOGLE_PLACES_API_KEY;
+  const originalFeature = process.env.FOOD_RECOMMENDATIONS_ENABLED;
+  const originalFetch = globalThis.fetch;
+  process.env.GOOGLE_PLACES_API_KEY = "test-key";
+  process.env.FOOD_RECOMMENDATIONS_ENABLED = "true";
+  let providerCalls = 0;
+  globalThis.fetch = (async (_input, init) => {
+    providerCalls += 1;
+    assert.ok(init?.signal, "the origin provider call must inherit a bounded parent signal");
+    return Response.json({ places: [] });
+  }) as typeof fetch;
+  try {
+    const response = await postFoodRecommendations(post("/api/food-recommendations", {
+      latitude: 35.6812,
+      longitude: 139.7671,
+      area: "Private route area",
+      mealKind: "lunch",
+      plannedTime: "12:00",
+      languageCode: "en",
+      destination: "japan",
+    }, {
+      Origin: "https://tripcheck.test",
+      "Sec-Fetch-Site": "same-origin",
+      "X-TripCheck-Session": "session_food_0001",
+      "X-TripCheck-Trip": "trip_food_0000001",
+    }));
+    assert.equal(response.status, 200);
+    assert.equal(providerCalls, 2, "an empty nearby result performs one bounded expansion");
+    assert.equal(response.headers.get("X-TripCheck-Quota-Remaining-Trip"), "54");
+    assert.equal(response.headers.get("X-TripCheck-Quota-Scope"), "process-local");
+  } finally {
+    restore("GOOGLE_PLACES_API_KEY", originalKey);
+    restore("FOOD_RECOMMENDATIONS_ENABLED", originalFeature);
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("route recommendation failure remains charged at the three-search ceiling", async () => {
+  const originalKey = process.env.GOOGLE_PLACES_API_KEY;
+  const originalFeature = process.env.ROUTE_RECOMMENDATIONS_ENABLED;
+  const originalFetch = globalThis.fetch;
+  process.env.GOOGLE_PLACES_API_KEY = "test-key";
+  process.env.ROUTE_RECOMMENDATIONS_ENABLED = "true";
+  let providerCalls = 0;
+  globalThis.fetch = (async () => {
+    providerCalls += 1;
+    return new Response("unavailable", { status: 503 });
+  }) as typeof fetch;
+  try {
+    const response = await postRouteRecommendations(post("/api/route-recommendations", {
+      routePoints: [
+        { latitude: 35.6812, longitude: 139.7671 },
+        { latitude: 35.7101, longitude: 139.8107 },
+      ],
+      excludedPlaceIds: [],
+      excludedNames: [],
+      destination: "japan",
+      languageCode: "en",
+    }, {
+      Origin: "https://tripcheck.test",
+      "Sec-Fetch-Site": "same-origin",
+      "X-TripCheck-Session": "session_route_001",
+      "X-TripCheck-Trip": "trip_route_000001",
+    }));
+    assert.equal(response.status, 502);
+    assert.equal(providerCalls, 1, "the Worker, not the origin handler, owns retries");
+    assert.equal(response.headers.get("X-TripCheck-Provider-Failed-Units"), "3");
+    assert.equal(response.headers.get("X-TripCheck-Quota-Remaining-Trip"), "39");
+  } finally {
+    restore("GOOGLE_PLACES_API_KEY", originalKey);
+    restore("ROUTE_RECOMMENDATIONS_ENABLED", originalFeature);
     globalThis.fetch = originalFetch;
   }
 });

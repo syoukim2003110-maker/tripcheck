@@ -5,8 +5,8 @@ import TripPlannerApp from "../TripPlannerApp";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "TripCheck — 旅程の実行可能性チェッカー",
-  description: "行きたい場所を貼るだけ。経路、営業時間、予約、空港と使える時間を照合し、実際に回れる順番と必要日数を示します。",
+  title: "TripCheck — 行きたい場所から、そのまま使える旅程へ",
+  description: "行きたい場所を入れるだけ。日別の組み合わせ、順番、移動、実用的なホテル拠点、無理のない食事候補まで組み、実際に回れるか確認します。",
   alternates: { canonical: "/ja" },
 };
 

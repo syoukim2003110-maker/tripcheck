@@ -9,8 +9,8 @@ export async function generateMetadata(): Promise<Metadata> {
   const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host") ?? "tripcheck-japan-tokyo.syoki.chatgpt.site";
   const protocol = requestHeaders.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
   const origin = `${protocol}://${host}`;
-  const title = "TripCheck — itinerary feasibility checker";
-  const description = "Paste your saved places. TripCheck checks routes, opening hours, bookings, airports and usable time to show what actually fits.";
+  const title = "TripCheck — build a realistic itinerary from saved places";
+  const description = "Drop in the places you want. TripCheck groups them into days, orders the route, suggests a practical base and schedule-checked meal candidates, and checks what actually fits.";
 
   return {
     metadataBase: new URL(origin),
@@ -56,7 +56,7 @@ export async function generateMetadata(): Promise<Metadata> {
       url: origin,
       siteName: "TripCheck",
       locale: "en_US",
-      images: [{ url: `${origin}/og-feasibility.png`, width: 1536, height: 1024, alt: "TripCheck turns saved places into a time-aware itinerary feasibility check" }],
+      images: [{ url: `${origin}/og-feasibility.png`, width: 1536, height: 1024, alt: "TripCheck turns saved places into a realistic day-by-day itinerary" }],
     },
     twitter: {
       card: "summary_large_image",

@@ -421,6 +421,24 @@ function improvementBetween(before: TripScenarioMetrics, after: TripScenarioMetr
   };
 }
 
+/**
+ * Product gate for showing a hotel/base change. The candidate metrics must
+ * come from a full deterministic rebuild; geometric distance alone is not
+ * sufficient evidence for a traveller-facing claim.
+ */
+export function qualifiesHotelBaseChange(
+  before: TripScenarioMetrics,
+  after: TripScenarioMetrics,
+) {
+  if (after.hardConflictCount < before.hardConflictCount) return true;
+  const minutesSaved = before.travelMinutes - after.travelMinutes;
+  if (!Number.isFinite(minutesSaved) || minutesSaved <= 0) return false;
+  if (minutesSaved >= 60) return true;
+  return Number.isFinite(before.travelMinutes)
+    && before.travelMinutes > 0
+    && minutesSaved * 100 >= before.travelMinutes * 15;
+}
+
 function improvesFeasibility(before: TripScenarioMetrics, after: TripScenarioMetrics) {
   if (after.hardConflictCount !== before.hardConflictCount) return after.hardConflictCount < before.hardConflictCount;
   if (after.overrunMinutes !== before.overrunMinutes) return after.overrunMinutes < before.overrunMinutes;
@@ -465,11 +483,13 @@ export function generateTripCounterfactuals(
     change: TripCounterfactualAlternative["change"],
     loss: TripCounterfactualAlternative["loss"] = null,
     alwaysComparable = false,
+    eligibility?: (beforeMetrics: TripScenarioMetrics, afterMetrics: TripScenarioMetrics) => boolean,
   ) => {
     const nextPlan = buildTripFromWishlist(raw, nextDays, pace, locale, nextContext);
     const nextFit = assessTripFit(raw, nextDays, pace, locale, nextContext, nextPlan);
     if (nextFit.status === "incomplete" || nextFit.status === "timed_out") return;
     const after = scenarioMetrics(nextPlan, nextFit);
+    if (eligibility && !eligibility(before, after)) return;
     if (!alwaysComparable && !improvesFeasibility(before, after)) return;
     candidates.push({ id, kind, change, before, after, improvement: improvementBetween(before, after), loss });
   };
@@ -548,6 +568,9 @@ export function generateTripCounterfactuals(
         },
       },
       { baseId: base.id, baseName: base.name },
+      null,
+      false,
+      qualifiesHotelBaseChange,
     );
   }
 

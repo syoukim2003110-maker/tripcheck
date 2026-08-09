@@ -11,6 +11,52 @@ import {
 } from "../lib/planning-live-routes-client.ts";
 import { buildTripFromWishlist } from "../lib/trip-builder.ts";
 
+function swissMountainStops() {
+  return [
+    {
+      id: "zermatt",
+      input: "Zermatt",
+      inputIndex: 0,
+      name: "Zermatt",
+      area: "Zermatt",
+      address: "Zermatt, Switzerland",
+      latitude: 46.0207,
+      longitude: 7.7491,
+      sourceUrl: "https://example.com/zermatt",
+      verifiedAt: "2026-08-09T00:00:00Z",
+      confidence: "medium" as const,
+      planningDurationMinutes: 60,
+      isAnchor: false,
+      countryCode: "CH",
+    },
+    {
+      id: "gornergrat",
+      input: "Gornergrat",
+      inputIndex: 1,
+      name: "Gornergrat",
+      area: "Zermatt",
+      address: "Gornergrat, Switzerland",
+      latitude: 45.9834,
+      longitude: 7.7847,
+      sourceUrl: "https://example.com/gornergrat",
+      verifiedAt: "2026-08-09T00:00:00Z",
+      confidence: "medium" as const,
+      planningDurationMinutes: 120,
+      isAnchor: false,
+      countryCode: "CH",
+    },
+  ];
+}
+
+function swissMountainDraft() {
+  return buildTripFromWishlist("Zermatt\nGornergrat", 1, "balanced", "en", {
+    tripStartDate: "2026-09-14",
+    resolvedStops: swissMountainStops(),
+    lockedOrderByDay: { 0: ["zermatt", "gornergrat"] },
+    transferBufferMinutes: 0,
+  });
+}
+
 test("builds hotel and stop legs with every mode contender that could win", () => {
   const draft = buildTripFromWishlist("Senso-ji\nTokyo Skytree", 1, "balanced", "en", {
     tripStartDate: "2026-09-14",
@@ -30,6 +76,48 @@ test("builds hotel and stop legs with every mode contender that could win", () =
   assert.match(legs[0].id, /^base-shinjuku::(?:sensoji|tokyo-skytree)$/);
   assert.match(legs[0].departureTime, /^2026-09-14T\d{2}:\d{2}:00\+09:00$/);
   assert.deepEqual(Object.keys(legs[0]).sort(), ["departureTime", "destination", "id", "mode", "origin"]);
+});
+
+test("mountain transit uses a distinct access-node endpoint and discloses the assumption", async () => {
+  const draft = swissMountainDraft();
+  const [leg] = buildPlanningRouteLegs(draft);
+  const [request] = buildSelectedTransitLegRequests(draft);
+
+  assert.ok(leg);
+  assert.equal(leg.id, "zermatt::gornergrat", "the logical itinerary leg keeps the summit id");
+  assert.equal(leg.mode, "transit");
+  assert.deepEqual(leg.destination, { latitude: 46.023889, longitude: 7.748889 });
+  assert.match(leg.routingEndpointKey ?? "", /access-node:gornergrat:didok-8501690/);
+  assert.equal(leg.accessAssumptions?.[0].mountainStopId, "gornergrat");
+  assert.equal(leg.accessAssumptions?.[0].accessNodeName, "Zermatt GGB station");
+  assert.equal(draft.days[0].stops[1].stop.name, "Gornergrat");
+  assert.deepEqual(request.destination, leg.destination);
+  assert.equal(request.legId, leg.id);
+  assert.match(request.requestKey, /access-node%3Agornergrat%3Adidok-8501690/);
+  assert.equal(buildPlanningRouteLegs(draft).some((candidate) => candidate.mode === "walk" || candidate.mode === "drive"), false);
+
+  let providerDestination: unknown;
+  const [evidence] = await fetchPlanningTransitEvidence([request], "en", {
+    fetcher: async (_input, init) => {
+      const body = JSON.parse(String(init?.body)) as { legs: Array<{ destination: unknown }> };
+      providerDestination = body.legs[0].destination;
+      return Response.json({
+        provider: "google_maps",
+        fetchedAt: "2026-08-09T00:00:00.000Z",
+        legs: [{
+          id: "transit-0",
+          status: "ok",
+          durationMinutes: 12,
+          transferCount: 0,
+          distanceMeters: 300,
+          encodedPolyline: null,
+        }],
+      });
+    },
+  });
+  assert.deepEqual(providerDestination, { latitude: 46.023889, longitude: 7.748889 });
+  assert.equal(evidence.providerRef, "google_maps:access_node:didok-8501690");
+  assert.equal(evidence.status, "verified", "the access-node segment itself is verified, not the full summit journey");
 });
 
 test("convergence requests include only selected transit legs with exact time provenance", () => {

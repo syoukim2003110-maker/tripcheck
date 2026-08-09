@@ -1,7 +1,15 @@
 import { createHash, randomUUID } from "node:crypto";
 
 export type PaidProvider = "google" | "anthropic";
-export type PaidOperation = "live_routes" | "place_resolution" | "place_intelligence" | "fresh_voices";
+export type PaidOperation =
+  | "live_routes"
+  | "place_resolution"
+  | "place_intelligence"
+  | "fresh_voices"
+  | "hotel_recommendations"
+  | "food_recommendations"
+  | "food_ranking"
+  | "route_recommendations";
 export type QuotaScope = "trip" | "session" | "process_day";
 
 export type PaidOperationPolicy = Readonly<{
@@ -24,6 +32,10 @@ export const PAID_OPERATION_POLICIES: PaidOperationPolicies = Object.freeze({
   place_resolution: Object.freeze({ provider: "google", maxPerRequest: 12, maxPerTrip: 12, maxPerSession: 36, maxPerProcessDay: 1_200 }),
   place_intelligence: Object.freeze({ provider: "google", maxPerRequest: 1, maxPerTrip: 10, maxPerSession: 30, maxPerProcessDay: 1_000 }),
   fresh_voices: Object.freeze({ provider: "anthropic", maxPerRequest: 2, maxPerTrip: 24, maxPerSession: 48, maxPerProcessDay: 192 }),
+  hotel_recommendations: Object.freeze({ provider: "google", maxPerRequest: 4, maxPerTrip: 20, maxPerSession: 60, maxPerProcessDay: 600 }),
+  food_recommendations: Object.freeze({ provider: "google", maxPerRequest: 2, maxPerTrip: 56, maxPerSession: 112, maxPerProcessDay: 2_000 }),
+  food_ranking: Object.freeze({ provider: "anthropic", maxPerRequest: 1, maxPerTrip: 28, maxPerSession: 56, maxPerProcessDay: 192 }),
+  route_recommendations: Object.freeze({ provider: "google", maxPerRequest: 3, maxPerTrip: 42, maxPerSession: 84, maxPerProcessDay: 75 }),
 });
 
 export const PROCESS_LOCAL_QUOTA_METADATA = Object.freeze({
@@ -339,7 +351,9 @@ function parseCookie(request: Request, name: string) {
 }
 
 function boundedOpaqueId(value: string | null) {
-  return value && /^[A-Za-z0-9_-]{8,96}$/.test(value) ? value : null;
+  // Keep this identical to the Worker boundary so a valid edge identity is
+  // never silently replaced by a different process-local quota subject.
+  return value && /^[A-Za-z0-9_-]{8,128}$/.test(value) ? value : null;
 }
 
 function defaultIdentity(

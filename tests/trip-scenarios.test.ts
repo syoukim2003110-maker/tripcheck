@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildTripFromWishlist } from "../lib/trip-builder.ts";
-import { assessTripFit, generateTripCounterfactuals } from "../lib/trip-scenarios.ts";
+import {
+  assessTripFit,
+  generateTripCounterfactuals,
+  qualifiesHotelBaseChange,
+  type TripScenarioMetrics,
+} from "../lib/trip-scenarios.ts";
 
 const eightPlaces = `Ghibli Museum
 Shibuya Sky
@@ -11,6 +16,78 @@ teamLab Planets
 Tsukiji Outer Market
 Meiji Jingu
 Akihabara`;
+
+function scenarioMetrics(overrides: Partial<TripScenarioMetrics> = {}): TripScenarioMetrics {
+  return {
+    hardConflictCount: 0,
+    overrunMinutes: 0,
+    minimumSlackMinutes: 60,
+    scheduledStopCount: 2,
+    dayCount: 1,
+    travelMinutes: 1_000,
+    ...overrides,
+  };
+}
+
+test("hotel change thresholds are inclusive at 60 minutes and 15 percent", () => {
+  const before = scenarioMetrics();
+  assert.equal(qualifiesHotelBaseChange(before, scenarioMetrics({ travelMinutes: 941 })), false, "59 minutes is below the absolute threshold");
+  assert.equal(qualifiesHotelBaseChange(before, scenarioMetrics({ travelMinutes: 940 })), true, "60 minutes is included");
+  const shortTrip = scenarioMetrics({ travelMinutes: 200 });
+  assert.equal(qualifiesHotelBaseChange(shortTrip, scenarioMetrics({ travelMinutes: 170.2 })), false, "14.9% is below the relative threshold");
+  assert.equal(qualifiesHotelBaseChange(shortTrip, scenarioMetrics({ travelMinutes: 170 })), true, "15% is included");
+});
+
+test("resolving a hard conflict qualifies even without a travel saving", () => {
+  const before = scenarioMetrics({ hardConflictCount: 1, travelMinutes: 100 });
+  const after = scenarioMetrics({ hardConflictCount: 0, travelMinutes: 120 });
+  assert.equal(qualifiesHotelBaseChange(before, after), true);
+});
+
+test("CHANGE_BASE uses re-solved metrics, stays bounded and excludes sub-threshold bases", () => {
+  const context = { hotelQuery: "Shinjuku hotel" };
+  const qualifyingRaw = "Senso-ji\nTokyo Skytree";
+  const qualifyingPlan = buildTripFromWishlist(qualifyingRaw, 2, "balanced", "en", context);
+  const qualifyingFit = assessTripFit(qualifyingRaw, 2, "balanced", "en", context, qualifyingPlan);
+  const alternatives = generateTripCounterfactuals(
+    qualifyingRaw,
+    2,
+    "balanced",
+    "en",
+    context,
+    qualifyingPlan,
+    qualifyingFit,
+  );
+  const baseChanges = alternatives.filter((alternative) => alternative.kind === "CHANGE_BASE");
+  assert.ok(baseChanges.length > 0);
+  assert.ok(baseChanges.every((alternative) => qualifiesHotelBaseChange(alternative.before, alternative.after)));
+  assert.ok(alternatives.length <= 3);
+
+  const signatures = new Set(Array.from({ length: 25 }, () => JSON.stringify(generateTripCounterfactuals(
+    qualifyingRaw,
+    2,
+    "balanced",
+    "en",
+    context,
+    qualifyingPlan,
+    qualifyingFit,
+  ))));
+  assert.equal(signatures.size, 1);
+
+  const subThresholdRaw = "Meiji Jingu\nShibuya Sky\nSenso-ji\nTokyo Skytree";
+  const subThresholdPlan = buildTripFromWishlist(subThresholdRaw, 2, "balanced", "en", context);
+  const subThresholdFit = assessTripFit(subThresholdRaw, 2, "balanced", "en", context, subThresholdPlan);
+  const subThresholdAlternatives = generateTripCounterfactuals(
+    subThresholdRaw,
+    2,
+    "balanced",
+    "en",
+    context,
+    subThresholdPlan,
+    subThresholdFit,
+  );
+  assert.equal(subThresholdAlternatives.some((alternative) => alternative.kind === "CHANGE_BASE"), false);
+});
 
 function unevenDurationFixture() {
   const definitions = [

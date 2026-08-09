@@ -1,7 +1,15 @@
 import { PROVIDER_QUOTA_SCHEMA_SQL } from "../../db/provider-quota-schema.ts";
 
 export type DurableQuotaProvider = "google" | "anthropic";
-export type DurableQuotaOperation = "live_routes" | "place_resolution" | "place_intelligence" | "fresh_voices";
+export type DurableQuotaOperation =
+  | "live_routes"
+  | "place_resolution"
+  | "place_intelligence"
+  | "fresh_voices"
+  | "hotel_recommendations"
+  | "food_recommendations"
+  | "food_ranking"
+  | "route_recommendations";
 export type DurableQuotaScope = "trip" | "session" | "day" | "month";
 
 export type DurableQuotaPolicy = Readonly<{
@@ -48,6 +56,45 @@ export const DURABLE_PROVIDER_QUOTA_POLICIES: DurableQuotaPolicies = Object.free
     maxPerSessionDay: 48,
     maxPerDay: 192,
     maxPerMonth: 1_920,
+  }),
+  // A route-wide hotel recommendation can issue three Google searches and a
+  // fourth fallback when the nearby search fails. Reserve that worst case so
+  // an internal fallback can never escape the durable ceiling.
+  hotel_recommendations: Object.freeze({
+    provider: "google",
+    maxPerRequest: 4,
+    maxPerTrip: 20,
+    maxPerSessionDay: 60,
+    maxPerDay: 600,
+    maxPerMonth: 6_000,
+  }),
+  // Nearby food discovery may make one bounded radius expansion. A fourteen
+  // day trip can have lunch and dinner slots, hence 56 provider events/trip.
+  food_recommendations: Object.freeze({
+    provider: "google",
+    maxPerRequest: 2,
+    maxPerTrip: 56,
+    maxPerSessionDay: 112,
+    maxPerDay: 2_000,
+    maxPerMonth: 20_000,
+  }),
+  food_ranking: Object.freeze({
+    provider: "anthropic",
+    maxPerRequest: 1,
+    maxPerTrip: 28,
+    maxPerSessionDay: 56,
+    maxPerDay: 192,
+    maxPerMonth: 1_920,
+  }),
+  // Search Along Route can fall back to the two route endpoints. Reserve all
+  // three searches even when the first one is sufficient.
+  route_recommendations: Object.freeze({
+    provider: "google",
+    maxPerRequest: 3,
+    maxPerTrip: 42,
+    maxPerSessionDay: 84,
+    maxPerDay: 75,
+    maxPerMonth: 2_250,
   }),
 });
 

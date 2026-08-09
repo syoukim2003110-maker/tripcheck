@@ -193,6 +193,10 @@ test("trip lifecycle rotation and provisional live-route preservation stay wired
     appSource,
     /routeRequestsPaused=\{!tripDateTouched \|\| Boolean\(plan && !currentTransitConvergence\)\}/,
   );
+  assert.match(
+    appSource,
+    /routePauseReason=\{!tripDateTouched \? "date_required"/,
+  );
 
   const finalDraftStart = appSource.indexOf("const finalDraft = buildTripFromWishlist(");
   const resetStart = appSource.indexOf("function resetTrip()", finalDraftStart);
@@ -205,4 +209,7 @@ test("trip lifecycle rotation and provisional live-route preservation stay wired
     mapSource,
     /fetch\("\/api\/live-routes", \{[^]*?headers: tripRequestHeaders\(\{ "Content-Type": "application\/json" \}\)/,
   );
+  assert.match(mapSource, /const embedViewPoints = routeRequestsPaused && embedPoints\.length > 1/);
+  assert.match(mapSource, /pathStops\.length === 0 \|\| routeRequestsPaused/);
+  assert.match(mapSource, /paused_date: "Date not set · visit order only"/);
 });

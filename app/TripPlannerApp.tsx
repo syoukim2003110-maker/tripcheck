@@ -1,7 +1,13 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import PlannerGoogleMap, { type FoodPin, type HotelPin, type RecommendationPin } from "./PlannerGoogleMap";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import PlannerGoogleMap, {
+  type FoodPin,
+  type HotelPin,
+  type PlannerMapDayLayer,
+  type RecommendationPin,
+} from "./PlannerGoogleMap";
+import PlannerDayTimeBar from "./PlannerDayTimeBar";
 import Icon, { type IconName } from "./PlannerIcons";
 import AirportOptionComparison from "./AirportOptionComparison";
 import SearchableCombobox, { type SearchableOption } from "./SearchableCombobox";
@@ -35,6 +41,7 @@ import {
 } from "../lib/planning-live-routes-client";
 import { PlaceResolutionError, requestPlaceResolution, type AmbiguousPlaceResolution } from "../lib/place-resolution-client";
 import { PLANNING_BUDGET, takeWithinPlanningBudget } from "../lib/planning-budget";
+import { poiAccessPolicyForStop } from "../lib/poi-access";
 import { resolveKnownStops, straightLineDistanceKm, type ResolvedInputStop, type RouteStop } from "../lib/route-optimizer";
 import type { Pace } from "../lib/trip-builder";
 import type { TransportMode, TravelPreference } from "../lib/time-feasibility";
@@ -73,6 +80,9 @@ import {
   type RouteFactEvidence,
 } from "../lib/feasibility-result";
 import { estimateStayMinutes } from "../lib/stay-estimates";
+import { detectGapsFromBuiltDay } from "../lib/gap-detection";
+import { createRecommendation, type FillerKind } from "../lib/itinerary-domain";
+import { evaluateRecommendationCandidate, recommendationPlaceAlreadyScheduled, recommendationPlanSnapshot, reserveDistinctRecommendationCandidates } from "../lib/recommendation-evaluator";
 import { requestRouteRecommendations, RouteRecommendationsError } from "../lib/route-recommendations-client";
 import type { RouteRecommendation, RouteRecommendationPoint } from "../lib/route-recommendations";
 import { createTripStore, type StoredTripRecord, type TripStore } from "../lib/trip-store";
@@ -105,7 +115,9 @@ import {
 
 type PlannerLocale = "en" | "ja";
 type PlannerInputStep = "places" | "conditions";
-type MobileResultView = "timeline" | "map";
+type PlannerBuildMode = "automatic" | "custom";
+type MobileResultView = "timeline" | "map" | "compact";
+type PlannerMapScope = "all" | "day";
 type PassportCountry = "unset" | "JP" | "other";
 type TransitConvergenceState = {
   inputKey: string;
@@ -123,6 +135,27 @@ const emptyTransitConvergenceState: TransitConvergenceState = {
   nonConverged: false,
   stopReason: null,
 };
+const plannerDayColors = ["#e2634e", "#356f9f", "#4b8060", "#7656a8"] as const;
+const TRIPCHECK_FILLER_PREFIX = "TripCheck recommendation";
+
+function fillerOccurrenceLine(index: number, kind: "micro" | "lunch" | "dinner" = "micro", atTime?: string) {
+  return `${TRIPCHECK_FILLER_PREFIX} ${kind} ${index + 1} — optional${/^\d{2}:\d{2}$/.test(atTime ?? "") ? ` — ${atTime}` : ""}`;
+}
+
+function recommendationStopId(providerRef: string) {
+  return providerRef.startsWith("google-") ? providerRef : `google-${providerRef}`;
+}
+
+function routeRecommendationFillerKind(candidate: RouteRecommendation): FillerKind {
+  const types = new Set(candidate.placeTypes);
+  return types.has("cafe") || types.has("coffee_shop") || types.has("bakery") || types.has("tea_house")
+    ? "CAFE"
+    : "MICRO_STOP";
+}
+
+function boundedRecommendationScore(value: number) {
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
 
 function upsertResolutionOverride(
   current: readonly ShareableResolutionOverride[],
@@ -189,6 +222,7 @@ type FoodState = {
   requestKey: string;
   query: string;
   candidates: FoodCandidate[];
+  fetchedAt?: string;
   notes: Record<string, { reason: string; tag: string }>;
   fresh: Record<string, FreshState>;
 };
@@ -268,6 +302,10 @@ function priceBand(level: HotelPriceLevel | null, destination: Destination) {
 
 function styledBestCandidate(candidates: HotelCandidate[], style: HotelStyleChoice) {
   if (style === "recommended") return candidates[0] ?? null;
+  // A dateless reference minimum or a relative price band cannot establish
+  // live value. Keep the value style unavailable until a dated, comparable
+  // availability source exists.
+  if (style === "value") return null;
   return candidates.find((candidate) => candidate.styles.includes(style)) ?? null;
 }
 
@@ -339,13 +377,12 @@ function newDeviceTripId() {
   return `trip-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-/* Axis winners are asserted only against the fetched candidate list, and only
- * when there is an actual comparison to make. */
+/* Axis winners are asserted only against comparable facts. Dateless reference
+ * minimums remain display facts, never a "best value" ranking. */
 function hotelAxisWinners(candidates: HotelCandidate[]) {
   if (candidates.length < 2) return { nearestId: null as string | null, topRatedId: null as string | null, valueId: null as string | null };
   let nearest = candidates[0];
   let topRated: HotelCandidate | null = null;
-  let value: HotelCandidate | null = null;
   for (const candidate of candidates) {
     if (
       candidate.routeBurdenMeters < nearest.routeBurdenMeters
@@ -357,9 +394,8 @@ function hotelAxisWinners(candidates: HotelCandidate[]) {
       const bestCount = topRated?.userRatingCount ?? 0;
       if (candidate.rating > bestRating || (candidate.rating === bestRating && count > bestCount)) topRated = candidate;
     }
-    if (candidate.styles.includes("value") && (value === null || candidate.score > value.score)) value = candidate;
   }
-  return { nearestId: nearest.id, topRatedId: topRated?.id ?? null, valueId: value?.id ?? null };
+  return { nearestId: nearest.id, topRatedId: topRated?.id ?? null, valueId: null as string | null };
 }
 
 /** Keep the current choice visible, then protect price and satisfaction axes. */
@@ -376,6 +412,32 @@ function hotelShortlist(candidates: HotelCandidate[], selectedId?: string | null
     if (!ordered.some((entry) => entry.id === candidate.id)) ordered.push(candidate);
   }
   return ordered.slice(0, 3);
+}
+
+function builtPlanTravelMinutes(plan: BuiltTripPlan) {
+  return plan.days.reduce((sum, planDay) => (
+    sum
+    + (planDay.hotelOutboundMinutes ?? 0)
+    + (planDay.hotelInboundMinutes ?? 0)
+    + planDay.legs.reduce((legSum, leg) => legSum + leg.comparison.recommended.minutes, 0)
+  ), 0);
+}
+
+function clockRangeContainsVisit(range: string, arrival: string, departure: string) {
+  const toMinutes = (value: string) => {
+    const match = /^(?:([01]\d|2[0-3])):([0-5]\d)$/.exec(value);
+    return match ? Number(match[1]) * 60 + Number(match[2]) : null;
+  };
+  const [startText, endText] = range.split("–");
+  const start = toMinutes(startText ?? "");
+  let end = toMinutes(endText ?? "");
+  let visitStart = toMinutes(arrival);
+  let visitEnd = toMinutes(departure);
+  if (start === null || end === null || visitStart === null || visitEnd === null) return false;
+  if (end < start) end += 1440;
+  while (visitStart < start) visitStart += 1440;
+  while (visitEnd < visitStart) visitEnd += 1440;
+  return visitStart >= start && visitEnd <= end;
 }
 
 /* Stop order can change when the route is optimized, so the hotel becomes
@@ -409,9 +471,12 @@ type PlannerEditState = {
   removedStops: Array<{ id: string; name: string }>;
 };
 
-// The code for later experiments remains available, but P0 has one job:
-// resolve a wishlist and return an explainable feasibility verdict.
-const P0_CORE_ONLY = true;
+// Product / UX specification v0.3 promotes route-aware hotels, meals and one
+// useful gap-filler per day into the core completion experience.  Keep the
+// switch explicit so a provider incident can still be isolated without
+// weakening the deterministic feasibility engine.
+const P0_CORE_ONLY = false;
+const P1_TRAVEL_ENRICHMENTS = false;
 const initialBuildProgress: BuildProgress = {
   stage: "resolving",
   current: 0,
@@ -514,19 +579,18 @@ function formatDuration(minutes: number, locale: PlannerLocale) {
 }
 
 function feasibilityStateCopy(state: FeasibilityState, locale: PlannerLocale, days: number, stops: number) {
-  const count = locale === "ja" ? `${stops}件` : `${stops} place${stops === 1 ? "" : "s"}`;
   if (locale === "ja") {
-    if (state === "VERIFIED_FEASIBLE") return { label: "確認済みで成立", headline: `確認できた前提では${days}日で${count}を回れます` };
-    if (state === "PROVISIONAL_FEASIBLE") return { label: "暫定成立", headline: `現在の前提では${days}日で${count}を回れます` };
-    if (state === "FEASIBLE_IF_ASSUMPTIONS") return { label: "条件付き成立", headline: `未確認の前提が合えば${days}日で${count}を回れます` };
-    if (state === "INFEASIBLE_HARD_CONFLICT") return { label: "要変更", headline: `現在の条件では${days}日で${count}を回れません` };
-    return { label: "判定保留", headline: "場所または重要な条件を確認すると、必要日数を判定できます" };
+    if (state === "VERIFIED_FEASIBLE") return { label: `全${stops}か所`, headline: `${days}日なら回れます` };
+    if (state === "PROVISIONAL_FEASIBLE") return { label: `全${stops}か所`, headline: `${days}日で回れそうです` };
+    if (state === "FEASIBLE_IF_ASSUMPTIONS") return { label: "確認が必要", headline: `${days}日案は確認が必要です` };
+    if (state === "INFEASIBLE_HARD_CONFLICT") return { label: "要修正", headline: "このままでは回れません" };
+    return { label: "判定保留", headline: "場所を確認すると判定できます" };
   }
-  if (state === "VERIFIED_FEASIBLE") return { label: "Verified feasible", headline: `${count} fit in ${days} day${days === 1 ? "" : "s"} under the verified facts` };
-  if (state === "PROVISIONAL_FEASIBLE") return { label: "Provisional", headline: `${count} fit in ${days} day${days === 1 ? "" : "s"} under the current assumptions` };
-  if (state === "FEASIBLE_IF_ASSUMPTIONS") return { label: "Conditional", headline: `${count} fit in ${days} day${days === 1 ? "" : "s"} if the unverified assumptions hold` };
-  if (state === "INFEASIBLE_HARD_CONFLICT") return { label: "Needs a change", headline: `${count} do not fit in ${days} day${days === 1 ? "" : "s"} under the current constraints` };
-  return { label: "Not enough evidence", headline: "Confirm the unresolved places or critical conditions to calculate the required days" };
+  if (state === "VERIFIED_FEASIBLE") return { label: `${stops} places`, headline: `${days} day${days === 1 ? "" : "s"} works` };
+  if (state === "PROVISIONAL_FEASIBLE") return { label: `${stops} places`, headline: `${days} day${days === 1 ? "" : "s"} should work` };
+  if (state === "FEASIBLE_IF_ASSUMPTIONS") return { label: "Check needed", headline: `Confirm a few details for this ${days}-day plan` };
+  if (state === "INFEASIBLE_HARD_CONFLICT") return { label: "Needs a change", headline: "This plan will not work as it is" };
+  return { label: "Not decided", headline: "Confirm the places to finish the plan" };
 }
 
 function feasibilityStateIcon(state: FeasibilityState): IconName {
@@ -662,8 +726,8 @@ function alternativeCopy(alternative: AlternativePlan, locale: PlannerLocale) {
       : { title: `Use ${mode} from ${from} to ${to}`, detail: `${tradeoff}${improvement ? ` · ${improvement}` : ""}` };
   }
   if (alternative.kind === "OPTIMIZE_ORDER") return locale === "ja"
-    ? { title: "日ごとの順番を最短移動にする", detail: `元の日別割当と固定条件を守り、行順だけを解放${improvement ? ` · ${improvement}` : ""}` }
-    : { title: "Use the shortest-travel order", detail: `Keeps day assignments and fixed constraints, while releasing pasted line order${improvement ? ` · ${improvement}` : ""}` };
+    ? { title: "日ごとの移動を減らす順番にする", detail: `元の日別割当と固定条件を守り、行順だけを解放${improvement ? ` · ${improvement}` : ""}` }
+    : { title: "Use a lower-travel order", detail: `Keeps day assignments and fixed constraints, while releasing pasted line order${improvement ? ` · ${improvement}` : ""}` };
   const stopName = alternative.change.stopName ?? alternative.loss?.stopName ?? "Optional";
   const stayMinutes = alternative.loss?.stayMinutes ?? 0;
   return locale === "ja"
@@ -747,7 +811,7 @@ const ui = {
     pace: "旅のペース",
     meal: "食事の提案",
     travelHeading: "移動手段",
-    travelAuto: "おまかせ（最短）",
+    travelAuto: "おまかせ（効率重視）",
     travelCar: "レンタカー・車",
     moveCar: "車",
     timebandHeading: "1日の時間帯",
@@ -900,8 +964,8 @@ const ui = {
     nightlyNightMissing: "この夜は候補を取得できず、共通のホテルのままです。",
     styleRecommended: "おすすめ",
     styleLuxury: "ラグジュアリー",
-    styleValue: "お手頃で高評価",
-    styleNote: "価格帯はGoogleの掲載区分です。",
+    styleValue: "参考価格あり",
+    styleNote: "参考価格は日付・空室未指定のため、コスパ順位には使いません。",
     hotelRankNote: "各日の行き先を1日1票で比較し、直線距離の平均と最も遠い日の負担が小さいホテルを優先。そこへGoogle評価と口コミ量を加えて総合順位を決めます。実際の所要時間は地図の経路で確認します。",
     hotelCompareHeading: "候補を比べる（タップで切り替え）",
     priceUnlisted: "価格未掲載",
@@ -910,15 +974,15 @@ const ui = {
     hotelReasonTop: "全日程への行きやすさ・評価・口コミ量の合計で1位の候補です。",
     hotelReasonNearest: "各日の行き先への距離負担が最も小さい候補です。",
     hotelReasonRated: "十分な口コミ数がある候補の中で、Google評価が最も高いホテルです。",
-    hotelReasonValue: "Googleの価格帯がお手頃で、評価4.1以上・口コミ100件以上の候補です。",
+    hotelReasonValue: "参考価格は表示しますが、日付と空室が未確認のためコスパ1位とは判定しません。",
     hotelReasonSpecified: "入力したホテル名に一致した候補です。行程の出発・帰着地点にも反映しています。",
     hotelReasonPicked: "切り替えて選んだ候補です。",
     hotelPurposeHeading: "何を優先する？",
     hotelPurposeBalanced: "総合",
     hotelPurposeNearest: "移動を少なく",
     hotelPurposeRated: "評価重視",
-    hotelPurposeValue: "コスパ",
-    hotelPurposeHelp: "同じ候補が複数の条件で1位になることがあります。",
+    hotelPurposeValue: "価格比較は準備中",
+    hotelPurposeHelp: "総移動時間と評価を比較します。価格・空室は予約サイトで確認してください。",
     axisNearest: "全日程に行きやすい目安",
     axisTopRated: "最高評価",
     distanceFrom: (distance: string) => `各日の中心へ直線平均約${distance}`,
@@ -1060,7 +1124,7 @@ const ui = {
     pace: "Pace",
     meal: "Food ideas",
     travelHeading: "Getting around",
-    travelAuto: "Best · fastest",
+    travelAuto: "Recommended · efficient",
     travelCar: "Rental car",
     moveCar: "Drive",
     timebandHeading: "Day rhythm",
@@ -1213,8 +1277,8 @@ const ui = {
     nightlyNightMissing: "No option loaded for this night — the shared hotel stays.",
     styleRecommended: "Best match",
     styleLuxury: "Luxury",
-    styleValue: "Value · high rated",
-    styleNote: "Price bands come from Google's listing.",
+    styleValue: "Reference price available",
+    styleNote: "Reference prices are dateless and availability is unknown, so they do not determine a value winner.",
     hotelRankNote: "Every day gets one equal vote. Hotels with a lower average and worst-day straight-line distance rank higher, then Google rating and review strength are added. Confirm actual travel time on the mapped routes.",
     hotelCompareHeading: "Compare picks — tap to switch",
     priceUnlisted: "No listed price",
@@ -1223,15 +1287,15 @@ const ui = {
     hotelReasonTop: "Top combined score for whole-trip access, rating and review strength.",
     hotelReasonNearest: "Lowest distance burden across each day's destinations.",
     hotelReasonRated: "Highest Google rating among candidates backed by at least 50 reviews.",
-    hotelReasonValue: "Google lists a lower price band, with at least a 4.1 rating and 100 reviews.",
+    hotelReasonValue: "A reference price is shown, but TripCheck does not call it best value without dated availability.",
     hotelReasonSpecified: "This matches the hotel you entered and is also used as the route's start and end base.",
     hotelReasonPicked: "Your pick from the alternatives.",
     hotelPurposeHeading: "What matters most?",
     hotelPurposeBalanced: "Overall",
     hotelPurposeNearest: "Less travel",
     hotelPurposeRated: "Top rated",
-    hotelPurposeValue: "Best value",
-    hotelPurposeHelp: "One hotel can win more than one category.",
+    hotelPurposeValue: "Price comparison pending",
+    hotelPurposeHelp: "Compare total travel and rating here; confirm price and availability with a booking provider.",
     axisNearest: "Best access estimate",
     axisTopRated: "Top rated",
     distanceFrom: (distance: string) => `~${distance} straight-line average`,
@@ -1462,15 +1526,17 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   const [detectedDestinationId, setDetectedDestinationId] = useState<DestinationId | null>(null);
   const [itinerary, setItinerary] = useState("");
   const [inputStep, setInputStep] = useState<PlannerInputStep>("places");
+  const [buildMode, setBuildMode] = useState<PlannerBuildMode>("automatic");
   const [isResolvingPlaces, setIsResolvingPlaces] = useState(false);
   const [reviewedInputSignature, setReviewedInputSignature] = useState("");
   const [mobileResultView, setMobileResultView] = useState<MobileResultView>("timeline");
+  const [mapScope, setMapScope] = useState<PlannerMapScope>("day");
   const [tripDays, setTripDays] = useState(3);
   const [tripStartDate, setTripStartDate] = useState(() => defaultTripDate());
   const [tripDateTouched, setTripDateTouched] = useState(false);
   const [hotelQuery, setHotelQuery] = useState("");
   const [pace, setPace] = useState<Pace>("balanced");
-  const [mealPlan, setMealPlan] = useState<MealPlan>("none");
+  const [mealPlan, setMealPlan] = useState<MealPlan>("all");
   const [arrivalAirport, setArrivalAirport] = useState<AirportCode>("none");
   const [arrivalTime, setArrivalTime] = useState("");
   const [departureAirport, setDepartureAirport] = useState<AirportCode>("none");
@@ -1490,6 +1556,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   const [placeWarning, setPlaceWarning] = useState(false);
   const [activeDay, setActiveDay] = useState(0);
   const [inspector, setInspector] = useState<Inspector>(null);
+  const [mapFocusedStopId, setMapFocusedStopId] = useState<string | null>(null);
   const [liveTransit, setLiveTransit] = useState<Record<string, number>>({});
   const [liveTransitTransferCounts, setLiveTransitTransferCounts] = useState<Record<string, number>>({});
   const [liveWalking, setLiveWalking] = useState<Record<string, number>>({});
@@ -1519,6 +1586,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   const [removedStops, setRemovedStops] = useState<Array<{ id: string; name: string }>>([]);
   const [openingWindowsByDay, setOpeningWindowsByDay] = useState<Record<string, Record<number, VisitWindow[]>>>({});
   const [foodSearches, setFoodSearches] = useState<Record<string, FoodState>>({});
+  const [foodRecommendationNotice, setFoodRecommendationNotice] = useState("");
   const [intelligence, setIntelligence] = useState<Record<string, IntelligenceState>>({});
   const [freshVoices, setFreshVoices] = useState<Record<string, FreshState>>({});
   const [hotelState, setHotelState] = useState<HotelState>(emptyHotelState);
@@ -1531,6 +1599,8 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   const [hotelPurpose, setHotelPurpose] = useState<HotelPurpose>("balanced");
   const [nightlyHotels, setNightlyHotels] = useState<NightlyHotelState>(emptyNightlyHotelState);
   const [routeRecommendationSearches, setRouteRecommendationSearches] = useState<Record<string, RouteRecommendationState>>({});
+  const [routeRecommendationNotice, setRouteRecommendationNotice] = useState("");
+  const [routeAlternativesExpanded, setRouteAlternativesExpanded] = useState(false);
   const [routeGeometryByDay, setRouteGeometryByDay] = useState<Record<string, RouteRecommendationPoint[]>>({});
   const [durationOverrides, setDurationOverrides] = useState<Record<string, number>>({});
   const [userStayMinutes, setUserStayMinutes] = useState<Record<string, number>>({});
@@ -2220,7 +2290,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     return payload ? JSON.stringify(payload) : "";
   }, [plan]);
   useEffect(() => {
-    if (P0_CORE_ONLY) {
+    if (!P1_TRAVEL_ENRICHMENTS) {
       setWeatherByDay({});
       return;
     }
@@ -2245,7 +2315,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     return payload ? JSON.stringify(payload) : "";
   }, [plan, activeDestination]);
   useEffect(() => {
-    if (P0_CORE_ONLY) {
+    if (!P1_TRAVEL_ENRICHMENTS) {
       setHolidaysByDate({});
       return;
     }
@@ -2326,7 +2396,91 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       + (day.hotelOutboundMinutes ?? 0)
       + (day.hotelInboundMinutes ?? 0)
     : 0;
+  const fillerKindsByStopId = useMemo(() => {
+    const kindsByInputIndex = new Map<number, "micro" | "lunch" | "dinner">();
+    parsedWishlistPlaces(itinerary).forEach((place, index) => {
+      if (!place.name.startsWith(TRIPCHECK_FILLER_PREFIX)) return;
+      const kind = /\blunch\b/i.test(place.name) ? "lunch" : /\bdinner\b/i.test(place.name) ? "dinner" : "micro";
+      kindsByInputIndex.set(index, kind);
+    });
+    return new Map(resolvedStops.flatMap((stop) => {
+      const kind = typeof stop.inputIndex === "number" ? kindsByInputIndex.get(stop.inputIndex) : undefined;
+      return kind ? [[stop.id, kind] as const] : [];
+    }));
+  }, [itinerary, resolvedStops]);
+  const fillerStopIds = useMemo(() => new Set(fillerKindsByStopId.keys()), [fillerKindsByStopId]);
   const mapStops = useMemo(() => day ? day.stops.map(({ stop }) => stop) : [], [day]);
+  const mapItemKinds = useMemo(() => Object.fromEntries(
+    mapStops.map((stop) => {
+      const fillerKind = fillerKindsByStopId.get(stop.id);
+      return [stop.id, fillerKind === "lunch" || fillerKind === "dinner" ? "meal" : fillerKind ? "filler" : "anchor"] as const;
+    }),
+  ), [fillerKindsByStopId, mapStops]);
+  const mapWarningStopIds = useMemo(() => day?.stops.flatMap((entry) => (
+    entry.reservationLateMinutes > 0
+    || entry.openingStatus === "conflict"
+    || entry.openingStatus === "closed_day"
+    || entry.openingStatus === "last_entry_conflict"
+      ? [entry.stop.id]
+      : []
+  )) ?? [], [day]);
+  const mapDayLayers = useMemo<PlannerMapDayLayer[]>(() => {
+    if (!plan) return [];
+    return plan.days.map((planDay, dayIndex) => {
+      const scheduledStops = planDay.stops.map(({ stop }) => stop);
+      const startBase = planDay.startBase ?? plan.selectedBase ?? null;
+      const endBase = planDay.endBase ?? startBase;
+      const warningIds = new Set(planDay.stops.flatMap((entry) => (
+        entry.reservationLateMinutes > 0
+        || entry.openingStatus === "conflict"
+        || entry.openingStatus === "closed_day"
+        || entry.openingStatus === "last_entry_conflict"
+          ? [entry.stop.id]
+          : []
+      )));
+      const layerStops: PlannerMapDayLayer["stops"] = [
+        ...(startBase ? [{
+          id: startBase.id,
+          name: startBase.name,
+          latitude: startBase.latitude,
+          longitude: startBase.longitude,
+          kind: "hotel" as const,
+        }] : []),
+        ...scheduledStops.map((stop, index) => ({
+          id: stop.id,
+          name: stop.name,
+          latitude: stop.latitude,
+          longitude: stop.longitude,
+          sequence: index + 1,
+          kind: fillerKindsByStopId.get(stop.id) === "lunch" || fillerKindsByStopId.get(stop.id) === "dinner"
+            ? "meal" as const
+            : fillerStopIds.has(stop.id) ? "filler" as const : "anchor" as const,
+          warning: warningIds.has(stop.id),
+        })),
+        ...(endBase && endBase.id !== startBase?.id ? [{
+          id: endBase.id,
+          name: endBase.name,
+          latitude: endBase.latitude,
+          longitude: endBase.longitude,
+          kind: "hotel" as const,
+        }] : []),
+      ];
+      const path = startBase && scheduledStops.length > 0
+        ? [startBase, ...scheduledStops, endBase ?? startBase]
+        : scheduledStops;
+      const routeSegments = path.slice(0, -1).map((from, index) => {
+        const to = path[index + 1];
+        const factId = `route:${planDay.label}:${from.id}:${to.id}`;
+        return routeEvidenceByFactId[factId]?.routeGeometry?.points ?? null;
+      });
+      return {
+        dayIndex,
+        dayColor: plannerDayColors[dayIndex % plannerDayColors.length],
+        stops: layerStops,
+        routeSegments,
+      };
+    });
+  }, [fillerKindsByStopId, fillerStopIds, plan, routeEvidenceByFactId]);
   const routeDepartureTimes = useMemo(() => {
     if (!day?.date || mapStops.length === 0) return [];
     const stopDeparture = (index: number) => day.stops[index]?.departure ?? day.finishTime;
@@ -2384,9 +2538,19 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   const recommendationRoutePoints = routeGeometryByDay[routeGeometryKey]?.length >= 2
     ? routeGeometryByDay[routeGeometryKey]
     : scheduledRecommendationRoutePoints;
+  const activeDayGaps = useMemo(() => day && activeFitDay
+    ? detectGapsFromBuiltDay(day, activeFitDay, { dayIndex: activeDay, transferBufferMinutes })
+    : [], [activeDay, activeFitDay, day, transferBufferMinutes]);
+  const primaryRecommendationGap = activeDayGaps[0] ?? null;
+  const recommendationSearchPoints = useMemo<RouteRecommendationPoint[]>(() => {
+    const segment = primaryRecommendationGap?.routeSegment;
+    if (!segment) return recommendationRoutePoints;
+    const points = [segment.from, segment.to].filter((point): point is RouteRecommendationPoint => Boolean(point));
+    return points.length > 0 ? points : recommendationRoutePoints;
+  }, [primaryRecommendationGap, recommendationRoutePoints]);
   const routeRecommendationKey = useMemo(() => day
-    ? `${locale}|${requestDestination}|${activeDay}|${recommendationRoutePoints.map((point) => `${point.latitude.toFixed(5)},${point.longitude.toFixed(5)}`).join("|")}`
-    : "", [activeDay, day, locale, recommendationRoutePoints, requestDestination]);
+    ? `${locale}|${requestDestination}|${activeDay}|${primaryRecommendationGap?.id ?? "no-gap"}|${recommendationSearchPoints.map((point) => `${point.latitude.toFixed(5)},${point.longitude.toFixed(5)}`).join("|")}`
+    : "", [activeDay, day, locale, primaryRecommendationGap?.id, recommendationSearchPoints, requestDestination]);
   const activeRouteRecommendationState = routeRecommendationKey
     ? routeRecommendationSearches[routeRecommendationKey] ?? emptyRouteRecommendationState
     : emptyRouteRecommendationState;
@@ -2401,6 +2565,24 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     () => plan?.foodRecommendationSlots.filter((slot) => slot.dayIndex === activeDay) ?? [],
     [activeDay, plan],
   );
+  const mealCandidatesBySlot = useMemo<Record<string, FoodCandidate[]>>(() => {
+    const usedProviderRefs = new Set(resolvedStops.flatMap((stop) => (
+      plannedStopIds.has(stop.id) && stop.providerRef ? [stop.providerRef] : []
+    )));
+    const next: Record<string, FoodCandidate[]> = {};
+    for (const slot of daySlots) {
+      const state = foodSearches[slot.id];
+      if (state?.status !== "ready" || state.requestKey !== foodRecommendationRequestKey(slot, locale)) continue;
+      const selectedId = mealSelections[slot.id];
+      next[slot.id] = reserveDistinctRecommendationCandidates(
+        state.candidates,
+        usedProviderRefs,
+        selectedId ?? null,
+        3,
+      );
+    }
+    return next;
+  }, [daySlots, foodSearches, locale, mealSelections, plannedStopIds, resolvedStops]);
   const selectedBuiltStop = inspector?.kind === "stop" && day
     ? day.stops.find(({ stop }) => stop.id === inspector.stopId) ?? null
     : null;
@@ -2422,6 +2604,22 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   const selectedHotel = hotelState.selectedId
     ? hotelState.candidates.find((candidate) => candidate.id === hotelState.selectedId) ?? null
     : null;
+  const hotelTravelMinutesById = useMemo(() => !hasPlan
+    ? {} as Record<string, number>
+    : Object.fromEntries(hotelState.candidates.map((candidate) => [
+      candidate.id,
+      builtPlanTravelMinutes(buildTripFromWishlist(
+        itinerary,
+        tripDays,
+        pace,
+        locale,
+        {
+          ...activePlannerContext,
+          resolvedBase: hotelAsResolvedBase(candidate, hotelQuery, candidate.address.slice(0, 100) || candidate.name, ""),
+        },
+      )),
+    ])), [activePlannerContext, hasPlan, hotelQuery, hotelState.candidates, itinerary, locale, pace, tripDays]);
+  const bestHotelTravelMinutes = Math.min(...Object.values(hotelTravelMinutesById));
   const hotelAxis = useMemo(() => hotelAxisWinners(hotelState.candidates), [hotelState.candidates]);
   const hasRakutenHotelEvidence = hotelState.candidates.some((candidate) => candidate.rakuten !== null);
   const hotelPriceLabel = useCallback((candidate: HotelCandidate) => (
@@ -2538,6 +2736,9 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   const resultStateCopy = feasibilityResult
     ? feasibilityStateCopy(feasibilityResult.state, locale, plan?.requestedDays ?? tripDays, plan?.scheduledStopCount ?? 0)
     : null;
+  const deferredAnchorStops = useMemo(() => plan
+    ? [...plan.deferredUnavailableStops, ...plan.deferredOptionalStops]
+    : [], [plan]);
   const displayedMapStops = hasPlan ? mapStops : previewStops;
   const displayedMapBase = hasPlan ? base : null;
   const manualPinDraft = manualPinTarget === null ? null : manualPlaceDrafts[manualPinTarget] ?? null;
@@ -2554,7 +2755,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     for (const slot of daySlots) {
       const state = foodSearches[slot.id];
       if (state?.status !== "ready" || state.requestKey !== foodRecommendationRequestKey(slot, locale)) continue;
-      state.candidates.forEach((candidate, index) => {
+      (mealCandidatesBySlot[slot.id] ?? []).forEach((candidate, index) => {
         if (typeof candidate.latitude !== "number" || typeof candidate.longitude !== "number") return;
         const existing = byCandidate.get(candidate.id);
         if (existing) {
@@ -2574,10 +2775,10 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       });
     }
     return [...byCandidate.values()];
-  }, [daySlots, foodSearches, locale]);
+  }, [daySlots, foodSearches, locale, mealCandidatesBySlot]);
   const recommendationPins = useMemo<RecommendationPin[]>(() => (
-    inspector?.kind === "recommendations" && activeRouteRecommendationState.status === "ready"
-      ? activeRouteRecommendationState.candidates.map((candidate, index) => ({
+    activeRouteRecommendationState.status === "ready"
+      ? activeRouteRecommendationState.candidates.slice(0, routeAlternativesExpanded ? 3 : 1).map((candidate, index) => ({
         id: candidate.id,
         name: candidate.name,
         latitude: candidate.latitude,
@@ -2585,13 +2786,17 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
         index,
       }))
       : []
-  ), [activeRouteRecommendationState, inspector?.kind]);
+  ), [activeRouteRecommendationState, routeAlternativesExpanded]);
 
   // Alpha guarantees one bounded review for 5–12 POIs. Larger pastes must be
   // split explicitly; sending only the first twelve would make omitted places
   // look like resolver failures and would violate the visible input contract.
   const canReviewPlaces = parsedPlaceCount > 0 && parsedPlaceCount <= 12 && !isResolvingPlaces;
-  const canBuild = placesHaveBeenReviewed && itinerary.trim().length >= 3 && !isBuilding;
+  const canBuild = parsedPlaceCount > 0
+    && parsedPlaceCount <= 12
+    && itinerary.trim().length >= 3
+    && !isResolvingPlaces
+    && !isBuilding;
 
   const handleRouteGeometry = useCallback((points: RouteRecommendationPoint[]) => {
     if (!routeGeometryKey) return;
@@ -2605,8 +2810,36 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   }, [routeGeometryKey]);
 
   const handleSelectStop = useCallback((stopId: string | null) => {
+    setMapFocusedStopId(stopId);
     setInspector(stopId ? { kind: "stop", stopId } : null);
+    if (stopId && typeof document !== "undefined") {
+      const target = document.querySelector<HTMLElement>(`[data-planner-stop-id="${CSS.escape(stopId)}"]`);
+      target?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
   }, []);
+
+  // While the traveller reads the timeline, keep the map centred on the item
+  // closest to the rail's visual centre. This changes map focus only; it does
+  // not open the inspector or mutate the plan.
+  useEffect(() => {
+    if (!hasPlan || typeof IntersectionObserver === "undefined") return;
+    const root = document.querySelector<HTMLElement>(".planner-sheet");
+    const rows = Array.from(document.querySelectorAll<HTMLElement>("[data-planner-stop-id]"));
+    if (!root || rows.length === 0) return;
+    const visible = new Map<string, number>();
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        const id = (entry.target as HTMLElement).dataset.plannerStopId;
+        if (!id) continue;
+        if (entry.isIntersecting) visible.set(id, entry.intersectionRatio);
+        else visible.delete(id);
+      }
+      const next = [...visible].sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))[0]?.[0] ?? null;
+      if (next) setMapFocusedStopId(next);
+    }, { root, rootMargin: "-28% 0px -42% 0px", threshold: [0.15, 0.5, 0.85] });
+    rows.forEach((row) => observer.observe(row));
+    return () => observer.disconnect();
+  }, [activeDay, hasPlan, plan?.days]);
 
   // A photo that 404s must not leave a broken frame (17.4). The node stays in
   // the DOM (hidden) so React's reconciliation is never fighting a manually
@@ -2877,20 +3110,35 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
         routePoints: routeContext.routePoints,
       }, locale, requestDestination, controller.signal);
       if (controller.signal.aborted || hotelPlanSignatureRef.current !== signatureAtStart) return;
-      const axes = hotelAxisWinners(response.candidates);
+      const rankedCandidates = response.candidates
+        .map((candidate) => ({
+          candidate,
+          travelMinutes: builtPlanTravelMinutes(buildTripFromWishlist(
+            itinerary,
+            tripDays,
+            pace,
+            locale,
+            { ...activePlannerContext, resolvedBase: hotelAsResolvedBase(candidate, hotelQuery, searchAnchor.area, response.fetchedAt) },
+          )),
+        }))
+        .sort((left, right) => left.travelMinutes - right.travelMinutes
+          || right.candidate.score - left.candidate.score
+          || left.candidate.id.localeCompare(right.candidate.id))
+        .map(({ candidate }) => candidate);
+      const axes = hotelAxisWinners(rankedCandidates);
       const selected = hotelStyle !== "recommended"
-        ? styledBestCandidate(response.candidates, hotelStyle) ?? response.candidates[0] ?? null
+        ? styledBestCandidate(rankedCandidates, hotelStyle) ?? rankedCandidates[0] ?? null
         : hotelPurpose === "nearest"
-          ? response.candidates.find((candidate) => candidate.id === axes.nearestId) ?? response.candidates[0] ?? null
+          ? rankedCandidates.find((candidate) => candidate.id === axes.nearestId) ?? rankedCandidates[0] ?? null
           : hotelPurpose === "rated"
-            ? response.candidates.find((candidate) => candidate.id === axes.topRatedId) ?? response.candidates[0] ?? null
+            ? rankedCandidates.find((candidate) => candidate.id === axes.topRatedId) ?? rankedCandidates[0] ?? null
             : hotelPurpose === "value"
-              ? response.candidates.find((candidate) => candidate.id === axes.valueId) ?? response.candidates[0] ?? null
-              : response.candidates[0] ?? null;
+              ? rankedCandidates.find((candidate) => candidate.id === axes.valueId) ?? rankedCandidates[0] ?? null
+              : rankedCandidates[0] ?? null;
       if (!selected) throw new Error("no_hotel_candidates");
       setHotelState({
         status: "ready",
-        candidates: response.candidates,
+        candidates: hotelShortlist(rankedCandidates, selected.id),
         selectedId: selected.id,
         fresh: { status: "loading", result: null },
       });
@@ -2981,6 +3229,13 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     commitPlannerEdit({ removedStops: removedStops.filter((entry) => entry.id !== stopId) });
   }
 
+  function removeSystemFiller(stop: RouteStop) {
+    removeStopFromPlan(stop);
+    setMealSelections((current) => Object.fromEntries(Object.entries(current).filter(([, candidateId]) => (
+      recommendationStopId(candidateId) !== stop.id
+    ))));
+  }
+
   function moveStopToDay(stopId: string, dayIndex: number) {
     if (dayIndex === activeDay) {
       // Tapping the current day releases the stop back to automatic placement.
@@ -2999,16 +3254,39 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   function mealRowsAfter(stopId: string, isLastStop: boolean) {
     return daySlots
       .filter((slot) => {
-        const candidateId = mealSelections[slot.id];
-        if (!candidateId) return false;
         return slot.kind === "lunch" ? slot.anchorStopId === stopId : isLastStop;
       })
       .sort((left, right) => (left.kind === right.kind ? 0 : left.kind === "lunch" ? -1 : 1))
       .flatMap((slot) => {
-        const candidate = foodSearches[slot.id]?.candidates.find((entry) => entry.id === mealSelections[slot.id]);
+        const state = foodSearches[slot.id];
+        if (state?.status !== "ready") return [(
+          <li className="planner-meal-row is-proposed is-pending" key={`meal-${slot.id}`}>
+            <span className="planner-meal-stop">
+              <time>{slot.window.split("–")[0]}</time>
+              <span className="planner-meal-dot" aria-hidden="true"><Icon name="fork" size={13} /></span>
+              <span className="planner-stop-main">
+                <small className="planner-filler-label"><Icon name="spark" size={10} />{locale === "ja" ? "おすすめ枠" : "Recommendation slot"}</small>
+                <b>{slot.kind === "lunch" ? (locale === "ja" ? "動線上の昼食を確認中" : "Checking lunch along the route") : (locale === "ja" ? "帰路の夕食を確認中" : "Checking dinner on the way back")}</b>
+                <small>{state?.status === "unavailable"
+                  ? locale === "ja" ? "候補を取得できませんでした。旅程はそのまま使えます。" : "Candidates did not load. The itinerary still works without one."
+                  : locale === "ja" ? "営業時間と動線を確認してから候補を表示します。" : "A candidate appears only after its route and hours are checked."}</small>
+              </span>
+            </span>
+            <span className="planner-filler-actions">
+              <button disabled={state?.status === "loading"} onClick={() => void findFood(slot, { reveal: true })} type="button">
+                {state?.status === "loading" ? (locale === "ja" ? "確認中" : "Checking") : (locale === "ja" ? "候補を見る" : "Find options")}
+              </button>
+            </span>
+          </li>
+        )];
+        const selectedId = mealSelections[slot.id];
+        const eligibleCandidates = mealCandidatesBySlot[slot.id] ?? [];
+        const candidate = eligibleCandidates.find((entry) => entry.id === selectedId) ?? eligibleCandidates[0];
         if (!candidate) return [];
+        if (selectedId && plannedStopIds.has(recommendationStopId(selectedId))) return [];
+        const accepted = selectedId === candidate.id;
         return [(
-          <li className="planner-meal-row" key={`meal-${slot.id}`}>
+          <li className={`planner-meal-row${accepted ? " is-accepted" : " is-proposed"}`} key={`meal-${slot.id}`}>
             <button
               className="planner-meal-stop"
               onClick={() => setInspector({ kind: "food", slotId: slot.id, candidateId: candidate.id })}
@@ -3017,24 +3295,157 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
               <time>{slot.window.split("–")[0]}</time>
               <span className="planner-meal-dot" aria-hidden="true"><Icon name="fork" size={13} /></span>
               <span className="planner-stop-main">
+                <small className="planner-filler-label"><Icon name="spark" size={10} />{accepted ? (locale === "ja" ? "旅程に追加済み" : "Added to this day") : (locale === "ja" ? "おすすめ" : "Recommended")}</small>
                 <b>{candidate.name}</b>
-                <small>{slot.kind === "lunch" ? text.lunchChip : text.dinnerChip} · {slot.window}</small>
+                <small>{slot.kind === "lunch" ? text.lunchChip : text.dinnerChip} · {slot.window}{candidate.distanceMeters !== null ? ` · ${locale === "ja" ? `動線から約${Math.max(1, Math.round(candidate.distanceMeters / 80))}分` : `~${Math.max(1, Math.round(candidate.distanceMeters / 80))} min from the route`}` : ""}</small>
               </span>
             </button>
+            <span className="planner-filler-actions">
+              <button onClick={() => toggleMealSelection(slot.id, candidate.id)} type="button">
+                {accepted ? (locale === "ja" ? "削除" : "Remove") : (locale === "ja" ? "ここにする" : "Add")}
+              </button>
+              <button onClick={() => setInspector({ kind: "food", slotId: slot.id, candidateId: candidate.id })} type="button">
+                {locale === "ja" ? "変更" : "Change"}
+              </button>
+            </span>
           </li>
         )];
       });
   }
 
   function toggleMealSelection(slotId: string, candidateId: string) {
-    setMealSelections((current) => {
-      if (current[slotId] === candidateId) {
+    if (!plan || !tripFit || !day) return;
+    const slot = daySlots.find((candidateSlot) => candidateSlot.id === slotId);
+    const foodState = foodSearches[slotId];
+    const candidate = foodState?.candidates.find((entry) => entry.id === candidateId);
+    if (!slot || !candidate || typeof candidate.latitude !== "number" || typeof candidate.longitude !== "number") return;
+    const currentCandidateId = mealSelections[slotId];
+    const currentStopId = currentCandidateId ? recommendationStopId(currentCandidateId) : null;
+    if (currentCandidateId === candidateId) {
+      const currentStop = resolvedStops.find((stop) => stop.id === currentStopId);
+      if (currentStop) removeSystemFiller(currentStop);
+      else setMealSelections((current) => {
         const next = { ...current };
         delete next[slotId];
         return next;
-      }
-      return { ...current, [slotId]: candidateId };
+      });
+      setFoodRecommendationNotice("");
+      return;
+    }
+    const duplicatePlannedPlace = recommendationPlaceAlreadyScheduled(candidate.id, plannedStopIds, resolvedStops, currentStopId);
+    if (duplicatePlannedPlace) {
+      setFoodRecommendationNotice(locale === "ja"
+        ? "同じ場所が、すでにこの旅程に入っています。別の候補を選んでください。"
+        : "That place is already in this itinerary. Choose a different suggestion.");
+      return;
+    }
+    const fillerKind = slot.kind === "lunch" ? "lunch" as const : "dinner" as const;
+    const otherFillers = day.stops.filter(({ stop }) => (
+      fillerStopIds.has(stop.id) && stop.id !== currentStopId
+    ));
+    if (otherFillers.length >= 3 || otherFillers.some(({ stop }) => fillerKindsByStopId.get(stop.id) === fillerKind)) {
+      setFoodRecommendationNotice(locale === "ja"
+        ? "この時間帯には、すでに別のおすすめがあります。先に外してから入れ替えてください。"
+        : "This recommendation slot is already in use. Remove the current suggestion before replacing it.");
+      return;
+    }
+    const inputIndex = parsedWishlistPlaces(itinerary).length;
+    const input = fillerOccurrenceLine(inputIndex, fillerKind, slot.window.split("–")[0]);
+    const resolvedId = recommendationStopId(candidate.id);
+    const resolved: ResolvedInputStop = {
+      id: resolvedId,
+      input,
+      inputIndex,
+      name: candidate.name,
+      address: candidate.address,
+      area: areaFromAddress(candidate.address, candidate.name, activeDestination),
+      latitude: candidate.latitude,
+      longitude: candidate.longitude,
+      sourceUrl: candidate.googleMapsUrl,
+      verifiedAt: foodState.fetchedAt?.slice(0, 10) ?? "",
+      confidence: "medium",
+      planningDurationMinutes: slot.kind === "lunch" ? 60 : 75,
+      isAnchor: false,
+      isUserEntered: false,
+      placeTypes: [candidate.type],
+      providerRef: candidate.id,
+    };
+    const candidateItinerary = `${itinerary.trimEnd()}\n${input}`.trimStart();
+    const candidateRemovedStops = currentStopId
+      ? [...new Set([...removedStops.map((entry) => entry.id), currentStopId])]
+      : removedStops.map((entry) => entry.id);
+    const candidateContext: TripPlannerContext = {
+      ...activePlannerContext,
+      resolvedStops: [...resolvedStops.filter((stop) => stop.inputIndex !== inputIndex), resolved],
+      dayOverrides: { ...(activePlannerContext.dayOverrides ?? {}), [resolved.id]: slot.dayIndex + 1 },
+      excludedStopIds: candidateRemovedStops,
+    };
+    const candidatePlan = buildTripFromWishlist(candidateItinerary, tripDays, pace, locale, candidateContext);
+    const candidateFit = assessTripFit(candidateItinerary, tripDays, pace, locale, candidateContext, candidatePlan);
+    const scheduledMeal = candidatePlan.days[slot.dayIndex]?.stops.find(({ stop }) => stop.id === resolved.id);
+    if (!scheduledMeal || !clockRangeContainsVisit(slot.window, scheduledMeal.arrival, scheduledMeal.departure)) {
+      setFoodRecommendationNotice(locale === "ja"
+        ? "この候補は食事時間内に収まらないため、旅程へ追加しませんでした。"
+        : "We did not add this option because it does not fit inside the meal window.");
+      return;
+    }
+    const anchorStopIds = new Set([
+      ...resolvedStops.filter((stop) => !fillerStopIds.has(stop.id)).map((stop) => stop.id),
+      ...plan.days.flatMap((planDay) => planDay.stops.flatMap(({ stop }) => fillerStopIds.has(stop.id) ? [] : [stop.id])),
+    ]);
+    const addedTravelMinutes = Math.max(0, builtPlanTravelMinutes(candidatePlan) - builtPlanTravelMinutes(plan));
+    const distanceScore = boundedRecommendationScore(100 - (candidate.distanceMeters ?? 1_500) / 18);
+    const qualityScore = boundedRecommendationScore(
+      (candidate.rating === null ? 60 : candidate.rating / 5 * 82)
+      + Math.min(18, Math.log10(Math.max(1, candidate.userRatingCount ?? 1)) * 6),
+    );
+    const recommendation = createRecommendation({
+      id: `meal:${slot.id}:${candidate.id}`,
+      type: "MEAL",
+      placeId: candidate.id,
+      fillerKind: slot.kind === "lunch" ? "LUNCH" : "DINNER",
+      slotId: slot.id,
+      proposedDayIndex: slot.dayIndex,
+      proposedStartAt: slot.window.split("–")[0],
+      addedTravelMinutes,
+      score: {
+        total: distanceScore * 0.35 + qualityScore * 0.4 + 25,
+        detour: distanceScore,
+        timeFit: 100,
+        qualityConfidence: qualityScore,
+        preferenceFit: 75,
+      },
+      reasons: [foodCandidateReason(candidate, locale)],
     });
+    const evaluation = evaluateRecommendationCandidate({
+      recommendation,
+      openingStatus: candidate.plannedOpen === false || candidate.businessStatus?.includes("CLOSED")
+        ? "CLOSED"
+        : candidate.plannedOpen === true ? "OPEN" : "UNKNOWN",
+      baseline: recommendationPlanSnapshot(plan, tripFit, anchorStopIds),
+      candidate: recommendationPlanSnapshot(candidatePlan, candidateFit, anchorStopIds),
+    });
+    const wasScheduled = candidatePlan.days.some((planDay) => planDay.stops.some(({ stop }) => stop.id === resolved.id));
+    if (evaluation.decision === "REJECTED" || !wasScheduled) {
+      setFoodRecommendationNotice(locale === "ja"
+        ? "この店を入れると、行きたい場所か予約条件を守れないため追加しませんでした。"
+        : "We did not add this place because it would displace a chosen stop or break a hard constraint.");
+      return;
+    }
+    setResolvedStops((current) => [...current.filter((stop) => stop.id !== resolved.id), resolved]);
+    setResolutionOverrides((current) => upsertResolutionOverride(current, { inputIndex, providerRef: candidate.id }));
+    setItinerary(candidateItinerary);
+    setDayOverrides((current) => ({ ...current, [resolved.id]: slot.dayIndex + 1 }));
+    if (currentStopId) {
+      setRemovedStops((current) => current.some((entry) => entry.id === currentStopId)
+        ? current
+        : [...current, { id: currentStopId, name: locale === "ja" ? "以前のおすすめ" : "Previous suggestion" }]);
+    }
+    setMealSelections((current) => ({ ...current, [slotId]: candidate.id }));
+    setFoodRecommendationNotice(evaluation.decision === "CONDITIONAL"
+      ? (locale === "ja" ? "旅程に追加しました。営業時間は未確認として表示します。" : "Added; opening hours remain unverified.")
+      : "");
+    postBuildLegBudgetRef.current = Math.max(postBuildLegBudgetRef.current, 6);
   }
 
   function renderHotelComparison() {
@@ -3048,7 +3459,6 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
             const tags = [
               ...hotelAxisLabels(candidate),
               ...(candidate.styles.includes("luxury") ? [text.styleLuxury] : []),
-              ...(candidate.styles.includes("value") ? [text.styleValue] : []),
             ];
             return (
               <article className={`planner-hotel-card${candidate.id === selectedHotel.id ? " is-selected" : ""}`} key={candidate.id}>
@@ -3066,7 +3476,11 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                     <small>
                       {[
                         candidate.rating !== null ? `★ ${candidate.rating.toFixed(1)}（${candidate.userRatingCount?.toLocaleString(locale === "ja" ? "ja-JP" : "en-US") ?? "—"}）` : null,
-                        text.distanceFrom(formatDistanceMeters(candidate.routeAverageDistanceMeters)),
+                        hotelTravelMinutesById[candidate.id] !== undefined
+                          ? locale === "ja"
+                            ? `全日程の移動 約${hotelTravelMinutesById[candidate.id]}分${Number.isFinite(bestHotelTravelMinutes) && hotelTravelMinutesById[candidate.id] > bestHotelTravelMinutes ? `（最短比 +${hotelTravelMinutesById[candidate.id] - bestHotelTravelMinutes}分）` : ""}`
+                            : `~${hotelTravelMinutesById[candidate.id]} min total travel${Number.isFinite(bestHotelTravelMinutes) && hotelTravelMinutesById[candidate.id] > bestHotelTravelMinutes ? ` (+${hotelTravelMinutesById[candidate.id] - bestHotelTravelMinutes} vs best)` : ""}`
+                          : text.distanceFrom(formatDistanceMeters(candidate.routeAverageDistanceMeters)),
                       ].filter(Boolean).join(" · ")}
                     </small>
                     {tags.length > 0 ? (
@@ -3224,6 +3638,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     // safer than leaving a restaurant or nightly hotel attached to a new area.
     setFoodSearches({});
     setRouteRecommendationSearches({});
+    setRouteRecommendationNotice("");
     setRouteGeometryByDay({});
     setMealSelections({});
     clearNightlyHotelResults();
@@ -3347,7 +3762,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       try {
         const response = await requestHotelRecommendations(anchor, locale, requestDestination);
         const pick = response.candidates[0] ?? null;
-        return { area: anchor.area, fetchedAt: response.fetchedAt, candidates: response.candidates, selectedId: pick?.id ?? null };
+        return { area: anchor.area, fetchedAt: response.fetchedAt, candidates: hotelShortlist(response.candidates, pick?.id), selectedId: pick?.id ?? null };
       } catch {
         return { area: anchor.area, fetchedAt: "", candidates: [], selectedId: null };
       }
@@ -3412,6 +3827,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     setInputStep("places");
     setReviewedInputSignature("");
     setMobileResultView("timeline");
+    setMapScope("day");
     setTravelPreference("auto");
     setDayStartDefault("09:00");
     setDayEndTarget("");
@@ -3436,7 +3852,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     setDepartureAirport(sample ? "none" : fullTripDemo.departureAirport);
     setDepartureTime(sample ? "" : fullTripDemo.departureTime);
     setFlightKind(sample ? "international" : fullTripDemo.flightKind);
-    setMealPlan("none");
+    setMealPlan(P0_CORE_ONLY ? "none" : "all");
     setResolvedStops([]);
     setAmbiguousPlaces([]);
     setManualPlaceDrafts({});
@@ -3448,6 +3864,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     setInspector(null);
     setFoodSearches({});
     setRouteRecommendationSearches({});
+    setRouteRecommendationNotice("");
     setRouteGeometryByDay({});
     setIntelligence({});
     setFreshVoices({});
@@ -3594,6 +4011,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       setPlaceWarning(false);
       setFoodSearches({});
       setRouteRecommendationSearches({});
+      setRouteRecommendationNotice("");
       setRouteGeometryByDay({});
       setIntelligence({});
       setFreshVoices({});
@@ -3745,9 +4163,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     // conditional until the traveller confirms a date.
     const preHotelEvidenceStops = !tripDateTouched
       ? []
-      : P0_CORE_ONLY
-        ? takeWithinPlanningBudget(preHotelStops, PLANNING_BUDGET.openingHours)
-        : preHotelStops;
+      : takeWithinPlanningBudget(preHotelStops, PLANNING_BUDGET.openingHours);
     let placeReviewCount = 0;
     const loadPlaceIntelligence = async (stop: RouteStop): Promise<readonly [string, IntelligenceState]> => {
       try {
@@ -3779,8 +4195,11 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     // P0 does not fetch hotels on the critical path, but omitting a base would
     // also omit two daily transfer legs and understate the required days. Use
     // the deterministic best area as an explicitly provisional routing base.
+    // A provider outage must never make the planner silently omit both daily
+    // hotel legs. The deterministic area recommendation remains a clearly
+    // provisional routing base until a live hotel is selected.
     let effectiveBase = resolvedHotel
-      ?? (P0_CORE_ONLY && draft.baseRecommendations[0]?.base
+      ?? (draft.baseRecommendations[0]?.base
         ? provisionalBaseAsResolved(draft.baseRecommendations[0].base)
         : null);
     let localHotelState: HotelState = { status: "unavailable", candidates: [], selectedId: null, fresh: emptyFreshState };
@@ -3794,14 +4213,29 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
           ...(draftHotelContext?.routePoints.length ? { routePoints: draftHotelContext.routePoints } : {}),
         }, locale, buildDestination, controller.signal);
         if (cancelled()) return;
-        const recommended = hotelResponse.candidates[0] ?? null;
-        const matchedExact = resolvedHotel ? matchingHotelCandidate(resolvedHotel, hotelResponse.candidates) : null;
+        const hotelCandidatesByTripTime = hotelResponse.candidates
+          .map((candidate) => ({
+            candidate,
+            travelMinutes: builtPlanTravelMinutes(buildTripFromWishlist(
+              itinerary,
+              tripDays,
+              pace,
+              locale,
+              plannerContext(hotelAsResolvedBase(candidate, hotelQuery, hotelAnchor.area, hotelResponse.fetchedAt)),
+            )),
+          }))
+          .sort((left, right) => left.travelMinutes - right.travelMinutes
+            || right.candidate.score - left.candidate.score
+            || left.candidate.id.localeCompare(right.candidate.id));
+        const rankedHotelCandidates = hotelCandidatesByTripTime.map(({ candidate }) => candidate);
+        const recommended = rankedHotelCandidates[0] ?? null;
+        const matchedExact = resolvedHotel ? matchingHotelCandidate(resolvedHotel, rankedHotelCandidates) : null;
         // A typed hotel name can still match a Google candidate directly, but
         // only when place resolution failed — once a resolved hotel is the
         // routing base, the displayed hotel must never diverge from it.
         const normalizedQuery = normalizeHotelName(hotelQuery);
         const matchedByQuery = !useRecommendedHotelForBuild && !resolvedHotel && normalizedQuery.length >= 3
-          ? hotelResponse.candidates.find((candidate) => {
+          ? rankedHotelCandidates.find((candidate) => {
             const candidateName = normalizeHotelName(candidate.name);
             return candidateName.length >= 3 && (candidateName.includes(normalizedQuery) || normalizedQuery.includes(candidateName));
           }) ?? null
@@ -3811,9 +4245,9 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
           effectiveBase = hotelAsResolvedBase(selected, hotelQuery, hotelAnchor.area, hotelResponse.fetchedAt);
         }
         const candidates = selected
-          ? [selected, ...hotelResponse.candidates.filter((candidate) => candidate.id !== selected.id)]
-          : hotelResponse.candidates;
-        localHotelState = { status: "ready", candidates, selectedId: selected?.id ?? null, fresh: emptyFreshState };
+          ? [selected, ...rankedHotelCandidates.filter((candidate) => candidate.id !== selected.id)]
+          : rankedHotelCandidates;
+        localHotelState = { status: "ready", candidates: hotelShortlist(candidates, selected?.id), selectedId: selected?.id ?? null, fresh: emptyFreshState };
       } catch {
         localHotelState = { status: "unavailable", candidates: [], selectedId: null, fresh: emptyFreshState };
       }
@@ -3885,9 +4319,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     const unrequestedStops = uniqueStops.filter((stop) => !prefetchedById.has(stop.id));
     const missingStops = !tripDateTouched
       ? []
-      : P0_CORE_ONLY
-        ? takeWithinPlanningBudget(unrequestedStops, PLANNING_BUDGET.openingHours, prefetchedEntries.length)
-        : unrequestedStops;
+      : takeWithinPlanningBudget(unrequestedStops, PLANNING_BUDGET.openingHours, prefetchedEntries.length);
     if (!commit(() => setBuildProgress((progress) => ({
       ...progress,
       current: uniqueStops.length - missingStops.length,
@@ -4013,9 +4445,11 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     routeRecommendationRequestRef.current += 1;
     setItinerary("");
     setInputStep("places");
+    setBuildMode("automatic");
     setIsResolvingPlaces(false);
     setReviewedInputSignature("");
     setMobileResultView("timeline");
+    setMapScope("day");
     setTravelPreference("auto");
     setDayStartDefault("09:00");
     setDayEndTarget("");
@@ -4028,7 +4462,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     setTripStartDate(defaultTripDate(destinationById(destinationChoice === "auto" ? "worldwide" : destinationChoice)));
     setTripDateTouched(false);
     setPace("balanced");
-    setMealPlan("none");
+    setMealPlan(P0_CORE_ONLY ? "none" : "all");
     setArrivalAirport("none");
     setArrivalTime("");
     setDepartureAirport("none");
@@ -4041,6 +4475,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     setResolvedBase(null);
     setFoodSearches({});
     setRouteRecommendationSearches({});
+    setRouteRecommendationNotice("");
     setRouteGeometryByDay({});
     setIntelligence({});
     setFreshVoices({});
@@ -4107,6 +4542,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     setResolvedBase(null);
     setFoodSearches({});
     setRouteRecommendationSearches({});
+    setRouteRecommendationNotice("");
     setRouteGeometryByDay({});
     setIntelligence({});
     setFreshVoices({});
@@ -4147,6 +4583,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   function switchDay(index: number) {
     setActiveDay(index);
     setInspector(null);
+    setMapFocusedStopId(null);
   }
 
   const findFood = useCallback(async (slot: FoodRecommendationSlot, options: { reveal?: boolean } = {}) => {
@@ -4164,7 +4601,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     try {
       const response = await requestFoodRecommendations(slot, locale, { destination: requestDestination });
       if (stale()) return;
-      const next: FoodState = { status: "ready", requestKey, query, candidates: response.candidates.slice(0, 3), notes: {}, fresh: {} };
+      const next: FoodState = { status: "ready", requestKey, query, candidates: response.candidates.slice(0, 3), fetchedAt: response.fetchedAt, notes: {}, fresh: {} };
       setFoodSearches((current) => ({ ...current, [slot.id]: next }));
       // Google evidence owns the order. Claude runs behind the instant result
       // only to add compact comparison copy for the supplied candidates.
@@ -4203,6 +4640,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   }, [daySlots, findFood, foodSearches, hasPlan, isBuilding, locale]);
 
   function openFoodSlot(slot: FoodRecommendationSlot) {
+    setFoodRecommendationNotice("");
     if (inspector?.kind === "food" && inspector.slotId === slot.id) {
       setInspector(null);
       return;
@@ -4215,12 +4653,14 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     setInspector({ kind: "food", slotId: slot.id });
   }
 
-  async function findRouteRecommendations() {
-    if (!day || !plan || !routeRecommendationKey || recommendationRoutePoints.length === 0) return;
+  const findRouteRecommendations = useCallback(async (options: { reveal?: boolean } = {}) => {
+    if (!day || !plan || !routeRecommendationKey || recommendationSearchPoints.length === 0 || !primaryRecommendationGap) return;
     const requestId = ++routeRecommendationRequestRef.current;
     const dayIndex = activeDay;
     const searchKey = routeRecommendationKey;
-    setInspector({ kind: "recommendations", dayIndex });
+    setRouteRecommendationNotice("");
+    setRouteAlternativesExpanded(false);
+    if (options.reveal !== false) setInspector({ kind: "recommendations", dayIndex });
     setRouteRecommendationSearches((current) => ({
       ...current,
       [searchKey]: { status: "loading", fetchedAt: null, candidates: [] },
@@ -4228,8 +4668,8 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     const existingStops = plan.days.flatMap((planDay) => planDay.stops.map(({ stop }) => stop));
     try {
       const response = await requestRouteRecommendations({
-        routePoints: recommendationRoutePoints,
-        excludedPlaceIds: [...new Set(existingStops.map((stop) => stop.id))],
+        routePoints: recommendationSearchPoints,
+        excludedPlaceIds: [...new Set(existingStops.map((stop) => stop.providerRef ?? stop.id.replace(/^google-/, "")))],
         excludedNames: [...new Set(existingStops.map((stop) => stop.name))],
         destination: requestDestination,
         languageCode: locale,
@@ -4249,7 +4689,14 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
         [searchKey]: { status, fetchedAt: null, candidates: [] },
       }));
     }
-  }
+  }, [activeDay, day, locale, plan, primaryRecommendationGap, recommendationSearchPoints, requestDestination, routeRecommendationKey]);
+
+  useEffect(() => {
+    if (P0_CORE_ONLY || !hasPlan || isBuilding || !primaryRecommendationGap) return;
+    if (activeRouteRecommendationState.status !== "idle") return;
+    const timer = window.setTimeout(() => void findRouteRecommendations({ reveal: false }), 240);
+    return () => window.clearTimeout(timer);
+  }, [activeRouteRecommendationState.status, findRouteRecommendations, hasPlan, isBuilding, primaryRecommendationGap]);
 
   function openRouteRecommendations() {
     if (!day) return;
@@ -4261,6 +4708,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       void findRouteRecommendations();
       return;
     }
+    setRouteAlternativesExpanded(false);
     setInspector({ kind: "recommendations", dayIndex: activeDay });
   }
 
@@ -4269,12 +4717,30 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   }
 
   function addRouteRecommendation(candidate: RouteRecommendation) {
-    if (plannedStopIds.has(candidate.id)) return;
+    if (!plan || !tripFit || !day || !primaryRecommendationGap || plannedStopIds.has(recommendationStopId(candidate.id))) return;
+    if (recommendationPlaceAlreadyScheduled(candidate.providerRef, plannedStopIds, resolvedStops)) {
+      setRouteRecommendationNotice(locale === "ja"
+        ? "同じ場所が、すでにこの旅程に入っています。別の候補を選んでください。"
+        : "That place is already in this itinerary. Choose a different suggestion.");
+      return;
+    }
     const checkedAt = activeRouteRecommendationState.fetchedAt?.slice(0, 10);
     if (!checkedAt) return;
+    const acceptedMicroFillers = day.stops.filter(({ stop }) => fillerKindsByStopId.get(stop.id) === "micro").length;
+    const acceptedMeals = daySlots.filter((slot) => Boolean(mealSelections[slot.id])).length;
+    if (acceptedMicroFillers >= 1 || acceptedMicroFillers + acceptedMeals >= 3) {
+      setRouteRecommendationNotice(locale === "ja"
+        ? "この日のおすすめ枠は埋まっています。追加済みのおすすめを外すと入れ替えられます。"
+        : "This day's recommendation slots are full. Remove an accepted suggestion to replace it.");
+      return;
+    }
+    const inputIndex = parsedWishlistPlaces(itinerary).length;
+    const input = fillerOccurrenceLine(inputIndex, "micro", primaryRecommendationGap.startAt);
+    const resolvedId = recommendationStopId(candidate.id);
     const resolved: ResolvedInputStop = {
-      id: candidate.id,
-      input: candidate.name,
+      id: resolvedId,
+      input,
+      inputIndex,
       name: candidate.name,
       address: candidate.address,
       area: areaFromAddress(candidate.address, candidate.name, activeDestination),
@@ -4283,29 +4749,91 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       sourceUrl: candidate.googleMapsUrl,
       verifiedAt: checkedAt,
       confidence: "medium",
-      planningDurationMinutes: estimateStayMinutes(candidate.name, candidate.placeTypes, 90),
+      planningDurationMinutes: Math.min(
+        estimateStayMinutes(candidate.name, candidate.placeTypes, 90),
+        Math.max(20, primaryRecommendationGap.availableMinutes - 10),
+      ),
       isAnchor: false,
-      isUserEntered: true,
+      isUserEntered: false,
       placeTypes: candidate.placeTypes,
+      providerRef: candidate.providerRef,
     };
-    const candidateOpeningWindows: Record<number, VisitWindow[]> = {};
-    for (let dayIndex = 0; dayIndex < 14; dayIndex += 1) {
-      const date = addCalendarDays(tripStartDate, dayIndex);
-      if (!date) continue;
-      const windows = googleOpeningWindowsForDate({
-        businessStatus: candidate.businessStatus,
-        regularOpeningPeriods: candidate.regularOpeningPeriods,
-      }, date);
-      if (windows !== null) candidateOpeningWindows[dayIndex] = windows;
+    const candidateItinerary = `${itinerary.trimEnd()}\n${input}`.trimStart();
+    const candidateContext: TripPlannerContext = {
+      ...activePlannerContext,
+      resolvedStops: [...resolvedStops.filter((stop) => stop.inputIndex !== inputIndex), resolved],
+      dayOverrides: { ...(activePlannerContext.dayOverrides ?? {}), [resolved.id]: activeDay + 1 },
+    };
+    const candidatePlan = buildTripFromWishlist(candidateItinerary, tripDays, pace, locale, candidateContext);
+    const candidateFit = assessTripFit(candidateItinerary, tripDays, pace, locale, candidateContext, candidatePlan);
+    const scheduledRecommendation = candidatePlan.days[activeDay]?.stops.find(({ stop }) => stop.id === resolved.id);
+    if (!scheduledRecommendation || !clockRangeContainsVisit(
+      `${primaryRecommendationGap.startAt}–${primaryRecommendationGap.endAt}`,
+      scheduledRecommendation.arrival,
+      scheduledRecommendation.departure,
+    )) {
+      setRouteRecommendationNotice(locale === "ja"
+        ? "この候補は空き時間内に収まらないため、旅程へ追加しませんでした。"
+        : "We did not add this suggestion because it does not fit inside the detected gap.");
+      return;
+    }
+    const anchorStopIds = new Set([
+      ...resolvedStops.filter((stop) => !fillerStopIds.has(stop.id)).map((stop) => stop.id),
+      ...plan.days.flatMap((planDay) => planDay.stops.flatMap(({ stop }) => fillerStopIds.has(stop.id) ? [] : [stop.id])),
+    ]);
+    const baselineTravel = builtPlanTravelMinutes(plan);
+    const candidateTravel = builtPlanTravelMinutes(candidatePlan);
+    const addedTravelMinutes = Math.max(0, candidateTravel - baselineTravel);
+    const detourScore = boundedRecommendationScore(100 - candidate.routeDistanceMeters / 20);
+    const qualityScore = boundedRecommendationScore(
+      (candidate.rating === null ? 62 : candidate.rating / 5 * 82)
+      + Math.min(18, Math.log10(Math.max(1, candidate.userRatingCount ?? 1)) * 6),
+    );
+    const availableMinutes = primaryRecommendationGap?.availableMinutes ?? 60;
+    const timeFitScore = boundedRecommendationScore(
+      100 - Math.max(0, resolved.planningDurationMinutes + addedTravelMinutes - availableMinutes) * 2,
+    );
+    const recommendation = createRecommendation({
+      id: `route:${activeDay}:${candidate.id}`,
+      type: routeRecommendationFillerKind(candidate) === "CAFE" ? "CAFE" : "MICRO_STOP",
+      placeId: candidate.providerRef,
+      fillerKind: routeRecommendationFillerKind(candidate),
+      slotId: primaryRecommendationGap?.id,
+      proposedDayIndex: activeDay,
+      proposedStartAt: primaryRecommendationGap?.startAt,
+      addedTravelMinutes,
+      score: {
+        total: detourScore * 0.4 + timeFitScore * 0.35 + qualityScore * 0.25,
+        detour: detourScore,
+        timeFit: timeFitScore,
+        qualityConfidence: qualityScore,
+        preferenceFit: 70,
+      },
+      reasons: [text.routeIdeasDistance(candidate.routeDistanceMeters)],
+    });
+    const evaluation = evaluateRecommendationCandidate({
+      recommendation,
+      openingStatus: candidate.businessStatus?.includes("CLOSED") ? "CLOSED" : "UNKNOWN",
+      baseline: recommendationPlanSnapshot(plan, tripFit, anchorStopIds),
+      candidate: recommendationPlanSnapshot(candidatePlan, candidateFit, anchorStopIds),
+    });
+    const wasScheduled = candidatePlan.days.some((planDay) => planDay.stops.some(({ stop }) => stop.id === resolved.id));
+    if (evaluation.decision === "REJECTED" || !wasScheduled) {
+      setRouteRecommendationNotice(locale === "ja"
+        ? "この候補を足すと、行きたい場所か予約条件を守れないため追加しませんでした。"
+        : "We did not add this suggestion because it would displace a chosen stop or break a hard constraint.");
+      return;
     }
     setResolvedStops((current) => current.some((stop) => stop.id === resolved.id) ? current : [...current, resolved]);
-    if (Object.keys(candidateOpeningWindows).length > 0) {
-      setOpeningWindowsByDay((current) => ({ ...current, [candidate.id]: candidateOpeningWindows }));
-    }
-    setItinerary((current) => `${current.trimEnd()}\n${candidate.name}`.trimStart());
-    setDayOverrides((current) => ({ ...current, [candidate.id]: activeDay + 1 }));
-    setRemovedStops((current) => current.filter((stop) => stop.id !== candidate.id));
+    setResolutionOverrides((current) => upsertResolutionOverride(current, { inputIndex, providerRef: candidate.providerRef }));
+    setItinerary(candidateItinerary);
+    setDayOverrides((current) => ({ ...current, [resolved.id]: activeDay + 1 }));
+    setRemovedStops((current) => current.filter((stop) => stop.id !== resolved.id));
+    setRouteRecommendationNotice(evaluation.decision === "CONDITIONAL"
+      ? (locale === "ja" ? "営業時間は未確認です。旅程には追加し、未確認として表示します。" : "Added with opening hours still marked unverified.")
+      : "");
     postBuildLegBudgetRef.current = Math.max(postBuildLegBudgetRef.current, 6);
+    setRouteAlternativesExpanded(false);
     setInspector(null);
   }
 
@@ -4553,6 +5081,27 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       </header>
 
       <div className={`planner-map-canvas${displayedMapStops.length > 8 ? " is-dense" : ""}`} aria-label={text.mapReady}>
+        {hasPlan ? (
+          <div className="planner-map-scope" role="group" aria-label={locale === "ja" ? "地図に表示する日程" : "Days shown on map"}>
+            <button aria-pressed={mapScope === "all"} className={mapScope === "all" ? "is-active" : ""} onClick={() => setMapScope("all")} type="button">{locale === "ja" ? "全日程" : "All days"}</button>
+            <button aria-pressed={mapScope === "day"} className={mapScope === "day" ? "is-active" : ""} onClick={() => setMapScope("day")} type="button">{locale === "ja" ? "この日" : "This day"}</button>
+          </div>
+        ) : null}
+        {hasPlan && plan && plan.days.length > 1 ? (
+          <div className="planner-map-day-legend" aria-label={locale === "ja" ? "日別ルートの色" : "Route colours by day"}>
+            {plan.days.map((planDay, index) => (
+              <button
+                aria-label={locale === "ja" ? `${index + 1}日目を選択` : `Select Day ${index + 1}`}
+                aria-pressed={index === activeDay}
+                className={index === activeDay ? "is-active" : ""}
+                key={planDay.label}
+                onClick={() => switchDay(index)}
+                style={{ "--planner-day-color": plannerDayColors[index % plannerDayColors.length] } as CSSProperties}
+                type="button"
+              ><i aria-hidden="true" />{locale === "ja" ? `${index + 1}日` : `D${index + 1}`}</button>
+            ))}
+          </div>
+        ) : null}
         {inputStep !== "places" || hasPlan || isBuilding ? <PlannerGoogleMap
           apiKey={mapsApiKey}
           base={displayedMapBase}
@@ -4566,10 +5115,16 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
           routeBudgetKey={`${buildRunRef.current}:${transitConvergenceInputKey}`}
           routeBudgetUsed={currentTransitConvergence?.eventCount ?? 0}
           routeRequestsPaused={!tripDateTouched || Boolean(plan && !currentTransitConvergence)}
+          routePauseReason={!tripDateTouched ? "date_required" : plan && !currentTransitConvergence ? "checking" : null}
           transitGeometry={routeTransitGeometry}
           coordinatePickActive={!hasPlan && inputStep === "conditions" && manualPinTarget !== null}
           coordinatePick={manualPinCoordinate}
           inspectorOpen={Boolean(inspector)}
+          dayActive
+          dayColor={plannerDayColors[activeDay % plannerDayColors.length]}
+          dayIndex={activeDay}
+          dayLayers={mapScope === "all" ? mapDayLayers : []}
+          itemKinds={mapItemKinds}
           locale={locale}
           onRouteGeometry={handleRouteGeometry}
           onPickCoordinate={(point) => {
@@ -4590,13 +5145,18 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
             if (candidate) selectHotelCandidate(candidate);
           }}
           onSelectRecommendation={selectRouteRecommendation}
+          onSelectDayStop={(dayIndex, stopId) => {
+            setActiveDay(dayIndex);
+            handleSelectStop(stopId);
+          }}
           onSelectStop={handleSelectStop}
           routeModes={routeModes}
           selectedFoodPinId={inspector?.kind === "food" ? inspector.candidateId ?? null : null}
           selectedHotelPinId={selectedHotel?.id ?? null}
           selectedRecommendationPinId={selectedRouteRecommendation?.id ?? null}
-          selectedStopId={inspector?.kind === "stop" ? inspector.stopId : inspector?.kind === "hotel" ? displayedMapBase?.id ?? null : null}
+          selectedStopId={inspector?.kind === "stop" ? inspector.stopId : inspector?.kind === "hotel" ? displayedMapBase?.id ?? null : mapFocusedStopId}
           stops={displayedMapStops}
+          warningStopIds={mapWarningStopIds}
         /> : null}
 
         {!day && !hasPlan && !isBuilding && displayedMapStops.length === 0 ? <div className="planner-map-empty"><span aria-hidden="true"><Icon name="pin" size={16} /></span><p>{text.mapEmpty}</p></div> : null}
@@ -4627,7 +5187,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                 </button>
               );
             }) : null}
-            {!P0_CORE_ONLY && recommendationRoutePoints.length > 0 ? (
+            {!P0_CORE_ONLY && primaryRecommendationGap ? (
               <button
                 className={`planner-recommendation-chip${inspector?.kind === "recommendations" ? " is-active" : ""}`}
                 onClick={openRouteRecommendations}
@@ -4656,7 +5216,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
             role="dialog"
             tabIndex={-1}
           >
-            <button className="planner-inspector-close" onClick={() => setInspector(null)} type="button" aria-label={text.close}><Icon name="close" size={13} /></button>
+            <button className="planner-inspector-close" onClick={() => { setInspector(null); setRouteAlternativesExpanded(false); }} type="button" aria-label={text.close}><Icon name="close" size={13} /></button>
             <header className="planner-inspector-head">
               <span className="planner-inspector-num">{selectedStopIndex + 1}</span>
               <div>
@@ -4971,13 +5531,14 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
             {(() => {
               if (hotelStayMode !== "nightly") return null;
               const nightCandidates = nightlyHotels.status === "ready" ? nightlyHotels.nights.flatMap((night) => night.candidates) : [];
-              const styleAvailable = (style: HotelStyle) => hotelState.candidates.some((candidate) => candidate.styles.includes(style))
-                || nightCandidates.some((candidate) => candidate.styles.includes(style));
+              const styleAvailable = (style: HotelStyle) => style === "value"
+                ? false
+                : hotelState.candidates.some((candidate) => candidate.styles.includes(style))
+                  || nightCandidates.some((candidate) => candidate.styles.includes(style));
               if (!styleAvailable("luxury") && !styleAvailable("value")) return null;
               const choices: Array<{ value: HotelStyleChoice; label: string; enabled: boolean }> = [
                 { value: "recommended", label: text.styleRecommended, enabled: true },
                 { value: "luxury", label: text.styleLuxury, enabled: styleAvailable("luxury") },
-                { value: "value", label: text.styleValue, enabled: styleAvailable("value") },
               ];
               return (
                 <div className="planner-hotel-styles" role="group" aria-label={text.styleNote}>
@@ -5034,7 +5595,6 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                                     {candidate.id === night.candidates[0]?.id ? <i>{text.hotelPurposeBalanced}</i> : null}
                                     {candidate.id === nightAxes.nearestId ? <i>{text.hotelPurposeNearest}</i> : null}
                                     {candidate.id === nightAxes.topRatedId ? <i>{text.hotelPurposeRated}</i> : null}
-                                    {candidate.styles.includes("value") ? <i>{text.hotelPurposeValue}</i> : null}
                                     {candidate.styles.includes("luxury") ? <i>{text.styleLuxury}</i> : null}
                                   </span>
                                 </span>
@@ -5062,7 +5622,6 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                   { purpose: "balanced" as const, label: text.hotelPurposeBalanced, id: hotelState.candidates[0]?.id ?? null },
                   { purpose: "nearest" as const, label: text.hotelPurposeNearest, id: hotelAxis.nearestId },
                   { purpose: "rated" as const, label: text.hotelPurposeRated, id: hotelAxis.topRatedId },
-                  { purpose: "value" as const, label: text.hotelPurposeValue, id: hotelAxis.valueId },
                 ]).map((choice) => {
                   const candidate = choice.id ? hotelState.candidates.find((item) => item.id === choice.id) ?? null : null;
                   return (
@@ -5105,7 +5664,6 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
               <span>{text.distanceFrom(formatDistanceMeters(selectedHotel.routeAverageDistanceMeters))}</span>
               {hotelAxisLabels(selectedHotel).map((label) => <span className="is-axis" key={label}>{label}</span>)}
               {selectedHotel.styles.includes("luxury") ? <span>{text.styleLuxury}</span> : null}
-              {selectedHotel.styles.includes("value") ? <span>{text.styleValue}</span> : null}
               {selectedHotel.rakuten?.reviewAverage ? (
                 <a className="is-rakuten" href={selectedHotel.rakuten.url} rel="noreferrer" target="_blank">
                   {text.rakutenTag(selectedHotel.rakuten.reviewAverage, selectedHotel.rakuten.reviewCount ?? 0)} ↗
@@ -5176,6 +5734,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
               </div>
             </header>
             <p className="planner-food-rationale">{activeFoodSlot.rationale}</p>
+            {foodRecommendationNotice ? <p className="planner-route-ideas-feedback" role="status">{foodRecommendationNotice}</p> : null}
             {activeFoodState.status === "loading" ? <p className="planner-food-status" role="status">{text.foodLoading}</p> : null}
             {activeFoodState.status === "unavailable" ? (
               <p className="planner-food-status">
@@ -5185,7 +5744,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
             ) : null}
             {activeFoodState.status === "ready" ? (
               <div className="planner-food-results">
-                {activeFoodState.candidates.map((candidate, index) => {
+                {(mealCandidatesBySlot[activeFoodSlot.id] ?? []).map((candidate, index) => {
                   const note = activeFoodState.notes[candidate.id];
                   const foodFresh = activeFoodState.fresh[candidate.id]?.result;
                   return (
@@ -5243,7 +5802,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
             role="dialog"
             tabIndex={-1}
           >
-            <button className="planner-inspector-close" onClick={() => setInspector(null)} type="button" aria-label={text.close}><Icon name="close" size={13} /></button>
+            <button className="planner-inspector-close" onClick={() => { setInspector(null); setRouteAlternativesExpanded(false); }} type="button" aria-label={text.close}><Icon name="close" size={13} /></button>
             <header className="planner-inspector-head">
               <span className="planner-inspector-num is-recommendation" aria-hidden="true"><Icon name="spark" size={17} /></span>
               <div>
@@ -5252,6 +5811,14 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
               </div>
             </header>
             <p className="planner-route-ideas-intro">{text.routeIdeasSubtitle}</p>
+            {primaryRecommendationGap ? (
+              <p className="planner-route-gap-note">
+                {locale === "ja"
+                  ? `${primaryRecommendationGap.startAt}〜${primaryRecommendationGap.endAt}の${primaryRecommendationGap.availableMinutes}分に収まる候補です。`
+                  : `Fits the ${primaryRecommendationGap.availableMinutes}-minute gap from ${primaryRecommendationGap.startAt} to ${primaryRecommendationGap.endAt}.`}
+              </p>
+            ) : null}
+            {routeRecommendationNotice ? <p className="planner-route-ideas-feedback" role="status">{routeRecommendationNotice}</p> : null}
             {activeRouteRecommendationState.status === "loading" ? (
               <p className="planner-route-ideas-status" role="status"><i aria-hidden="true" />{text.routeIdeasLoading}</p>
             ) : null}
@@ -5269,8 +5836,8 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
             ) : null}
             {activeRouteRecommendationState.status === "ready" && activeRouteRecommendationState.candidates.length > 0 ? (
               <div className="planner-route-ideas-list">
-                {activeRouteRecommendationState.candidates.map((candidate, index) => {
-                  const added = plannedStopIds.has(candidate.id);
+                {activeRouteRecommendationState.candidates.slice(0, routeAlternativesExpanded ? 3 : 1).map((candidate, index) => {
+                  const added = plannedStopIds.has(recommendationStopId(candidate.id));
                   const selected = inspector.candidateId === candidate.id;
                   return (
                     <article className={selected ? "is-selected" : undefined} key={candidate.id}>
@@ -5308,6 +5875,11 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                     </article>
                   );
                 })}
+                {!routeAlternativesExpanded && activeRouteRecommendationState.candidates.length > 1 ? (
+                  <button className="planner-route-alternatives" onClick={() => setRouteAlternativesExpanded(true)} type="button">
+                    {locale === "ja" ? `他の候補を2件見る` : `See ${Math.min(2, activeRouteRecommendationState.candidates.length - 1)} alternatives`}
+                  </button>
+                ) : null}
                 <p className="planner-route-ideas-note">{text.routeIdeasNote}</p>
               </div>
             ) : null}
@@ -5341,24 +5913,26 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
           </div>
         ) : !hasPlan ? (
           <div className="planner-form-view">
-            <nav className="planner-input-progress" aria-label={locale === "ja" ? "入力の進み具合" : "Planning progress"}>
+            <nav className={`planner-input-progress${inputStep === "places" && buildMode === "automatic" ? " is-compact" : ""}`} aria-label={locale === "ja" ? "入力の進み具合" : "Planning progress"}>
               <button aria-current={inputStep === "places" ? "step" : undefined} className={inputStep === "places" ? "is-active" : "is-complete"} onClick={() => setInputStep("places")} type="button">
-                <i aria-hidden="true">{inputStep === "conditions" ? <Icon name="check" size={11} /> : 1}</i><span>{locale === "ja" ? "場所" : "Places"}</span>
+                <i aria-hidden="true">{inputStep === "conditions" ? <Icon name="check" size={11} /> : 1}</i><span>{locale === "ja" ? "場所と日数" : "Places & days"}</span>
               </button>
               <span aria-hidden="true" />
-              <div aria-current={inputStep === "conditions" ? "step" : undefined} className={inputStep === "conditions" ? "is-active" : ""}>
-                <i aria-hidden="true">2</i><span>{locale === "ja" ? "条件" : "Conditions"}</span>
-              </div>
-              <span aria-hidden="true" />
-              <div><i aria-hidden="true">3</i><span>{locale === "ja" ? "結果" : "Result"}</span></div>
+              {inputStep === "conditions" || buildMode === "custom" ? <>
+                <div aria-current={inputStep === "conditions" ? "step" : undefined} className={inputStep === "conditions" ? "is-active" : ""}>
+                  <i aria-hidden="true">2</i><span>{locale === "ja" ? "詳細" : "Details"}</span>
+                </div>
+                <span aria-hidden="true" />
+                <div><i aria-hidden="true">3</i><span>{locale === "ja" ? "旅程" : "Itinerary"}</span></div>
+              </> : <div><i aria-hidden="true">2</i><span>{locale === "ja" ? "旅程" : "Itinerary"}</span></div>}
             </nav>
 
             <div className="planner-intro">
               <h1>{inputStep === "places"
-                ? locale === "ja" ? "行きたい場所を、そのまま貼る。" : "Paste your saved places."
+                ? locale === "ja" ? "行きたい場所を入れるだけ。" : "Add the places you want to visit."
                 : locale === "ja" ? "場所を確認して、旅の条件を決める。" : "Confirm the places. Set the limits."}</h1>
               <p>{inputStep === "places"
-                ? locale === "ja" ? "地図・移動・営業時間を照合して、実際に回れる順番と必要日数を出します。" : "See what actually fits after routes, opening hours, and your usable time are checked."
+                ? locale === "ja" ? "日ごとの組み合わせ、順番、移動、ホテル、食事まで一つの旅程につなげます。" : "Get the days, order, routes, a practical base and meal stops in one usable itinerary."
                 : locale === "ja" ? "未解決の場所は推測せず残します。日数・拠点・空港・使える時間を設定してください。" : "Unresolved places stay explicit. Add the days, base, airports, and time you can actually use."}</p>
             </div>
 
@@ -5500,9 +6074,64 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                   />
                 </div>
 
+                <section className="planner-quick-conditions" aria-labelledby="planner-quick-conditions-title">
+                  <header>
+                    <span>{locale === "ja" ? "旅行の日数" : "Trip length"}</span>
+                    <b id="planner-quick-conditions-title">{locale === "ja" ? "いつ・何日行きますか？" : "When and for how long?"}</b>
+                  </header>
+                  <div className="planner-primary-fields">
+                    <label>
+                      <span>{text.days}</span>
+                      <select onChange={(event) => changeTripDays(Number(event.target.value))} value={tripDays}>
+                        {Array.from({ length: 14 }, (_, index) => index + 1).map((value) => (
+                          <option key={value} value={value}>{locale === "ja" ? `${value}日` : `${value} day${value === 1 ? "" : "s"}`}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <div className="planner-date-field">
+                      <label htmlFor="planner-quick-trip-date">
+                        <span>{text.date}</span>
+                        <input id="planner-quick-trip-date" onChange={(event) => { setTripStartDate(event.target.value); setTripDateTouched(true); }} type="date" value={tripStartDate} />
+                      </label>
+                      <button aria-pressed={!tripDateTouched} onClick={() => setTripDateTouched(false)} type="button">
+                        {locale === "ja" ? "日付はまだ未定" : "Date not decided yet"}
+                      </button>
+                    </div>
+                  </div>
+                </section>
+
+                <section className="planner-build-mode" aria-labelledby="planner-build-mode-title">
+                  <header>
+                    <span>{locale === "ja" ? "作り方" : "Planning mode"}</span>
+                    <b id="planner-build-mode-title">{locale === "ja" ? "どこまで自分で決めますか？" : "How much do you want to set?"}</b>
+                  </header>
+                  <div role="group" aria-label={locale === "ja" ? "旅程の作り方" : "Itinerary planning mode"}>
+                    <button aria-pressed={buildMode === "automatic"} className={buildMode === "automatic" ? "is-active" : ""} onClick={() => setBuildMode("automatic")} type="button">
+                      <Icon name="spark" size={14} /><span><b>{locale === "ja" ? "おまかせで作る" : "Build it for me"}</b><small>{locale === "ja" ? "移動・食事・ホテルも自動で提案" : "Routes, meals and a practical base included"}</small></span>
+                    </button>
+                    <button aria-pressed={buildMode === "custom"} className={buildMode === "custom" ? "is-active" : ""} onClick={() => setBuildMode("custom")} type="button">
+                      <Icon name="mark" size={14} /><span><b>{locale === "ja" ? "こだわって調整" : "Fine-tune it"}</b><small>{locale === "ja" ? "ホテル・ペース・移動条件を指定" : "Set the hotel, pace and travel limits"}</small></span>
+                    </button>
+                  </div>
+                </section>
+
+                {buildMode === "custom" ? (
+                  <div className="planner-quick-advanced">
+                    <label className="planner-hotel-field"><span>{text.hotel}</span><input onChange={(event) => { setHotelQuery(event.target.value); setPlanReady(false); }} placeholder={text.hotelPlaceholder} value={hotelQuery} /></label>
+                    <div className="planner-core-choices">
+                      <div className="planner-choice"><span>{text.pace}</span><div className="planner-choice-chips" role="group" aria-label={text.pace}>{(["relaxed", "balanced", "fast"] as const).map((value) => <button aria-pressed={pace === value} className={pace === value ? "is-active" : ""} key={value} onClick={() => setPace(value)} type="button">{text[value]}</button>)}</div></div>
+                      <div className="planner-choice"><span>{text.travelHeading}</span><div className="planner-choice-chips" role="group" aria-label={text.travelHeading}>{([["auto", text.travelAuto], ["car", text.travelCar]] as const).map(([value, label]) => <button aria-pressed={travelPreference === value} className={travelPreference === value ? "is-active" : ""} key={value} onClick={() => setTravelPreference(value)} type="button">{label}</button>)}</div></div>
+                      <div className="planner-choice"><span>{text.timebandHeading}</span><div className="planner-choice-chips" role="group" aria-label={text.timebandHeading}>{([["08:00", text.timebandEarly], ["09:00", text.timebandNormal], ["10:30", text.timebandLate]] as const).map(([value, label]) => <button aria-pressed={dayStartDefault === value} className={dayStartDefault === value ? "is-active" : ""} key={value} onClick={() => setDayStartDefault(value)} type="button">{label}</button>)}</div></div>
+                    </div>
+                    <button className="planner-secondary-review" disabled={!canReviewPlaces} onClick={() => void reviewWishlistPlaces()} type="button">
+                      {locale === "ja" ? "空港・予約・地点ごとの条件も設定" : "Set airports, bookings and per-place details"}
+                    </button>
+                  </div>
+                ) : null}
+
                 {placeWarning ? <p className="planner-inline-status is-warning" role="status">{locale === "ja" ? "位置情報サービスに接続できませんでした。分かる場所だけで続け、残りは未解決として表示します。" : "Place lookup is unavailable. Known places will continue and the rest will stay unresolved."}</p> : null}
-                <button className="planner-build-button planner-review-button" disabled={!canReviewPlaces} onClick={() => void reviewWishlistPlaces()} type="button">
-                  <span>{isResolvingPlaces ? (locale === "ja" ? "場所を確認中…" : "Checking places…") : (locale === "ja" ? "場所を確認する" : "Check these places")}</span><b aria-hidden="true"><Icon name="arrow" size={19} /></b>
+                <button className="planner-build-button planner-review-button" disabled={!canBuild} onClick={() => void buildPlan()} type="button">
+                  <span>{isBuilding ? (locale === "ja" ? "旅程を作成中…" : "Building your itinerary…") : (locale === "ja" ? "旅程を作る" : "Build my itinerary")}</span><b aria-hidden="true"><Icon name="arrow" size={19} /></b>
                 </button>
               </div>
             ) : (
@@ -5694,7 +6323,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                 </details>
 
                 <button className="planner-build-button" disabled={!canBuild} onClick={() => void buildPlan()} type="button">
-                  <span>{locale === "ja" ? "実行可能性をチェック" : "Check feasibility"}</span><b aria-hidden="true"><Icon name="arrow" size={19} /></b>
+                  <span>{locale === "ja" ? "旅程を作る" : "Build my itinerary"}</span><b aria-hidden="true"><Icon name="arrow" size={19} /></b>
                 </button>
               </div>
             )}
@@ -5749,22 +6378,44 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
             <div className="planner-mobile-result-toggle" role="group" aria-label={locale === "ja" ? "結果の表示" : "Result view"}>
               <button aria-pressed={mobileResultView === "timeline"} className={mobileResultView === "timeline" ? "is-active" : ""} onClick={() => setMobileResultView("timeline")} type="button">{locale === "ja" ? "旅程" : "Timeline"}</button>
               <button aria-pressed={mobileResultView === "map"} className={mobileResultView === "map" ? "is-active" : ""} onClick={() => setMobileResultView("map")} type="button">{locale === "ja" ? "地図" : "Map"}</button>
+              <button aria-pressed={mobileResultView === "compact"} className={mobileResultView === "compact" ? "is-active" : ""} onClick={() => setMobileResultView("compact")} type="button">{locale === "ja" ? "地図を隠す" : "Hide map"}</button>
             </div>
 
             <header className="planner-result-header">
               <div>
                 <span className={`planner-verdict-label${feasibilityResult ? ` is-${feasibilityResult.state.toLowerCase()}` : ""}`}>
                   {feasibilityResult ? <i aria-hidden="true"><Icon name={feasibilityStateIcon(feasibilityResult.state)} size={12} /></i> : null}
-                  {resultStateCopy?.label ?? (locale === "ja" ? "判定結果" : "Feasibility result")}
+                  {deferredAnchorStops.length > 0 && plan
+                    ? locale === "ja"
+                      ? `${plan.scheduledStopCount}/${plan.scheduledStopCount + deferredAnchorStops.length}か所を日程化`
+                      : `${plan.scheduledStopCount} of ${plan.scheduledStopCount + deferredAnchorStops.length} places planned`
+                    : resultStateCopy?.label ?? (locale === "ja" ? "判定結果" : "Feasibility result")}
                 </span>
                 <h1>{resultStateCopy?.headline ?? day.theme}</h1>
               </div>
               <div className="planner-result-actions">
-                <button aria-label={locale === "ja" ? "変更を取り消す" : "Undo change"} disabled={!canUndoPlannerHistory(editHistory)} onClick={undoPlannerEdit} title={locale === "ja" ? "取り消す (⌘/Ctrl+Z)" : "Undo (⌘/Ctrl+Z)"} type="button">↶</button>
-                <button aria-label={locale === "ja" ? "変更をやり直す" : "Redo change"} disabled={!canRedoPlannerHistory(editHistory)} onClick={redoPlannerEdit} title={locale === "ja" ? "やり直す (⌘/Ctrl+Shift+Z)" : "Redo (⌘/Ctrl+Shift+Z)"} type="button">↷</button>
-                <button onClick={() => setPrintMode(true)} title={text.printTitle} type="button">{text.print}</button>
-                <button className={shareCopied ? "is-copied" : ""} onClick={() => setShareDialogOpen(true)} ref={shareTriggerRef} title={text.shareTitle} type="button">{shareCopied ? text.shareCopied : text.share}</button>
                 <button onClick={() => { setHasPlan(false); setInputStep("conditions"); setInspector(null); }} type="button">{text.edit}</button>
+                <details className="planner-result-menu">
+                  <summary aria-label={locale === "ja" ? "その他の操作" : "More actions"}>•••</summary>
+                  <div>
+                    <button
+                      className="planner-mobile-verdict-action"
+                      onClick={(event) => {
+                        const menu = event.currentTarget.closest("details") as HTMLDetailsElement | null;
+                        if (menu) menu.open = false;
+                        const details = document.querySelector(".planner-verdict-details") as HTMLDetailsElement | null;
+                        if (!details) return;
+                        details.open = true;
+                        details.scrollIntoView({ behavior: "smooth", block: "start" });
+                      }}
+                      type="button"
+                    >{locale === "ja" ? "判定の詳細" : "Verdict details"}</button>
+                    <button aria-label={locale === "ja" ? "変更を取り消す" : "Undo change"} disabled={!canUndoPlannerHistory(editHistory)} onClick={undoPlannerEdit} title={locale === "ja" ? "取り消す (⌘/Ctrl+Z)" : "Undo (⌘/Ctrl+Z)"} type="button">↶ {locale === "ja" ? "元に戻す" : "Undo"}</button>
+                    <button aria-label={locale === "ja" ? "変更をやり直す" : "Redo change"} disabled={!canRedoPlannerHistory(editHistory)} onClick={redoPlannerEdit} title={locale === "ja" ? "やり直す (⌘/Ctrl+Shift+Z)" : "Redo (⌘/Ctrl+Shift+Z)"} type="button">↷ {locale === "ja" ? "やり直す" : "Redo"}</button>
+                    <button onClick={() => setPrintMode(true)} title={text.printTitle} type="button">{text.print}</button>
+                    <button className={shareCopied ? "is-copied" : ""} onClick={() => setShareDialogOpen(true)} ref={shareTriggerRef} title={text.shareTitle} type="button">{shareCopied ? text.shareCopied : text.share}</button>
+                  </div>
+                </details>
               </div>
             </header>
             <p aria-atomic="true" aria-live="polite" className="sr-only">{historyAnnouncement}</p>
@@ -5813,10 +6464,47 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                 {feasibilityResult.primaryConflict ? ` ${conflictCopy(feasibilityResult.primaryConflict, locale)}` : ""}
               </p>
               <section className={`planner-feasibility-card is-${feasibilityResult.state.toLowerCase()}`} aria-labelledby="planner-feasibility-title">
-                <header>
-                  <span id="planner-feasibility-title">{locale === "ja" ? "実行可能性" : "Reality check"}</span>
-                  <small>{minimumDaysCopy(feasibilityResult, locale)}</small>
+                <header className="planner-result-decision">
+                  <div>
+                    <span id="planner-feasibility-title">{locale === "ja" ? "旅程の結論" : "Plan result"}</span>
+                    <small>{minimumDaysCopy(feasibilityResult, locale)}</small>
+                  </div>
+                  <button
+                    onClick={() => {
+                      if (feasibilityResult.state === "INFEASIBLE_HARD_CONFLICT") {
+                        document.getElementById("planner-alternatives-title")?.scrollIntoView({ behavior: "smooth", block: "center" });
+                        return;
+                      }
+                      if (feasibilityResult.state === "UNKNOWN" || feasibilityResult.state === "FEASIBLE_IF_ASSUMPTIONS") {
+                        setHasPlan(false);
+                        setInputStep("conditions");
+                        setInspector(null);
+                        return;
+                      }
+                      document.querySelector(".planner-day-tabs")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                    }}
+                    type="button"
+                  >{locale === "ja"
+                    ? feasibilityResult.state === "INFEASIBLE_HARD_CONFLICT" ? "直し方を見る" : feasibilityResult.state === "UNKNOWN" || feasibilityResult.state === "FEASIBLE_IF_ASSUMPTIONS" ? "確認する" : "このプランを見る"
+                    : feasibilityResult.state === "INFEASIBLE_HARD_CONFLICT" ? "See how to fix it" : feasibilityResult.state === "UNKNOWN" || feasibilityResult.state === "FEASIBLE_IF_ASSUMPTIONS" ? "Review details" : "View this plan"}</button>
                 </header>
+
+                {feasibilityResult.primaryConflict || deferredAnchorStops.length > 0 || feasibilityResult.primaryAttention ? (
+                  <p className="planner-one-warning">
+                    <Icon name="signal" size={14} />
+                    <span>{feasibilityResult.primaryConflict
+                      ? conflictCopy(feasibilityResult.primaryConflict, locale)
+                      : deferredAnchorStops.length > 0
+                        ? locale === "ja"
+                          ? `${deferredAnchorStops.slice(0, 2).map((stop) => stop.name).join("、")}${deferredAnchorStops.length > 2 ? `ほか${deferredAnchorStops.length - 2}件` : ""}は、現在の条件では日程に入りません。`
+                          : `${deferredAnchorStops.slice(0, 2).map((stop) => stop.name).join(", ")}${deferredAnchorStops.length > 2 ? ` and ${deferredAnchorStops.length - 2} more` : ""} do not fit the current plan.`
+                      : attentionCopy(feasibilityResult.primaryAttention!, locale)}</span>
+                  </p>
+                ) : null}
+
+                <details className="planner-verdict-details">
+                  <summary>{locale === "ja" ? "判定の詳細" : "Verdict details"}</summary>
+                  <div className="planner-verdict-details-body">
 
                 <div className="planner-trip-days" role="group" aria-label={text.fitSelectedDays}>
                   <span>{text.fitSelectedDays}</span>
@@ -5864,15 +6552,6 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                     <p>{coveragePublicCopy(regionalCoverage, locale)}</p>
                     {regionalCoverage.lastValidatedAt ? <small>{locale === "ja" ? `地域評価: ${regionalCoverage.lastValidatedAt}` : `Regional review: ${regionalCoverage.lastValidatedAt}`}</small> : null}
                   </details>
-                ) : null}
-
-                {feasibilityResult.primaryConflict || feasibilityResult.primaryAttention ? (
-                  <section className="planner-primary-attention">
-                    <span>{locale === "ja" ? "最大の注意点" : "Biggest attention"}</span>
-                    <b>{feasibilityResult.primaryConflict
-                      ? conflictCopy(feasibilityResult.primaryConflict, locale)
-                      : attentionCopy(feasibilityResult.primaryAttention!, locale)}</b>
-                  </section>
                 ) : null}
 
                 {plan.inputMode === "existing_itinerary" ? (() => {
@@ -5925,8 +6604,8 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                     },
                     {
                       key: "shortest",
-                      label: locale === "ja" ? "最短移動版" : "Shortest travel",
-                      detail: shortest ? alternativeCopy(shortest, locale).title : (locale === "ja" ? "固定条件内では現在の順番が最短です" : "Current order is already shortest within fixed constraints"),
+                      label: locale === "ja" ? "移動を減らす案" : "Lower-travel order",
+                      detail: shortest ? alternativeCopy(shortest, locale).title : (locale === "ja" ? "固定条件内で、より移動の少ない案は見つかりませんでした" : "No lower-travel alternative was found within the fixed constraints"),
                       metrics: shortest?.after ?? currentMetrics,
                       alternative: shortest,
                     },
@@ -6012,11 +6691,39 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                   </ul>
                 </details>
 
+                {placeWarning || (!P0_CORE_ONLY && hotelState.status === "unavailable") || plan.overCapacityCount > 0 || plan.deferredUnavailableStops.length > 0 || plan.deferredOptionalStops.length > 0 ? (
+                  <details className="planner-plan-notices">
+                    <summary>
+                      <span aria-hidden="true">!</span>
+                      {locale === "ja" ? "その他の注意" : "Other notices"}
+                    </summary>
+                    <div>
+                      {placeWarning && plan.unknownEntries.length === 0 ? <p>{text.placeFallback}</p> : null}
+                      {!P0_CORE_ONLY && hotelState.status === "unavailable" ? (
+                        <p>{text.hotelUnavailable}{" "}<a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${hotelQuery.trim() || mapStops[0]?.area || destinationName(activeDestination, locale)} ${locale === "ja" ? "ホテル" : "hotels"}`)}`} rel="noreferrer" target="_blank">{text.hotelSearch} ↗</a></p>
+                      ) : null}
+                      {plan.overCapacityCount > 0 ? <p>{text.overCapacity}</p> : null}
+                      {plan.deferredUnavailableStops.length > 0 || plan.deferredOptionalStops.length > 0 ? (
+                        <div className="planner-excluded">
+                          <b>{text.excludedHeading} · {plan.deferredUnavailableStops.length + plan.deferredOptionalStops.length}</b>
+                          <ul>
+                            {plan.deferredUnavailableStops.map((stop) => <li key={stop.id}><b>{stop.name}</b><small> — {text.excludedClosed}</small></li>)}
+                            {plan.deferredOptionalStops.map((stop) => <li key={stop.id}><b>{stop.name}</b><small> — {text.excludedPace}</small></li>)}
+                          </ul>
+                        </div>
+                      ) : null}
+                    </div>
+                  </details>
+                ) : null}
+
+                  </div>
+                </details>
+
               </section>
               </>
             ) : null}
 
-            {!P0_CORE_ONLY && beforeYouGo && (beforeYouGo.reservations.length > 0 || beforeYouGo.watchlist.length > 0 || activeEssentials || preTripItems.length > 0) ? (
+            {P1_TRAVEL_ENRICHMENTS && beforeYouGo && (beforeYouGo.reservations.length > 0 || beforeYouGo.watchlist.length > 0 || activeEssentials || preTripItems.length > 0) ? (
               <details className="planner-warning planner-before-you-go">
                 <summary><span aria-hidden="true"><Icon name="check" size={13} /></span>{text.beforeHeading}</summary>
                 <label className="planner-passport-country">
@@ -6105,56 +6812,22 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                 return (
                   <button
                     aria-pressed={activeDay === index}
-                    className={`${activeDay === index ? "is-active" : ""}${weekday?.isWeekend ? " is-weekend" : ""}`}
+                    className={`is-day-${index % 4 + 1}${activeDay === index ? " is-active" : ""}${weekday?.isWeekend ? " is-weekend" : ""}`}
                     key={candidate.label}
                     onClick={() => switchDay(index)}
                     type="button"
                   >
                     <b>{index + 1}</b>
                     <span>
-                      {tripDateTouched && candidate.date ? candidate.date.slice(5).replace("-", "/") : candidate.label}
-                      {weekday ? ` ${weekday.label}` : ""}
+                      {locale === "ja" ? `${index + 1}日目` : `Day ${index + 1}`}
+                      {` · ${candidate.stops.length <= 2
+                        ? locale === "ja" ? "ゆったり" : "easy"
+                        : locale === "ja" ? `${candidate.stops.length}か所` : `${candidate.stops.length} stops`}`}
                     </span>
-                    {weatherByDay[index] ? (
-                      <i className="planner-day-weather">
-                        <Icon name={weatherIconByKind[weatherByDay[index].kind as WeatherKind] ?? "cloud"} size={11} />
-                        {weatherByDay[index].temperatureMaxC}°
-                      </i>
-                    ) : null}
-                    {tripDateTouched && candidate.date && holidaysByDate[candidate.date] ? (
-                      <i className="planner-day-holiday" title={holidaysByDate[candidate.date].localName}>{text.holidayBadge}</i>
-                    ) : null}
                   </button>
                 );
               })}
             </div>
-
-            {placeWarning && plan.unknownEntries.length === 0 ? <p className="planner-warning" role="status"><span aria-hidden="true">!</span>{text.placeFallback}</p> : null}
-            {!P0_CORE_ONLY && hotelState.status === "unavailable" ? (
-              <p className="planner-warning" role="status">
-                <span aria-hidden="true">!</span>
-                <span className="planner-warning-body">
-                  {text.hotelUnavailable}{" "}
-                  <a
-                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${hotelQuery.trim() || mapStops[0]?.area || destinationName(activeDestination, locale)} ${locale === "ja" ? "ホテル" : "hotels"}`)}`}
-                    rel="noreferrer"
-                    target="_blank"
-                  >
-                    {text.hotelSearch} ↗
-                  </a>
-                </span>
-              </p>
-            ) : null}
-            {plan.overCapacityCount > 0 ? <p className="planner-warning" role="status"><span aria-hidden="true">!</span>{text.overCapacity}</p> : null}
-            {plan.deferredUnavailableStops.length > 0 || plan.deferredOptionalStops.length > 0 ? (
-              <details className="planner-warning planner-excluded" role="status">
-                <summary><span aria-hidden="true">!</span>{text.excludedHeading} · {plan.deferredUnavailableStops.length + plan.deferredOptionalStops.length}</summary>
-                <ul>
-                  {plan.deferredUnavailableStops.map((stop) => <li key={stop.id}><b>{stop.name}</b><small> — {text.excludedClosed}</small></li>)}
-                  {plan.deferredOptionalStops.map((stop) => <li key={stop.id}><b>{stop.name}</b><small> — {text.excludedPace}</small></li>)}
-                </ul>
-              </details>
-            ) : null}
 
             <section className="planner-day-summary">
               <div>
@@ -6166,12 +6839,11 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                     : day.label}
                 </span>
                 <b>{day.startTime}—{day.finishTime}</b>
+                <PlannerDayTimeBar day={day} fit={activeFitDay} locale={locale} />
                 {activeFitDay ? (
                   <div className="planner-day-metrics" aria-label={locale === "ja" ? "この日の時間内訳" : "Day time breakdown"}>
-                    <span><small>{locale === "ja" ? "使用" : "Used"}</small><b>{formatDuration(activeFitDay.plannedMinutes, locale)}</b></span>
-                    <span><small>{locale === "ja" ? "利用可能" : "Available"}</small><b>{formatDuration(activeFitDay.availableMinutes, locale)}</b></span>
+                    <span><small>{locale === "ja" ? "予定" : "Planned"}</small><b>{formatDuration(activeFitDay.plannedMinutes, locale)}</b></span>
                     <span><small>{locale === "ja" ? "余白" : "Spare"}</small><b>{formatDuration(Math.max(0, activeFitDay.slackMinutes), locale)}</b></span>
-                    <span><small>{locale === "ja" ? "移動" : "Travel"}</small><b>{formatDuration(dayTravelTotal, locale)}</b></span>
                   </div>
                 ) : dayTravelTotal > 0 ? <small className="planner-day-total">{text.travelTotal(dayTravelTotal)}</small> : null}
                 {weatherByDay[activeDay] ? (
@@ -6194,6 +6866,135 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                   <small className="planner-day-caution">{text.sundayClosingNote}</small>
                 ) : null}
               </div>
+            </section>
+
+            {hotelStayMode === "nightly" && day.endBase ? (
+              <button className="planner-tonight" onClick={() => setInspector({ kind: "hotel" })} type="button">
+                <span aria-hidden="true"><Icon name="bed" size={13} /></span>{text.tonightHotel(day.endBase.name)}
+              </button>
+            ) : null}
+
+            {day.stops.length === 0 ? <p className="planner-open-day">{text.openDay}</p> : (
+              <ol className="planner-timeline">
+                {day.stops.map((builtStop, index) => {
+                  const leg = index > 0 ? day.legs[index - 1] : null;
+                  const recommended = leg?.comparison.recommended;
+                  const isSelected = inspector?.kind === "stop" && inspector.stopId === builtStop.stop.id;
+                  const durationStatus = durationEvidenceByStopId[builtStop.stop.id] ?? "estimated";
+                  const accessPolicy = poiAccessPolicyForStop(builtStop.stop);
+                  const isFiller = fillerStopIds.has(builtStop.stop.id);
+                  const fillerKind = fillerKindsByStopId.get(builtStop.stop.id);
+                  const isMealFiller = fillerKind === "lunch" || fillerKind === "dinner";
+                  const durationSource = durationStatus === "user_provided"
+                    ? (locale === "ja" ? "指定" : "set")
+                    : durationStatus === "verified"
+                      ? (locale === "ja" ? "確認" : "confirmed")
+                      : (locale === "ja" ? "推定" : "estimated");
+                  return (
+                    <Fragment key={`${builtStop.stop.id}-${index}`}>
+                    {index === 0 && base && day.hotelOutboundMinutes !== null ? (
+                      <li className="planner-hotel-leg">
+                        <span aria-hidden="true"><Icon name="bed" size={12} /></span>
+                        <span>{text.hotelDepartRow(modeLabel(day.hotelOutboundMode), day.hotelOutboundMinutes)}</span>
+                      </li>
+                    ) : null}
+                    <li className={isFiller ? `is-system-filler${isMealFiller ? " is-meal-filler" : ""}` : undefined}>
+                      {leg && recommended ? (() => {
+                        const legKey = routeLegKey(leg.from.id, leg.to.id);
+                        const modeLabel = (mode: TransportMode) => mode === "taxi" && travelPreference === "car" ? text.moveCar : text.move[mode];
+                        return (
+                          <details className="planner-leg">
+                            <summary>
+                              <span>{modeIcon(recommended.mode, travelPreference === "car")}<b>{modeLabel(recommended.mode)} · {text.minutes(recommended.minutes)}</b></span>
+                              <small>{locale === "ja" ? "変更" : "Change"}</small>
+                            </summary>
+                            <div className="planner-leg-modes" role="group" aria-label={`${leg.from.name} → ${leg.to.name} · ${text.legModes}`}>
+                              {leg.comparison.options
+                                .filter((option) => option.mode !== "walk" || option.minutes <= 90)
+                                .map((option) => (
+                                  <button
+                                    aria-pressed={option.mode === recommended.mode}
+                                    className={option.mode === recommended.mode ? "is-active" : ""}
+                                    key={option.mode}
+                                    onClick={() => setLegMode(legKey, option.mode)}
+                                    title={`${modeLabel(option.mode)} · ${text.legModes}`}
+                                    type="button"
+                                  >
+                                    {modeIcon(option.mode, travelPreference === "car")}
+                                    <b>{text.minutes(option.minutes)}</b>
+                                  </button>
+                                ))}
+                            </div>
+                            <span className="planner-leg-evidence">
+                              {recommended.source === "live" ? <em>{text.legLive}</em> : null}
+                              {recommended.mode === "transit" && leg.transferCount !== null ? (
+                                <em>{locale === "ja" ? `乗換${leg.transferCount}回` : `${leg.transferCount} transfer${leg.transferCount === 1 ? "" : "s"}`}</em>
+                              ) : null}
+                            </span>
+                          </details>
+                        );
+                      })() : null}
+                      <button
+                        className={`planner-stop-row${isSelected ? " is-selected" : ""}${isFiller ? " is-filler" : ""}`}
+                        data-planner-stop-id={builtStop.stop.id}
+                        onClick={() => {
+                          setMapFocusedStopId(builtStop.stop.id);
+                          setInspector(isSelected ? null : { kind: "stop", stopId: builtStop.stop.id });
+                        }}
+                        type="button"
+                      >
+                        <time>{builtStop.arrival}</time>
+                        <span className="planner-stop-dot">{isMealFiller ? <Icon name="fork" size={11} /> : isFiller ? <Icon name="spark" size={11} /> : index + 1}</span>
+                        <span className="planner-stop-main">
+                          {isFiller ? <small className="planner-filler-label"><Icon name={isMealFiller ? "fork" : "spark"} size={10} />{isMealFiller
+                            ? fillerKind === "lunch" ? (locale === "ja" ? "昼食のおすすめ" : "Lunch recommendation") : (locale === "ja" ? "夕食のおすすめ" : "Dinner recommendation")
+                            : locale === "ja" ? "おすすめ" : "Recommended"}</small> : null}
+                          <b>{builtStop.stop.name}</b>
+                          <small>{builtStop.stop.area} · {text.previewStay(builtStop.stop.planningDurationMinutes)} <i className={`planner-duration-source is-${durationStatus}`}>{durationSource}</i></small>
+                          {accessPolicy ? <small className="planner-access-note"><Icon name="train" size={10} />{accessPolicy.note[locale]}</small> : null}
+                        </span>
+                        <span className="planner-stop-flags">
+                          {builtStop.reservationLateMinutes > 0
+                            ? <i className="is-booked">{text.lateShort(builtStop.reservationLateMinutes)}</i>
+                            : builtStop.fixedTime
+                              ? <i className="is-booked">{builtStop.fixedTime}</i>
+                              : builtStop.priority === "must"
+                                ? <i className="is-must">{text.must}</i>
+                                : null}
+                          {builtStop.openingStatus === "conflict"
+                            ? <i className="is-booked">{text.openingConflict}</i>
+                            : builtStop.openingStatus === "closed_day"
+                              ? <i className="is-booked">{text.openingClosedDay}</i>
+                              : builtStop.openingStatus === "last_entry_conflict"
+                                ? <i className="is-booked">{locale === "ja" ? "最終入場後" : "after last entry"}</i>
+                                : null}
+                        </span>
+                      </button>
+                      {isFiller ? (
+                        <button
+                          className="planner-filler-remove"
+                          onClick={() => removeSystemFiller(builtStop.stop)}
+                          type="button"
+                        >
+                          <Icon name="close" size={10} />{locale === "ja" ? "おすすめを外す" : "Remove suggestion"}
+                        </button>
+                      ) : null}
+                    </li>
+                    {!P0_CORE_ONLY ? mealRowsAfter(builtStop.stop.id, index === day.stops.length - 1) : null}
+                    {index === day.stops.length - 1 && dayEndBase && day.hotelInboundMinutes !== null ? (
+                      <li className="planner-hotel-leg is-return">
+                        <span aria-hidden="true"><Icon name="bed" size={12} /></span>
+                        <span>{text.hotelReturnRow(modeLabel(day.hotelInboundMode), day.hotelInboundMinutes)}</span>
+                      </li>
+                    ) : null}
+                    </Fragment>
+                  );
+                })}
+              </ol>
+            )}
+
+            <details className="planner-day-settings planner-day-settings-after">
+              <summary>{locale === "ja" ? "日程設定と移動データ" : "Day settings and route data"}</summary>
               <div className="planner-day-time-controls">
                 <label className="planner-day-start">
                   <span>{text.dayStart}</span>
@@ -6227,106 +7028,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
               {day.deadlineOverrunMinutes > 0 && day.deadline
                 ? <em>{day.deadlineKind === "curfew" ? text.curfewOver(day.deadline) : text.deadlineOver(day.deadline)}</em>
                 : <small>{measuredRouteCount > 0 ? text.walkingSafety : text.estimated}</small>}
-            </section>
-
-            {hotelStayMode === "nightly" && day.endBase ? (
-              <button className="planner-tonight" onClick={() => setInspector({ kind: "hotel" })} type="button">
-                <span aria-hidden="true"><Icon name="bed" size={13} /></span>{text.tonightHotel(day.endBase.name)}
-              </button>
-            ) : null}
-
-            {day.stops.length === 0 ? <p className="planner-open-day">{text.openDay}</p> : (
-              <ol className="planner-timeline">
-                {day.stops.map((builtStop, index) => {
-                  const leg = index > 0 ? day.legs[index - 1] : null;
-                  const recommended = leg?.comparison.recommended;
-                  const stopIntel = intelligence[builtStop.stop.id]?.result;
-                  const checked = intelligence[builtStop.stop.id]?.status === "ready";
-                  const publicSignals = freshVoices[builtStop.stop.id]?.result?.findings.length ?? 0;
-                  const isSelected = inspector?.kind === "stop" && inspector.stopId === builtStop.stop.id;
-                  const durationStatus = durationEvidenceByStopId[builtStop.stop.id] ?? "estimated";
-                  const durationSource = durationStatus === "user_provided"
-                    ? (locale === "ja" ? "指定" : "set")
-                    : durationStatus === "verified"
-                      ? (locale === "ja" ? "確認" : "confirmed")
-                      : (locale === "ja" ? "推定" : "estimated");
-                  return (
-                    <Fragment key={`${builtStop.stop.id}-${index}`}>
-                    {index === 0 && base && day.hotelOutboundMinutes !== null ? (
-                      <li className="planner-hotel-leg">
-                        <span aria-hidden="true"><Icon name="bed" size={12} /></span>
-                        <span>{text.hotelDepartRow(modeLabel(day.hotelOutboundMode), day.hotelOutboundMinutes)}</span>
-                      </li>
-                    ) : null}
-                    <li>
-                      {leg && recommended ? (() => {
-                        const legKey = routeLegKey(leg.from.id, leg.to.id);
-                        const modeLabel = (mode: TransportMode) => mode === "taxi" && travelPreference === "car" ? text.moveCar : text.move[mode];
-                        return (
-                          <div className="planner-leg">
-                            <div className="planner-leg-modes" role="group" aria-label={`${leg.from.name} → ${leg.to.name} · ${text.legModes}`}>
-                              {leg.comparison.options
-                                .filter((option) => option.mode !== "walk" || option.minutes <= 90)
-                                .map((option) => (
-                                  <button
-                                    aria-pressed={option.mode === recommended.mode}
-                                    className={option.mode === recommended.mode ? "is-active" : ""}
-                                    key={option.mode}
-                                    onClick={() => setLegMode(legKey, option.mode)}
-                                    title={`${modeLabel(option.mode)} · ${text.legModes}`}
-                                    type="button"
-                                  >
-                                    {modeIcon(option.mode, travelPreference === "car")}
-                                    <b>{text.minutes(option.minutes)}</b>
-                                  </button>
-                                ))}
-                            </div>
-                            {recommended.source === "live" ? <em>{text.legLive}</em> : null}
-                            {recommended.mode === "transit" && leg.transferCount !== null ? (
-                              <em>{locale === "ja" ? `乗換${leg.transferCount}回` : `${leg.transferCount} transfer${leg.transferCount === 1 ? "" : "s"}`}</em>
-                            ) : null}
-                          </div>
-                        );
-                      })() : null}
-                      <button
-                        className={`planner-stop-row${isSelected ? " is-selected" : ""}`}
-                        onClick={() => setInspector(isSelected ? null : { kind: "stop", stopId: builtStop.stop.id })}
-                        type="button"
-                      >
-                        <time>{builtStop.arrival}</time>
-                        <span className="planner-stop-dot">{index + 1}</span>
-                        <span className="planner-stop-main">
-                          <b>{builtStop.stop.name}</b>
-                          <small>{builtStop.stop.area} · {text.previewStay(builtStop.stop.planningDurationMinutes)} <i className={`planner-duration-source is-${durationStatus}`}>{durationSource}</i></small>
-                        </span>
-                        <span className="planner-stop-flags">
-                          {builtStop.fixedTime ? <i className="is-booked">{builtStop.fixedTime}</i> : null}
-                          {builtStop.reservationLateMinutes > 0 ? <i className="is-booked">{text.lateShort(builtStop.reservationLateMinutes)}</i> : null}
-                          {builtStop.priority === "must" ? <i className="is-must">{text.must}</i> : null}
-                          {builtStop.priority === "optional" ? <i className="is-optional">{text.optional}</i> : null}
-                          {!P0_CORE_ONLY && stopIntel?.place.rating !== null && stopIntel?.place.rating !== undefined ? <i className="is-checked">★ {stopIntel.place.rating.toFixed(1)}</i> : null}
-                          {!P0_CORE_ONLY && checked && (stopIntel?.place.rating === null || stopIntel?.place.rating === undefined) ? <i className="is-checked" aria-hidden="true">✓</i> : null}
-                          {!P0_CORE_ONLY && publicSignals > 0 ? <i className="is-must">SNS {publicSignals}</i> : null}
-                          {builtStop.openingStatus === "verified_open" ? <i className="is-checked">{text.openingAdjusted}</i> : null}
-                          {builtStop.openingStatus === "conflict" ? <i className="is-booked">{text.openingConflict}</i> : null}
-                          {builtStop.openingStatus === "closed_day" ? <i className="is-booked">{text.openingClosedDay}</i> : null}
-                          {builtStop.openingStatus === "last_entry_conflict" ? <i className="is-booked">{locale === "ja" ? "最終入場後" : "after last entry"}</i> : null}
-                          {builtStop.openingStatus === "unknown" ? <i className="is-unknown">{text.openingUnknown}</i> : null}
-                        </span>
-                      </button>
-                    </li>
-                    {!P0_CORE_ONLY ? mealRowsAfter(builtStop.stop.id, index === day.stops.length - 1) : null}
-                    {index === day.stops.length - 1 && dayEndBase && day.hotelInboundMinutes !== null ? (
-                      <li className="planner-hotel-leg is-return">
-                        <span aria-hidden="true"><Icon name="bed" size={12} /></span>
-                        <span>{text.hotelReturnRow(modeLabel(day.hotelInboundMode), day.hotelInboundMinutes)}</span>
-                      </li>
-                    ) : null}
-                    </Fragment>
-                  );
-                })}
-              </ol>
-            )}
+            </details>
 
             {!hintDismissed ? <p className="planner-select-hint">{text.selectHint}</p> : null}
 

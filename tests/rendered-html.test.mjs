@@ -23,25 +23,27 @@ async function render() {
   );
 }
 
-test("server-renders the input-first TripCheck feasibility checker", async () => {
+test("server-renders the input-first TripCheck itinerary builder", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
-  assert.match(html, /<title>TripCheck — itinerary feasibility checker<\/title>/i);
+  assert.match(html, /<title>TripCheck — build a realistic itinerary from saved places<\/title>/i);
   // The searchable country picker ships in the server-rendered form,
   // defaulting to detection rather than to any one country.
   assert.match(html, /Detect automatically/);
   assert.match(html, /<input(?=[^>]*id="planner-destination")(?=[^>]*role="combobox")(?=[^>]*value="Detect automatically")[^>]*>/i);
   assert.match(html, /Type a country to choose/);
   assert.match(html, /class="trip-planner-app is-places"/);
-  assert.match(html, /Paste your saved places\./);
-  assert.match(html, /See what actually fits/);
-  assert.match(html, />Places</);
-  assert.match(html, />Conditions</);
-  assert.match(html, />Result</);
-  assert.match(html, /Check these places/);
+  assert.match(html, /Add the places you want to visit\./);
+  assert.match(html, /Build my itinerary/);
+  assert.match(html, /When and for how long\?/);
+  assert.match(html, /Build it for me/);
+  assert.match(html, /Fine-tune it/);
+  assert.match(html, /Places &amp; days/);
+  assert.match(html, />Itinerary</);
+  assert.doesNotMatch(html, />Conditions</);
   assert.match(html, /Try a sample/);
   // Step 1 is intentionally map-free: hiding the canvas in CSS would still
   // load Google and spend privacy/cost budget before the traveller asks.
@@ -82,8 +84,10 @@ test("keeps P0 trust, print and adoption contracts explicit in the planner UI", 
   assert.match(source, /function printTransferCopy[\s\S]*leg\.transferCount/);
   assert.match(printSource, /!P0_CORE_ONLY && activeEssentials/);
   assert.doesNotMatch(autoSaveSource, /plan_saved_or_shared/);
-  assert.match(source, /builtStop\.openingStatus === "unknown" \? <i className="is-unknown">/);
-  assert.doesNotMatch(source, /builtStop\.openingStatus === "unknown" && stopIntel/);
+  assert.match(source, /planner-one-warning/);
+  assert.match(source, /planner-verdict-details/);
+  assert.match(source, /<PlannerDayTimeBar/);
+  assert.doesNotMatch(source, /className="is-checked"><Icon name="check"/);
   assert.match(source, /planner-verdict-label/);
   assert.match(source, /feasibilityStateIcon\(feasibilityResult\.state\)/);
   assert.match(css, /planner-stop-flags \.is-unknown/);

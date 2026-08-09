@@ -4,6 +4,11 @@ import type { LiveRouteCoordinate, LiveRouteResult, LiveRouteTravelMode } from "
 import { decodeGooglePolyline } from "./google-polyline.ts";
 import { estimateTravelOptions, type TravelPreference } from "./time-feasibility.ts";
 import { straightLineDistanceKm, type RouteStop } from "./route-optimizer.ts";
+import {
+  allowedTransportModesForLeg,
+  routeAccessEndpointsForLeg,
+  type PoiAccessAssumption,
+} from "./poi-access.ts";
 import { routeLegKey, type BuiltTripPlan } from "./trip-builder.ts";
 import { PLANNING_BUDGET } from "./planning-budget.ts";
 import { tripRequestHeaders } from "./trip-request-identity.ts";
@@ -32,11 +37,16 @@ export type PlanningRouteLeg = {
   destination: LiveRouteCoordinate;
   departureTime: string;
   mode: PlanningRouteMode;
+  /** Present only when the provider endpoint differs from the itinerary POI. */
+  routingEndpointKey?: string;
+  accessAssumptions?: readonly PoiAccessAssumption[];
 };
 
 export type PlanningRouteResult = LiveRouteResult & {
   mode: PlanningRouteMode;
   departureTime: string;
+  routingEndpointKey?: string;
+  accessAssumptions?: readonly PoiAccessAssumption[];
 };
 
 export type PlanningRoutePrefetch = {
@@ -64,6 +74,8 @@ export type PlanningTransitLegRequest = SelectedTransitLegRequest & Readonly<{
   destination: LiveRouteCoordinate;
   /** Exact critical-fact ids that consume this bucketed provider result. */
   factIds: readonly string[];
+  routingEndpointKey?: string;
+  accessAssumptions?: readonly PoiAccessAssumption[];
 }>;
 
 export type PlanningTransitFetchOptions = {
@@ -104,6 +116,23 @@ function addDays(value: string, days: number) {
   return date.toISOString().slice(0, 10);
 }
 
+function providerEndpointsForLeg(origin: RouteStop, destination: RouteStop) {
+  const resolution = routeAccessEndpointsForLeg(origin, destination);
+  if (resolution.status === "conditional" || !resolution.origin || !resolution.destination) return null;
+  return {
+    origin: resolution.origin.coordinate,
+    destination: resolution.destination.coordinate,
+    ...(resolution.status === "access_node" ? {
+      routingEndpointKey: resolution.routingEndpointKey!,
+      accessAssumptions: resolution.assumptions,
+    } : {}),
+  };
+}
+
+function providerTransitIdentity(legId: string, routingEndpointKey?: string) {
+  return routingEndpointKey ? `${legId}@${routingEndpointKey}` : legId;
+}
+
 function timedPathForDay(plan: BuiltTripPlan, dayIndex: number) {
   const day = plan.days[dayIndex];
   const destinationProfile = destinationById(plan.destination);
@@ -133,10 +162,11 @@ function timedPathForDay(plan: BuiltTripPlan, dayIndex: number) {
     const destination = path[index + 1];
     const departureTime = localDateTimeWithOffset(localDate, localTime, destinationProfile.timeZone);
     if (!departureTime) return [];
+    const endpoints = providerEndpointsForLeg(origin, destination);
+    if (!endpoints) return [];
     const shared = {
       id: routeLegKey(origin.id, destination.id),
-      origin: { latitude: origin.latitude, longitude: origin.longitude },
-      destination: { latitude: destination.latitude, longitude: destination.longitude },
+      ...endpoints,
       departureTime,
     };
     // The mode the schedule actually uses (including a per-leg user pick) is
@@ -246,8 +276,13 @@ function selectedTransitOccurrencesForDay(plan: BuiltTripPlan, dayIndex: number)
       : day.legs[index]?.comparison.recommended.mode;
     if (mode !== "transit") return [];
 
+    const endpoints = providerEndpointsForLeg(origin, destination);
+    if (!endpoints) return [];
     const legId = routeLegKey(origin.id, destination.id);
-    const requestKey = transitRequestKey(legId, departureTime);
+    const requestKey = transitRequestKey(
+      providerTransitIdentity(legId, endpoints.routingEndpointKey),
+      departureTime,
+    );
     const factId = planningRouteFactId(day.label, origin.id, destination.id);
     return [{
       legId,
@@ -255,10 +290,9 @@ function selectedTransitOccurrencesForDay(plan: BuiltTripPlan, dayIndex: number)
       departureTime,
       departureBucket: transitDepartureBucket(departureTime),
       requestKey,
-      origin: { latitude: origin.latitude, longitude: origin.longitude },
-      destination: { latitude: destination.latitude, longitude: destination.longitude },
+      ...endpoints,
       factIds: [factId],
-      occurrenceId: `${factId}@${departureTime}`,
+      occurrenceId: `${factId}@${departureTime}${endpoints.routingEndpointKey ? `@${endpoints.routingEndpointKey}` : ""}`,
     }];
   });
 }
@@ -311,6 +345,8 @@ export function buildSelectedTransitLegRequests(plan: BuiltTripPlan): PlanningTr
         origin: occurrence.origin,
         destination: occurrence.destination,
         factIds: occurrence.factIds,
+        ...(occurrence.routingEndpointKey ? { routingEndpointKey: occurrence.routingEndpointKey } : {}),
+        ...(occurrence.accessAssumptions ? { accessAssumptions: occurrence.accessAssumptions } : {}),
       });
       continue;
     }
@@ -347,6 +383,8 @@ function contenderModes(
   preference: TravelPreference,
   mobility: MobilityProfile,
 ): PlanningRouteMode[] {
+  const allowed = allowedTransportModesForLeg(origin, destination);
+  if (allowed.length === 1 && allowed[0] === "transit") return ["transit"];
   const comparison = estimateTravelOptions(origin, destination, preference, mobility);
   const minutesOf = (mode: "walk" | "transit" | "taxi") =>
     comparison.options.find((option) => option.mode === mode)!.minutes;
@@ -366,7 +404,7 @@ function contenderModes(
  * schedule shifts.
  */
 export function planningRouteRequestKey(
-  leg: Pick<PlanningRouteLeg, "mode" | "id" | "departureTime">,
+  leg: Pick<PlanningRouteLeg, "mode" | "id" | "departureTime" | "routingEndpointKey">,
 ) {
   // The departure minute is bucketed to half an hour in the KEY only: feeding
   // measured minutes back into the schedule shifts every later departure a
@@ -376,7 +414,7 @@ export function planningRouteRequestKey(
     /T(\d{2}):(\d{2})/,
     (_all, hour: string, minute: string) => `T${hour}:${Number(minute) < 30 ? "00" : "30"}`,
   );
-  return `${leg.mode}|${leg.id}|${bucketed}`;
+  return `${leg.mode}|${providerTransitIdentity(leg.id, leg.routingEndpointKey)}|${bucketed}`;
 }
 
 /**
@@ -497,6 +535,8 @@ async function requestBatch(
       ...leg!,
       mode,
       departureTime: legs[index].departureTime,
+      ...(legs[index].routingEndpointKey ? { routingEndpointKey: legs[index].routingEndpointKey } : {}),
+      ...(legs[index].accessAssumptions ? { accessAssumptions: legs[index].accessAssumptions } : {}),
     } satisfies PlanningRouteResult)),
   };
 }
@@ -529,6 +569,9 @@ export async function fetchPlanningTransitEvidence(
       return batch.map((request, index): TransitProviderObservation => {
         const result = response.legs[index];
         const points = result?.encodedPolyline ? decodeGooglePolyline(result.encodedPolyline) : [];
+        const providerRef = request.accessAssumptions?.length
+          ? `google_maps:access_node:${request.accessAssumptions.map((item) => item.accessNodeId).sort().join(",")}`
+          : "google_maps";
         return result?.status === "ok" && result.durationMinutes !== null
           ? {
               requestKey: request.requestKey,
@@ -536,7 +579,7 @@ export async function fetchPlanningTransitEvidence(
               durationMinutes: result.durationMinutes,
               transferCount: result.transferCount,
               fetchedAt: response.fetchedAt,
-              providerRef: "google_maps",
+              providerRef,
               ...(points.length >= 2 ? { routeGeometry: {
                 points,
                 distanceMeters: result.distanceMeters,
@@ -548,7 +591,7 @@ export async function fetchPlanningTransitEvidence(
               durationMinutes: null,
               transferCount: null,
               fetchedAt: response.fetchedAt,
-              providerRef: "google_maps",
+              providerRef,
             };
       });
     } catch {
@@ -557,7 +600,9 @@ export async function fetchPlanningTransitEvidence(
         status: "failed",
         durationMinutes: null,
         transferCount: null,
-        providerRef: "google_maps",
+        providerRef: request.accessAssumptions?.length
+          ? `google_maps:access_node:${request.accessAssumptions.map((item) => item.accessNodeId).sort().join(",")}`
+          : "google_maps",
       }));
     }
   });

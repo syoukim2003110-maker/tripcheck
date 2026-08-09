@@ -43,6 +43,7 @@ test("polyline encoder follows Google's documented example", () => {
 function candidate(overrides: Partial<RouteRecommendation>): RouteRecommendation {
   return {
     id: "google-candidate",
+    providerRef: "candidate",
     name: "Candidate",
     address: "Address",
     type: "Museum",
@@ -114,6 +115,7 @@ test("Google adapter uses Search Along Route and excludes existing places", asyn
   assert.equal(sentBodies[0].pageSize, 20);
   assert.equal("maxResultCount" in sentBodies[0], false);
   assert.deepEqual(result.map(({ id }) => id), ["google-new"]);
+  assert.deepEqual(result.map(({ providerRef }) => providerRef), ["new"]);
 });
 
 test("Google adapter accepts a highly rated cafe as a useful route stop", async () => {
@@ -138,6 +140,7 @@ test("Google adapter accepts a highly rated cafe as a useful route stop", async 
     destination: "japan",
   }, "test", fetcher);
   assert.deepEqual(result.map(({ id }) => id), ["google-cafe"]);
+  assert.deepEqual(result.map(({ providerRef }) => providerRef), ["cafe"]);
 });
 
 test("accepts current natural-feature types and a useful secondary type", async () => {

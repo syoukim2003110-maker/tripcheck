@@ -9,10 +9,21 @@ import { decodeGooglePolyline } from "../lib/google-polyline";
 import type { RouteStop } from "../lib/route-optimizer";
 import type { TransportMode } from "../lib/time-feasibility";
 import { PLANNING_BUDGET } from "../lib/planning-budget";
+import {
+  buildPlannerMapDayLayerViews,
+  buildPlannerMapPinView,
+  buildPlannerMapRouteView,
+  plannerRouteGeometryIsDrawable,
+  type PlannerMapDayLayer,
+  type PlannerMapItemKind,
+  type PlannerMapPinView,
+} from "../lib/planner-map-model";
 import { tripRequestHeaders } from "../lib/trip-request-identity";
 
 type MapLocale = "en" | "ja";
-type RouteState = "idle" | "loading" | "live" | "partial" | "unavailable";
+type RouteState = "idle" | "paused_date" | "loading" | "live" | "partial" | "unavailable";
+
+export type { PlannerMapDayLayer, PlannerMapDayLayerStop } from "../lib/planner-map-model";
 
 export type FoodPin = {
   id: string;
@@ -41,7 +52,7 @@ export type RecommendationPin = {
   index: number;
 };
 
-type Props = {
+export type PlannerGoogleMapProps = {
   apiKey: string;
   base: RouteStop | null;
   /** Tonight's hotel when it differs from the morning base (nightly hotel mode). */
@@ -57,12 +68,29 @@ type Props = {
   routeBudgetUsed: number;
   /** Holds display-only walking/taxi fetches until transit convergence ends. */
   routeRequestsPaused: boolean;
+  /** Explains a deliberate pause without presenting it as provider failure. */
+  routePauseReason?: "date_required" | "checking" | null;
   /** Already-fetched transit geometry, aligned to the visible physical legs. */
   transitGeometry: readonly (readonly { latitude: number; longitude: number }[] | null)[];
   /** Lets one unresolved occurrence be positioned without rebuilding the trip. */
   coordinatePickActive?: boolean;
   coordinatePick?: { latitude: number; longitude: number } | null;
   inspectorOpen: boolean;
+  /** Zero-based day index shared with the timeline. */
+  dayIndex?: number;
+  /** Optional shared timeline/map colour. Falls back to the map day palette. */
+  dayColor?: string;
+  /** In all-days views, non-selected routes use the 2px/faint treatment. */
+  dayActive?: boolean;
+  /**
+   * Optional all-days snapshot. The current day remains authoritative through
+   * the legacy route props; provider-backed inactive layers are display-only.
+   */
+  dayLayers?: readonly PlannerMapDayLayer[];
+  /** Item semantics keyed by the same stable id used by timeline selection. */
+  itemKinds?: Readonly<Record<string, PlannerMapItemKind>>;
+  /** Consequential stop warnings are marked with an explicit `!`, not colour alone. */
+  warningStopIds?: readonly string[];
   destination: Destination;
   locale: MapLocale;
   onRouteGeometry: (points: Array<{ latitude: number; longitude: number }>) => void;
@@ -72,6 +100,8 @@ type Props = {
   onSelectHotelCandidate: (candidateId: string) => void;
   onSelectRecommendation: (candidateId: string) => void;
   onSelectStop: (stopId: string | null) => void;
+  /** Lets an inactive marker activate its day before opening the shared item. */
+  onSelectDayStop?: (dayIndex: number, stopId: string) => void;
   routeModes: TransportMode[];
   selectedFoodPinId: string | null;
   selectedHotelPinId: string | null;
@@ -79,6 +109,8 @@ type Props = {
   selectedStopId: string | null;
   stops: RouteStop[];
 };
+
+const EMPTY_DAY_LAYERS: readonly PlannerMapDayLayer[] = [];
 
 declare global {
   interface Window {
@@ -181,33 +213,101 @@ function createChip(
   map: any,
   options: {
     position: { lat: number; lng: number };
-    badge: string;
     name: string;
-    kind: "stop" | "hotel" | "hotel-option" | "food" | "food-lunch" | "food-dinner" | "food-both" | "recommendation" | "manual";
+    view: PlannerMapPinView;
     pixelOffsetX?: number;
     stopId: string;
+    dayAppearance?: {
+      dayIndex: number;
+      dayNumber: number;
+      color: string;
+      active: boolean;
+      pinOpacity: number;
+      pinZIndex: number;
+    };
     onClick?: () => void;
   },
 ): Chip {
   const overlay = new google.maps.OverlayView();
   let element: HTMLButtonElement | null = null;
+  let label: HTMLSpanElement | null = null;
+  let selected = false;
+  let hovered = false;
+  let focused = false;
+  const syncInteractionState = () => {
+    if (!element || !label) return;
+    const visible = selected || hovered || focused;
+    label.hidden = !visible;
+    element.classList.toggle("is-label-visible", visible);
+    if (options.dayAppearance) {
+      element.style.opacity = String(selected ? 1 : options.dayAppearance.pinOpacity);
+      element.style.zIndex = String(selected ? 6 : options.dayAppearance.pinZIndex);
+    }
+  };
   overlay.onAdd = function onAdd() {
     element = document.createElement("button");
     element.type = "button";
-    element.className = `planner-map-chip is-${options.kind}`;
+    element.className = options.view.className;
+    element.dataset.itemId = options.stopId;
+    element.dataset.itemKind = options.view.kind;
+    element.dataset.markerShape = options.view.shape;
+    element.dataset.labelVisibility = options.view.labelVisibility;
+    if (options.dayAppearance) {
+      const appearance = options.dayAppearance;
+      element.classList.add(`is-day-${appearance.dayNumber}`, appearance.active ? "is-active-day" : "is-inactive-day");
+      element.dataset.dayColor = appearance.color;
+      element.dataset.dayIndex = String(appearance.dayIndex);
+      element.style.setProperty("--planner-map-day-color", appearance.color);
+      element.style.opacity = String(appearance.pinOpacity);
+      element.style.zIndex = String(appearance.pinZIndex);
+    }
     const badge = document.createElement("i");
-    if (options.kind === "hotel") badge.innerHTML = HOTEL_BADGE_SVG;
-    else if (options.kind === "food" && options.badge === "F") badge.innerHTML = MEAL_BADGE_SVG;
-    else if (options.kind === "food-lunch") badge.innerHTML = LUNCH_BADGE_SVG;
-    else if (options.kind === "food-dinner") badge.innerHTML = DINNER_BADGE_SVG;
-    else if (options.kind === "food-both") badge.innerHTML = MEAL_BADGE_SVG;
-    else if (options.kind === "recommendation") badge.innerHTML = RECOMMENDATION_BADGE_SVG;
-    else badge.textContent = options.badge;
-    const label = document.createElement("span");
+    if (options.view.glyph === "bed") badge.innerHTML = HOTEL_BADGE_SVG;
+    else if (options.view.glyph === "meal") badge.innerHTML = MEAL_BADGE_SVG;
+    else if (options.view.glyph === "lunch") badge.innerHTML = LUNCH_BADGE_SVG;
+    else if (options.view.glyph === "dinner") badge.innerHTML = DINNER_BADGE_SVG;
+    else if (options.view.glyph === "star") badge.innerHTML = RECOMMENDATION_BADGE_SVG;
+    else badge.textContent = options.view.badge;
+    if (options.dayAppearance) {
+      const { color } = options.dayAppearance;
+      element.style.borderColor = color;
+      if (options.view.kind === "anchor") {
+        badge.style.backgroundColor = color;
+      } else if (options.view.kind === "filler") {
+        badge.style.backgroundColor = "#ffffff";
+        badge.style.border = `2px solid ${color}`;
+        badge.style.color = color;
+      }
+    }
+    label = document.createElement("span");
     label.textContent = options.name;
+    label.hidden = true;
     element.append(badge, label);
+    if (options.view.warningBadge) {
+      const warning = document.createElement("b");
+      warning.className = "planner-map-chip-warning";
+      warning.textContent = options.view.warningBadge;
+      warning.setAttribute("aria-hidden", "true");
+      element.append(warning);
+    }
     element.title = options.name;
-    element.setAttribute("aria-label", `${options.name} ${options.badge}`);
+    element.setAttribute("aria-label", `${options.name}, ${options.view.ariaKind}`);
+    element.addEventListener("mouseenter", () => {
+      hovered = true;
+      syncInteractionState();
+    });
+    element.addEventListener("mouseleave", () => {
+      hovered = false;
+      syncInteractionState();
+    });
+    element.addEventListener("focus", () => {
+      focused = true;
+      syncInteractionState();
+    });
+    element.addEventListener("blur", () => {
+      focused = false;
+      syncInteractionState();
+    });
     if (options.onClick) {
       element.addEventListener("click", (event) => {
         event.stopPropagation();
@@ -218,6 +318,10 @@ function createChip(
       element.tabIndex = -1;
       element.setAttribute("aria-hidden", "true");
     }
+    // Google Maps also dispatches its own synthetic map click after a DOM
+    // overlay click. DOM stopPropagation alone does not reliably stop that
+    // second event, which immediately cleared the selected stop again.
+    google.maps.OverlayView.preventMapHitsAndGesturesFrom?.(element);
     this.getPanes()?.overlayMouseTarget.appendChild(element);
   };
   overlay.draw = function draw() {
@@ -237,7 +341,11 @@ function createChip(
   return {
     overlay,
     stopId: options.stopId,
-    setSelected: (selected: boolean) => element?.classList.toggle("is-selected", selected),
+    setSelected: (nextSelected: boolean) => {
+      selected = nextSelected;
+      element?.classList.toggle("is-selected", selected);
+      syncInteractionState();
+    },
   };
 }
 
@@ -254,10 +362,17 @@ export default function PlannerGoogleMap({
   routeBudgetKey,
   routeBudgetUsed,
   routeRequestsPaused,
+  routePauseReason = null,
   transitGeometry,
   coordinatePickActive = false,
   coordinatePick = null,
   inspectorOpen,
+  dayIndex = 0,
+  dayColor,
+  dayActive = true,
+  dayLayers = EMPTY_DAY_LAYERS,
+  itemKinds = {},
+  warningStopIds = [],
   locale,
   onRouteGeometry,
   onPickCoordinate,
@@ -266,13 +381,14 @@ export default function PlannerGoogleMap({
   onSelectHotelCandidate,
   onSelectRecommendation,
   onSelectStop,
+  onSelectDayStop,
   routeModes,
   selectedFoodPinId,
   selectedHotelPinId,
   selectedRecommendationPinId,
   selectedStopId,
   stops,
-}: Props) {
+}: PlannerGoogleMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   // The opening view is fixed at mount; once a country or a stop set exists,
   // the recentre effect below owns where the map looks.
@@ -280,10 +396,13 @@ export default function PlannerGoogleMap({
   const engineRef = useRef<{ google: any; map: any; maps: any } | null>(null);
   const chipsRef = useRef<Chip[]>([]);
   const routeLinesRef = useRef<any[]>([]);
+  const dayLayerChipsRef = useRef<Chip[]>([]);
+  const dayLayerLinesRef = useRef<any[]>([]);
   const foodChipsRef = useRef<Chip[]>([]);
   const hotelChipsRef = useRef<Chip[]>([]);
   const recommendationChipsRef = useRef<Chip[]>([]);
   const coordinatePickChipRef = useRef<Chip | null>(null);
+  const suppressMapClickUntilRef = useRef(0);
   const legCacheRef = useRef<Map<string, { path: any[]; minutes: number | null; fetchedAt: string | null }>>(new Map());
   const routeBudgetRef = useRef({ key: routeBudgetKey, used: routeBudgetUsed });
   const renderSeqRef = useRef(0);
@@ -294,6 +413,8 @@ export default function PlannerGoogleMap({
   const onSelectHotelCandidateRef = useRef(onSelectHotelCandidate);
   const onSelectRecommendationRef = useRef(onSelectRecommendation);
   const onSelectStopRef = useRef(onSelectStop);
+  const onSelectDayStopRef = useRef(onSelectDayStop);
+  const selectedStopIdRef = useRef(selectedStopId);
   const onRouteGeometryRef = useRef(onRouteGeometry);
   const onPickCoordinateRef = useRef(onPickCoordinate);
   const coordinatePickActiveRef = useRef(coordinatePickActive);
@@ -317,6 +438,8 @@ export default function PlannerGoogleMap({
     onSelectHotelCandidateRef.current = onSelectHotelCandidate;
     onSelectRecommendationRef.current = onSelectRecommendation;
     onSelectStopRef.current = onSelectStop;
+    onSelectDayStopRef.current = onSelectDayStop;
+    selectedStopIdRef.current = selectedStopId;
     onRouteGeometryRef.current = onRouteGeometry;
     onPickCoordinateRef.current = onPickCoordinate;
     coordinatePickActiveRef.current = coordinatePickActive;
@@ -325,17 +448,34 @@ export default function PlannerGoogleMap({
   const finishBase = base && endBase && endBase.id !== base.id ? endBase : null;
   const displayStops = base ? [base, ...stops, ...(finishBase ? [finishBase] : [])] : stops;
   const pathStops = base && stops.length > 0 ? [base, ...stops, finishBase ?? base] : stops;
-  const stopsSignature = `${destination.id}:${destination.regionCode ?? "worldwide"}|${locale}|${onSelectHotel ? "hotel-on" : "hotel-off"}|${displayStops.map((stop) => `${stop.id}@${stop.latitude.toFixed(5)},${stop.longitude.toFixed(5)}`).join("|")}`;
+  const routeView = buildPlannerMapRouteView({ dayIndex, dayColor, active: dayActive });
+  const activeDayAppearance = {
+    dayIndex: routeView.dayIndex,
+    dayNumber: routeView.dayNumber,
+    color: routeView.color,
+    active: dayActive,
+    pinOpacity: dayActive ? 1 : 0.38,
+    pinZIndex: dayActive ? 3 : 0,
+  };
+  const dayLayerViews = buildPlannerMapDayLayerViews(dayLayers, { activeDayIndex: dayIndex, locale });
+  const warningStopIdSet = new Set(warningStopIds);
+  const stopsSignature = `${destination.id}:${destination.regionCode ?? "worldwide"}|${locale}|${onSelectHotel ? "hotel-on" : "hotel-off"}|${displayStops.map((stop) => `${stop.id}@${stop.latitude.toFixed(5)},${stop.longitude.toFixed(5)}:${itemKinds[stop.id] ?? "anchor"}:${warningStopIdSet.has(stop.id) ? "warning" : "clear"}`).join("|")}`;
   const transitGeometrySignature = transitGeometry.map((points) => points
     ? points.map((point) => `${point.latitude.toFixed(5)},${point.longitude.toFixed(5)}`).join(";")
     : "-").join("|");
-  const routeSignature = `${routeBudgetKey}|${stopsSignature}|${drawRoute ? "route" : "pins"}|${routeRequestsPaused ? "paused" : "ready"}|${routeModes.join(",")}|${departureTimes.join(",")}|${transitGeometrySignature}`;
-  const foodSignature = foodPins.map((pin) => `${pin.id}:${pin.mealKind}@${pin.latitude.toFixed(5)},${pin.longitude.toFixed(5)}`).join("|");
-  const hotelSignature = hotelPins.map((pin) => `${pin.id}@${pin.latitude.toFixed(5)},${pin.longitude.toFixed(5)}:${pin.priceLabel}`).join("|");
-  const recommendationSignature = recommendationPins.map((pin) => `${pin.id}@${pin.latitude.toFixed(5)},${pin.longitude.toFixed(5)}`).join("|");
+  const routeSignature = `${routeBudgetKey}|${stopsSignature}|${drawRoute ? "route" : "pins"}|${routeRequestsPaused ? `paused:${routePauseReason ?? "checking"}` : "ready"}|${routeModes.join(",")}|${departureTimes.join(",")}|${transitGeometrySignature}|${routeView.dayIndex}:${routeView.color}:${dayActive ? "active" : "inactive"}`;
+  const pinDaySignature = `${locale}:${routeView.dayIndex}:${routeView.color}:${dayActive ? "active" : "inactive"}`;
+  const foodSignature = `${pinDaySignature}|${foodPins.map((pin) => `${pin.id}:${pin.mealKind}@${pin.latitude.toFixed(5)},${pin.longitude.toFixed(5)}`).join("|")}`;
+  const hotelSignature = `${pinDaySignature}|${hotelPins.map((pin) => `${pin.id}@${pin.latitude.toFixed(5)},${pin.longitude.toFixed(5)}:${pin.priceLabel}`).join("|")}`;
+  const recommendationSignature = `${pinDaySignature}|${recommendationPins.map((pin) => `${pin.id}@${pin.latitude.toFixed(5)},${pin.longitude.toFixed(5)}`).join("|")}`;
   const coordinatePickSignature = coordinatePick
     ? `${coordinatePick.latitude.toFixed(6)},${coordinatePick.longitude.toFixed(6)}`
     : "none";
+  const dayLayersSignature = dayLayerViews.map((layer) => [
+    `${layer.dayIndex}:${layer.color}:${layer.active ? "active" : "inactive"}`,
+    layer.stops.map((stop) => `${stop.id}:${stop.sequence}@${stop.latitude.toFixed(5)},${stop.longitude.toFixed(5)}:${stop.pin.kind}:${stop.warning ? "warning" : "clear"}`).join(","),
+    layer.drawableSegments.map((segment) => segment.map((point) => `${point.lat.toFixed(5)},${point.lng.toFixed(5)}`).join(";")).join("/"),
+  ].join("|")).join("||");
 
   useEffect(() => {
     let cancelled = false;
@@ -365,6 +505,9 @@ export default function PlannerGoogleMap({
           backgroundColor: "#f4f4f5",
         });
         map.addListener("click", (event: any) => {
+          if (Date.now() < suppressMapClickUntilRef.current) return;
+          const clickedElement = event?.domEvent?.target;
+          if (clickedElement instanceof Element && clickedElement.closest(".planner-map-chip")) return;
           onSelectStopRef.current(null);
           if (!coordinatePickActiveRef.current) return;
           const latitude = event?.latLng?.lat?.();
@@ -384,12 +527,14 @@ export default function PlannerGoogleMap({
     return () => {
       cancelled = true;
       chipsRef.current.forEach((chip) => chip.overlay.setMap(null));
+      dayLayerChipsRef.current.forEach((chip) => chip.overlay.setMap(null));
       foodChipsRef.current.forEach((chip) => chip.overlay.setMap(null));
       hotelChipsRef.current.forEach((chip) => chip.overlay.setMap(null));
       recommendationChipsRef.current.forEach((chip) => chip.overlay.setMap(null));
       coordinatePickChipRef.current?.overlay.setMap(null);
       coordinatePickChipRef.current = null;
       routeLinesRef.current.forEach((line) => line.setMap(null));
+      dayLayerLinesRef.current.forEach((line) => line.setMap(null));
       if (tilesListener) tilesListener.remove();
       engineRef.current = null;
     };
@@ -409,14 +554,26 @@ export default function PlannerGoogleMap({
     chipsRef.current = displayStops.map((stop, index) => {
       const isHotel = Boolean(base) && (index === 0 || (Boolean(finishBase) && index === displayStops.length - 1));
       const selectHotel = onSelectHotelRef.current;
-      return createChip(google, map, {
-        position: { lat: stop.latitude, lng: stop.longitude },
-        badge: isHotel ? "H" : String(base ? index : index + 1),
-        name: stop.name,
-        kind: isHotel ? "hotel" : "stop",
-        stopId: stop.id,
-        onClick: isHotel ? (selectHotel ? () => selectHotel() : undefined) : () => onSelectStopRef.current(stop.id),
+      const sequence = base ? index : index + 1;
+      const view = buildPlannerMapPinView({
+        kind: isHotel ? "hotel" : itemKinds[stop.id] ?? "anchor",
+        sequence,
+        warning: warningStopIdSet.has(stop.id),
+        locale,
       });
+      const chip = createChip(google, map, {
+        position: { lat: stop.latitude, lng: stop.longitude },
+        name: stop.name,
+        pixelOffsetX: isHotel ? 0 : (sequence % 2 === 0 ? -10 : 10),
+        view,
+        stopId: stop.id,
+        dayAppearance: activeDayAppearance,
+        onClick: isHotel
+          ? (selectHotel ? () => { suppressMapClickUntilRef.current = Date.now() + 250; selectHotel(); } : undefined)
+          : () => { suppressMapClickUntilRef.current = Date.now() + 250; onSelectStopRef.current(stop.id); },
+      });
+      chip.setSelected(chip.stopId === selectedStopIdRef.current);
+      return chip;
     });
 
     if (displayStops.length === 0) {
@@ -534,7 +691,7 @@ export default function PlannerGoogleMap({
       const routeBounds = new LatLngBounds();
       const geometry: Array<{ latitude: number; longitude: number }> = [];
       for (const result of results) {
-        if (result.path.length < 2) continue;
+        if (!plannerRouteGeometryIsDrawable(result.path)) continue;
         liveLegCount += 1;
         result.path.forEach((point: any) => routeBounds.extend(point));
         for (const point of result.path) {
@@ -543,13 +700,26 @@ export default function PlannerGoogleMap({
             geometry.push({ latitude: point.lat, longitude: point.lng });
           }
         }
-        const routeColor = { walk: "#2f8878", transit: "#e2634e", taxi: "#6f5aa8" }[result.mode];
         routeLinesRef.current.push(
-          new google.maps.Polyline({ map, path: result.path, strokeColor: "#ffffff", strokeOpacity: 0.92, strokeWeight: 9, zIndex: 4 }),
-          new google.maps.Polyline({ map, path: result.path, strokeColor: routeColor, strokeOpacity: 0.95, strokeWeight: 5, zIndex: 5 }),
+          new google.maps.Polyline({
+            map,
+            path: result.path,
+            strokeColor: "#ffffff",
+            strokeOpacity: routeView.outlineOpacity,
+            strokeWeight: routeView.outlineWeight,
+            zIndex: Math.max(1, routeView.zIndex - 1),
+          }),
+          new google.maps.Polyline({
+            map,
+            path: result.path,
+            strokeColor: routeView.color,
+            strokeOpacity: routeView.strokeOpacity,
+            strokeWeight: routeView.strokeWeight,
+            zIndex: routeView.zIndex,
+          }),
         );
       }
-      if (liveLegCount === legs.length) {
+      if (liveLegCount === legs.length && dayLayerViews.length === 0) {
         displayStops.forEach((stop) => routeBounds.extend({ lat: stop.latitude, lng: stop.longitude }));
         fitVisibleBounds(map, routeBounds, inspectorOpenRef.current);
       }
@@ -575,6 +745,79 @@ export default function PlannerGoogleMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engineState, routeSignature]);
 
+  // All-days context is deliberately display-only. It consumes no provider
+  // budget and draws only geometry the caller already has evidence for. The
+  // active day is omitted here because the live pipeline above owns it.
+  useEffect(() => {
+    dayLayerChipsRef.current.forEach((chip) => chip.overlay.setMap(null));
+    dayLayerLinesRef.current.forEach((line) => line.setMap(null));
+    dayLayerChipsRef.current = [];
+    dayLayerLinesRef.current = [];
+    if (engineState !== "js" || !engineRef.current) return;
+
+    const { google, map } = engineRef.current;
+    for (const layer of dayLayerViews) {
+      if (layer.active) continue;
+      const appearance = {
+        dayIndex: layer.dayIndex,
+        dayNumber: layer.dayNumber,
+        color: layer.color,
+        active: false,
+        pinOpacity: layer.pinOpacity,
+        pinZIndex: layer.pinZIndex,
+      };
+      for (const segment of layer.drawableSegments) {
+        dayLayerLinesRef.current.push(
+          new google.maps.Polyline({
+            clickable: false,
+            map,
+            path: segment,
+            strokeColor: "#ffffff",
+            strokeOpacity: layer.route.outlineOpacity,
+            strokeWeight: layer.route.outlineWeight,
+            zIndex: Math.max(1, layer.route.zIndex - 1),
+          }),
+          new google.maps.Polyline({
+            clickable: false,
+            map,
+            path: segment,
+            strokeColor: layer.route.color,
+            strokeOpacity: layer.route.strokeOpacity,
+            strokeWeight: layer.route.strokeWeight,
+            zIndex: layer.route.zIndex,
+          }),
+        );
+      }
+      for (const stop of layer.stops) {
+        const chip = createChip(google, map, {
+          position: { lat: stop.latitude, lng: stop.longitude },
+          name: stop.name,
+          pixelOffsetX: stop.kind === "hotel" ? 0 : ((stop.sequence ?? 1) % 2 === 0 ? -10 : 10),
+          view: stop.pin,
+          stopId: stop.id,
+          dayAppearance: appearance,
+          onClick: () => {
+            suppressMapClickUntilRef.current = Date.now() + 250;
+            if (onSelectDayStopRef.current) onSelectDayStopRef.current(layer.dayIndex, stop.id);
+            else onSelectStopRef.current(stop.id);
+          },
+        });
+        chip.setSelected(chip.stopId === selectedStopIdRef.current);
+        dayLayerChipsRef.current.push(chip);
+      }
+    }
+
+    return () => {
+      dayLayerChipsRef.current.forEach((chip) => chip.overlay.setMap(null));
+      dayLayerLinesRef.current.forEach((line) => line.setMap(null));
+      dayLayerChipsRef.current = [];
+      dayLayerLinesRef.current = [];
+    };
+    // Stable numeric/content signature avoids rebuilding overlays when a
+    // parent recreates equivalent day-layer arrays.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engineState, dayLayersSignature]);
+
   useEffect(() => {
     if (engineState !== "js" || !engineRef.current) return;
     const { map } = engineRef.current;
@@ -582,6 +825,7 @@ export default function PlannerGoogleMap({
     const fitCurrentView = () => {
       const points = [
         ...displayStops.map((stop) => ({ lat: stop.latitude, lng: stop.longitude })),
+        ...dayLayerViews.flatMap((layer) => layer.stops.map((stop) => ({ lat: stop.latitude, lng: stop.longitude }))),
         ...foodPins.map((pin) => ({ lat: pin.latitude, lng: pin.longitude })),
         ...hotelPins.map((pin) => ({ lat: pin.latitude, lng: pin.longitude })),
         ...recommendationPins.map((pin) => ({ lat: pin.latitude, lng: pin.longitude })),
@@ -603,19 +847,21 @@ export default function PlannerGoogleMap({
     };
     // This effect changes only the camera framing; it deliberately does not refetch routes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engineState, stopsSignature, foodSignature, hotelSignature, recommendationSignature, inspectorOpen]);
+  }, [engineState, stopsSignature, dayLayersSignature, foodSignature, hotelSignature, recommendationSignature, inspectorOpen]);
 
   useEffect(() => {
     chipsRef.current.forEach((chip) => chip.setSelected(chip.stopId === selectedStopId));
+    dayLayerChipsRef.current.forEach((chip) => chip.setSelected(chip.stopId === selectedStopId));
     if (!selectedStopId || engineState !== "js" || !engineRef.current) return;
-    const stop = displayStops.find((candidate) => candidate.id === selectedStopId);
+    const stop = displayStops.find((candidate) => candidate.id === selectedStopId)
+      ?? dayLayerViews.flatMap((layer) => layer.stops).find((candidate) => candidate.id === selectedStopId);
     if (stop) focusVisiblePoint(
       engineRef.current.map,
       { lat: stop.latitude, lng: stop.longitude },
       inspectorOpenRef.current,
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedStopId, engineState, stopsSignature]);
+  }, [selectedStopId, engineState, stopsSignature, dayLayersSignature]);
 
   useEffect(() => {
     if (engineState !== "js" || !engineRef.current) return;
@@ -624,9 +870,9 @@ export default function PlannerGoogleMap({
     foodChipsRef.current.forEach((chip) => chip.overlay.setMap(null));
     foodChipsRef.current = foodPins.map((pin) => createChip(google, map, {
       position: { lat: pin.latitude, lng: pin.longitude },
-      badge: String(pin.index + 1),
       name: pin.name,
-      kind: pin.mealKind === "lunch" ? "food-lunch" : pin.mealKind === "dinner" ? "food-dinner" : "food-both",
+      view: buildPlannerMapPinView({ kind: "meal", mealKind: pin.mealKind, locale }),
+      dayAppearance: activeDayAppearance,
       pixelOffsetX: (pin.index - 1) * 30,
       stopId: `food-${pin.id}`,
       onClick: () => onSelectFoodRef.current(pin.slotId, pin.candidateId),
@@ -635,10 +881,11 @@ export default function PlannerGoogleMap({
       const bounds = new LatLngBounds();
       foodPins.forEach((pin) => bounds.extend({ lat: pin.latitude, lng: pin.longitude }));
       displayStops.forEach((stop) => bounds.extend({ lat: stop.latitude, lng: stop.longitude }));
+      dayLayerViews.forEach((layer) => layer.stops.forEach((stop) => bounds.extend({ lat: stop.latitude, lng: stop.longitude })));
       fitVisibleBounds(map, bounds, inspectorOpenRef.current);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engineState, foodSignature]);
+  }, [engineState, foodSignature, dayLayersSignature]);
 
   // Hotel alternatives are a comparison overlay only. Keeping them in a
   // separate effect means opening the hotel panel never re-requests Routes.
@@ -648,9 +895,9 @@ export default function PlannerGoogleMap({
     hotelChipsRef.current.forEach((chip) => chip.overlay.setMap(null));
     hotelChipsRef.current = hotelPins.map((pin) => createChip(google, map, {
       position: { lat: pin.latitude, lng: pin.longitude },
-      badge: pin.priceLabel,
       name: pin.name,
-      kind: "hotel-option",
+      view: buildPlannerMapPinView({ kind: "hotel", badgeText: pin.priceLabel, comparison: true, locale }),
+      dayAppearance: activeDayAppearance,
       stopId: `hotel-${pin.id}`,
       onClick: () => onSelectHotelCandidateRef.current(pin.id),
     }));
@@ -673,9 +920,9 @@ export default function PlannerGoogleMap({
     recommendationChipsRef.current.forEach((chip) => chip.overlay.setMap(null));
     recommendationChipsRef.current = recommendationPins.map((pin) => createChip(google, map, {
       position: { lat: pin.latitude, lng: pin.longitude },
-      badge: String(pin.index + 1),
       name: pin.name,
-      kind: "recommendation",
+      view: buildPlannerMapPinView({ kind: "filler", locale }),
+      dayAppearance: activeDayAppearance,
       stopId: `recommendation-${pin.id}`,
       onClick: () => onSelectRecommendationRef.current(pin.id),
     }));
@@ -694,9 +941,13 @@ export default function PlannerGoogleMap({
     const { google, map } = engineRef.current;
     coordinatePickChipRef.current = createChip(google, map, {
       position: { lat: coordinatePick.latitude, lng: coordinatePick.longitude },
-      badge: "+",
       name: locale === "ja" ? "指定する地点" : "Traveller-selected point",
-      kind: "manual",
+      view: {
+        ...buildPlannerMapPinView({ kind: "anchor", badgeText: "+", locale }),
+        glyph: "manual",
+        className: "planner-map-chip is-manual is-shape-manual",
+        ariaKind: locale === "ja" ? "指定する地点" : "traveller-selected point",
+      },
       stopId: "manual-coordinate-pick",
     });
     focusVisiblePoint(map, { lat: coordinatePick.latitude, lng: coordinatePick.longitude }, inspectorOpenRef.current);
@@ -716,17 +967,31 @@ export default function PlannerGoogleMap({
       longitude: destination.center.longitude,
       name: destinationName(destination, locale),
     }];
+  // A multi-point Embed request becomes Directions and silently uses the
+  // current timetable. While the traveller has not chosen a date (or live
+  // verification is still paused), keep this fallback view-only. Numbered JS
+  // markers still communicate visit order without inventing a route.
+  const embedViewPoints = routeRequestsPaused && embedPoints.length > 1
+    ? [{
+        latitude: embedPoints.reduce((sum, point) => sum + point.latitude, 0) / embedPoints.length,
+        longitude: embedPoints.reduce((sum, point) => sum + point.longitude, 0) / embedPoints.length,
+        name: destinationName(destination, locale),
+      }]
+    : embedPoints;
   const embedParams = new URLSearchParams({
     language: locale,
-    points: embedPoints.map((stop) => `${stop.latitude},${stop.longitude}`).join("|"),
-    labels: embedPoints.map((stop) => stop.name).join("|"),
-    ...(pathStops.length === 0 ? { overview: "1", zoom: String(destination.overviewZoom) } : {}),
+    points: embedViewPoints.map((stop) => `${stop.latitude},${stop.longitude}`).join("|"),
+    labels: embedViewPoints.map((stop) => stop.name).join("|"),
+    ...(pathStops.length === 0 || routeRequestsPaused ? { overview: "1", zoom: String(destination.overviewZoom) } : {}),
     ...(destination.id === "worldwide" ? {} : { destination: destination.id }),
   });
 
+  const displayedRouteState: RouteState = routeRequestsPaused
+    ? routePauseReason === "date_required" ? "paused_date" : "loading"
+    : routeState;
   const statusText = locale === "ja"
-    ? { idle: "地図", loading: "経路を取得中…", live: "経路データ取得済み", partial: "一部の経路のみ取得済み", unavailable: "経路データ未取得" }[routeState]
-    : { idle: "Map", loading: "Fetching routes…", live: "Route data retrieved", partial: "Some route data unavailable", unavailable: "Route data unavailable" }[routeState];
+    ? { idle: "地図", paused_date: "日付未定 · 訪問順のみ", loading: "経路を取得中…", live: "経路データ取得済み", partial: "一部の経路のみ取得済み", unavailable: "経路データ未取得" }[displayedRouteState]
+    : { idle: "Map", paused_date: "Date not set · visit order only", loading: "Fetching routes…", live: "Route data retrieved", partial: "Some route data unavailable", unavailable: "Route data unavailable" }[displayedRouteState];
 
   return (
     <>
@@ -737,9 +1002,14 @@ export default function PlannerGoogleMap({
         src={`/api/map-embed?${embedParams.toString()}`}
         title={locale === "ja" ? "旅程のGoogleマップ" : "Itinerary on Google Maps"}
       />
-      <div className={`planner-google-map${engineState === "js" ? " is-visible" : ""}${coordinatePickActive ? " is-coordinate-picking" : ""}`} ref={containerRef} />
+      <div
+        className={`planner-google-map${engineState === "js" ? " is-visible" : ""}${coordinatePickActive ? " is-coordinate-picking" : ""} is-day-${routeView.dayNumber}${dayActive ? " is-active-day" : " is-inactive-day"}`}
+        data-day-color={routeView.color}
+        data-day-index={routeView.dayIndex}
+        ref={containerRef}
+      />
       {drawRoute && pathStops.length > 1 ? (
-        <span aria-live="polite" className={`planner-route-status is-${routeState}`}><i aria-hidden="true" />{statusText}</span>
+        <span aria-live="polite" className={`planner-route-status is-${displayedRouteState}`}><i aria-hidden="true" />{statusText}</span>
       ) : null}
     </>
   );

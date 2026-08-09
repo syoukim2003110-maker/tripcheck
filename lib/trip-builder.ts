@@ -26,6 +26,12 @@ import {
   type RouteStop,
 } from "./route-optimizer.ts";
 import { applyLiveTransitMinutes, estimateTravelOptions, type ModeComparison, type TransportMode, type TravelPreference } from "./time-feasibility.ts";
+import {
+  allowedTransportModesForLeg,
+  routeAccessEndpointsForLeg,
+  type PoiAccessAssumption,
+  type PoiRouteEndpoint,
+} from "./poi-access.ts";
 
 import { isDayAnchorStay, isFoodPlaceTypes } from "./stay-estimates.ts";
 
@@ -55,6 +61,9 @@ export type BuiltPlanLeg = {
   walkingLimitExceededMinutes: number;
   /** Exact selected-route evidence; null never means zero transfers. */
   transferCount: number | null;
+  /** Provider route ends at a disclosed access node, or could not be resolved. */
+  routeEvidenceScope?: "access_node" | "conditional";
+  accessAssumptions?: readonly PoiAccessAssumption[];
 };
 
 export type MobilityPolicy = {
@@ -84,6 +93,10 @@ export type BuiltPlanDay = {
   hotelInboundSource: "estimate" | "live" | null;
   hotelOutboundTransferCount: number | null;
   hotelInboundTransferCount: number | null;
+  hotelOutboundRouteEvidenceScope?: "access_node" | "conditional";
+  hotelInboundRouteEvidenceScope?: "access_node" | "conditional";
+  hotelOutboundAccessAssumptions?: readonly PoiAccessAssumption[];
+  hotelInboundAccessAssumptions?: readonly PoiAccessAssumption[];
   /** Where this day begins (previous night's hotel) and ends (tonight's hotel). */
   startBase: TripBase | null;
   endBase: TripBase | null;
@@ -1033,6 +1046,7 @@ type TravelInputs = {
 const defaultTravel: TravelInputs = { preference: "auto", bufferMinutes: 10 };
 
 function knownTransferCount(from: RouteStop, to: RouteStop, travel: TravelInputs) {
+  if (routeAccessEndpointsForLeg(from, to).status !== "direct") return null;
   const count = travel.transfers?.[routeLegKey(from.id, to.id)];
   return typeof count === "number" && Number.isSafeInteger(count) && count >= 0 && count <= 100
     ? count
@@ -1042,14 +1056,36 @@ function knownTransferCount(from: RouteStop, to: RouteStop, travel: TravelInputs
 function routeComparison(from: RouteStop, to: RouteStop, travel: TravelInputs) {
   const key = routeLegKey(from.id, to.id);
   const mobility = travel.mobility ?? "transit_first";
-  const comparison = applyLiveTransitMinutes(
+  const access = routeAccessEndpointsForLeg(from, to);
+  // A provider result ending at an access station is useful route evidence,
+  // but it is not the full summit journey. Keep the solver's duration
+  // conditional/estimated until the mountain continuation is modelled.
+  const fullLegProviderEvidence = access.status === "direct";
+  const providerComparison = applyLiveTransitMinutes(
     estimateTravelOptions(from, to, travel.preference, mobility),
-    travel.transit?.[key],
-    travel.walking?.[key],
-    travel.driving?.[key],
+    fullLegProviderEvidence ? travel.transit?.[key] : undefined,
+    fullLegProviderEvidence ? travel.walking?.[key] : undefined,
+    fullLegProviderEvidence ? travel.driving?.[key] : undefined,
     travel.preference,
     mobility,
   );
+  const unfilteredComparison = fullLegProviderEvidence ? providerComparison : {
+    options: providerComparison.options.map((option) => ({ ...option, source: "estimate" as const })),
+    fastest: { ...providerComparison.fastest, source: "estimate" as const },
+    recommended: { ...providerComparison.recommended, source: "estimate" as const },
+  };
+  const allowedModes = allowedTransportModesForLeg(from, to);
+  const allowedOptions = unfilteredComparison.options.filter((option) => allowedModes.includes(option.mode));
+  // Curated access policies fail closed. Their current P0 policy always keeps
+  // transit, but preserve the unfiltered comparison if a malformed future
+  // policy were to remove every supported mode.
+  const comparison = allowedOptions.length > 0 && allowedOptions.length !== unfilteredComparison.options.length
+    ? {
+        options: allowedOptions,
+        fastest: allowedOptions.reduce((best, option) => option.minutes < best.minutes ? option : best),
+        recommended: allowedOptions.reduce((best, option) => option.minutes < best.minutes ? option : best),
+      }
+    : unfilteredComparison;
   // A per-leg pick beats every automatic rule; the schedule, map and Google
   // measurements all follow it.
   const overrideMode = travel.overrides?.[key];
@@ -1084,6 +1120,46 @@ function routeComparison(from: RouteStop, to: RouteStop, travel: TravelInputs) {
     if (alternative) recommended = alternative;
   }
   return recommended === comparison.recommended ? comparison : { ...comparison, recommended };
+}
+
+function endpointAsRouteStop(original: RouteStop, endpoint: PoiRouteEndpoint): RouteStop {
+  return endpoint.kind === "poi" ? original : {
+    ...original,
+    id: endpoint.id,
+    name: endpoint.name,
+    latitude: endpoint.coordinate.latitude,
+    longitude: endpoint.coordinate.longitude,
+  };
+}
+
+function accessMetadataForLeg(from: RouteStop, to: RouteStop) {
+  const access = routeAccessEndpointsForLeg(from, to);
+  if (access.status === "direct") return {};
+  return {
+    routeEvidenceScope: access.status,
+    accessAssumptions: access.assumptions,
+  } as const;
+}
+
+function googleMapsUrlsForLeg(from: RouteStop, to: RouteStop): Record<TransportMode, string> {
+  const access = routeAccessEndpointsForLeg(from, to);
+  if (access.status === "conditional" || !access.origin || !access.destination) {
+    return { walk: "", transit: "", taxi: "" };
+  }
+  if (access.status === "access_node") {
+    const origin = endpointAsRouteStop(from, access.origin);
+    const destination = endpointAsRouteStop(to, access.destination);
+    return {
+      walk: "",
+      transit: buildGoogleMapsUrl([origin, destination], "transit"),
+      taxi: "",
+    };
+  }
+  return {
+    walk: buildGoogleMapsUrl([from, to], "walking"),
+    transit: buildGoogleMapsUrl([from, to], "transit"),
+    taxi: buildGoogleMapsUrl([from, to], "driving"),
+  };
 }
 
 function routeTravelMinutes(from: RouteStop, to: RouteStop, travel: TravelInputs) {
@@ -1409,17 +1485,14 @@ function buildDay(
       from,
       to,
       comparison,
-      googleMapsUrls: {
-        walk: buildGoogleMapsUrl([from, to], "walking"),
-        transit: buildGoogleMapsUrl([from, to], "transit"),
-        taxi: buildGoogleMapsUrl([from, to], "driving"),
-      },
+      googleMapsUrls: googleMapsUrlsForLeg(from, to),
       isLocalMealPause: false,
       walkingMinutes,
       walkingLimitExceededMinutes,
       transferCount: comparison.recommended.mode === "transit"
         ? knownTransferCount(from, to, travelInputs)
         : null,
+      ...accessMetadataForLeg(from, to),
     };
   });
   let cursor = startMinutes;
@@ -1432,8 +1505,13 @@ function buildDay(
   let hotelInboundSource: "estimate" | "live" | null = null;
   let hotelOutboundTransferCount: number | null = null;
   let hotelInboundTransferCount: number | null = null;
+  let hotelOutboundRouteEvidenceScope: "access_node" | "conditional" | undefined;
+  let hotelInboundRouteEvidenceScope: "access_node" | "conditional" | undefined;
+  let hotelOutboundAccessAssumptions: readonly PoiAccessAssumption[] | undefined;
+  let hotelInboundAccessAssumptions: readonly PoiAccessAssumption[] | undefined;
   const transferBufferMinutes = travelInputs.bufferMinutes ?? 10;
   if (startBase && ordered[0]) {
+    const access = accessMetadataForLeg(startBase, ordered[0]);
     const outbound = routeComparison(startBase, ordered[0], travelInputs).recommended;
     cursor += outbound.minutes + transferBufferMinutes;
     hotelTravelMinutes = outbound.minutes;
@@ -1443,6 +1521,8 @@ function buildDay(
     hotelOutboundTransferCount = outbound.mode === "transit"
       ? knownTransferCount(startBase, ordered[0], travelInputs)
       : null;
+    hotelOutboundRouteEvidenceScope = access.routeEvidenceScope;
+    hotelOutboundAccessAssumptions = access.accessAssumptions;
   }
   const scheduledStops = ordered.map((stop, stopIndex): BuiltPlanStop => {
     const constraint = constraints.get(stop.id) ?? defaultConstraint;
@@ -1475,6 +1555,7 @@ function buildDay(
   });
   const finishBase = endBase ?? startBase;
   if (finishBase && ordered.at(-1)) {
+    const access = accessMetadataForLeg(ordered.at(-1)!, finishBase);
     const inbound = routeComparison(ordered.at(-1)!, finishBase, travelInputs).recommended;
     cursor += inbound.minutes;
     hotelTravelMinutes = (hotelTravelMinutes ?? 0) + inbound.minutes;
@@ -1484,6 +1565,8 @@ function buildDay(
     hotelInboundTransferCount = inbound.mode === "transit"
       ? knownTransferCount(ordered.at(-1)!, finishBase, travelInputs)
       : null;
+    hotelInboundRouteEvidenceScope = access.routeEvidenceScope;
+    hotelInboundAccessAssumptions = access.accessAssumptions;
   }
   const airportDeadline = departureConstraint
     ? clockMinutes(departureConstraint.cityTime)! + (departureConstraint.cityTimeDayOffset === -1 ? -1440 : 0)
@@ -1519,6 +1602,10 @@ function buildDay(
     hotelInboundSource,
     hotelOutboundTransferCount,
     hotelInboundTransferCount,
+    ...(hotelOutboundRouteEvidenceScope ? { hotelOutboundRouteEvidenceScope } : {}),
+    ...(hotelInboundRouteEvidenceScope ? { hotelInboundRouteEvidenceScope } : {}),
+    ...(hotelOutboundAccessAssumptions ? { hotelOutboundAccessAssumptions } : {}),
+    ...(hotelInboundAccessAssumptions ? { hotelInboundAccessAssumptions } : {}),
     startBase,
     endBase: finishBase,
     deadline: deadlineMinutes === null ? null : clock(deadlineMinutes),

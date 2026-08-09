@@ -5,9 +5,9 @@ import TripPlannerApp from "./TripPlannerApp";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "TripCheck — itinerary feasibility checker",
+  title: "TripCheck — build a realistic itinerary from saved places",
   description:
-    "Paste your saved places. TripCheck checks routes, opening hours, bookings, airports and usable time to show what actually fits.",
+    "Drop in the places you want. TripCheck groups them into days, orders the route, suggests a practical base and schedule-checked meal candidates, and checks what actually fits.",
   alternates: { canonical: "/" },
 };
 

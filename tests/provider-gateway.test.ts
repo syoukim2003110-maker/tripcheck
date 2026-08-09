@@ -163,6 +163,23 @@ test("default identity issues a bounded anonymous HttpOnly cookie without storin
   access.complete();
 });
 
+test("the origin gateway preserves the Worker's full bounded opaque identity range", () => {
+  const gateway = new PaidProviderGateway();
+  const sessionId = `session_${"a".repeat(93)}`;
+  const tripId = `trip_${"b".repeat(95)}`;
+  const preflight = gateway.preflight(request({
+    "X-TripCheck-Session": sessionId,
+    "X-TripCheck-Trip": tripId,
+  }), "google");
+  assert.equal(preflight.ok, true);
+  if (!preflight.ok) return;
+  const access = gateway.reserve(preflight, "place_intelligence", 1);
+  assert.equal(access.ok, true);
+  if (!access.ok) return;
+  assert.equal(access.headers["Set-Cookie"], undefined, "an accepted Worker identity must not be replaced");
+  access.complete();
+});
+
 test("gateway reservations expose explicit non-durable metadata and count bounded failures", async () => {
   const configured = policies();
   const ledger = new ProcessLocalProviderLedger({ policies: configured });

@@ -119,6 +119,10 @@ type WorkerTestEnvironment = {
   TRIPCHECK_PAID_API_DISABLED?: string;
   TRIPCHECK_GOOGLE_API_DISABLED?: string;
   TRIPCHECK_ANTHROPIC_API_DISABLED?: string;
+  HOTEL_RECOMMENDATIONS_ENABLED?: string;
+  FOOD_RECOMMENDATIONS_ENABLED?: string;
+  ROUTE_RECOMMENDATIONS_ENABLED?: string;
+  ANTHROPIC_REQUESTS_ENABLED?: string;
 };
 
 type WorkerTestContext = {
@@ -138,6 +142,7 @@ function environment(db?: WorkerTestD1): WorkerTestEnvironment {
     IMAGES: undefined as never,
     TRIPCHECK_PUBLIC_ORIGIN: "https://tripcheck.test",
     TRIPCHECK_QUOTA_HASH_SECRET: "worker-test-secret-that-is-at-least-32-characters",
+    ANTHROPIC_REQUESTS_ENABLED: "true",
   };
 }
 
@@ -169,13 +174,17 @@ test("paid paths fail closed before the application handler when D1 is missing",
   assert.equal(response.headers.get("X-Content-Type-Options"), "nosniff");
 });
 
-test("all four core paid paths reserve the expected provider operation and unit count", async () => {
+test("all core paid paths reserve the expected provider operation and conservative provider-event count", async () => {
   testGlobal.__tripCheckAppFetch = async () => Response.json({ delegated: true });
   const cases = [
     ["/api/live-routes", { legs: [{ private: "A" }, { private: "B" }] }, "google", "live_routes", 2],
     ["/api/place-resolution", { queries: ["Private place A", "Private place B"], hotelQuery: "Private hotel" }, "google", "place_resolution", 3],
     ["/api/place-intelligence", { name: "Private place" }, "google", "place_intelligence", 1],
     ["/api/place-intelligence/fresh", { name: "Private place", depth: "deep" }, "anthropic", "fresh_voices", 2],
+    ["/api/hotel-recommendations", { area: "Private area", query: "" }, "google", "hotel_recommendations", 4],
+    ["/api/food-recommendations", { area: "Private meal area" }, "google", "food_recommendations", 2],
+    ["/api/food-recommendations/ai", { area: "Private meal area", candidates: [{ name: "Private food" }] }, "anthropic", "food_ranking", 1],
+    ["/api/route-recommendations", { routePoints: [{ private: "A" }, { private: "B" }] }, "google", "route_recommendations", 3],
   ] as const;
 
   for (const [path, body, provider, operation, units] of cases) {
@@ -194,8 +203,21 @@ test("all four core paid paths reserve the expected provider operation and unit 
       assert.equal(statement.bindings[5], units);
     }
     const persistedInputs = JSON.stringify(db.batches[0].map((statement) => statement.bindings));
-    assert.doesNotMatch(persistedInputs, /Private place|Private hotel|"A"|"B"/i);
+    assert.doesNotMatch(persistedInputs, /Private place|Private hotel|Private area|Private meal|Private food|"A"|"B"/i);
   }
+});
+
+test("a named hotel search is charged as one focused provider event", async () => {
+  testGlobal.__tripCheckAppFetch = async () => Response.json({ delegated: true });
+  const db = new WorkerTestD1();
+  const response = await worker.fetch(paidPost("/api/hotel-recommendations", {
+    area: "Private area",
+    query: "Private named hotel",
+  }), environment(db), context);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("X-TripCheck-Quota-Charged-Units"), "1");
+  assert.ok(db.batches[0].every((statement) => statement.bindings[1] === "hotel_recommendations" && statement.bindings[5] === 1));
+  assert.doesNotMatch(JSON.stringify(db.batches[0].map((statement) => statement.bindings)), /Private named hotel|Private area/i);
 });
 
 function exactOverrides(count: number) {
@@ -394,6 +416,14 @@ test("origin and kill-switch denials retain edge security headers and never dele
   assert.equal(killed.status, 503);
   assert.equal((await killed.json() as { code: string }).code, "paid_api_disabled");
   assert.equal(killed.headers.get("X-Frame-Options"), "DENY");
+
+  const featureKilledEnv = environment(db);
+  featureKilledEnv.FOOD_RECOMMENDATIONS_ENABLED = "false";
+  const featureKilled = await worker.fetch(paidPost("/api/food-recommendations", { area: "Private meal area" }), featureKilledEnv, context);
+  assert.equal(featureKilled.status, 503);
+  assert.equal((await featureKilled.json() as { code: string }).code, "feature_disabled");
+  assert.equal(featureKilled.headers.get("X-TripCheck-Feature-Scope"), "core-recommendation");
+  assert.equal(featureKilled.headers.get("X-Frame-Options"), "DENY");
   assert.equal(appCalls, 0);
   assert.equal(db.batches.length, 0);
 });

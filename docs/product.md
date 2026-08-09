@@ -53,6 +53,57 @@ and the engine looks for route and timing conflicts.
    genuinely requires identity.
 7. Add a feature only when it removes a named travel burden.
 
+## v0.3 product and UX contract (August 9, 2026)
+
+The planner is an itinerary builder first and a feasibility report second. The
+default path asks only for the traveller's places, trip length and optional
+date, then offers one authoritative **Build my itinerary** action. People who
+want control can reveal hotel, pace, transport, airport and per-place settings
+through the custom path; those controls must not burden the default path.
+
+The first result viewport must answer five questions in this order:
+
+1. Does the plan work?
+2. What is the single most important warning, if any?
+3. Which day is selected and how full is it?
+4. What are the first two scheduled stops?
+5. Is there one useful, safe addition that fits an actual gap?
+
+Evidence counts, regional coverage, assumptions and counterfactuals remain
+available under **Verdict details**. They are not a dashboard placed before the
+itinerary. Desktop results reserve 48% for the timeline and 52% for the map.
+On mobile, the map remains above the timeline at no more than 35% of the
+viewport and can be collapsed; the timeline remains usable without the map.
+
+Every place supplied by the traveller is an **Anchor**. A meal, cafe or
+micro-stop proposed by TripCheck is a **Filler** and must remain visibly
+different in the timeline and on the map. A Filler is never silently added. It
+may be accepted only after the deterministic planner re-runs the whole day and
+confirms that it creates no new hard conflict, does not defer an Anchor and
+does not violate a reservation. There may be at most one lunch, one dinner and
+one cafe/micro Filler per day; the UI shows one default and at most two
+alternatives. Removing an accepted Filler is one action and recalculates the
+plan.
+
+Gap suggestions are bounded: gaps below 30 minutes receive no suggestion;
+30–59 minutes may receive a cafe, bakery or convenience stop; 60–120 minutes
+may receive a small attraction or meal; longer open periods are outside the
+P0 auto-fill contract. Unknown opening hours produce a conditional proposal,
+never a verified claim. Confirmed closure or a failed re-solve rejects the
+candidate.
+
+Hotel recommendations are ranked against full-trip travel, not only straight
+line proximity. Changing an existing base is suggested only if it resolves a
+hard conflict, saves at least 60 minutes, or reduces travel by at least 15%.
+Price or value language requires an actual attributable price signal.
+
+The map uses one stable colour per day, numbered Anchor pins and visually
+distinct Filler, meal, hotel and warning pins. A selected route is 5px and an
+unselected route is 2px. Timeline selection and map selection must remain
+bidirectional. Missing provider geometry is left undrawn; a straight line is
+never presented as a measured route. Known mountain rail destinations use an
+access node and do not offer impossible direct walking, taxi or driving legs.
+
 ## Current useful vertical slice
 
 1. Paste an unordered Tokyo wishlist and choose one to ten available days; the
@@ -162,7 +213,7 @@ not official duration requirements.
 ### Never needs AI
 
 - coordinate distance and area clustering;
-- shortest-order calculation, time arithmetic and buffer checks;
+- deterministic route-order evaluation, time arithmetic and buffer checks;
 - opening-hour conflicts after verified hours are supplied;
 - reservation and last-entry constraints;
 - walking-load totals and pace thresholds;

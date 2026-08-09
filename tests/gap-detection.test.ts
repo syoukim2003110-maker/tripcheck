@@ -1,0 +1,141 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import {
+  classifyGapMinutes,
+  detectGapsFromBuiltDay,
+  detectItineraryGaps,
+  type GapDetectionDay,
+} from "../lib/gap-detection.ts";
+import type { BuiltPlanDay } from "../lib/trip-builder.ts";
+import type { TripFitDay } from "../lib/trip-scenarios.ts";
+
+test("classifies the exact 29/30/60/120/121 minute P0 boundaries", () => {
+  assert.equal(classifyGapMinutes(29), "BELOW_MINIMUM");
+  assert.equal(classifyGapMinutes(30), "SHORT_30_TO_59");
+  assert.equal(classifyGapMinutes(59), "SHORT_30_TO_59");
+  assert.equal(classifyGapMinutes(60), "MEDIUM_60_TO_120");
+  assert.equal(classifyGapMinutes(120), "MEDIUM_60_TO_120");
+  assert.equal(classifyGapMinutes(121), "OUTSIDE_P0_OVER_120");
+});
+
+function betweenGap(minutes: number) {
+  const secondStart = 10 * 60 + 10 + minutes;
+  const clock = (value: number) => `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
+  return detectItineraryGaps({
+    dayIndex: 0,
+    startAt: "09:00",
+    usableUntil: clock(secondStart + 30),
+    availableMinutes: secondStart + 30 - 9 * 60,
+    startCoordinate: null,
+    endCoordinate: null,
+    returnTravelMinutes: 0,
+    anchors: [
+      { id: "a", startAt: "09:00", endAt: "10:00", coordinate: { latitude: 35, longitude: 139 }, travelFromPreviousMinutes: 0 },
+      { id: "b", startAt: clock(secondStart), endAt: clock(secondStart + 30), coordinate: { latitude: 35.01, longitude: 139.01 }, travelFromPreviousMinutes: 10 },
+    ],
+  }).filter((gap) => gap.kind === "BETWEEN_ANCHORS");
+}
+
+test("detects only 30–120 minute gaps and assigns deterministic suggestion bands", () => {
+  assert.equal(betweenGap(29).length, 0);
+  assert.equal(betweenGap(30)[0].sizeBand, "SHORT_30_TO_59");
+  assert.deepEqual(betweenGap(30)[0].suggestionKinds, ["CAFE", "BAKERY", "PARK", "LOOKOUT"]);
+  assert.equal(betweenGap(60)[0].sizeBand, "MEDIUM_60_TO_120");
+  assert.deepEqual(betweenGap(60)[0].suggestionKinds, ["SMALL_FACILITY", "WALK", "CAFE_AND_WALK"]);
+  assert.equal(betweenGap(120)[0].availableMinutes, 120);
+  assert.equal(betweenGap(121).length, 0, "post-P0 attraction gaps stay as slack");
+});
+
+test("labels before-first, between-anchor and before-hotel-return gaps", () => {
+  const input: GapDetectionDay = {
+    dayIndex: 2,
+    startAt: "09:00",
+    usableUntil: "14:10",
+    availableMinutes: 310,
+    startCoordinate: { latitude: 35, longitude: 139 },
+    endCoordinate: { latitude: 35.03, longitude: 139.03 },
+    returnTravelMinutes: 20,
+    anchors: [
+      { id: "a", startAt: "09:40", endAt: "10:10", coordinate: { latitude: 35.01, longitude: 139.01 }, travelFromPreviousMinutes: 10 },
+      { id: "b", startAt: "11:20", endAt: "12:20", coordinate: { latitude: 35.02, longitude: 139.02 }, travelFromPreviousMinutes: 10 },
+    ],
+  };
+  const gaps = detectItineraryGaps(input);
+  assert.deepEqual(gaps.map((gap) => [gap.kind, gap.availableMinutes]), [
+    ["BEFORE_FIRST_ANCHOR", 30],
+    ["BETWEEN_ANCHORS", 60],
+    ["BEFORE_HOTEL_RETURN", 90],
+  ]);
+  assert.deepEqual(gaps[1].routeSegment, {
+    from: { latitude: 35.01, longitude: 139.01 },
+    to: { latitude: 35.02, longitude: 139.02 },
+  });
+});
+
+test("produces the same gap ids and ordering across 100 runs", () => {
+  const input: GapDetectionDay = {
+    dayIndex: 0,
+    startAt: "09:00",
+    usableUntil: "13:00",
+    availableMinutes: 240,
+    startCoordinate: null,
+    endCoordinate: null,
+    returnTravelMinutes: 0,
+    anchors: [
+      { id: "a", startAt: "09:30", endAt: "10:00", coordinate: { latitude: 35, longitude: 139 }, travelFromPreviousMinutes: 0 },
+      { id: "b", startAt: "11:10", endAt: "12:30", coordinate: { latitude: 35.01, longitude: 139.01 }, travelFromPreviousMinutes: 10 },
+    ],
+  };
+  const signatures = new Set(Array.from({ length: 100 }, () => JSON.stringify(detectItineraryGaps(input))));
+  assert.equal(signatures.size, 1);
+});
+
+test("preserves chronological insertion order across midnight", () => {
+  const gaps = detectItineraryGaps({
+    dayIndex: 0,
+    startAt: "23:00",
+    usableUntil: "02:00",
+    availableMinutes: 180,
+    startCoordinate: null,
+    endCoordinate: null,
+    returnTravelMinutes: 0,
+    anchors: [
+      { id: "late", startAt: "23:30", endAt: "23:45", coordinate: { latitude: 35, longitude: 139 }, travelFromPreviousMinutes: 0 },
+      { id: "after-midnight", startAt: "00:15", endAt: "00:30", coordinate: { latitude: 35.01, longitude: 139.01 }, travelFromPreviousMinutes: 0 },
+    ],
+  });
+
+  assert.deepEqual(gaps.map((gap) => gap.startAt), ["23:00", "23:45", "00:30"]);
+});
+
+test("adapts BuiltPlanDay and TripFitDay without owning planner logic", () => {
+  const stop = (id: string, latitude: number) => ({
+    id,
+    name: id,
+    area: "test",
+    latitude,
+    longitude: 139,
+    sourceUrl: "https://example.com",
+    verifiedAt: "2026-08-09",
+    confidence: "medium" as const,
+    planningDurationMinutes: 30,
+    isAnchor: false,
+  });
+  const first = stop("a", 35);
+  const second = stop("b", 35.01);
+  const day = {
+    startTime: "09:00",
+    startBase: null,
+    endBase: null,
+    hotelOutboundMinutes: null,
+    hotelInboundMinutes: 0,
+    stops: [
+      { stop: first, arrival: "09:00", departure: "10:00" },
+      { stop: second, arrival: "11:00", departure: "12:00" },
+    ],
+    legs: [{ comparison: { recommended: { mode: "transit", minutes: 20 } } }],
+  } as BuiltPlanDay;
+  const fit = { dayIndex: 0, usableUntil: "12:00", availableMinutes: 180 } as TripFitDay;
+  const gaps = detectGapsFromBuiltDay(day, fit, { transferBufferMinutes: 10 });
+  assert.deepEqual(gaps.map((gap) => [gap.kind, gap.availableMinutes]), [["BETWEEN_ANCHORS", 30]]);
+});

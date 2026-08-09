@@ -33,6 +33,10 @@ interface Env extends DurableQuotaEnvironment {
     };
   };
   TRIPCHECK_PUBLIC_ORIGIN?: string;
+  HOTEL_RECOMMENDATIONS_ENABLED?: string;
+  FOOD_RECOMMENDATIONS_ENABLED?: string;
+  ROUTE_RECOMMENDATIONS_ENABLED?: string;
+  ANTHROPIC_REQUESTS_ENABLED?: string;
 }
 
 interface ExecutionContext {
@@ -43,6 +47,10 @@ interface ExecutionContext {
 type PaidApiRoute = Readonly<{
   provider: DurableQuotaProvider;
   operation: DurableQuotaOperation;
+  featureFlags?: readonly Readonly<{
+    name: "HOTEL_RECOMMENDATIONS_ENABLED" | "FOOD_RECOMMENDATIONS_ENABLED" | "ROUTE_RECOMMENDATIONS_ENABLED" | "ANTHROPIC_REQUESTS_ENABLED";
+    mode: "default-on" | "explicit-on";
+  }>[];
 }>;
 
 const PAID_API_ROUTES: Readonly<Record<string, PaidApiRoute>> = Object.freeze({
@@ -50,6 +58,29 @@ const PAID_API_ROUTES: Readonly<Record<string, PaidApiRoute>> = Object.freeze({
   "/api/place-resolution": Object.freeze({ provider: "google", operation: "place_resolution" }),
   "/api/place-intelligence": Object.freeze({ provider: "google", operation: "place_intelligence" }),
   "/api/place-intelligence/fresh": Object.freeze({ provider: "anthropic", operation: "fresh_voices" }),
+  "/api/hotel-recommendations": Object.freeze({
+    provider: "google",
+    operation: "hotel_recommendations",
+    featureFlags: Object.freeze([{ name: "HOTEL_RECOMMENDATIONS_ENABLED", mode: "default-on" }] as const),
+  }),
+  "/api/food-recommendations": Object.freeze({
+    provider: "google",
+    operation: "food_recommendations",
+    featureFlags: Object.freeze([{ name: "FOOD_RECOMMENDATIONS_ENABLED", mode: "default-on" }] as const),
+  }),
+  "/api/food-recommendations/ai": Object.freeze({
+    provider: "anthropic",
+    operation: "food_ranking",
+    featureFlags: Object.freeze([
+      { name: "FOOD_RECOMMENDATIONS_ENABLED", mode: "default-on" },
+      { name: "ANTHROPIC_REQUESTS_ENABLED", mode: "explicit-on" },
+    ] as const),
+  }),
+  "/api/route-recommendations": Object.freeze({
+    provider: "google",
+    operation: "route_recommendations",
+    featureFlags: Object.freeze([{ name: "ROUTE_RECOMMENDATIONS_ENABLED", mode: "default-on" }] as const),
+  }),
 });
 
 const SESSION_COOKIE = "tc_paid_session";
@@ -103,6 +134,14 @@ function paidRequestIsSameOrigin(request: Request, env: Env) {
   } catch {
     return false;
   }
+}
+
+function paidFeatureEnabled(route: PaidApiRoute, env: Env) {
+  return (route.featureFlags ?? []).every((flag) => (
+    flag.mode === "explicit-on"
+      ? env[flag.name] === "true"
+      : env[flag.name] !== "false"
+  ));
 }
 
 function boundedOpaqueId(value: string | null) {
@@ -162,6 +201,26 @@ async function paidRequestUnits(request: Request, operation: DurableQuotaOperati
     const hotel = typeof input.hotelQuery === "string" && input.hotelQuery.trim().length > 0 ? 1 : 0;
     return input.queries.length + exact + hotel;
   }
+  if (operation === "hotel_recommendations") {
+    if (
+      input.query !== undefined
+      && input.query !== null
+      && input.query !== ""
+      && !validPlaceResolutionText(input.query, 160)
+    ) return null;
+    // A named property is one focused search. Automatic hotel discovery uses
+    // three searches and may make one bounded fallback.
+    return typeof input.query === "string" && input.query.trim().length > 0 ? 1 : 4;
+  }
+  if (operation === "food_recommendations") {
+    // Nearby food discovery may make one bounded radius expansion.
+    return 2;
+  }
+  if (operation === "food_ranking") return 1;
+  if (operation === "route_recommendations") {
+    // Search Along Route may fall back to both route endpoints.
+    return 3;
+  }
   if (input.depth === undefined || input.depth === "deep") return 2;
   return input.depth === "quick" ? 1 : null;
 }
@@ -194,6 +253,11 @@ async function handlePaidApi(
 ) {
   if (!paidRequestIsSameOrigin(request, env)) {
     return secureResponse(edgeJson("forbidden", 403), url);
+  }
+  if (!paidFeatureEnabled(route, env)) {
+    return secureResponse(edgeJson("feature_disabled", 503, {
+      "X-TripCheck-Feature-Scope": "core-recommendation",
+    }), url);
   }
   const units = await paidRequestUnits(request, route.operation);
   if (units === null) return secureResponse(edgeJson("invalid_request", 400), url);
