@@ -971,6 +971,7 @@ details.planner-excluded { display: block; }
 .planner-resolved-places li { align-items: center; border-bottom: 1px solid var(--pl-line); display: grid; gap: 9px; grid-template-columns: 25px minmax(0, 1fr) auto; min-height: 54px; padding: 7px 0; }
 .planner-resolved-places li:last-child { border-bottom: 0; }
 .planner-place-status { align-items: center; background: var(--pl-good-soft); border-radius: 50%; color: var(--pl-good); display: flex; font-size: 11px; font-weight: 850; height: 24px; justify-content: center; width: 24px; }
+.planner-resolved-places li.is-parsed .planner-place-status { background: #f0f0f2; color: #62626b; }
 .planner-resolved-places li.is-review .planner-place-status { background: var(--pl-warn-bg); color: var(--pl-warn-ink); }
 .planner-resolved-places li.is-unresolved .planner-place-status { background: #fff0eb; color: #9b3524; }
 .planner-resolved-places li > span:nth-child(2) { display: grid; min-width: 0; }

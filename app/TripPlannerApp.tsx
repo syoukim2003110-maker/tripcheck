@@ -39,7 +39,7 @@ import {
   prefetchPlanningRouteDurations,
   type PlanningTransitLegRequest,
 } from "../lib/planning-live-routes-client";
-import { PlaceResolutionError, requestPlaceResolution, type AmbiguousPlaceResolution } from "../lib/place-resolution-client";
+import { PlaceResolutionError, placeReviewInputSignature, placeReviewStatus, requestPlaceResolution, type AmbiguousPlaceResolution } from "../lib/place-resolution-client";
 import { PLANNING_BUDGET, takeWithinPlanningBudget } from "../lib/planning-budget";
 import { poiAccessPolicyForStop } from "../lib/poi-access";
 import { resolveKnownStops, straightLineDistanceKm, type ResolvedInputStop, type RouteStop } from "../lib/route-optimizer";
@@ -2672,11 +2672,10 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     return rows;
   }, [itinerary]);
   const parsedPlaceCount = useMemo(() => parsePreviewRows.filter((row) => row.type === "place").length, [parsePreviewRows]);
-  const currentInputSignature = useMemo(() => JSON.stringify([
-    itinerary.trim(),
-    locale,
-    destinationChoice,
-  ]), [destinationChoice, itinerary, locale]);
+  const currentInputSignature = useMemo(
+    () => placeReviewInputSignature(itinerary, locale, destinationChoice),
+    [destinationChoice, itinerary, locale],
+  );
   const placesHaveBeenReviewed = inputStep === "conditions" && reviewedInputSignature === currentInputSignature;
   useEffect(() => {
     if (inputStep !== "conditions" || hasPlan) setManualPinTarget(null);
@@ -2693,7 +2692,11 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       ...row,
       resolved,
       ambiguity,
-      status: !placesHaveBeenReviewed ? "parsed" as const : resolved ? "confirmed" as const : ambiguity ? "review" as const : "unresolved" as const,
+      status: placeReviewStatus({
+        reviewCompleted: placesHaveBeenReviewed,
+        hasResolvedPlace: Boolean(resolved),
+        hasAmbiguousMatch: Boolean(ambiguity),
+      }),
     }];
   }), [ambiguousPlaces, locale, parsePreviewRows, placesHaveBeenReviewed, resolvedStops]);
   const unresolvedReviewedCount = reviewedPlaceRows.filter((row) => row.status === "unresolved").length;
@@ -3803,6 +3806,12 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       setAmbiguousPlaces([]);
       setManualPlaceDrafts({});
       setPreviewStops([]);
+    } else {
+      // The built plan deliberately retains the same provider identities and
+      // coordinates across a language switch. Move the review identity with
+      // that retained evidence so returning to Details cannot relabel every
+      // confirmed place as pending or unresolved.
+      setReviewedInputSignature(placeReviewInputSignature(itinerary, next, destinationChoice));
     }
     setLocale(next);
     window.history.replaceState({}, "", next === "ja" ? "/ja" : "/");
@@ -3976,6 +3985,12 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   async function buildPlan(options: { preserveEdits?: boolean } = {}) {
     if (!canBuild && !options.preserveEdits) return;
     const buildStartedAt = typeof performance !== "undefined" ? performance.now() : Date.now();
+    // Bind the place-resolution result to the exact paste/country/language that
+    // produced it. The automatic path skips the separate review screen, but its
+    // provider results are still a completed review. Without this signature,
+    // returning from the result to "Review details" labels every resolved place
+    // as unresolved even though the same provider records built the plan.
+    const inputSignatureAtBuildStart = currentInputSignature;
     const authoredConstraintCount = parsedWishlistPlaces(itinerary).filter((place) => (
       place.priority !== "normal" || place.isReservation || place.time !== null || place.stayMinutes !== null || place.day !== null
     )).length
@@ -4292,6 +4307,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
         removedStops: options.preserveEdits ? removedStops : [],
       }));
       setHotelSearchSignature(hotelPlanSignature(draft));
+      setReviewedInputSignature(inputSignatureAtBuildStart);
       setActiveDay(0);
       setHasPlan(true);
       setPlanReady(true);
@@ -6144,8 +6160,8 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                   <ul>
                     {reviewedPlaceRows.map((row) => (
                       <li className={`is-${row.status}`} key={`${row.placeIndex}-${row.place.name}`}>
-                        <span className="planner-place-status" aria-label={row.status === "confirmed" ? (locale === "ja" ? "確認済み" : "Confirmed") : row.status === "review" ? (locale === "ja" ? "候補を選択" : "Choose a match") : (locale === "ja" ? "未解決" : "Unresolved")}>
-                          {row.status === "confirmed" ? <Icon name="check" size={11} /> : row.status === "review" ? "!" : "×"}
+                        <span className="planner-place-status" aria-label={row.status === "confirmed" ? (locale === "ja" ? "確認済み" : "Confirmed") : row.status === "review" ? (locale === "ja" ? "候補を選択" : "Choose a match") : row.status === "parsed" ? (locale === "ja" ? "確認待ち" : "Pending review") : (locale === "ja" ? "未解決" : "Unresolved")}>
+                          {row.status === "confirmed" ? <Icon name="check" size={11} /> : row.status === "review" ? "!" : row.status === "parsed" ? "…" : "×"}
                         </span>
                         <span>
                           <b>{row.resolved?.name ?? row.place.name}</b>

@@ -17,6 +17,33 @@ export type PlaceResolutionResponse = {
   ambiguous: AmbiguousPlaceResolution[];
 };
 
+export type PlaceReviewStatus = "parsed" | "confirmed" | "review" | "unresolved";
+
+export function placeReviewInputSignature(
+  raw: string,
+  locale: Locale,
+  destination: DestinationChoice,
+) {
+  return JSON.stringify([raw.trim(), locale, destination]);
+}
+
+/**
+ * Keeps presentation state separate from lookup transport. A completed direct
+ * build is a review just like the explicit review step: provider/catalog hits
+ * are confirmed, ambiguous results need a choice, and only the remainder is
+ * unresolved.
+ */
+export function placeReviewStatus(input: {
+  reviewCompleted: boolean;
+  hasResolvedPlace: boolean;
+  hasAmbiguousMatch: boolean;
+}): PlaceReviewStatus {
+  if (!input.reviewCompleted) return "parsed";
+  if (input.hasResolvedPlace) return "confirmed";
+  if (input.hasAmbiguousMatch) return "review";
+  return "unresolved";
+}
+
 export class PlaceResolutionError extends Error {
   code: "not_configured" | "invalid_request" | "unavailable";
 

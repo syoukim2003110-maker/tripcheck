@@ -1,9 +1,53 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { areaFromAddress, fetchGooglePlaceResolutions, fetchGoogleResolvedPlace, parsePlaceResolutionRequest } from "../lib/google-place-resolver.ts";
 import { destinationById } from "../lib/destinations.ts";
-import { buildPlaceResolutionPayload, placeResolutionQueryCount } from "../lib/place-resolution-client.ts";
+import { buildPlaceResolutionPayload, placeResolutionQueryCount, placeReviewInputSignature, placeReviewStatus } from "../lib/place-resolution-client.ts";
 import { buildTripFromWishlist } from "../lib/trip-builder.ts";
+
+test("the automatic build preserves its place-review identity for Review details", () => {
+  const appSource = readFileSync(new URL("../app/TripPlannerApp.tsx", import.meta.url), "utf8");
+  const buildStart = appSource.indexOf("async function buildPlan(");
+  const resetStart = appSource.indexOf("function resetTrip()", buildStart);
+  assert.ok(buildStart >= 0 && resetStart > buildStart);
+  const buildSource = appSource.slice(buildStart, resetStart);
+
+  assert.match(buildSource, /const inputSignatureAtBuildStart = currentInputSignature;/);
+  assert.match(
+    buildSource,
+    /setHotelSearchSignature\(hotelPlanSignature\(draft\)\);\s*setReviewedInputSignature\(inputSignatureAtBuildStart\);\s*setActiveDay\(0\);\s*setHasPlan\(true\);/,
+    "the review identity must commit atomically with the provider-backed result",
+  );
+});
+
+test("a completed direct review distinguishes resolved, ambiguous and unknown places", () => {
+  assert.equal(placeReviewStatus({ reviewCompleted: false, hasResolvedPlace: true, hasAmbiguousMatch: false }), "parsed");
+  assert.equal(placeReviewStatus({ reviewCompleted: true, hasResolvedPlace: true, hasAmbiguousMatch: false }), "confirmed");
+  assert.equal(placeReviewStatus({ reviewCompleted: true, hasResolvedPlace: false, hasAmbiguousMatch: true }), "review");
+  assert.equal(placeReviewStatus({ reviewCompleted: true, hasResolvedPlace: false, hasAmbiguousMatch: false }), "unresolved");
+  assert.equal(
+    placeReviewStatus({ reviewCompleted: true, hasResolvedPlace: true, hasAmbiguousMatch: true }),
+    "confirmed",
+    "an occurrence-bound provider choice must win over a stale ambiguous shortlist",
+  );
+});
+
+test("a retained reviewed plan moves its identity with the selected language", () => {
+  const english = placeReviewInputSignature("  Chapel Bridge  ", "en", "switzerland");
+  const japanese = placeReviewInputSignature("Chapel Bridge", "ja", "switzerland");
+  assert.notEqual(english, japanese);
+  assert.equal(english, JSON.stringify(["Chapel Bridge", "en", "switzerland"]));
+
+  const appSource = readFileSync(new URL("../app/TripPlannerApp.tsx", import.meta.url), "utf8");
+  const localeStart = appSource.indexOf("function changeLocale(");
+  const demoStart = appSource.indexOf("function loadDemo(", localeStart);
+  assert.ok(localeStart >= 0 && demoStart > localeStart);
+  assert.match(
+    appSource.slice(localeStart, demoStart),
+    /setReviewedInputSignature\(placeReviewInputSignature\(itinerary, next, destinationChoice\)\);/,
+  );
+});
 
 test("sends only unresolved place names, not day headings or timing notes", () => {
   const payload = buildPlaceResolutionPayload(`1日目
