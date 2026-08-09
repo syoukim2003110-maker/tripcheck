@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { evaluateGoogleOpeningAt, googleOpeningWindowsForDate } from "../lib/google-opening-hours.ts";
+import { evaluateGoogleOpeningAt, googleCurrentOpeningWindowsForDate, googleOpeningWindowsForDate } from "../lib/google-opening-hours.ts";
 
 const mondayLunchHours = [{
   open: { day: 1, hour: 11, minute: 30 },
@@ -127,4 +127,32 @@ test("keeps missing hours unknown while explicit closure returns no windows", ()
     businessStatus: "CLOSED_TEMPORARILY",
     regularOpeningPeriods: mondayLunchHours,
   }, "2026-07-20"), []);
+});
+
+test("uses date-qualified current hours only inside the provider coverage window", () => {
+  const currentOpeningPeriods = [{
+    open: { date: { year: 2026, month: 8, day: 10 }, day: 1, hour: 9, minute: 0 },
+    close: { date: { year: 2026, month: 8, day: 10 }, day: 1, hour: 17, minute: 0 },
+  }];
+  assert.deepEqual(googleCurrentOpeningWindowsForDate({
+    businessStatus: "OPERATIONAL",
+    currentOpeningPeriods,
+  }, "2026-08-10"), [{ openMinutes: 540, closeMinutes: 1020 }]);
+  assert.equal(googleCurrentOpeningWindowsForDate({
+    businessStatus: "OPERATIONAL",
+    currentOpeningPeriods,
+  }, "2026-09-10"), null, "an ordinary future date must fall back to an estimated weekly schedule");
+});
+
+test("handles a date-qualified overnight period and an explicit special-day closure", () => {
+  const overnight = [{
+    open: { date: { year: 2026, month: 8, day: 10 }, day: 1, hour: 22, minute: 0 },
+    close: { date: { year: 2026, month: 8, day: 11 }, day: 2, hour: 2, minute: 0 },
+  }];
+  assert.deepEqual(googleCurrentOpeningWindowsForDate({ currentOpeningPeriods: overnight }, "2026-08-10"), [{ openMinutes: 1320, closeMinutes: 1440 }]);
+  assert.deepEqual(googleCurrentOpeningWindowsForDate({ currentOpeningPeriods: overnight }, "2026-08-11"), [{ openMinutes: 0, closeMinutes: 120 }]);
+  assert.deepEqual(googleCurrentOpeningWindowsForDate({
+    currentOpeningPeriods: [],
+    currentSpecialDays: [{ date: { year: 2026, month: 8, day: 12 }, exceptionalHours: true }],
+  }, "2026-08-12"), []);
 });

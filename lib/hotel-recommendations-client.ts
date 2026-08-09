@@ -1,3 +1,4 @@
+import type { DestinationChoice } from "./destinations.ts";
 import type { Locale } from "./i18n.ts";
 import type { HotelCandidate } from "./google-hotels.ts";
 
@@ -11,6 +12,7 @@ export type HotelSearchInput = {
 
 export type HotelRecommendationsResponse = {
   provider: "google_maps";
+  evidenceProviders: { rakuten: boolean };
   fetchedAt: string;
   candidates: HotelCandidate[];
 };
@@ -24,7 +26,11 @@ export class HotelRecommendationsError extends Error {
   }
 }
 
-export function buildHotelSearchPayload(input: HotelSearchInput, locale: Locale) {
+export function buildHotelSearchPayload(
+  input: HotelSearchInput,
+  locale: Locale,
+  destination: DestinationChoice = "auto",
+) {
   const query = input.query?.trim();
   const routePoints = input.routePoints?.slice(0, 10).map(({ latitude, longitude }) => ({ latitude, longitude }));
   return {
@@ -34,12 +40,14 @@ export function buildHotelSearchPayload(input: HotelSearchInput, locale: Locale)
     ...(query ? { query } : {}),
     ...(routePoints?.length ? { routePoints } : {}),
     languageCode: locale === "ja" ? "ja" as const : "en" as const,
+    destination,
   };
 }
 
 export async function requestHotelRecommendations(
   input: HotelSearchInput,
   locale: Locale,
+  destination: DestinationChoice = "auto",
   signal?: AbortSignal,
 ): Promise<HotelRecommendationsResponse> {
   let response: Response;
@@ -47,7 +55,7 @@ export async function requestHotelRecommendations(
     response = await fetch("/api/hotel-recommendations", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(buildHotelSearchPayload(input, locale)),
+      body: JSON.stringify(buildHotelSearchPayload(input, locale, destination)),
       signal,
     });
   } catch {

@@ -1,3 +1,4 @@
+import type { DestinationChoice } from "./destinations.ts";
 import type { Locale } from "./i18n.ts";
 
 export type TripIdeasResponse = {
@@ -15,13 +16,18 @@ export class TripIdeasError extends Error {
   }
 }
 
-export async function requestTripIdeas(concept: string, locale: Locale, signal?: AbortSignal): Promise<TripIdeasResponse> {
+export async function requestTripIdeas(
+  concept: string,
+  locale: Locale,
+  destination: DestinationChoice = "auto",
+  signal?: AbortSignal,
+): Promise<TripIdeasResponse> {
   let response: Response;
   try {
     response = await fetch("/api/trip-ideas", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ concept, languageCode: locale === "ja" ? "ja" : "en" }),
+      body: JSON.stringify({ concept, languageCode: locale === "ja" ? "ja" : "en", destination }),
       signal,
     });
   } catch {

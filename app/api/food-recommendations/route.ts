@@ -1,4 +1,5 @@
 import { fetchGoogleFoodCandidates, parseFoodSearchRequest } from "../../../lib/google-food";
+import { nonCoreApiGate } from "../../../lib/server/non-core-api-gate";
 
 const noStoreHeaders = { "Cache-Control": "no-store, max-age=0" };
 
@@ -13,10 +14,12 @@ function sameOrigin(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const featureGate = nonCoreApiGate("food_recommendations");
+  if (featureGate) return featureGate;
   if (!sameOrigin(request) || request.headers.get("Sec-Fetch-Site") === "cross-site") {
     return Response.json({ code: "forbidden" }, { status: 403, headers: noStoreHeaders });
   }
-  const apiKey = process.env.GOOGLE_PLACES_API_KEY ?? process.env.GOOGLE_ROUTES_API_KEY;
+  const apiKey = process.env.GOOGLE_PLACES_API_KEY?.trim() || process.env.GOOGLE_ROUTES_API_KEY?.trim();
   if (!apiKey) return Response.json({ code: "not_configured" }, { status: 503, headers: noStoreHeaders });
 
   let body: unknown;

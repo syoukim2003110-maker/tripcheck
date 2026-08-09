@@ -22,11 +22,24 @@ export type LiveRouteResult = {
   id: string;
   durationMinutes: number | null;
   distanceMeters: number | null;
+  encodedPolyline: string | null;
+  /** Number of vehicle changes on a transit route; null unless step data is complete. */
+  transferCount: number | null;
   status: "ok" | "unavailable";
 };
 
 const validLanguages = new Set(["en", "ja", "ko", "zh-CN"]);
 const validTravelModes = new Set<LiveRouteTravelMode>(["TRANSIT", "WALK", "DRIVE"]);
+const validStepTravelModes = new Set(["DRIVE", "BICYCLE", "WALK", "TWO_WHEELER", "TRANSIT"]);
+
+export function resolveGoogleRoutesApiKey(environment: {
+  GOOGLE_ROUTES_API_KEY?: string;
+  GOOGLE_PLACES_API_KEY?: string;
+}) {
+  return environment.GOOGLE_ROUTES_API_KEY?.trim()
+    || environment.GOOGLE_PLACES_API_KEY?.trim()
+    || null;
+}
 
 function validCoordinate(value: unknown): value is LiveRouteCoordinate {
   if (!value || typeof value !== "object") return false;
@@ -35,16 +48,16 @@ function validCoordinate(value: unknown): value is LiveRouteCoordinate {
     && typeof candidate.longitude === "number"
     && Number.isFinite(candidate.latitude)
     && Number.isFinite(candidate.longitude)
-    && candidate.latitude >= 20
-    && candidate.latitude <= 46
-    && candidate.longitude >= 122
-    && candidate.longitude <= 154;
+    && candidate.latitude >= -90
+    && candidate.latitude <= 90
+    && candidate.longitude >= -180
+    && candidate.longitude <= 180;
 }
 
 export function parseLiveRoutesRequest(input: unknown, now = new Date()): LiveRoutesRequest | null {
   if (!input || typeof input !== "object") return null;
   const candidate = input as Record<string, unknown>;
-  if (!Array.isArray(candidate.legs) || candidate.legs.length < 1 || candidate.legs.length > 24) return null;
+  if (!Array.isArray(candidate.legs) || candidate.legs.length < 1 || candidate.legs.length > 20) return null;
   if (typeof candidate.languageCode !== "string" || !validLanguages.has(candidate.languageCode)) return null;
   const travelMode = candidate.travelMode ?? "TRANSIT";
   if (typeof travelMode !== "string" || !validTravelModes.has(travelMode as LiveRouteTravelMode)) return null;
@@ -81,6 +94,44 @@ function durationMinutes(value: unknown) {
   return match ? Math.max(1, Math.ceil(Number(match[1]) / 60)) : null;
 }
 
+type GoogleRoutePayload = {
+  duration?: string;
+  distanceMeters?: number;
+  polyline?: { encodedPolyline?: string };
+  legs?: Array<{ steps?: Array<{ travelMode?: unknown }> }>;
+};
+
+/**
+ * Google documents one TRANSIT RouteLegStep per transit ride. A transfer is a
+ * change between rides, hence max(0, rides - 1). Missing or malformed step
+ * fields remain unknown instead of being treated as a zero-transfer route.
+ */
+function transferCount(route: GoogleRoutePayload | undefined, travelMode: LiveRouteTravelMode) {
+  if (travelMode !== "TRANSIT") return null;
+  if (!route || !Array.isArray(route.legs) || route.legs.length === 0) return null;
+  const steps = route.legs.flatMap((leg) => Array.isArray(leg.steps) ? leg.steps : []);
+  if (steps.length === 0 || route.legs.some((leg) => !Array.isArray(leg.steps))) return null;
+  if (steps.some((step) => (
+    !step
+    || typeof step !== "object"
+    || typeof step.travelMode !== "string"
+    || !validStepTravelModes.has(step.travelMode)
+  ))) return null;
+  const rideCount = steps.filter((step) => step.travelMode === "TRANSIT").length;
+  return Math.max(0, rideCount - 1);
+}
+
+function unavailableRoute(id: string): LiveRouteResult {
+  return {
+    id,
+    durationMinutes: null,
+    distanceMeters: null,
+    encodedPolyline: null,
+    transferCount: null,
+    status: "unavailable",
+  };
+}
+
 async function mapWithConcurrency<T, R>(
   values: T[],
   concurrency: number,
@@ -112,7 +163,12 @@ export async function fetchGoogleRoutes(
         headers: {
           "Content-Type": "application/json",
           "X-Goog-Api-Key": apiKey,
-          "X-Goog-FieldMask": "routes.duration,routes.distanceMeters",
+          "X-Goog-FieldMask": [
+            "routes.duration",
+            "routes.distanceMeters",
+            "routes.polyline.encodedPolyline",
+            ...(request.travelMode === "TRANSIT" ? ["routes.legs.steps.travelMode"] : []),
+          ].join(","),
         },
         body: JSON.stringify({
           origin: { location: { latLng: leg.origin } },
@@ -124,19 +180,23 @@ export async function fetchGoogleRoutes(
         }),
         signal: AbortSignal.timeout(8_000),
       });
-      if (!response.ok) return { id: leg.id, durationMinutes: null, distanceMeters: null, status: "unavailable" };
-      const payload = await response.json() as { routes?: Array<{ duration?: string; distanceMeters?: number }> };
+      if (!response.ok) return unavailableRoute(leg.id);
+      const payload = await response.json() as { routes?: GoogleRoutePayload[] };
       const route = payload.routes?.[0];
       const minutes = durationMinutes(route?.duration);
-      if (!route || minutes === null) return { id: leg.id, durationMinutes: null, distanceMeters: null, status: "unavailable" };
+      if (!route || minutes === null) return unavailableRoute(leg.id);
       return {
         id: leg.id,
         durationMinutes: minutes,
         distanceMeters: typeof route.distanceMeters === "number" ? route.distanceMeters : null,
+        encodedPolyline: typeof route.polyline?.encodedPolyline === "string" && route.polyline.encodedPolyline.length > 0
+          ? route.polyline.encodedPolyline
+          : null,
+        transferCount: transferCount(route, request.travelMode),
         status: "ok",
       };
     } catch {
-      return { id: leg.id, durationMinutes: null, distanceMeters: null, status: "unavailable" };
+      return unavailableRoute(leg.id);
     }
   });
 }

@@ -18,6 +18,12 @@ export type RakutenHotelFact = {
 
 const searchCache = new Map<string, { expiresAt: number; facts: RakutenHotelFact[] }>();
 const cacheTtlMs = 30 * 60 * 1000;
+const maxCacheEntries = 256;
+const totalRequestDeadlineMs = 2_500;
+const allowedHotelLinkHosts = new Set([
+  "travel.rakuten.co.jp",
+  "hb.afl.rakuten.co.jp",
+]);
 let requestTail: Promise<void> = Promise.resolve();
 let lastRequestStartedAt = 0;
 
@@ -31,8 +37,9 @@ export function buildRakutenSearchUrl(applicationId: string, latitude: number, l
     datumType: "1",
     hits: "30",
     sort: "standard",
+    elements: "hotelName,hotelMinCharge,reviewAverage,reviewCount,hotelInformationUrl,latitude,longitude",
   });
-  return `https://openapi.rakuten.co.jp/engine/api/Travel/SimpleHotelSearch/20170426?${params.toString()}`;
+  return `https://openapi.rakuten.co.jp/engine/api/Travel/SimpleHotelSearch/20260731?${params.toString()}`;
 }
 
 type RakutenPayload = {
@@ -55,14 +62,31 @@ function positiveNumber(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
 }
 
+function safeHotelInformationUrl(value: unknown) {
+  if (typeof value !== "string") return null;
+  try {
+    const url = new URL(value.trim());
+    if (
+      url.protocol !== "https:"
+      || url.port !== ""
+      || url.username !== ""
+      || url.password !== ""
+      || !allowedHotelLinkHosts.has(url.hostname.toLocaleLowerCase())
+    ) return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
 export function parseRakutenHotels(payload: RakutenPayload): RakutenHotelFact[] {
   return (payload.hotels ?? []).flatMap((entry) => {
     const info = entry.hotel?.[0]?.hotelBasicInfo;
     const name = typeof info?.hotelName === "string" ? info.hotelName.trim() : "";
-    const url = typeof info?.hotelInformationUrl === "string" ? info.hotelInformationUrl : "";
+    const url = safeHotelInformationUrl(info?.hotelInformationUrl);
     const latitude = positiveNumber(info?.latitude);
     const longitude = positiveNumber(info?.longitude);
-    if (!name || !url.startsWith("http") || latitude === null || longitude === null) return [];
+    if (!name || url === null || latitude === null || longitude === null) return [];
     return [{
       hotelName: name,
       minCharge: positiveNumber(info?.hotelMinCharge),
@@ -107,6 +131,31 @@ export function matchRakutenFact(
   return best?.fact ?? null;
 }
 
+function deadlineError() {
+  return new Error("rakuten_timeout");
+}
+
+function remainingDeadlineMs(deadline: number) {
+  return Math.max(0, deadline - Date.now());
+}
+
+async function beforeDeadline<T>(promise: Promise<T>, deadline: number): Promise<T> {
+  const remaining = remainingDeadlineMs(deadline);
+  if (remaining <= 0) throw deadlineError();
+
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_resolve, reject) => {
+        timeout = setTimeout(() => reject(deadlineError()), remaining);
+      }),
+    ]);
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout);
+  }
+}
+
 export async function fetchRakutenHotelFacts(
   latitude: number,
   longitude: number,
@@ -114,6 +163,7 @@ export async function fetchRakutenHotelFacts(
   accessKey: string,
   fetcher: typeof fetch = fetch,
 ): Promise<RakutenHotelFact[]> {
+  const deadline = Date.now() + totalRequestDeadlineMs;
   const cacheKey = `${latitude.toFixed(3)}|${longitude.toFixed(3)}`;
   const cached = searchCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) return cached.facts;
@@ -122,26 +172,37 @@ export async function fetchRakutenHotelFacts(
   // A short in-isolate queue prevents a burst from nightly-hotel comparisons;
   // the cache avoids repeating the same nearby search altogether.
   let release!: () => void;
-  const previous = requestTail;
-  requestTail = new Promise<void>((resolve) => { release = resolve; });
-  await previous;
-  const filledWhileQueued = searchCache.get(cacheKey);
-  if (filledWhileQueued && filledWhileQueued.expiresAt > Date.now()) {
-    release();
-    return filledWhileQueued.facts;
-  }
-  const waitMs = Math.max(0, 1_000 - (Date.now() - lastRequestStartedAt));
-  if (waitMs > 0) await new Promise((resolve) => setTimeout(resolve, waitMs));
-  lastRequestStartedAt = Date.now();
+  const previous = requestTail.catch(() => undefined);
+  const ownTurn = new Promise<void>((resolve) => { release = resolve; });
+  // Keep this turn chained behind its predecessor even if this caller reaches
+  // its deadline while waiting. Resolving ownTurn in finally then lets all
+  // later callers advance once the predecessor itself has finished.
+  requestTail = previous.then(() => ownTurn);
 
   try {
-    const response = await fetcher(buildRakutenSearchUrl(applicationId, latitude, longitude), {
-      headers: { accessKey },
-      signal: AbortSignal.timeout(8_000),
-    });
-    if (!response.ok) throw new Error("rakuten_unavailable");
-    const facts = parseRakutenHotels(await response.json() as RakutenPayload);
-    searchCache.set(cacheKey, { expiresAt: Date.now() + cacheTtlMs, facts });
+    await beforeDeadline(previous, deadline);
+    const filledWhileQueued = searchCache.get(cacheKey);
+    if (filledWhileQueued && filledWhileQueued.expiresAt > Date.now()) return filledWhileQueued.facts;
+
+    const waitMs = Math.max(0, 1_000 - (Date.now() - lastRequestStartedAt));
+    if (waitMs > 0) {
+      await beforeDeadline(new Promise<void>((resolve) => setTimeout(resolve, waitMs)), deadline);
+    }
+    lastRequestStartedAt = Date.now();
+
+    const fetchTimeoutMs = Math.max(1, Math.ceil(remainingDeadlineMs(deadline)));
+    const facts = await beforeDeadline((async () => {
+      const response = await fetcher(buildRakutenSearchUrl(applicationId, latitude, longitude), {
+        headers: { accessKey },
+        signal: AbortSignal.timeout(fetchTimeoutMs),
+      });
+      if (!response.ok) throw new Error("rakuten_unavailable");
+      return parseRakutenHotels(await response.json() as RakutenPayload);
+    })(), deadline);
+    const now = Date.now();
+    for (const [key, entry] of searchCache) if (entry.expiresAt <= now) searchCache.delete(key);
+    while (searchCache.size >= maxCacheEntries) searchCache.delete(searchCache.keys().next().value as string);
+    searchCache.set(cacheKey, { expiresAt: now + cacheTtlMs, facts });
     return facts;
   } finally {
     release();

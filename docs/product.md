@@ -21,14 +21,16 @@ proven and must never distort a recommendation.
 ## One-line promise
 
 Drop in the places you want, in any order. TripCheck turns them into a
-day-by-day route that is easier to understand, execute and change. Add a hotel
-and flight times so travel days use the hours that actually remain.
+day-by-day route and tells you whether the trip actually fits. Add a hotel and
+flight times so travel days use the hours that remain; if everything does not
+fit, see the minimum days and the choices that would make it work.
 
 ## Initial customer and first job
 
-The initial user is an independent Tokyo traveller who has collected places in
+The initial user is an independent Japan traveller who has collected places in
 notes, saved lists, videos or an AI answer but does not want to manually turn
-them into a schedule. The first job is simple: accept an unordered wishlist,
+them into a schedule. Tokyo remains the highest-confidence seed market. The
+first job is simple: accept an unordered wishlist,
 group nearby places into the available days, choose an efficient visit order
 and compare likely transport modes without replacing the user's choices.
 
@@ -53,7 +55,8 @@ and the engine looks for route and timing conflicts.
 
 ## Current useful vertical slice
 
-1. Paste an unordered Tokyo wishlist and choose one to fourteen available days.
+1. Paste an unordered Tokyo wishlist and choose one to ten available days; the
+   fit checker can compare alternatives through fourteen days.
 2. Recognise a small local catalog of common Tokyo places in the browser while
    retaining unresolved entries instead of guessing their location.
 3. Cluster recognised places geographically across the selected number of days.
@@ -92,15 +95,36 @@ and the engine looks for route and timing conflicts.
     results for each planned leg. Send coordinates and departure timestamps,
     never the pasted itinerary text, and keep walking/taxi visibly estimated.
 20. Let the traveller choose whether TripCheck should suggest food around the
-    whole route, dinner only, or no food recommendations. Recommendations remain
-    outside the fixed schedule: they identify a useful area and broad time
-    window without locking an exact restaurant or start time.
+    whole route, dinner only, or no food recommendations. Once a plan exists,
+    fetch several rating-backed lunch and dinner candidates in the background
+    and show them on the map without requiring an extra discovery click.
+    Recommendations remain outside the fixed schedule until explicitly chosen.
 21. Put fixed reservations and unresolved entries in one trip brief, then show
     food recommendations as a separate, visually connected layer beside each
     day's route.
 22. When a calendar date is available, show a date-aware crowd outlook beside
     each scheduled item. The first version is an explicitly labelled planning
     heuristic with a visible weekend driver, never a live queue claim.
+23. Re-run the same resolved wishlist deterministically across one to fourteen
+    days, show the usable time left after airport and day-end constraints, and
+    report the minimum days needed. When the current trip does not fit, offer
+    review candidates while protecting must-do, booked and fixed-time places.
+    If any place is unresolved or unavailable, keep the day diagnostics but
+    withhold minimum-day, spare-day and removal conclusions.
+24. Compare two traveller-supplied arrival or departure flight candidates by
+    the time they make available in the main city, including airport processing
+    and transfer assumptions. Only airports serving the same metropolitan base
+    may be compared. Apply the chosen candidate to the trip without pretending
+    to know price, availability, baggage rules or delays.
+25. Keep food discovery, public-source checks and measured route enrichment out
+    of the first-plan critical path. Food and public checks start only when the
+    traveller opens or requests them; measured routes blend in after the plan.
+26. Show provisional date, hotel-base and missing-flight assumptions next to the
+    result, and never show Japanese-passport entry rules until the traveller has
+    explicitly selected a Japanese passport.
+27. Run hotel search and place-detail enrichment in parallel after wishlist
+    resolution. Public-web checks, food discovery and route measurements remain
+    progressive so they never become hidden prerequisites again.
 
 This computation is immediate, on-device and does not use AI. Straight-line
 distance and formula-based travel minutes are planning estimates, not claims
@@ -159,22 +183,24 @@ unavailable.
 
 ## Product sequence by burden removed
 
-1. **Which day, what order and how to move?** Local recognition, multi-day
+1. **Does the trip fit at all?** Usable first/last-day time, minimum required
+   days and explicit trade-offs when the wishlist exceeds the trip.
+2. **Which day, what order and how to move?** Local recognition, multi-day
    geographic grouping, route order and transport-mode comparison.
-2. **Where should the trip be based?** Hotel-area comparison and hotel-aware
+3. **Where should the trip be based?** Hotel-area comparison and hotel-aware
    daily routes.
-3. **How much of the first and last day exists?** Flight, airport processing,
+4. **How much of the first and last day exists?** Flight, airport processing,
    city transfer and early-arrival buffers.
-4. **Will the day fit?** Durations, verified hours, reservations, buffers and
+5. **Will the day fit?** Durations, verified hours, reservations, buffers and
    walking load.
-5. **What happens in the real network?** Current Google route/place adapters,
+6. **What happens in the real network?** Current Google route/place adapters,
    with cost, consent and provider terms handled explicitly.
-6. **What changed today?** Delay, weather and fatigue replanning.
-7. **Can everyone accept it?** Must-do priorities, accessibility, dietary needs
+7. **What changed today?** Delay, weather and fatigue replanning.
+8. **Can everyone accept it?** Must-do priorities, accessibility, dietary needs
    and private personal limits.
-8. **Who owes what?** Itinerary-linked planned and actual expenses, individual
+9. **Who owes what?** Itinerary-linked planned and actual expenses, individual
    burden and group settlement. This is not a standalone Splitwise clone.
-9. **What do I need at the stop?** Addresses, Japanese presentation cards,
+10. **What do I need at the stop?** Addresses, Japanese presentation cards,
    reservation details, luggage and payment notes stored locally by default.
 
 ## Success evidence
@@ -192,7 +218,8 @@ removed.
 
 ## Current boundaries
 
-- Tokyo only;
+- Japan-first; Tokyo has the deepest verified seed data. Other destinations are
+  an explicitly labelled beta and must not imply the same POI coverage;
 - browser-first and account-free;
 - no automated booking or money transfer;
 - no saved-list scraping;

@@ -6,8 +6,34 @@ test("rakuten search uses WGS84 degrees and a bounded radius", () => {
   const url = buildRakutenSearchUrl("app-id", 34.66, 135.43);
   assert.match(url, /datumType=1/);
   assert.match(url, /searchRadius=3/);
-  assert.match(url, /^https:\/\/openapi\.rakuten\.co\.jp\/engine\/api\/Travel\/SimpleHotelSearch\/20170426\?/);
+  assert.match(url, /^https:\/\/openapi\.rakuten\.co\.jp\/engine\/api\/Travel\/SimpleHotelSearch\/20260731\?/);
+  assert.match(url, /elements=.*hotelMinCharge/);
   assert.doesNotMatch(url, /accessKey=/, "the access key belongs in a header, not a logged URL");
+});
+
+test("queue wait, rate spacing and fetch share one 2.5 second deadline without deadlocking", async () => {
+  const abortAwareResponse = (delayMs: number) => (async (_input: string | URL | Request, init?: RequestInit) => (
+    new Promise<Response>((resolve, reject) => {
+      const timeout = setTimeout(() => resolve(Response.json({ hotels: [] })), delayMs);
+      init?.signal?.addEventListener("abort", () => {
+        clearTimeout(timeout);
+        reject(init.signal?.reason ?? new Error("aborted"));
+      }, { once: true });
+    })
+  )) as typeof fetch;
+
+  // Prime the one-request-per-second clock, then make one request spend its
+  // budget on both spacing and a slow fetch. A second request waits behind it.
+  await fetchRakutenHotelFacts(35.401, 139.401, "deadline-app", "access-key", abortAwareResponse(0));
+  const slow = fetchRakutenHotelFacts(35.501, 139.501, "deadline-app", "access-key", abortAwareResponse(2_000));
+  const slowRejected = assert.rejects(slow);
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const queued = fetchRakutenHotelFacts(35.601, 139.601, "deadline-app", "access-key", abortAwareResponse(2_000));
+  const queuedRejected = assert.rejects(queued);
+  await Promise.all([slowRejected, queuedRejected]);
+
+  const afterTimeout = await fetchRakutenHotelFacts(35.701, 139.701, "deadline-app", "access-key", abortAwareResponse(0));
+  assert.deepEqual(afterTimeout, [], "a timed-out queue turn must not strand later callers");
 });
 
 test("rakuten requests use the required access-key header", async () => {
@@ -27,13 +53,18 @@ test("rakuten payloads parse defensively", () => {
   const facts = parseRakutenHotels({
     hotels: [
       { hotel: [{ hotelBasicInfo: { hotelName: "ホテル京阪 ユニバーサル・タワー", hotelMinCharge: 9800, reviewAverage: 4.21, reviewCount: 5321, hotelInformationUrl: "https://travel.rakuten.co.jp/HOTEL/1", latitude: 34.667, longitude: 135.435 } }] },
+      { hotel: [{ hotelBasicInfo: { hotelName: "Affiliate hotel", hotelInformationUrl: "https://hb.afl.rakuten.co.jp/hgc/example", latitude: 35.1, longitude: 135.1 } }] },
+      { hotel: [{ hotelBasicInfo: { hotelName: "Plain HTTP", hotelInformationUrl: "http://travel.rakuten.co.jp/HOTEL/2", latitude: 35.2, longitude: 135.2 } }] },
+      { hotel: [{ hotelBasicInfo: { hotelName: "Lookalike host", hotelInformationUrl: "https://travel.rakuten.co.jp.evil.example/HOTEL/3", latitude: 35.3, longitude: 135.3 } }] },
+      { hotel: [{ hotelBasicInfo: { hotelName: "Fake protocol", hotelInformationUrl: "httpx://travel.rakuten.co.jp/HOTEL/4", latitude: 35.4, longitude: 135.4 } }] },
       { hotel: [{ hotelBasicInfo: { hotelName: "壊れたデータ", latitude: 34.6, longitude: 135.4 } }] },
       { hotel: [{}] },
     ],
   });
-  assert.equal(facts.length, 1);
+  assert.equal(facts.length, 2);
   assert.equal(facts[0].minCharge, 9800);
   assert.equal(facts[0].reviewAverage, 4.21);
+  assert.equal(facts[1].url, "https://hb.afl.rakuten.co.jp/hgc/example");
 });
 
 test("a fact attaches only to a clear same-building match", () => {

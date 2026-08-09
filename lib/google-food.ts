@@ -1,3 +1,5 @@
+import type { DestinationChoice } from "./destinations.ts";
+import { destinationById, isDestinationChoice } from "./destinations.ts";
 import { evaluateGoogleOpeningAt } from "./google-opening-hours.ts";
 
 export type FoodSearchRequest = {
@@ -7,6 +9,8 @@ export type FoodSearchRequest = {
   mealKind: "lunch" | "dinner";
   query: string;
   languageCode: "en" | "ja";
+  /** Country the meal happens in; decides the region bias. */
+  destination: DestinationChoice;
   visitDate?: string;
   visitTime?: string;
 };
@@ -56,6 +60,8 @@ export type FoodCandidate = {
 
 type GooglePlace = {
   id?: string;
+  primaryType?: string;
+  types?: string[];
   displayName?: { text?: string };
   formattedAddress?: string;
   googleMapsUri?: string;
@@ -84,11 +90,15 @@ type GooglePlace = {
 const validLanguages = new Set(["en", "ja"]);
 const validMealKinds = new Set(["lunch", "dinner"]);
 const searchRadiusMeters = 1_500;
+const sparseSearchRadiusMeters = 3_000;
+const foodPlaceTypes = ["restaurant", "cafe", "coffee_shop", "bakery", "tea_house"] as const;
 const popularityPriorRating = 4.0;
 const popularityPriorReviews = 120;
 
 const fieldMask = [
   "places.id",
+  "places.primaryType",
+  "places.types",
   "places.displayName",
   "places.formattedAddress",
   "places.googleMapsUri",
@@ -128,8 +138,8 @@ export function defaultFoodDiscoveryQuery(languageCode: "en" | "ja") {
 export function parseFoodSearchRequest(input: unknown): FoodSearchRequest | null {
   if (!input || typeof input !== "object") return null;
   const candidate = input as Record<string, unknown>;
-  if (typeof candidate.latitude !== "number" || !Number.isFinite(candidate.latitude) || candidate.latitude < 20 || candidate.latitude > 46) return null;
-  if (typeof candidate.longitude !== "number" || !Number.isFinite(candidate.longitude) || candidate.longitude < 122 || candidate.longitude > 154) return null;
+  if (typeof candidate.latitude !== "number" || !Number.isFinite(candidate.latitude) || candidate.latitude < -90 || candidate.latitude > 90) return null;
+  if (typeof candidate.longitude !== "number" || !Number.isFinite(candidate.longitude) || candidate.longitude < -180 || candidate.longitude > 180) return null;
   if (typeof candidate.languageCode !== "string" || !validLanguages.has(candidate.languageCode)) return null;
   if (typeof candidate.mealKind !== "string" || !validMealKinds.has(candidate.mealKind)) return null;
   const languageCode = candidate.languageCode as FoodSearchRequest["languageCode"];
@@ -149,6 +159,7 @@ export function parseFoodSearchRequest(input: unknown): FoodSearchRequest | null
     mealKind: candidate.mealKind as FoodSearchRequest["mealKind"],
     query: suppliedQuery ?? defaultFoodDiscoveryQuery(languageCode),
     languageCode,
+    destination: isDestinationChoice(candidate.destination) ? candidate.destination : "auto",
     ...(hasVisitPair ? { visitDate: visitDate!, visitTime: visitTime! } : {}),
   };
 }
@@ -337,6 +348,16 @@ export function rankFoodCandidates(candidates: FoodCandidate[]) {
     .slice(0, 3);
 }
 
+function foodTypeLabel(place: GooglePlace, languageCode: "en" | "ja") {
+  const providerTypes = [place.primaryType, ...(place.types ?? [])];
+  const matched = foodPlaceTypes.find((type) => providerTypes.includes(type));
+  if (matched === "cafe" || matched === "coffee_shop") return languageCode === "ja" ? "カフェ" : "Cafe";
+  if (matched === "bakery") return languageCode === "ja" ? "ベーカリー" : "Bakery";
+  if (matched === "tea_house") return languageCode === "ja" ? "ティーハウス" : "Tea house";
+  if (matched === "restaurant") return languageCode === "ja" ? "レストラン" : "Restaurant";
+  return place.primaryTypeDisplayName?.text?.trim() ?? (languageCode === "ja" ? "飲食店" : "Restaurant");
+}
+
 function parseCandidate(place: GooglePlace, request: FoodSearchRequest): FoodCandidate | null {
   const name = place.displayName?.text?.trim();
   const googleMapsUrl = place.googleMapsUri?.trim();
@@ -365,7 +386,7 @@ function parseCandidate(place: GooglePlace, request: FoodSearchRequest): FoodCan
     id: place.id,
     name,
     address: place.formattedAddress?.trim() ?? "",
-    type: place.primaryTypeDisplayName?.text?.trim() ?? (request.languageCode === "ja" ? "飲食店" : "Restaurant"),
+    type: foodTypeLabel(place, request.languageCode),
     googleMapsUrl,
     ...(latitude !== null && longitude !== null ? { latitude, longitude } : {}),
     distanceMeters: latitude !== null && longitude !== null
@@ -400,14 +421,16 @@ export async function fetchGoogleFoodCandidates(
   fetcher: typeof fetch = fetch,
 ): Promise<FoodCandidate[]> {
   const localHighlights = isLocalHighlightsRequest(request);
+  const destination = destinationById(request.destination === "auto" ? "worldwide" : request.destination);
+  const regionBias = destination.regionCode ? { regionCode: destination.regionCode } : {};
   const url = localHighlights
     ? "https://places.googleapis.com/v1/places:searchNearby"
     : "https://places.googleapis.com/v1/places:searchText";
   const body = localHighlights ? {
-    includedTypes: ["restaurant"],
+    includedTypes: foodPlaceTypes,
     maxResultCount: 10,
     languageCode: request.languageCode,
-    regionCode: "JP",
+    ...regionBias,
     rankPreference: "POPULARITY",
     locationRestriction: {
       circle: {
@@ -421,7 +444,7 @@ export async function fetchGoogleFoodCandidates(
     strictTypeFiltering: true,
     pageSize: 8,
     languageCode: request.languageCode,
-    regionCode: "JP",
+    ...regionBias,
     rankPreference: "RELEVANCE",
     locationBias: {
       circle: {
@@ -430,20 +453,48 @@ export async function fetchGoogleFoodCandidates(
       },
     },
   };
-  const response = await fetcher(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Goog-Api-Key": apiKey,
-      "X-Goog-FieldMask": fieldMask,
-    },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(8_000),
-  });
-  if (!response.ok) throw new Error("places_unavailable");
-  const payload = await response.json() as { places?: GooglePlace[] };
-  return rankFoodCandidates((payload.places ?? []).flatMap((place) => {
+  const fetchPlaces = async (requestBody: typeof body) => {
+    const response = await fetcher(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": apiKey,
+        "X-Goog-FieldMask": fieldMask,
+      },
+      body: JSON.stringify(requestBody),
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (!response.ok) throw new Error("places_unavailable");
+    const payload = await response.json() as { places?: GooglePlace[] };
+    return payload.places ?? [];
+  };
+
+  let places = await fetchPlaces(body);
+  let parsed = places.flatMap((place) => {
     const candidate = parseCandidate(place, request);
     return candidate ? [candidate] : [];
-  }));
+  });
+  // Dense neighbourhoods complete in one call. Sparse/rural anchors get one
+  // bounded expansion so a valid cafe beside the route is not reported as
+  // “nothing nearby”. Provider IDs deduplicate the overlap.
+  if (localHighlights && rankFoodCandidates(parsed).length < 3) {
+    const expandedBody = {
+      ...body,
+      locationRestriction: {
+        circle: {
+          center: { latitude: request.latitude, longitude: request.longitude },
+          radius: sparseSearchRadiusMeters,
+        },
+      },
+    };
+    const expanded = await fetchPlaces(expandedBody);
+    const byId = new Map(places.flatMap((place) => place.id ? [[place.id, place] as const] : []));
+    for (const place of expanded) if (place.id) byId.set(place.id, place);
+    places = [...byId.values()];
+    parsed = places.flatMap((place) => {
+      const candidate = parseCandidate(place, request);
+      return candidate ? [candidate] : [];
+    });
+  }
+  return rankFoodCandidates(parsed);
 }

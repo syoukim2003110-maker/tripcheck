@@ -48,6 +48,7 @@ test("client sends candidate metadata but strips Google URLs and itinerary field
     area: "渋谷",
     latitude: 35.6595,
     longitude: 139.7005,
+    anchorStopId: "shibuya-crossing",
     window: "17:30–21:00",
     rationale: "移動しやすい",
     queryIdeas: ["焼き鳥"],
@@ -55,7 +56,7 @@ test("client sends candidate metadata but strips Google URLs and itinerary field
   const payload = buildFoodRankingPayload(slot, "焼き鳥", [{
     ...request.candidates[0],
     googleMapsUrl: "https://maps.google.com/secret",
-  }], "ja");
+  }] as unknown as Parameters<typeof buildFoodRankingPayload>[2], "ja");
   assert.deepEqual(payload.candidates, [request.candidates[0]]);
   assert.equal(JSON.stringify(payload).includes("googleMapsUrl"), false);
   assert.equal(JSON.stringify(payload).includes("rationale"), false);

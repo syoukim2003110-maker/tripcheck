@@ -4,6 +4,7 @@ import {
   parseFoodRankingRequest,
 } from "../../../../lib/ai-food-ranking";
 import { enabledAnthropicApiKey } from "../../../../lib/anthropic-runtime";
+import { nonCoreApiGate } from "../../../../lib/server/non-core-api-gate";
 
 const noStoreHeaders = { "Cache-Control": "no-store, max-age=0" };
 
@@ -18,6 +19,8 @@ function sameOrigin(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const featureGate = nonCoreApiGate("food_recommendations");
+  if (featureGate) return featureGate;
   if (!sameOrigin(request) || request.headers.get("Sec-Fetch-Site") === "cross-site") {
     return Response.json({ code: "forbidden" }, { status: 403, headers: noStoreHeaders });
   }

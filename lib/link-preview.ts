@@ -1,3 +1,10 @@
+import {
+  assertPublicNetworkTarget,
+  parsePublicHttpsUrl,
+  resolvePublicHostAddresses,
+  type HostAddressResolver,
+} from "./server/public-url-policy.ts";
+
 export type LinkPreview = {
   url: string;
   title: string;
@@ -6,30 +13,8 @@ export type LinkPreview = {
   siteName: string;
 };
 
-function isPrivateIpv4(hostname: string) {
-  const parts = hostname.split(".").map(Number);
-  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return false;
-  return parts[0] === 10
-    || parts[0] === 127
-    || (parts[0] === 169 && parts[1] === 254)
-    || (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31)
-    || (parts[0] === 192 && parts[1] === 168)
-    || parts[0] === 0;
-}
-
 export function parsePublicPreviewUrl(value: unknown): URL | null {
-  if (typeof value !== "string" || value.length > 500) return null;
-  let url: URL;
-  try {
-    url = new URL(value.trim());
-  } catch {
-    return null;
-  }
-  const hostname = url.hostname.toLowerCase();
-  if (url.protocol !== "https:" || url.username || url.password || (url.port && url.port !== "443")) return null;
-  if (!hostname || hostname === "localhost" || hostname.endsWith(".local") || hostname.endsWith(".internal")) return null;
-  if (isPrivateIpv4(hostname) || hostname.includes(":")) return null;
-  return url;
+  return parsePublicHttpsUrl(value);
 }
 
 function decodeHtml(value: string) {
@@ -78,10 +63,13 @@ async function readLimitedText(response: Response, maximumBytes = 700_000) {
 export async function fetchLinkPreview(
   input: URL,
   fetcher: typeof fetch = fetch,
+  resolver: HostAddressResolver = resolvePublicHostAddresses,
 ): Promise<LinkPreview> {
-  let current = input;
+  let current = parsePublicPreviewUrl(input.toString());
+  if (!current) throw new Error("preview_target");
   let response: Response | null = null;
   for (let redirects = 0; redirects < 4; redirects += 1) {
+    current = await assertPublicNetworkTarget(current, resolver);
     response = await fetcher(current, {
       headers: { "User-Agent": "TripCheck-LinkPreview/1.0", Accept: "text/html,application/xhtml+xml" },
       redirect: "manual",
@@ -90,6 +78,7 @@ export async function fetchLinkPreview(
     if (![301, 302, 303, 307, 308].includes(response.status)) break;
     const location = response.headers.get("location");
     if (!location) throw new Error("preview_redirect");
+    await response.body?.cancel().catch(() => undefined);
     const next = parsePublicPreviewUrl(new URL(location, current).toString());
     if (!next) throw new Error("preview_redirect");
     current = next;

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { buildPlaceResolutionPayload } from "../lib/place-resolution-client.ts";
 import { buildTripFromWishlist } from "../lib/trip-builder.ts";
-import { formatWishlistLines, parsedWishlistPlaces, parseWishlist } from "../lib/wishlist-parser.ts";
+import { formatWishlistLines, parsedWishlistPlaces, parseWishlist, setWishlistPlacePriority, updateWishlistPlaceConstraints } from "../lib/wishlist-parser.ts";
 
 test("a day heading with content keeps the place instead of dropping the line", () => {
   const [line] = parsedWishlistPlaces("1日目: 浅草寺");
@@ -142,4 +142,85 @@ test("a written time-of-day wish becomes a scheduling hint, not part of the name
   const [timed] = parsedWishlistPlaces("teamLab Planets 10:00");
   assert.equal(timed.time, "10:00");
   assert.equal(timed.timeOfDay, null);
+});
+
+test("the chip UI can change priority while keeping one textual source of truth", () => {
+  const raw = "Day 1\nSenso-ji\nhttps://example.com/private-note\nTokyo Skytree — optional\nteamLab Planets — 15:30 booked";
+  const must = setWishlistPlacePriority(raw, 0, "must", "en");
+  assert.equal(parsedWishlistPlaces(must)[0].priority, "must");
+  assert.match(must, /Senso-ji — must/);
+  assert.match(must, /https:\/\/example\.com\/private-note/, "unparsed input survives a chip edit");
+
+  const normal = setWishlistPlacePriority(must, 0, "normal", "en");
+  assert.equal(parsedWishlistPlaces(normal)[0].priority, "normal");
+  assert.doesNotMatch(normal, /Senso-ji — must/);
+
+  const booked = setWishlistPlacePriority(raw, 2, "optional", "en");
+  assert.equal(parsedWishlistPlaces(booked)[2].priority, "must", "bookings stay protected");
+});
+
+test("condition controls can edit one occurrence's booking, clock, and stay without losing private lines", () => {
+  const raw = "Day 1\nMuseum\nhttps://example.com/private-note\nMuseum — optional";
+  const booked = updateWishlistPlaceConstraints(raw, 1, {
+    isReservation: true,
+    time: "14:30",
+    stayMinutes: 95,
+  }, "en");
+  const places = parsedWishlistPlaces(booked);
+
+  assert.deepEqual(places[0], {
+    name: "Museum",
+    day: 1,
+    time: null,
+    timeOfDay: null,
+    isReservation: false,
+    priority: "normal",
+    stayMinutes: null,
+  });
+  assert.equal(places[1].time, "14:30", "the second same-name occurrence is the only edited visit");
+  assert.equal(places[1].isReservation, true);
+  assert.equal(places[1].priority, "must", "a fixed booking is always protected");
+  assert.equal(places[1].stayMinutes, 95);
+  assert.match(booked, /https:\/\/example\.com\/private-note/);
+});
+
+test("invalid condition edits are ignored and stay durations remain in the supported range", () => {
+  const raw = "Senso-ji — 09:00 — stay 45 min";
+  const invalid = updateWishlistPlaceConstraints(raw, 0, { time: "25:99", stayMinutes: Number.NaN }, "en");
+  assert.equal(parsedWishlistPlaces(invalid)[0].time, "09:00");
+  assert.equal(parsedWishlistPlaces(invalid)[0].stayMinutes, 45);
+
+  const bounded = updateWishlistPlaceConstraints(raw, 0, { stayMinutes: 900 }, "en");
+  assert.equal(parsedWishlistPlaces(bounded)[0].stayMinutes, 480);
+});
+
+test("calendar-date headings preserve real gaps in an existing itinerary", () => {
+  const places = parsedWishlistPlaces(`2026-09-14
+Senso-ji
+2026-09-16
+Tokyo Skytree
+Sep 18: Shibuya Sky`);
+
+  assert.deepEqual(places.map(({ name, day }) => ({ name, day })), [
+    { name: "Senso-ji", day: 1 },
+    { name: "Tokyo Skytree", day: 3 },
+    { name: "Shibuya Sky", day: 5 },
+  ]);
+  assert.match(formatWishlistLines(`2026-09-14
+Senso-ji
+2026-09-16
+Tokyo Skytree
+Sep 18: Shibuya Sky`, "en"), /^Day 1\nSenso-ji\nDay 3\nTokyo Skytree\nDay 5\nShibuya Sky$/);
+});
+
+test("month-name headings preserve calendar gaps across a year boundary", () => {
+  const places = parsedWishlistPlaces(`Dec 30
+Senso-ji
+Jan 2
+Tokyo Skytree`);
+
+  assert.deepEqual(places.map(({ name, day }) => ({ name, day })), [
+    { name: "Senso-ji", day: 1 },
+    { name: "Tokyo Skytree", day: 4 },
+  ]);
 });

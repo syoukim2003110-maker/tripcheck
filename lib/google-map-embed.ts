@@ -1,8 +1,13 @@
+import type { Destination } from "./destinations.ts";
+import { destinationById, isDestinationId } from "./destinations.ts";
+
 export type MapEmbedRequest = {
   points: Array<{ latitude: number; longitude: number; label?: string }>;
   language: "en" | "ja";
   zoom?: number;
   overview?: boolean;
+  /** Region bias and label suffix; "worldwide" when the country is unknown. */
+  destination: Destination;
 };
 
 export function parseMapEmbedRequest(url: string): MapEmbedRequest | null {
@@ -20,56 +25,61 @@ export function parseMapEmbedRequest(url: string): MapEmbedRequest | null {
   });
   if (points.some(({ latitude, longitude }) => (
     !Number.isFinite(latitude) || !Number.isFinite(longitude)
-    || latitude < 20 || latitude > 46 || longitude < 122 || longitude > 154
+    || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180
   ))) return null;
   const labels = rawLabels.map((label) => label.trim());
   if (labels.some((label) => label.length === 0 || label.length > 120)) return null;
   const rawZoom = parsed.searchParams.get("zoom");
   const zoom = rawZoom ? Number(rawZoom) : undefined;
-  if (zoom !== undefined && (!Number.isInteger(zoom) || zoom < 4 || zoom > 18)) return null;
+  if (zoom !== undefined && (!Number.isInteger(zoom) || zoom < 1 || zoom > 18)) return null;
   const overview = parsed.searchParams.get("overview") === "1";
+  const rawDestination = parsed.searchParams.get("destination");
+  if (rawDestination !== null && !isDestinationId(rawDestination)) return null;
   return {
     points: points.map((point, index) => ({ ...point, ...(labels[index] ? { label: labels[index] } : {}) })),
     language,
     ...(zoom ? { zoom } : {}),
     ...(overview ? { overview } : {}),
+    destination: destinationById(rawDestination),
   };
 }
 
 export function buildGoogleMapEmbedUrl(request: MapEmbedRequest, apiKey: string) {
   const coordinate = ({ latitude, longitude }: MapEmbedRequest["points"][number]) => `${latitude},${longitude}`;
+  const { regionCode, querySuffix: labelSuffix } = request.destination;
+  const withRegion = (params: URLSearchParams) => {
+    if (regionCode) params.set("region", regionCode);
+    return params;
+  };
   if (request.overview && request.points.length === 1) {
-    const params = new URLSearchParams({
+    const params = withRegion(new URLSearchParams({
       key: apiKey,
       center: coordinate(request.points[0]),
-      zoom: String(request.zoom ?? 5),
+      zoom: String(request.zoom ?? request.destination.overviewZoom),
       maptype: "roadmap",
       language: request.language,
-      region: "JP",
-    });
+    }));
     return `https://www.google.com/maps/embed/v1/view?${params.toString()}`;
   }
   if (request.points.length === 1) {
-    const params = new URLSearchParams({
+    const params = withRegion(new URLSearchParams({
       key: apiKey,
       q: coordinate(request.points[0]),
       zoom: String(request.zoom ?? 14),
       language: request.language,
-      region: "JP",
-    });
+    }));
     return `https://www.google.com/maps/embed/v1/place?${params.toString()}`;
   }
-  const params = new URLSearchParams({
+  const params = withRegion(new URLSearchParams({
     key: apiKey,
     origin: coordinate(request.points[0]),
     destination: coordinate(request.points.at(-1)!),
-    mode: "transit",
+    mode: request.destination.mobility === "car_first" ? "driving" : "transit",
     language: request.language,
-    region: "JP",
-  });
+  }));
   if (request.points.length > 2) {
     params.set("waypoints", request.points.slice(1, -1).map((point) => (
-      point.label ? `${point.label}, Japan` : coordinate(point)
+      point.label ? (labelSuffix ? `${point.label}, ${labelSuffix}` : point.label) : coordinate(point)
     )).join("|"));
   }
   return `https://www.google.com/maps/embed/v1/directions?${params.toString()}`;

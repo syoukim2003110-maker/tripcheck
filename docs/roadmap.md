@@ -1,6 +1,6 @@
-# TripCheck Japan — utility-first roadmap v1.4
+# TripCheck Japan — utility-first roadmap v1.5
 
-Last updated: 2026-07-18
+Last updated: 2026-08-08
 
 ## North star
 
@@ -35,8 +35,9 @@ Deliver:
 - browser-local recognition for a deliberately small Tokyo POI catalog;
 - unordered wishlist input and a selectable one-to-fourteen-day window;
 - geographic clustering that assigns nearby places to the same day;
-- exact shortest open path for up to ten known stops in each day;
-- fast nearest-neighbour plus local improvement above ten stops;
+- exact shortest open path for ordinary geographic ordering, with
+  constraint-aware exhaustive ordering capped at seven stops to avoid factorial UI stalls;
+- fast nearest-neighbour plus local improvement for larger days;
 - planning arrival times and visible stay assumptions;
 - walking, train and taxi comparisons with fastest and recommended separated;
 - hotel or nearest-station input for recognised Tokyo base areas;
@@ -44,6 +45,14 @@ Deliver:
 - hotel-area ranking by the wishlist's total route distance;
 - optional Haneda/Narita arrival and departure flight boundaries;
 - visible airport-processing, early-arrival and city-transfer assumptions;
+- two-candidate arrival/departure comparison by usable main-city time, with
+  honest exclusions for price, availability, baggage and delays; only airports
+  serving the same metro base are comparable — **active**;
+- deterministic comparison of the same wishlist across one to fourteen days,
+  with minimum required days and first/last-day usable time; incomplete inputs
+  keep diagnostics but withhold day-count conclusions — **active**;
+- protected review candidates when the trip does not fit: must-do, booked and
+  fixed-time stops are never silently removed — **active**;
 - open days preserved when the trip is longer than the place list;
 - unresolved places retained for future resolution rather than discarded;
 - user-initiated Google Maps handoff for live transit confirmation.
@@ -66,6 +75,7 @@ Deliver:
 - verified queue and safety-buffer inputs;
 - verified source metadata for a narrow set of high-demand attractions;
 - explicit explanation of the smallest repair;
+- side-by-side preview of “add days” versus “keep days and review places”;
 - fixtures for missed-entry, last-entry, overpacked-day and station-walk cases.
 - route-aware food recommendation areas that never lock the itinerary —
   **active**;

@@ -1,4 +1,6 @@
-import { postAnthropicMessages } from "./anthropic-runtime.ts";
+import { anthropicTimeoutMs, postAnthropicMessages } from "./anthropic-runtime.ts";
+import { destinationById, isDestinationChoice } from "./destinations.ts";
+import type { DestinationChoice } from "./destinations.ts";
 
 /*
  * Concept → starter wishlist. Claude proposes real, well-known places for a
@@ -12,11 +14,12 @@ export const TRIP_IDEAS_MODEL = "claude-haiku-4-5-20251001";
 export type TripIdeasRequest = {
   concept: string;
   languageCode: "ja" | "en";
+  /** Country the wishlist should stay inside. */
+  destination: DestinationChoice;
 };
 
 export type TripIdeasResult = {
   provider: "anthropic";
-  concept: string;
   places: string[];
 };
 
@@ -41,19 +44,27 @@ export function parseTripIdeasRequest(input: unknown): TripIdeasRequest | null {
   const concept = boundedText(candidate.concept, 2, 120);
   if (!concept) return null;
   if (candidate.languageCode !== "ja" && candidate.languageCode !== "en") return null;
-  return { concept, languageCode: candidate.languageCode };
+  return {
+    concept,
+    languageCode: candidate.languageCode,
+    destination: isDestinationChoice(candidate.destination) ? candidate.destination : "auto",
+  };
 }
 
 export function buildTripIdeasBody(request: TripIdeasRequest) {
   const language = request.languageCode === "ja" ? "Japanese" : "English";
+  const destination = destinationById(request.destination === "auto" ? "worldwide" : request.destination);
+  const country = destination.querySuffix;
+  const scope = country ? `a ${country} trip` : "a trip";
+  const inCountry = country ? ` in ${country}` : "";
   return {
     model: TRIP_IDEAS_MODEL,
     max_tokens: 400,
     temperature: 0,
-    system: "You draft starting points for a Japan trip wishlist. Given a trip concept, list 8 to 12 real, existing, specific places in Japan that fit it: sightseeing spots, landmarks, districts, markets or food streets. Prefer famous, easily findable places over obscure ones; for food concepts prefer food districts and markets over individual restaurants. Never invent a place — leave out anything you are not sure exists. Reply with ONLY a JSON array of place-name strings in the requested language, no commentary, no code fences.",
+    system: `You draft starting points for ${scope} wishlist. Given a trip concept, list 8 to 12 real, existing, specific places${inCountry} that fit it: sightseeing spots, landmarks, districts, markets or food streets. Prefer famous, easily findable places over obscure ones; for food concepts prefer food districts and markets over individual restaurants. Never invent a place — leave out anything you are not sure exists. Reply with ONLY a JSON array of place-name strings in the requested language, no commentary, no code fences.`,
     messages: [{
       role: "user",
-      content: `Concept: ${request.concept}\nLanguage for place names: ${language}\nJSON array only.`,
+      content: `Concept: ${request.concept}\nLanguage for place names: ${language}${country ? `\nCountry: ${country}` : ""}\nJSON array only.`,
     }],
   };
 }
@@ -62,7 +73,7 @@ type AnthropicPayload = {
   content?: Array<{ type?: string; text?: string }>;
 };
 
-export function parseTripIdeasResponse(payload: AnthropicPayload, concept: string): TripIdeasResult {
+export function parseTripIdeasResponse(payload: AnthropicPayload): TripIdeasResult {
   const textBlock = (payload.content ?? []).find((block) => block.type === "text" && typeof block.text === "string");
   if (!textBlock?.text) throw new TripIdeasProviderError("empty_response");
   const raw = textBlock.text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
@@ -83,7 +94,7 @@ export function parseTripIdeasResponse(payload: AnthropicPayload, concept: strin
     return [name];
   }).slice(0, 12);
   if (places.length === 0) throw new TripIdeasProviderError("empty_response");
-  return { provider: "anthropic", concept, places };
+  return { provider: "anthropic", places };
 }
 
 export async function fetchTripIdeas(
@@ -94,7 +105,9 @@ export async function fetchTripIdeas(
 ): Promise<TripIdeasResult> {
   const response = await postAnthropicMessages(apiKey, buildTripIdeasBody(request), {
     fetcher,
-    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(20_000)]) : AbortSignal.timeout(20_000),
+    signal: signal
+      ? AbortSignal.any([signal, AbortSignal.timeout(anthropicTimeoutMs(20_000))])
+      : AbortSignal.timeout(anthropicTimeoutMs(20_000)),
   });
   if (!response.ok) {
     throw new TripIdeasProviderError(
@@ -104,5 +117,5 @@ export async function fetchTripIdeas(
     );
   }
   const payload = await response.json() as AnthropicPayload;
-  return parseTripIdeasResponse(payload, request.concept);
+  return parseTripIdeasResponse(payload);
 }

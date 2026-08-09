@@ -5,6 +5,7 @@ import {
   type TripIdeasResult,
 } from "../../../lib/trip-ideas";
 import { enabledAnthropicApiKey } from "../../../lib/anthropic-runtime";
+import { nonCoreApiGate } from "../../../lib/server/non-core-api-gate";
 
 const noStoreHeaders = { "Cache-Control": "private, no-store, max-age=0" };
 const cacheTtlMs = 60 * 60 * 1000;
@@ -14,6 +15,12 @@ const globalQuota = 60;
 const resultCache = new Map<string, { expiresAt: number; result: TripIdeasResult }>();
 const clientWindows = new Map<string, { startedAt: number; count: number }>();
 let globalWindow = { startedAt: Date.now(), count: 0 };
+
+async function cacheKey(value: string) {
+  const bytes = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
 
 function sameOrigin(request: Request) {
   const origin = request.headers.get("Origin");
@@ -49,6 +56,8 @@ function withinQuota(key: string) {
 }
 
 export async function POST(request: Request) {
+  const featureGate = nonCoreApiGate("trip_ideas");
+  if (featureGate) return featureGate;
   if (!sameOrigin(request) || request.headers.get("Sec-Fetch-Site") === "cross-site") {
     return Response.json({ code: "forbidden" }, { status: 403, headers: noStoreHeaders });
   }
@@ -64,7 +73,7 @@ export async function POST(request: Request) {
   const parsed = parseTripIdeasRequest(body);
   if (!parsed) return Response.json({ code: "invalid_request" }, { status: 400, headers: noStoreHeaders });
 
-  const cacheId = `${parsed.languageCode}|${parsed.concept.normalize("NFKC").toLocaleLowerCase()}`;
+  const cacheId = await cacheKey(`${parsed.destination}|${parsed.languageCode}|${parsed.concept.normalize("NFKC").toLocaleLowerCase()}`);
   const cached = resultCache.get(cacheId);
   if (cached && cached.expiresAt > Date.now()) {
     return Response.json(cached.result, { headers: noStoreHeaders });

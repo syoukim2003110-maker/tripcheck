@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import "@fontsource/anton";
-import "./globals.css";
+import "./base.css";
 import "./planner.css";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -9,27 +9,26 @@ export async function generateMetadata(): Promise<Metadata> {
   const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host") ?? "tripcheck-japan-tokyo.syoki.chatgpt.site";
   const protocol = requestHeaders.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
   const origin = `${protocol}://${host}`;
-  const title = "TripCheck — Japan trip planner";
-  const description = "Add places in any order. TripCheck groups each day, draws the route on Google Maps and keeps nearby food options in one workspace.";
+  const title = "TripCheck — itinerary feasibility checker";
+  const description = "Paste your saved places. TripCheck checks routes, opening hours, bookings, airports and usable time to show what actually fits.";
 
   return {
     metadataBase: new URL(origin),
     title,
     description,
-    applicationName: "TripCheck Japan",
+    applicationName: "TripCheck",
     category: "travel",
     keywords: [
-      "Japan itinerary planner",
-      "Japan trip builder",
-      "Japan route optimizer",
-      "Japan sightseeing route planner",
-      "Japan itinerary generator",
-      "best area to stay in Japan",
-      "Japan hotel location planner",
-      "Japan airport itinerary planner",
+      "trip itinerary planner",
+      "travel route optimizer",
+      "itinerary feasibility checker",
+      "realistic travel itinerary",
+      "minimum trip days calculator",
+      "airport itinerary planner",
+      "Google Maps itinerary planner",
       "Japan trip planner",
-      "Japan travel planning",
-      "Google Maps itinerary Japan",
+      "Switzerland trip planner",
+      "Europe itinerary planner",
     ],
     alternates: {
       canonical: origin,
@@ -55,15 +54,15 @@ export async function generateMetadata(): Promise<Metadata> {
       description,
       type: "website",
       url: origin,
-      siteName: "TripCheck Japan",
+      siteName: "TripCheck",
       locale: "en_US",
-      images: [{ url: `${origin}/og.png`, width: 1536, height: 1024, alt: "TripCheck Japan — 日本を、ひとつの地図で。" }],
+      images: [{ url: `${origin}/og-feasibility.png`, width: 1536, height: 1024, alt: "TripCheck turns saved places into a time-aware itinerary feasibility check" }],
     },
     twitter: {
       card: "summary_large_image",
       title,
       description,
-      images: [`${origin}/og.png`],
+      images: [`${origin}/og-feasibility.png`],
     },
   };
 }

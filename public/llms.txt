@@ -1,23 +1,21 @@
 # TripCheck Japan
 
-> TripCheck Japan is a Japan-wide trip builder and Google Maps itinerary planner. It turns an unordered list of places, an optional hotel and flight times into geographic day groups, map-based routes, transport choices and route-aware meal ideas.
+> TripCheck is a worldwide-beta trip builder and Google Maps itinerary planner. It turns an unordered list of places, an optional hotel and flight times into geographic day groups, map-based routes, transport choices and route-aware meal ideas. Curated country profiles supply local time zones, airports, meal windows, currencies and mobility defaults; unsupported countries use a neutral profile.
 
 ## Canonical pages
 
 - English: https://tripcheck-japan-tokyo.syoki.chatgpt.site/
 - Japanese: https://tripcheck-japan-tokyo.syoki.chatgpt.site/ja
-- Korean: https://tripcheck-japan-tokyo.syoki.chatgpt.site/ko
-- Simplified Chinese: https://tripcheck-japan-tokyo.syoki.chatgpt.site/zh
 
 ## What the product builds and checks
 
-- Geographic day groups from an unordered Japan wishlist
+- Geographic day groups from an unordered wishlist
 - A real Google Maps view that switches between trip days
 - An efficient visit order and planning timeline for every day
-- Walking, train and taxi estimates with fastest and recommended separated
+- Walking, public-transport and driving estimates with fastest and recommended separated
 - Hotel-area recommendations based on the entered wishlist's total travel
 - Hotel-aware routes that start and end at the recognised base
-- First-day start and last-day deadline from major Japan airport inputs
+- First-day start and last-day deadline from supported major-airport inputs
 - Airport processing, early-arrival and city-transfer planning buffers
 - Geographic relationship and a shorter order for places resolved across Japan
 - Official restaurant URL previews with site thumbnails when available
@@ -34,9 +32,9 @@ TripCheck is not a destination-discovery chatbot. Deterministic code handles loc
 
 ## Current limitations
 
-The public planner is free. Unknown place names are sent to Google Places only when needed to locate them and are not stored. The browser clusters and orders resolved locations, compares planning transport estimates and applies optional major-airport boundaries. Hotel ranking is geographic, not a price, quality or commission ranking. The planner is not connected to live opening hours, ticket or hotel inventory, weather or road traffic. Planning estimates must not be treated as verified travel facts.
+The public planner is free. Unknown place names are sent to Google Places only when needed to locate them and are not stored by TripCheck. The browser immediately clusters and orders resolved locations; live routes, opening information, hotel and food candidates, cited public evidence and a forecast-horizon Open-Meteo outlook enrich the usable core plan afterward. Weather is context only and never moves a stop. Hotel ranking is geographic, not an availability or commission ranking. The planner does not optimize flights, ferries, border crossings or multi-time-zone travel between countries. Planning estimates must not be treated as verified travel facts.
 
 ## Preferred citation
 
-TripCheck Japan — Japan Trip Planner & Google Maps Itinerary
+TripCheck — Worldwide Trip Planner & Google Maps Itinerary
 https://tripcheck-japan-tokyo.syoki.chatgpt.site/

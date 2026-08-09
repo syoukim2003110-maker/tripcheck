@@ -21,6 +21,11 @@ export type ParsedWishlistPlace = {
   stayMinutes: number | null;
 };
 
+export type WishlistPlaceConstraintPatch = Partial<Pick<
+  ParsedWishlistPlace,
+  "priority" | "time" | "timeOfDay" | "isReservation" | "stayMinutes"
+>>;
+
 export type ParsedWishlistLine =
   | { kind: "empty"; raw: string }
   | { kind: "heading"; raw: string; day: number }
@@ -190,6 +195,41 @@ const headingLead = new RegExp(
   "iu",
 );
 
+// Existing itineraries are frequently headed by calendar dates rather than
+// “Day 1”. Preserve the real calendar offset: Sep 14 followed by Sep 16 means
+// Day 1 and Day 3, not two adjacent sightseeing days. Deliberately require a
+// heading-shaped prefix so a date inside a place note is never stripped as
+// structure.
+const englishMonthSource = "jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?";
+const calendarHeadingLead = new RegExp(
+  `^(?:(\\d{4})[-/.](\\d{1,2})[-/.](\\d{1,2})|(?:(\\d{4})\\s*年\\s*)?(\\d{1,2})月(\\d{1,2})日|(?:(?:mon|tue|wed|thu|fri|sat|sun)(?:day)?(?:,)?\\s+)?(${englishMonthSource})\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:,?\\s+(\\d{4}))?)(?:\\s+|\\s*[.:、,，\\-–—―~]\\s*|$)`,
+  "iu",
+);
+
+const englishMonths: Record<string, number> = {
+  jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
+  jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12,
+};
+
+type CalendarHeadingDate = { year: number | null; month: number; day: number };
+
+function parsedCalendarHeadingDate(match: RegExpMatchArray): CalendarHeadingDate | null {
+  const isoYear = match[1] ? Number(match[1]) : null;
+  const japaneseYear = match[4] ? Number(match[4]) : null;
+  const englishYear = match[9] ? Number(match[9]) : null;
+  const monthName = match[7]?.slice(0, 3).toLocaleLowerCase();
+  const month = match[2] ? Number(match[2]) : match[5] ? Number(match[5]) : monthName ? englishMonths[monthName] : null;
+  const day = match[3] ? Number(match[3]) : match[6] ? Number(match[6]) : match[8] ? Number(match[8]) : null;
+  if (month === null || day === null || month < 1 || month > 12 || day < 1 || day > 31) return null;
+  return { year: isoYear ?? japaneseYear ?? englishYear, month, day };
+}
+
+function calendarEpochDay(date: { year: number; month: number; day: number }) {
+  const parsed = new Date(Date.UTC(date.year, date.month - 1, date.day));
+  if (parsed.getUTCFullYear() !== date.year || parsed.getUTCMonth() !== date.month - 1 || parsed.getUTCDate() !== date.day) return null;
+  return Math.floor(parsed.getTime() / 86_400_000);
+}
+
 function headingDay(match: RegExpMatchArray) {
   const value = match[1] ?? match[2] ?? match[3] ?? match[4];
   const day = Number(value);
@@ -199,6 +239,9 @@ function headingDay(match: RegExpMatchArray) {
 export function parseWishlist(raw: string): ParsedWishlistLine[] {
   const lines: ParsedWishlistLine[] = [];
   let contextDay: number | null = null;
+  let calendarHeadingCount = 0;
+  let calendarAnchor: { year: number; month: number; day: number; epochDay: number } | null = null;
+  let previousCalendarDate: { year: number; month: number; day: number } | null = null;
 
   for (const rawLine of raw.split("\n")) {
     const original = rawLine.trim();
@@ -221,6 +264,42 @@ export function parseWishlist(raw: string): ParsedWishlistLine[] {
           continue;
         }
         lineDay = day;
+        text = rest;
+      }
+    }
+
+    if (!heading) {
+      const calendarHeading = text.match(calendarHeadingLead);
+      if (calendarHeading) {
+        const parts = parsedCalendarHeadingDate(calendarHeading);
+        let calendarDay: number | null = null;
+        if (parts) {
+          let year: number = parts.year ?? previousCalendarDate?.year ?? 2000;
+          if (parts.year === null && previousCalendarDate && (
+            parts.month < previousCalendarDate.month
+            || (parts.month === previousCalendarDate.month && parts.day < previousCalendarDate.day)
+          )) year += 1;
+          const epochDay = calendarEpochDay({ year, month: parts.month, day: parts.day });
+          if (epochDay !== null) {
+            calendarAnchor ??= { year, month: parts.month, day: parts.day, epochDay };
+            const offset = epochDay - calendarAnchor.epochDay;
+            if (offset >= 0 && offset < 30) {
+              calendarDay = offset + 1;
+              previousCalendarDate = { year, month: parts.month, day: parts.day };
+            }
+          }
+        }
+        // Retain the legacy sequential fallback only for malformed, backwards,
+        // or out-of-range headings. Valid supported dates never lose gaps.
+        calendarHeadingCount += 1;
+        contextDay = calendarDay ?? calendarHeadingCount;
+        calendarHeadingCount = Math.max(calendarHeadingCount, contextDay);
+        const rest = text.slice(calendarHeading[0].length).trim();
+        if (!rest) {
+          lines.push({ kind: "heading", raw: original, day: contextDay });
+          continue;
+        }
+        lineDay = contextDay;
         text = rest;
       }
     }
@@ -323,6 +402,29 @@ export function parsedWishlistPlaces(raw: string): ParsedWishlistPlace[] {
   return parseWishlist(raw).flatMap((line) => (line.kind === "place" ? line.places : []));
 }
 
+/** Serializes already-reviewed places without carrying opaque/unparsed lines. */
+export function formatParsedWishlistPlaces(
+  places: ParsedWishlistPlace[],
+  languageCode: "ja" | "en",
+) {
+  const output: string[] = [];
+  let visibleDay: number | null = null;
+  for (const place of places) {
+    if (place.day !== null && place.day !== visibleDay) {
+      output.push(languageCode === "ja" ? `${place.day}日目` : `Day ${place.day}`);
+      visibleDay = place.day;
+    }
+    const timeOfDayLabel = place.timeOfDay === null ? null : languageCode === "ja"
+      ? { morning: "朝", evening: "夕方", night: "夜" }[place.timeOfDay]
+      : place.timeOfDay;
+    const markers = languageCode === "ja"
+      ? [place.time ?? timeOfDayLabel, place.isReservation ? "予約" : place.priority === "must" ? "必須" : null, place.priority === "optional" ? "時間があれば" : null, place.stayMinutes ? `滞在${place.stayMinutes}分` : null]
+      : [place.time ?? timeOfDayLabel, place.isReservation ? "booked" : place.priority === "must" ? "must" : null, place.priority === "optional" ? "optional" : null, place.stayMinutes ? `stay ${place.stayMinutes} min` : null];
+    output.push([place.name, ...markers.filter(Boolean)].join(" — "));
+  }
+  return output.join("\n");
+}
+
 /* Convert a free-form paste into the strict one-place-per-line form shown by
  * the UI. This is optional: the planner already consumes the parsed places,
  * but making the normalized form visible gives the user an editable source of
@@ -351,4 +453,104 @@ export function formatWishlistLines(raw: string, languageCode: "ja" | "en") {
     }
   }
   return output.join("\n");
+}
+
+/**
+ * Applies a Must/Optional choice from the chip UI without introducing a second
+ * hidden source of truth. The normalized text remains what sharing, parsing
+ * and the deterministic planner consume.
+ */
+export function setWishlistPlacePriority(
+  raw: string,
+  placeIndex: number,
+  priority: WishlistPriority,
+  languageCode: "ja" | "en",
+) {
+  return updateWishlistPlaceConstraints(raw, placeIndex, { priority }, languageCode);
+}
+
+function normalizeConstraintPatch(
+  original: ParsedWishlistPlace,
+  patch: WishlistPlaceConstraintPatch,
+): ParsedWishlistPlace {
+  const priority = patch.priority === "must" || patch.priority === "normal" || patch.priority === "optional"
+    ? patch.priority
+    : original.priority;
+  const isReservation = typeof patch.isReservation === "boolean" ? patch.isReservation : original.isReservation;
+  const time = patch.time === null || /^([01]\d|2[0-3]):[0-5]\d$/.test(patch.time ?? "")
+    ? patch.time ?? null
+    : original.time;
+  const timeOfDay = patch.timeOfDay === null
+    || patch.timeOfDay === "morning"
+    || patch.timeOfDay === "evening"
+    || patch.timeOfDay === "night"
+    ? patch.timeOfDay ?? null
+    : original.timeOfDay;
+  const requestedStay = patch.stayMinutes;
+  const stayMinutes = requestedStay === null
+    ? null
+    : typeof requestedStay === "number" && Number.isFinite(requestedStay)
+      ? Math.min(480, Math.max(15, Math.round(requestedStay)))
+      : original.stayMinutes;
+  return {
+    ...original,
+    priority: isReservation ? "must" : priority,
+    isReservation,
+    time,
+    // A precise clock and a broad time-of-day hint are mutually exclusive.
+    timeOfDay: time === null ? timeOfDay : null,
+    stayMinutes,
+  };
+}
+
+/**
+ * Applies one occurrence's structured constraints while retaining a single,
+ * shareable textual source of truth. Unparsed/private lines survive verbatim;
+ * callers never need to splice marker words into free-form input themselves.
+ */
+export function updateWishlistPlaceConstraints(
+  raw: string,
+  placeIndex: number,
+  patch: WishlistPlaceConstraintPatch,
+  languageCode: "ja" | "en",
+) {
+  const parsed = parseWishlist(raw);
+  const placeCount = parsed.reduce((count, line) => count + (line.kind === "place" ? line.places.length : 0), 0);
+  if (!Number.isInteger(placeIndex) || placeIndex < 0 || placeIndex >= placeCount) return raw;
+  const output: string[] = [];
+  let visibleDay: number | null = null;
+  let cursor = 0;
+  for (const line of parsed) {
+    if (line.kind === "empty") {
+      if (output.at(-1) !== "") output.push("");
+      continue;
+    }
+    if (line.kind === "heading") {
+      visibleDay = line.day;
+      output.push(line.raw.trim());
+      continue;
+    }
+    if (line.kind === "unparsed") {
+      output.push(line.raw);
+      continue;
+    }
+    for (const original of line.places) {
+      const place = cursor === placeIndex
+        ? normalizeConstraintPatch(original, patch)
+        : original;
+      cursor += 1;
+      if (place.day !== null && place.day !== visibleDay) {
+        output.push(languageCode === "ja" ? `${place.day}日目` : `Day ${place.day}`);
+        visibleDay = place.day;
+      }
+      const timeOfDayLabel = place.timeOfDay === null ? null : languageCode === "ja"
+        ? { morning: "朝", evening: "夕方", night: "夜" }[place.timeOfDay]
+        : place.timeOfDay;
+      const markers = languageCode === "ja"
+        ? [place.time ?? timeOfDayLabel, place.isReservation ? "予約" : place.priority === "must" ? "必須" : null, place.priority === "optional" ? "時間があれば" : null, place.stayMinutes ? `滞在${place.stayMinutes}分` : null]
+        : [place.time ?? timeOfDayLabel, place.isReservation ? "booked" : place.priority === "must" ? "must" : null, place.priority === "optional" ? "optional" : null, place.stayMinutes ? `stay ${place.stayMinutes} min` : null];
+      output.push([place.name, ...markers.filter(Boolean)].join(" — "));
+    }
+  }
+  return output.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }

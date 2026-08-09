@@ -9,7 +9,7 @@ import {
 
 process.env.ANTHROPIC_REQUESTS_ENABLED = "true";
 
-const request = { name: "浅草寺", area: "浅草", languageCode: "ja" as const };
+const request = { name: "浅草寺", area: "浅草", languageCode: "ja" as const, destination: "japan" as const };
 
 test("caps one field check at two localized public-web searches", () => {
   const body = buildFreshVoicesBody(request);
@@ -17,7 +17,7 @@ test("caps one field check at two localized public-web searches", () => {
   assert.equal(body.tools.length, 1);
   assert.equal(body.tools[0].type, "web_search_20250305");
   assert.equal(body.tools[0].max_uses, 2);
-  assert.equal(body.tools[0].user_location.country, "JP");
+  assert.equal(body.tools[0].user_location?.country, "JP");
   assert.match(body.messages[0].content, /浅草寺 \(浅草, Japan\)/);
   assert.match(body.system, /untrusted evidence/);
   assert.match(body.system, /Never infer/);
@@ -27,6 +27,11 @@ test("caps one field check at two localized public-web searches", () => {
 
 test("parses bounded intent and depth while preserving legacy defaults", () => {
   assert.deepEqual(parseFreshVoicesRequest(request), { ...request, intent: "place", depth: "deep" });
+  // A missing destination stays "auto" rather than silently assuming Japan.
+  assert.deepEqual(
+    parseFreshVoicesRequest({ name: "Jungfraujoch", area: "Grindelwald", languageCode: "en" }),
+    { name: "Jungfraujoch", area: "Grindelwald", languageCode: "en", destination: "auto", intent: "place", depth: "deep" },
+  );
   assert.deepEqual(parseFreshVoicesRequest({ ...request, intent: "food", depth: "quick" }), {
     ...request,
     intent: "food",

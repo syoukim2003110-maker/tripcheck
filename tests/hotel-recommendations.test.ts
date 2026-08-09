@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { registerHooks } from "node:module";
 import test from "node:test";
 import {
   buildHotelSearchPayload,
@@ -7,11 +8,28 @@ import {
 } from "../lib/hotel-recommendations-client.ts";
 import { fetchGoogleHotelCandidates, hotelStyles, parseHotelSearchRequest, placeTypesIncludeLodging } from "../lib/google-hotels.ts";
 
+// App routes use bundler-style extensionless imports. This narrow test hook
+// lets Node's type-stripping runner load the real handler without changing the
+// production import or introducing a second implementation in the test.
+const routeHooks = registerHooks({
+  resolve(specifier, context, nextResolve) {
+    const fromRoute = context.parentURL?.endsWith("/app/api/hotel-recommendations/route.ts");
+    const match = fromRoute ? specifier.match(/^\.\.\/\.\.\/\.\.\/lib\/(.+)$/) : null;
+    if (match) return nextResolve(new URL(`../lib/${match[1]}.ts`, import.meta.url).href, context);
+    return nextResolve(specifier, context);
+  },
+});
+const { POST: hotelRecommendationsRoute } = await import(
+  new URL("../app/api/hotel-recommendations/route.ts", import.meta.url).href
+) as { POST(request: Request): Promise<Response> };
+routeHooks.deregister();
+
 const validRequest = {
   latitude: 35.6812,
   longitude: 139.7671,
   area: "Tokyo Station",
   languageCode: "en" as const,
+  destination: "japan" as const,
 };
 
 test("distinguishes an actual lodging result from a station or area typed in the hotel field", () => {
@@ -33,8 +51,14 @@ test("accepts a bounded hotel search with an optional hotel name", () => {
   ];
   assert.deepEqual(parseHotelSearchRequest({ ...validRequest, routePoints }), { ...validRequest, routePoints });
   assert.equal(parseHotelSearchRequest({ ...validRequest, routePoints: Array.from({ length: 11 }, () => routePoints[0]) }), null);
-  assert.equal(parseHotelSearchRequest({ ...validRequest, routePoints: [{ latitude: 80, longitude: 135 }] }), null);
-  assert.equal(parseHotelSearchRequest({ ...validRequest, latitude: 80 }), null);
+  assert.equal(parseHotelSearchRequest({ ...validRequest, routePoints: [{ latitude: 95, longitude: 135 }] }), null);
+  assert.equal(parseHotelSearchRequest({ ...validRequest, latitude: 95 }), null);
+  // A Swiss anchor is a legitimate hotel search now.
+  assert.equal(
+    parseHotelSearchRequest({ ...validRequest, latitude: 46.02, longitude: 7.75, destination: "switzerland" })?.destination,
+    "switzerland",
+  );
+  assert.equal(parseHotelSearchRequest({ ...validRequest, destination: "narnia" })?.destination, "auto");
   assert.equal(parseHotelSearchRequest({ ...validRequest, query: 42 }), null);
   assert.equal(parseHotelSearchRequest({ ...validRequest, languageCode: "ko" }), null);
 });
@@ -69,6 +93,7 @@ test("whole-itinerary access outranks closeness to the single search anchor", as
     longitude: 135.195,
     area: "Kyoto",
     languageCode: "en",
+    destination: "japan",
     routePoints: [
       { latitude: 35.0116, longitude: 135.7681 },
       { latitude: 35.021, longitude: 135.755 },
@@ -81,7 +106,7 @@ test("whole-itinerary access outranks closeness to the single search anchor", as
 });
 
 test("requests live Google hotel evidence and returns a diverse deterministic shortlist", async () => {
-  let captured: { url: string; init: RequestInit } | null = null;
+  const captured: { value: { url: string; init: RequestInit } | null } = { value: null };
   const places = [
     {
       id: "hotel-a",
@@ -167,7 +192,7 @@ test("requests live Google hotel evidence and returns a diverse deterministic sh
     },
   ];
   const fetcher = (async (url: string | URL | Request, init?: RequestInit) => {
-    captured = { url: String(url), init: init ?? {} };
+    captured.value = { url: String(url), init: init ?? {} };
     return Response.json({ places });
   }) as typeof fetch;
 
@@ -185,8 +210,8 @@ test("requests live Google hotel evidence and returns a diverse deterministic sh
   assert.equal(results[0].payment?.source, "google_listing_and_review");
   assert.equal(results.find((candidate) => candidate.id === "hotel-c")?.payment?.cashOnly, true);
 
-  assert.equal(captured?.url, "https://places.googleapis.com/v1/places:searchText");
-  const headers = new Headers(captured?.init.headers);
+  assert.equal(captured.value?.url, "https://places.googleapis.com/v1/places:searchText");
+  const headers = new Headers(captured.value?.init.headers);
   const requestedFields = headers.get("X-Goog-FieldMask") ?? "";
   assert.match(requestedFields, /places\.rating/);
   assert.match(requestedFields, /places\.reviews/);
@@ -194,7 +219,7 @@ test("requests live Google hotel evidence and returns a diverse deterministic sh
   assert.match(requestedFields, /places\.photos/);
   assert.match(requestedFields, /places\.businessStatus/);
   assert.match(requestedFields, /places\.types/);
-  const body = JSON.parse(String(captured?.init.body));
+  const body = JSON.parse(String(captured.value?.init.body));
   assert.equal(body.pageSize, 6);
   assert.equal(body.includedType, "hotel");
   assert.equal(body.locationBias.circle.center.latitude, validRequest.latitude);
@@ -259,6 +284,7 @@ test("review payment reports are used only when listing evidence is absent", asy
     longitude: 135.7681,
     area: "京都駅",
     languageCode: "ja",
+    destination: "japan",
   }, "secret", fetcher);
   assert.equal(results[0].payment?.source, "google_review");
   assert.equal(results[0].payment?.cashOnly, true);
@@ -286,6 +312,7 @@ test("payment reports keep QR and transit IC positive/negative separate and neut
     longitude: 135.7681,
     area: "京都駅",
     languageCode: "ja",
+    destination: "japan",
   }, "secret", fetcher);
   assert.deepEqual(results[0].payment?.acceptedMethods, ["transport_ic"]);
   assert.deepEqual(results[0].payment?.notAcceptedMethods, ["qr_code"]);
@@ -402,6 +429,7 @@ test("client payload contains the bounded hotel search anchor, day route points 
     query: "Palace Hotel Tokyo",
     routePoints,
     languageCode: "en",
+    destination: "auto",
   });
   assert.deepEqual(buildHotelSearchPayload({
     latitude: 35.6812,
@@ -412,7 +440,13 @@ test("client payload contains the bounded hotel search anchor, day route points 
     longitude: 139.7671,
     area: "東京駅",
     languageCode: "ja",
+    destination: "auto",
   });
+  assert.equal(buildHotelSearchPayload({
+    latitude: 46.0207,
+    longitude: 7.7491,
+    area: "Zermatt",
+  }, "en", "switzerland").destination, "switzerland");
 });
 
 test("client maps server and network failures to bounded error codes", async () => {
@@ -430,5 +464,87 @@ test("client maps server and network failures to bounded error codes", async () 
     );
   } finally {
     globalThis.fetch = originalFetch;
+  }
+});
+
+test("route reports Rakuten evidence availability and logs only a bounded failure code", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalWarn = console.warn;
+  const originalGoogleKey = process.env.GOOGLE_PLACES_API_KEY;
+  const originalRakutenId = process.env.RAKUTEN_APPLICATION_ID;
+  const originalRakutenKey = process.env.RAKUTEN_ACCESS_KEY;
+  const originalNonCoreApis = process.env.TRIPCHECK_NON_CORE_APIS_ENABLED;
+  const warnings: unknown[][] = [];
+  const googleHotel = (latitude: number, longitude: number) => ({
+    id: `hotel-${latitude}`,
+    displayName: { text: "Test Hotel" },
+    formattedAddress: "Tokyo",
+    googleMapsUri: "https://maps.google.com/test-hotel",
+    businessStatus: "OPERATIONAL",
+    types: ["hotel", "lodging"],
+    location: { latitude, longitude },
+    rating: 4.5,
+    userRatingCount: 500,
+  });
+  const requestFor = (latitude: number, longitude: number) => new Request("http://tripcheck.test/api/hotel-recommendations", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Origin: "http://tripcheck.test" },
+    body: JSON.stringify({
+      latitude,
+      longitude,
+      area: "Tokyo",
+      query: "Test Hotel",
+      languageCode: "en",
+      destination: "japan",
+    }),
+  });
+
+  try {
+    process.env.GOOGLE_PLACES_API_KEY = "google-secret";
+    process.env.RAKUTEN_APPLICATION_ID = "rakuten-id";
+    process.env.RAKUTEN_ACCESS_KEY = "rakuten-secret";
+    process.env.TRIPCHECK_NON_CORE_APIS_ENABLED = "true";
+    console.warn = (...args: unknown[]) => { warnings.push(args); };
+
+    globalThis.fetch = (async (input) => {
+      const url = String(input);
+      if (url.startsWith("https://places.googleapis.com/")) {
+        return Response.json({ places: [googleHotel(35.6812, 139.7671)] });
+      }
+      if (url.startsWith("https://openapi.rakuten.co.jp/")) return Response.json({ hotels: [] });
+      throw new Error("unexpected provider");
+    }) as typeof fetch;
+    const successResponse = await hotelRecommendationsRoute(requestFor(35.6812, 139.7671));
+    const success = await successResponse.json() as { evidenceProviders: { rakuten: boolean } };
+    assert.equal(successResponse.status, 200);
+    assert.deepEqual(success.evidenceProviders, { rakuten: true }, "an empty successful result still proves the provider was available");
+
+    globalThis.fetch = (async (input) => {
+      const url = String(input);
+      if (url.startsWith("https://places.googleapis.com/")) {
+        return Response.json({ places: [googleHotel(35.6895, 139.6917)] });
+      }
+      if (url.startsWith("https://openapi.rakuten.co.jp/")) {
+        return Response.json({ errors: { errorMessage: "CLIENT_IP_NOT_ALLOWED" } }, { status: 403 });
+      }
+      throw new Error("unexpected provider");
+    }) as typeof fetch;
+    const failureResponse = await hotelRecommendationsRoute(requestFor(35.6895, 139.6917));
+    const failure = await failureResponse.json() as { evidenceProviders: { rakuten: boolean }; candidates: unknown[] };
+    assert.equal(failureResponse.status, 200, "optional Rakuten failure must not hide Google candidates");
+    assert.equal(failure.candidates.length, 1);
+    assert.deepEqual(failure.evidenceProviders, { rakuten: false });
+    assert.deepEqual(warnings, [["rakuten_optional_unavailable"]]);
+  } finally {
+    globalThis.fetch = originalFetch;
+    console.warn = originalWarn;
+    if (originalGoogleKey === undefined) delete process.env.GOOGLE_PLACES_API_KEY;
+    else process.env.GOOGLE_PLACES_API_KEY = originalGoogleKey;
+    if (originalRakutenId === undefined) delete process.env.RAKUTEN_APPLICATION_ID;
+    else process.env.RAKUTEN_APPLICATION_ID = originalRakutenId;
+    if (originalRakutenKey === undefined) delete process.env.RAKUTEN_ACCESS_KEY;
+    else process.env.RAKUTEN_ACCESS_KEY = originalRakutenKey;
+    if (originalNonCoreApis === undefined) delete process.env.TRIPCHECK_NON_CORE_APIS_ENABLED;
+    else process.env.TRIPCHECK_NON_CORE_APIS_ENABLED = originalNonCoreApis;
   }
 });

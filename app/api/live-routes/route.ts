@@ -1,22 +1,18 @@
-import { fetchGoogleRoutes, parseLiveRoutesRequest } from "../../../lib/google-routes";
+import { fetchGoogleRoutes, parseLiveRoutesRequest, resolveGoogleRoutesApiKey } from "../../../lib/google-routes";
+import { paidApiDenialResponse, paidProviderGateway } from "../../../lib/server/provider-gateway";
+import { providerFetchWithParentSignal } from "../../../lib/server/provider-resilience";
 
 const noStoreHeaders = { "Cache-Control": "no-store, max-age=0" };
 
-function sameOrigin(request: Request) {
-  const origin = request.headers.get("Origin");
-  if (!origin) return process.env.NODE_ENV !== "production";
-  try {
-    return new URL(origin).origin === new URL(request.url).origin;
-  } catch {
-    return false;
-  }
-}
-
 export async function POST(request: Request) {
-  if (!sameOrigin(request) || request.headers.get("Sec-Fetch-Site") === "cross-site") {
-    return Response.json({ code: "forbidden" }, { status: 403, headers: noStoreHeaders });
-  }
-  const apiKey = process.env.GOOGLE_ROUTES_API_KEY ?? process.env.GOOGLE_PLACES_API_KEY;
+  const preflight = paidProviderGateway.preflight(request, "google");
+  if (!preflight.ok) return paidApiDenialResponse(preflight, noStoreHeaders);
+  // An empty optional Routes entry in `.env` must not mask a configured Places
+  // key that is also authorized for Routes.
+  const apiKey = resolveGoogleRoutesApiKey({
+    GOOGLE_ROUTES_API_KEY: process.env.GOOGLE_ROUTES_API_KEY,
+    GOOGLE_PLACES_API_KEY: process.env.GOOGLE_PLACES_API_KEY,
+  });
   if (!apiKey) {
     return Response.json({ code: "not_configured" }, { status: 503, headers: noStoreHeaders });
   }
@@ -32,11 +28,28 @@ export async function POST(request: Request) {
     return Response.json({ code: "invalid_or_out_of_range" }, { status: 400, headers: noStoreHeaders });
   }
 
-  const legs = await fetchGoogleRoutes(parsed, apiKey);
-  return Response.json({
-    provider: "google_maps",
-    fetchedAt: new Date().toISOString(),
-    travelMode: parsed.travelMode,
-    legs,
-  }, { headers: noStoreHeaders });
+  const access = paidProviderGateway.reserve(preflight, "live_routes", parsed.legs.length);
+  if (!access.ok) return paidApiDenialResponse(access, noStoreHeaders);
+  try {
+    const legs = await fetchGoogleRoutes(parsed, apiKey, providerFetchWithParentSignal(request.signal));
+    const failedUnits = legs.filter((leg) => leg.status !== "ok").length;
+    access.complete({ failedUnits });
+    const allUnavailable = failedUnits === legs.length;
+    return Response.json({
+      provider: "google_maps",
+      fetchedAt: new Date().toISOString(),
+      travelMode: parsed.travelMode,
+      legs,
+    }, {
+      status: allUnavailable ? 502 : 200,
+      headers: {
+        ...noStoreHeaders,
+        ...access.headers,
+        "X-TripCheck-Provider-Failed-Units": String(failedUnits),
+      },
+    });
+  } catch {
+    access.complete({ failedUnits: parsed.legs.length });
+    return Response.json({ code: "unavailable" }, { status: 502, headers: { ...noStoreHeaders, ...access.headers } });
+  }
 }

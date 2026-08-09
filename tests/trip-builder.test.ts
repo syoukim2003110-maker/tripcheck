@@ -11,14 +11,102 @@ Tsukiji Outer Market
 Meiji Jingu
 Akihabara`;
 
+function unevenDurationFixture() {
+  const definitions = [
+    { id: "long-a", name: "Long A", latitude: 35, longitude: 139, minutes: 420 },
+    { id: "long-b", name: "Long B", latitude: 35.0001, longitude: 139.0001, minutes: 420 },
+    { id: "short-c", name: "Short C", latitude: 35, longitude: 140, minutes: 30 },
+    { id: "short-d", name: "Short D", latitude: 35.0001, longitude: 140.0001, minutes: 30 },
+  ];
+  return {
+    raw: definitions.map(({ name }) => name).join("\n"),
+    resolvedStops: definitions.map(({ id, name, latitude, longitude, minutes }, inputIndex) => ({
+      id,
+      input: name,
+      inputIndex,
+      name,
+      area: "Test",
+      address: `${name} address`,
+      latitude,
+      longitude,
+      sourceUrl: `https://example.com/${id}`,
+      verifiedAt: "2026-08-09T00:00:00Z",
+      confidence: "medium" as const,
+      planningDurationMinutes: minutes,
+      isAnchor: false,
+    })),
+  };
+}
+
 test("turns an unordered wishlist into geographically grouped days", () => {
   const plan = buildTripFromWishlist(wishlist, 2, "balanced");
 
+  assert.equal(plan.inputMode, "wishlist");
   assert.equal(plan.recognizedStopCount, 8);
   assert.equal(plan.days.length, 2);
   assert.equal(plan.days.flatMap((day) => day.stops).length, 8);
   assert.ok(plan.days.every((day) => day.stops.length === 4));
-  assert.ok(plan.days.every((day) => day.googleMapsUrl.includes("travelmode=transit")));
+  assert.ok(plan.days.every((day) => day.googleMapsUrl!.includes("travelmode=transit")));
+});
+
+test("reassigns an uneven geographic seed before claiming the day count is impossible", () => {
+  const fixture = unevenDurationFixture();
+  const context = {
+    resolvedStops: fixture.resolvedStops,
+    defaultDayStart: "09:00",
+    dayEndTarget: "22:00",
+    transferBufferMinutes: 0 as const,
+  };
+  const signatures = new Set<string>();
+  for (let run = 0; run < 100; run += 1) {
+    const plan = buildTripFromWishlist(fixture.raw, 2, "balanced", "en", context);
+    signatures.add(JSON.stringify(plan.days.map((day) => day.stops.map(({ stop }) => stop.id))));
+    assert.equal(plan.scheduleConflictCount, 0);
+    assert.ok(plan.days.every((day) => day.deadlineOverrunMinutes === 0));
+    assert.deepEqual(
+      plan.days.flatMap((day) => day.stops.map(({ stop }) => stop.id)).sort(),
+      ["long-a", "long-b", "short-c", "short-d"],
+    );
+  }
+  assert.equal(signatures.size, 1, "the bounded local search must be deterministic across repeated solves");
+});
+
+test("day-assignment search never moves a stop out of its locked day", () => {
+  const fixture = unevenDurationFixture();
+  const plan = buildTripFromWishlist(fixture.raw, 2, "balanced", "en", {
+    resolvedStops: fixture.resolvedStops,
+    defaultDayStart: "09:00",
+    dayEndTarget: "22:00",
+    transferBufferMinutes: 0,
+    lockedOrderByDay: { 0: ["long-a", "long-b"] },
+  });
+
+  assert.deepEqual(plan.days[0].stops.map(({ stop }) => stop.id), ["long-a", "long-b"]);
+  assert.ok(plan.days[0].deadlineOverrunMinutes > 0, "a hard lock is retained even when relaxing it would fit");
+});
+
+test("preserves the written day and visit order in existing-itinerary mode", () => {
+  const plan = buildTripFromWishlist(`Day 1
+Shibuya Sky
+Senso-ji
+Tokyo Skytree`, 1, "balanced");
+
+  assert.equal(plan.inputMode, "existing_itinerary");
+  assert.deepEqual(
+    plan.days[0].stops.map(({ stop }) => stop.id),
+    ["shibuya-sky", "sensoji", "tokyo-skytree"],
+  );
+});
+
+test("keeps an explicit edited order while wishlist mode remains optimisable", () => {
+  const plan = buildTripFromWishlist("Shibuya Sky\nSenso-ji\nTokyo Skytree", 1, "balanced", "en", {
+    lockedOrderByDay: { 0: ["sensoji", "shibuya-sky", "tokyo-skytree"] },
+  });
+
+  assert.deepEqual(
+    plan.days[0].stops.map(({ stop }) => stop.id),
+    ["sensoji", "shibuya-sky", "tokyo-skytree"],
+  );
 });
 
 test("compares walking, transit and taxi without claiming live routing", () => {
@@ -40,6 +128,67 @@ test("keeps unsupported entries visible for later map resolution", () => {
   assert.deepEqual(plan.unknownEntries, ["A tiny cafe my friend recommended"]);
 });
 
+test("resolves duplicate names by reviewed occurrence instead of conflating them", () => {
+  const resolvedStops = [
+    { id: "manual-museum-0", input: "City Museum", inputIndex: 0, name: "City Museum North", area: "North", address: "North", latitude: 35.7, longitude: 139.7, sourceUrl: "", verifiedAt: "", confidence: "low" as const, planningDurationMinutes: 60, isAnchor: false, isUserEntered: true, userProvidedCoordinates: true },
+    { id: "manual-museum-1", input: "City Museum", inputIndex: 1, name: "City Museum South", area: "South", address: "South", latitude: 35.6, longitude: 139.8, sourceUrl: "", verifiedAt: "", confidence: "low" as const, planningDurationMinutes: 60, isAnchor: false, isUserEntered: true, userProvidedCoordinates: true },
+  ];
+  const plan = buildTripFromWishlist("City Museum\nCity Museum", 1, "balanced", "en", { resolvedStops });
+
+  assert.deepEqual(plan.days[0].stops.map(({ stop }) => stop.id).sort(), ["manual-museum-0", "manual-museum-1"]);
+  assert.equal(plan.unknownEntries.length, 0);
+});
+
+test("does not prefix-match Tokyo's provider result onto Tokyo Tower", () => {
+  const plan = buildTripFromWishlist("Tokyo\nTokyo Tower", 1, "balanced", "en", {
+    resolvedStops: [{
+      id: "provider-tokyo-city",
+      input: "Tokyo",
+      name: "Tokyo",
+      area: "Tokyo",
+      address: "Tokyo, Japan",
+      latitude: 35.6762,
+      longitude: 139.6503,
+      sourceUrl: "https://example.com/tokyo",
+      verifiedAt: "2026-08-09T00:00:00Z",
+      confidence: "medium",
+      planningDurationMinutes: 60,
+      isAnchor: false,
+    }],
+  });
+
+  assert.deepEqual(
+    plan.days[0].stops.map(({ stop }) => stop.id).sort(),
+    ["provider-tokyo-city", "tokyo-tower"],
+  );
+});
+
+test("keeps repeated occurrences distinct when one exact provider result is reused", () => {
+  const plan = buildTripFromWishlist("City Museum\nCity Museum", 1, "balanced", "en", {
+    resolvedStops: [{
+      id: "provider-city-museum",
+      providerRef: "google-place-id",
+      input: "City Museum",
+      name: "City Museum",
+      area: "Central",
+      address: "1 Museum Road",
+      latitude: 35.68,
+      longitude: 139.76,
+      sourceUrl: "https://example.com/city-museum",
+      verifiedAt: "2026-08-09T00:00:00Z",
+      confidence: "medium",
+      planningDurationMinutes: 60,
+      isAnchor: false,
+    }],
+  });
+
+  assert.deepEqual(plan.days[0].stops.map(({ stop }) => stop.id).sort(), [
+    "provider-city-museum",
+    "provider-city-museum--occurrence-2",
+  ]);
+  assert.ok(plan.days[0].stops.every(({ stop }) => stop.providerRef === "google-place-id"));
+});
+
 test("builds the day around a recognised hotel area and ranks alternative bases", () => {
   const plan = buildTripFromWishlist(wishlist, 2, "balanced", "en", { hotelQuery: "hotel near Shinjuku Station" });
 
@@ -47,7 +196,7 @@ test("builds the day around a recognised hotel area and ranks alternative bases"
   assert.equal(plan.hotelResolved, true);
   assert.equal(plan.baseRecommendations.length, 3);
   assert.ok(plan.days.every((day) => day.hotelTravelMinutes !== null));
-  assert.ok(plan.days.every((day) => day.googleMapsUrl.includes("travelmode=transit")));
+  assert.ok(plan.days.every((day) => day.googleMapsUrl!.includes("travelmode=transit")));
 });
 
 test("can use a real recommended hotel even when the user left the hotel field blank", () => {
@@ -91,6 +240,29 @@ test("protects airport processing, city transfer and international departure tim
   assert.equal(departure.cityTime, "14:15");
   assert.equal(departure.airportMinutes, 120);
   assert.equal(plan.days[0].deadline, "14:15");
+});
+
+test("uses a measured airport-to-hotel route instead of the country-wide fallback", () => {
+  const initial = buildTripFromWishlist(`Senso-ji\nTokyo Skytree`, 1, "balanced", "en", {
+    hotelQuery: "Ueno hotel",
+    arrivalAirport: "HND",
+    arrivalTime: "10:00",
+    tripStartDate: "2026-09-14",
+  });
+  assert.ok(initial.selectedBase);
+  const key = routeLegKey("airport-hnd", initial.selectedBase.id);
+  const measured = buildTripFromWishlist(`Senso-ji\nTokyo Skytree`, 1, "balanced", "en", {
+    hotelQuery: "Ueno hotel",
+    arrivalAirport: "HND",
+    arrivalTime: "10:00",
+    tripStartDate: "2026-09-14",
+    liveTransitMinutes: { [key]: 37 },
+    liveTransitTransferCounts: { [key]: 2 },
+  });
+  const arrival = measured.airportConstraints.find((constraint) => constraint.direction === "arrival")!;
+  assert.equal(arrival.transferMinutes, 37);
+  assert.equal(arrival.transferCount, 2);
+  assert.equal(arrival.cityTime, "12:07");
 });
 
 test("flags a day that runs past the airport departure deadline", () => {
@@ -180,6 +352,107 @@ test("recalculates the day from a user start time and stay duration", () => {
   assert.equal(stop.stop.planningDurationMinutes, 180);
 });
 
+test("uses a per-day end time ahead of the trip-wide cutoff", () => {
+  const plan = buildTripFromWishlist("Senso-ji\nTokyo Skytree", 2, "balanced", "en", {
+    dayEndTarget: "22:00",
+    dayEndTimes: { 0: "11:00", 1: "20:30" },
+    dayStartTimes: { 0: "09:00", 1: "10:00" },
+  });
+
+  assert.equal(plan.days[0].deadline, "11:00");
+  assert.equal(plan.days[1].deadline, "20:30");
+});
+
+test("uses 22:00 as the deterministic day-end target when none is supplied", () => {
+  const plan = buildTripFromWishlist("Long Visit", 1, "balanced", "en", {
+    defaultDayStart: "09:00",
+    resolvedStops: [{
+      id: "long-visit",
+      input: "Long Visit",
+      name: "Long Visit",
+      area: "Central",
+      address: "1 Long Road",
+      latitude: 35.68,
+      longitude: 139.76,
+      sourceUrl: "https://example.com/long-visit",
+      verifiedAt: "2026-08-09T00:00:00Z",
+      confidence: "medium",
+      planningDurationMinutes: 840,
+      isAnchor: false,
+    }],
+  });
+
+  assert.equal(plan.days[0].deadline, "22:00");
+  assert.equal(plan.days[0].deadlineKind, "curfew");
+  assert.equal(plan.days[0].deadlineOverrunMinutes, 60);
+});
+
+test("rebalances ordinary visits after a booking moves onto a full fixed day", () => {
+  const resolvedStops = [
+    ["west-a", "West A", 0],
+    ["east-b", "East B", 10],
+    ["west-c", "West C", 0.1],
+    ["east-d", "East D", 10.1],
+  ].map(([id, name, longitude]) => ({
+    id: String(id),
+    input: String(name),
+    name: String(name),
+    area: "Test",
+    address: `${name} Road`,
+    latitude: 35,
+    longitude: Number(longitude),
+    sourceUrl: `https://example.com/${id}`,
+    verifiedAt: "2026-08-09T00:00:00Z",
+    confidence: "medium" as const,
+    planningDurationMinutes: 30,
+    isAnchor: false,
+  }));
+  const plan = buildTripFromWishlist("West A\nEast B — Day 1 10:00 booked\nWest C\nEast D", 2, "balanced", "en", { resolvedStops });
+
+  assert.ok(plan.days[0].stops.some(({ stop }) => stop.id === "east-b"), "the booked stop stays on Day 1");
+  assert.deepEqual(plan.days.map((day) => day.stops.length), [2, 2]);
+});
+
+test("the bounded large-day optimiser preserves feasible booking and opening constraints deterministically", () => {
+  const resolvedStops = Array.from({ length: 8 }, (_, index) => ({
+    id: `large-${index}`,
+    input: `Large Place ${index}`,
+    name: `Large Place ${index}`,
+    area: "Test",
+    address: `${index} Test Road`,
+    latitude: 35,
+    longitude: 139 + index * 0.0001,
+    sourceUrl: `https://example.com/large-${index}`,
+    verifiedAt: "2026-08-09T00:00:00Z",
+    confidence: "medium" as const,
+    planningDurationMinutes: 15,
+    isAnchor: false,
+  }));
+  const openingWindowsByDay = Object.fromEntries(resolvedStops.map((stop, index) => [
+    stop.id,
+    { 0: [{ openMinutes: 9 * 60, closeMinutes: index === 0 ? 9 * 60 + 20 : 18 * 60 }] },
+  ]));
+  const build = () => buildTripFromWishlist([
+    "Large Place 0",
+    ...Array.from({ length: 6 }, (_, index) => `Large Place ${index + 1}`),
+    "Large Place 7 — 09:45 booked",
+  ].join("\n"), 1, "fast", "en", {
+    defaultDayStart: "09:00",
+    resolvedStops,
+    openingWindowsByDay,
+    transferBufferMinutes: 10,
+  });
+  const first = build();
+  const signature = JSON.stringify(first.days[0].stops.map(({ stop, arrival, departure }) => [stop.id, arrival, departure]));
+
+  assert.equal(first.days[0].openingConflictCount, 0);
+  assert.equal(first.days[0].reservationConflictCount, 0);
+  assert.equal(first.days[0].stops[0].stop.id, "large-0");
+  for (let run = 0; run < 100; run += 1) {
+    assert.equal(JSON.stringify(build().days[0].stops.map(({ stop, arrival, departure }) => [stop.id, arrival, departure])), signature);
+  }
+});
+
 test("softly moves a stop with explicit early-cutoff evidence earlier without overriding reservations", () => {
   const plan = buildTripFromWishlist("Senso-ji\nTokyo Skytree", 1, "balanced", "en", {
     earlyVisitStopIds: ["tokyo-skytree"],
@@ -213,6 +486,61 @@ test("attaches real calendar dates to each planned day", () => {
   assert.deepEqual(plan.days.map((day) => day.date), ["2026-09-14", "2026-09-15", "2026-09-16"]);
 });
 
+test("keeps a missing calendar date as an empty itinerary day", () => {
+  const plan = buildTripFromWishlist(`2026-09-14
+Senso-ji
+2026-09-16
+Tokyo Skytree`, 3, "balanced", "en", { tripStartDate: "2026-09-14" });
+
+  assert.equal(plan.inputMode, "existing_itinerary");
+  assert.equal(plan.minimumPinnedDay, 3);
+  assert.deepEqual(plan.days.map((day) => day.stops.map(({ stop }) => stop.id)), [
+    ["sensoji"],
+    [],
+    ["tokyo-skytree"],
+  ]);
+});
+
+test("rolls a late arrival onto the next activity date and its opening hours", () => {
+  const plan = buildTripFromWishlist("Senso-ji", 1, "balanced", "en", {
+    tripStartDate: "2026-09-14",
+    arrivalAirport: "HND",
+    arrivalTime: "23:30",
+    flightKind: "international",
+    openingWindowsByDay: {
+      sensoji: {
+        0: [],
+        1: [{ openMinutes: 10 * 60, closeMinutes: 17 * 60 }],
+      },
+    },
+  });
+  const arrival = plan.airportConstraints.find((constraint) => constraint.direction === "arrival")!;
+
+  assert.equal(arrival.cityTime, "02:00");
+  assert.equal(arrival.cityTimeDayOffset, 1);
+  assert.equal(plan.days[0].date, "2026-09-15");
+  assert.equal(plan.days[0].startTime, "09:00");
+  assert.equal(plan.days[0].stops[0].arrival, "10:00");
+  assert.equal(plan.days[0].stops[0].openingStatus, "verified_open");
+  assert.equal(plan.deferredUnavailableStops.length, 0);
+});
+
+test("keeps an early departure cutoff on the previous calendar day", () => {
+  const plan = buildTripFromWishlist("Senso-ji", 1, "balanced", "en", {
+    tripStartDate: "2026-09-14",
+    departureAirport: "HND",
+    departureTime: "02:00",
+    flightKind: "international",
+  });
+  const departure = plan.airportConstraints.find((constraint) => constraint.direction === "departure")!;
+
+  assert.equal(departure.cityTime, "22:00");
+  assert.equal(departure.cityTimeDayOffset, -1);
+  assert.equal(plan.days[0].date, "2026-09-14");
+  assert.equal(plan.days[0].deadline, "22:00");
+  assert.ok(plan.days[0].deadlineOverrunMinutes > 0);
+});
+
 test("uses fresh transit minutes when supplied while preserving estimated alternatives", () => {
   const liveTransitMinutes = {
     [routeLegKey("sensoji", "tokyo-skytree")]: 41,
@@ -235,6 +563,51 @@ test("uses live walking minutes when Google returns them", () => {
   const walking = plan.days[0].legs[0].comparison.options.find((option) => option.mode === "walk")!;
   assert.equal(walking.minutes, 7);
   assert.equal(walking.source, "live");
+});
+
+test("treats walking and transfer limits as visible soft mobility policy", () => {
+  const baseline = buildTripFromWishlist("Senso-ji\nTokyo Skytree", 1, "balanced", "en", {
+    maxWalkingMinutesPerLeg: 5,
+    maxTransfersPerLeg: 1,
+  });
+  const firstLeg = baseline.days[0].legs[0];
+  const key = routeLegKey(firstLeg.from.id, firstLeg.to.id);
+  const lockedWalk = buildTripFromWishlist("Senso-ji\nTokyo Skytree", 1, "balanced", "en", {
+    maxWalkingMinutesPerLeg: 5,
+    maxTransfersPerLeg: 1,
+    legModeOverrides: { [key]: "walk" },
+  });
+
+  assert.notEqual(baseline.days[0].legs[0].comparison.recommended.mode, "walk");
+  assert.equal(lockedWalk.days[0].legs[0].comparison.recommended.mode, "walk", "an explicit mode is never silently changed");
+  assert.ok(lockedWalk.days[0].legs[0].walkingLimitExceededMinutes > 0);
+  assert.deepEqual(lockedWalk.mobilityPolicy, {
+    maxWalkingMinutesPerLeg: 5,
+    maxTransfersPerLeg: 1,
+    walkingLimitWasProvided: true,
+    transferLimitWasProvided: true,
+  });
+
+  const reverseKey = routeLegKey(firstLeg.to.id, firstLeg.from.id);
+  const liveTransitMinutes = { [key]: 8, [reverseKey]: 8 };
+  const liveTransitTransferCounts = { [key]: 3, [reverseKey]: 3 };
+  const avoidsTransfers = buildTripFromWishlist("Senso-ji\nTokyo Skytree", 1, "balanced", "en", {
+    maxTransfersPerLeg: 1,
+    liveTransitMinutes,
+    liveTransitTransferCounts,
+  });
+  const lockedTransit = buildTripFromWishlist("Senso-ji\nTokyo Skytree", 1, "balanced", "en", {
+    maxTransfersPerLeg: 1,
+    liveTransitMinutes,
+    liveTransitTransferCounts,
+    lockedOrderByDay: { 0: [firstLeg.from.id, firstLeg.to.id] },
+    legModeOverrides: { [key]: "transit" },
+  });
+
+  assert.notEqual(avoidsTransfers.days[0].legs[0].comparison.recommended.mode, "transit", "an automatic choice may avoid a known transfer-limit violation");
+  assert.equal(avoidsTransfers.days[0].legs[0].transferCount, null, "a non-transit selection does not inherit transit burden");
+  assert.equal(lockedTransit.days[0].legs[0].comparison.recommended.mode, "transit", "the user's fixed mode remains hard");
+  assert.equal(lockedTransit.days[0].legs[0].transferCount, 3);
 });
 
 test("waits for a verified opening window before starting a visit", () => {
@@ -455,7 +828,7 @@ test("an 'at sunset' wish schedules the stop into the evening", () => {
 });
 
 test("meal-typed stops drift toward meal windows instead of opening the day", () => {
-  const resolved = (id, name, latitude, longitude, placeTypes, minutes) => ({
+  const resolved = (id: string, name: string, latitude: number, longitude: number, placeTypes: string[], minutes: number) => ({
     id,
     input: name,
     name,
@@ -465,7 +838,7 @@ test("meal-typed stops drift toward meal windows instead of opening the day", ()
     longitude,
     sourceUrl: `https://maps.google.com/${id}`,
     verifiedAt: "2026-07-21T00:00:00Z",
-    confidence: "high",
+    confidence: "medium" as const,
     planningDurationMinutes: minutes,
     isAnchor: false,
     placeTypes,
@@ -480,4 +853,20 @@ test("meal-typed stops drift toward meal windows instead of opening the day", ()
   const ichiran = plan.days[0].stops.find(({ stop }) => stop.id === "ichiran-shibuya");
   assert.ok(ichiran, "Ichiran should be planned");
   assert.ok(ichiran.arrival >= "11:00", `a ramen stop should not open the day (arrival ${ichiran.arrival})`);
+});
+
+test("treats last entry as a hard admission cutoff distinct from closing time", () => {
+  const raw = "Senso-ji — Day 1";
+  const common = {
+    durationOverrides: { sensoji: 45 },
+    openingWindowsByDay: { sensoji: { 0: [{ openMinutes: 9 * 60, closeMinutes: 18 * 60 }] } },
+    lastEntryTimes: { sensoji: "16:30" },
+  };
+  const late = buildTripFromWishlist(raw, 1, "balanced", "en", { ...common, defaultDayStart: "16:40" });
+  const onTime = buildTripFromWishlist(raw, 1, "balanced", "en", { ...common, defaultDayStart: "16:20" });
+
+  assert.equal(late.days[0].stops[0].openingStatus, "last_entry_conflict");
+  assert.equal(late.days[0].openingConflictCount, 1);
+  assert.equal(onTime.days[0].stops[0].openingStatus, "verified_open");
+  assert.equal(onTime.days[0].stops[0].departure, "17:05", "the visit may finish after last entry while still finishing before closing");
 });

@@ -1,18 +1,12 @@
 import { fetchPlaceIntelligence, parsePlaceIntelligenceRequest } from "../../../lib/place-intelligence";
+import { paidApiDenialResponse, paidProviderGateway } from "../../../lib/server/provider-gateway";
+import { providerFetchWithParentSignal } from "../../../lib/server/provider-resilience";
 
 const noStoreHeaders = { "Cache-Control": "no-store, max-age=0" };
 
 export async function POST(request: Request) {
-  const origin = request.headers.get("Origin");
-  if (origin) {
-    try {
-      if (new URL(origin).origin !== new URL(request.url).origin) {
-        return Response.json({ code: "forbidden" }, { status: 403, headers: noStoreHeaders });
-      }
-    } catch {
-      return Response.json({ code: "forbidden" }, { status: 403, headers: noStoreHeaders });
-    }
-  }
+  const preflight = paidProviderGateway.preflight(request, "google");
+  if (!preflight.ok) return paidApiDenialResponse(preflight, noStoreHeaders);
   const placesApiKey = process.env.GOOGLE_PLACES_API_KEY;
   if (!placesApiKey) return Response.json({ code: "not_configured" }, { status: 503, headers: noStoreHeaders });
   let body: unknown;
@@ -23,13 +17,22 @@ export async function POST(request: Request) {
   }
   const parsed = parsePlaceIntelligenceRequest(body);
   if (!parsed) return Response.json({ code: "invalid_request" }, { status: 400, headers: noStoreHeaders });
+  const access = paidProviderGateway.reserve(preflight, "place_intelligence", 1);
+  if (!access.ok) return paidApiDenialResponse(access, noStoreHeaders);
 
   try {
     // Google evidence is organized by deterministic rules. Claude is reserved for the
     // separate, explicit public-web search so this fast path stays cheap and reproducible.
-    const result = await fetchPlaceIntelligence(parsed, placesApiKey, null);
-    return Response.json(result, { headers: noStoreHeaders });
+    const result = await fetchPlaceIntelligence(
+      parsed,
+      placesApiKey,
+      null,
+      providerFetchWithParentSignal(request.signal),
+    );
+    access.complete();
+    return Response.json(result, { headers: { ...noStoreHeaders, ...access.headers } });
   } catch {
-    return Response.json({ code: "unavailable" }, { status: 502, headers: noStoreHeaders });
+    access.complete({ failedUnits: 1 });
+    return Response.json({ code: "unavailable" }, { status: 502, headers: { ...noStoreHeaders, ...access.headers } });
   }
 }

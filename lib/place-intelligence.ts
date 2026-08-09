@@ -1,10 +1,23 @@
 import { FOOD_RANKING_MODEL } from "./ai-food-ranking.ts";
-import { postAnthropicMessages } from "./anthropic-runtime.ts";
+import { anthropicTimeoutMs, postAnthropicMessages } from "./anthropic-runtime.ts";
+import { destinationById, destinationPlaceQuery, isDestinationChoice } from "./destinations.ts";
+import type { DestinationChoice } from "./destinations.ts";
 
 export type PlaceIntelligenceRequest = {
   name: string;
   area: string;
+  latitude: number;
+  longitude: number;
+  /** Exact Google Place ID retained from resolution when available. */
+  providerRef?: string;
   languageCode: "en" | "ja";
+  /** Country the stop belongs to; "auto" searches without a region bias. */
+  destination: DestinationChoice;
+  /**
+   * P0 needs identity and opening hours only. Rich reviews/photos/payment are
+   * a separate enrichment surface and must not leak into the core field mask.
+   */
+  scope?: "planning" | "enrichment";
 };
 
 export type PlaceReviewEvidence = {
@@ -48,6 +61,8 @@ export type PlaceIntelligenceResult = {
     userRatingCount: number | null;
     openNow: boolean | null;
     hours: string[];
+    currentOpeningPeriods?: unknown[] | null;
+    currentSpecialDays?: unknown[] | null;
     regularOpeningPeriods?: unknown[] | null;
     photoName?: string | null;
     photoAttribution?: { name: string; uri: string } | null;
@@ -213,8 +228,21 @@ export function parsePlaceIntelligenceRequest(input: unknown): PlaceIntelligence
   const source = input as Record<string, unknown>;
   const name = boundedText(source.name, 1, 160);
   const area = boundedText(source.area, 1, 100);
-  if (!name || !area || (source.languageCode !== "ja" && source.languageCode !== "en")) return null;
-  return { name, area, languageCode: source.languageCode };
+  const latitude = typeof source.latitude === "number" && Number.isFinite(source.latitude) && source.latitude >= -90 && source.latitude <= 90 ? source.latitude : null;
+  const longitude = typeof source.longitude === "number" && Number.isFinite(source.longitude) && source.longitude >= -180 && source.longitude <= 180 ? source.longitude : null;
+  const providerRef = source.providerRef === undefined ? undefined : boundedText(source.providerRef, 4, 256);
+  if (!name || !area || latitude === null || longitude === null || (source.languageCode !== "ja" && source.languageCode !== "en")) return null;
+  if (source.providerRef !== undefined && (!providerRef || !/^[A-Za-z0-9_-]+$/.test(providerRef))) return null;
+  return {
+    name,
+    area,
+    latitude,
+    longitude,
+    ...(providerRef ? { providerRef } : {}),
+    languageCode: source.languageCode,
+    destination: isDestinationChoice(source.destination) ? source.destination : "auto",
+    ...(source.scope === "planning" || source.scope === "enrichment" ? { scope: source.scope } : {}),
+  };
 }
 
 function socialLinks(name: string, area: string) {
@@ -362,7 +390,7 @@ async function fetchAnthropicAnalysis(
     output_config: { format: { type: "json_schema", schema: analysisSchema } },
   }, {
     fetcher,
-    signal: AbortSignal.timeout(5_000),
+    signal: AbortSignal.timeout(anthropicTimeoutMs(5_000)),
   });
   if (!response.ok) throw new Error("anthropic_unavailable");
   const payload = await response.json() as { content?: Array<{ type?: string; text?: string }> };
@@ -379,31 +407,58 @@ export async function fetchPlaceIntelligence(
   anthropicApiKey: string | null,
   fetcher: typeof fetch = fetch,
 ): Promise<PlaceIntelligenceResult> {
-  const response = await fetcher("https://places.googleapis.com/v1/places:searchText", {
+  const destination = destinationById(request.destination === "auto" ? "worldwide" : request.destination);
+  const planningFields = "id,displayName,formattedAddress,location,googleMapsUri,websiteUri,businessStatus,currentOpeningHours,regularOpeningHours";
+  const enrichmentFields = `${planningFields},rating,userRatingCount,paymentOptions,reviews,photos`;
+  // An exact resolver identity is already sufficient for planning and should
+  // never be expanded into a reviews/photos/payment SKU implicitly. Rich
+  // fallback search remains available only to the explicitly separate
+  // enrichment scope.
+  const selectedFields = request.providerRef || request.scope === "planning" ? planningFields : enrichmentFields;
+  const searchFields = `places.${selectedFields.split(",").join(",places.")}`;
+  const exactUrl = request.providerRef
+    ? `https://places.googleapis.com/v1/places/${encodeURIComponent(request.providerRef)}?languageCode=${request.languageCode}`
+    : "https://places.googleapis.com/v1/places:searchText";
+  const response = await fetcher(exactUrl, request.providerRef ? {
+    method: "GET",
+    headers: {
+      "X-Goog-Api-Key": placesApiKey,
+      "X-Goog-FieldMask": selectedFields,
+    },
+    signal: AbortSignal.timeout(8_000),
+  } : {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       "X-Goog-Api-Key": placesApiKey,
-      "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.googleMapsUri,places.websiteUri,places.businessStatus,places.currentOpeningHours,places.regularOpeningHours,places.rating,places.userRatingCount,places.paymentOptions,places.reviews,places.photos",
+      "X-Goog-FieldMask": searchFields,
     },
     body: JSON.stringify({
-      textQuery: `${request.name} ${request.area} Japan`,
+      textQuery: destinationPlaceQuery(`${request.name} ${request.area}`, destination),
       pageSize: 1,
       languageCode: request.languageCode,
-      regionCode: "JP",
+      ...(destination.regionCode ? { regionCode: destination.regionCode } : {}),
+      locationBias: { circle: { center: { latitude: request.latitude, longitude: request.longitude }, radius: 1_000 } },
       rankPreference: "RELEVANCE",
     }),
     signal: AbortSignal.timeout(8_000),
   });
   if (!response.ok) throw new Error("places_unavailable");
-  const payload = await response.json() as { places?: Array<Record<string, unknown>> };
-  const raw = payload.places?.[0];
+  const payload = await response.json() as Record<string, unknown> & { places?: Array<Record<string, unknown>> };
+  const raw = request.providerRef ? payload : payload.places?.[0];
   if (!raw) throw new Error("place_not_found");
+  const location = raw.location as { latitude?: unknown; longitude?: unknown } | undefined;
+  const actualLatitude = typeof location?.latitude === "number" ? location.latitude : null;
+  const actualLongitude = typeof location?.longitude === "number" ? location.longitude : null;
+  if (actualLatitude === null || actualLongitude === null) throw new Error("place_not_found");
+  const latitudeDeltaKm = Math.abs(actualLatitude - request.latitude) * 111;
+  const longitudeDeltaKm = Math.abs(actualLongitude - request.longitude) * 111 * Math.cos(request.latitude * Math.PI / 180);
+  if (Math.hypot(latitudeDeltaKm, longitudeDeltaKm) > 1.5) throw new Error("place_mismatch");
   const displayName = raw.displayName as { text?: string } | undefined;
   const mapsUrl = boundedText(raw.googleMapsUri, 1, 500);
   const name = boundedText(displayName?.text, 1, 160);
   if (!mapsUrl || !name) throw new Error("place_not_found");
-  const currentHours = raw.currentOpeningHours as { openNow?: boolean; weekdayDescriptions?: unknown } | undefined;
+  const currentHours = raw.currentOpeningHours as { openNow?: boolean; weekdayDescriptions?: unknown; periods?: unknown; specialDays?: unknown } | undefined;
   const regularHours = raw.regularOpeningHours as { openNow?: boolean; weekdayDescriptions?: unknown; periods?: unknown } | undefined;
   const payment = raw.paymentOptions as Record<string, unknown> | undefined;
   const photos = Array.isArray(raw.photos) ? raw.photos as Array<Record<string, unknown>> : [];
@@ -445,6 +500,8 @@ export async function fetchPlaceIntelligence(
       userRatingCount: typeof raw.userRatingCount === "number" ? raw.userRatingCount : null,
       openNow: optionalBoolean(currentHours?.openNow ?? regularHours?.openNow),
       hours: (Array.isArray(currentHours?.weekdayDescriptions) ? currentHours?.weekdayDescriptions : regularHours?.weekdayDescriptions) as string[] ?? [],
+      currentOpeningPeriods: Array.isArray(currentHours?.periods) ? currentHours.periods : null,
+      currentSpecialDays: Array.isArray(currentHours?.specialDays) ? currentHours.specialDays : null,
       regularOpeningPeriods: Array.isArray(regularHours?.periods) ? regularHours.periods : null,
       photoName: photo ? photo.name as string : null,
       photoAttribution,

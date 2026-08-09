@@ -1,3 +1,6 @@
+import type { DestinationChoice } from "./destinations.ts";
+import { destinationById, destinationPlaceQuery, isDestinationChoice } from "./destinations.ts";
+
 export type HotelSearchRequest = {
   latitude: number;
   longitude: number;
@@ -5,6 +8,8 @@ export type HotelSearchRequest = {
   query?: string;
   routePoints?: Array<{ latitude: number; longitude: number }>;
   languageCode: "en" | "ja";
+  /** Country the trip is in; decides the region bias and the query suffix. */
+  destination: DestinationChoice;
 };
 
 export type HotelPaymentMethod =
@@ -147,7 +152,7 @@ function finiteCoordinate(value: unknown, minimum: number, maximum: number) {
 export function parseHotelSearchRequest(input: unknown): HotelSearchRequest | null {
   if (!input || typeof input !== "object") return null;
   const source = input as Record<string, unknown>;
-  if (!finiteCoordinate(source.latitude, 20, 46) || !finiteCoordinate(source.longitude, 122, 154)) return null;
+  if (!finiteCoordinate(source.latitude, -90, 90) || !finiteCoordinate(source.longitude, -180, 180)) return null;
   if (typeof source.languageCode !== "string" || !validLanguages.has(source.languageCode)) return null;
   const area = boundedText(source.area, 1, 100);
   if (!area) return null;
@@ -169,7 +174,7 @@ export function parseHotelSearchRequest(input: unknown): HotelSearchRequest | nu
     const parsedPoints = source.routePoints.map((point) => {
       if (!point || typeof point !== "object") return null;
       const candidate = point as Record<string, unknown>;
-      if (!finiteCoordinate(candidate.latitude, 20, 46) || !finiteCoordinate(candidate.longitude, 122, 154)) return null;
+      if (!finiteCoordinate(candidate.latitude, -90, 90) || !finiteCoordinate(candidate.longitude, -180, 180)) return null;
       return { latitude: candidate.latitude as number, longitude: candidate.longitude as number };
     });
     if (parsedPoints.some((point) => point === null)) return null;
@@ -183,7 +188,17 @@ export function parseHotelSearchRequest(input: unknown): HotelSearchRequest | nu
     ...(query ? { query } : {}),
     ...(routePoints ? { routePoints } : {}),
     languageCode: source.languageCode as HotelSearchRequest["languageCode"],
+    destination: isDestinationChoice(source.destination) ? source.destination : "auto",
   };
+}
+
+function requestDestination(request: HotelSearchRequest) {
+  return destinationById(request.destination === "auto" ? "worldwide" : request.destination);
+}
+
+function regionBias(request: HotelSearchRequest) {
+  const { regionCode } = requestDestination(request);
+  return regionCode ? { regionCode } : {};
 }
 
 function radians(value: number) {
@@ -495,7 +510,7 @@ async function searchHotelText(
       strictTypeFiltering: false,
       pageSize: 6,
       languageCode: request.languageCode,
-      regionCode: "JP",
+      ...regionBias(request),
       rankPreference: "RELEVANCE",
       locationBias: {
         circle: {
@@ -527,7 +542,7 @@ async function searchHotelsNearRouteCenter(
       includedTypes: nearbyLodgingTypes,
       maxResultCount: 20,
       languageCode: request.languageCode,
-      regionCode: "JP",
+      ...regionBias(request),
       rankPreference: "POPULARITY",
       locationRestriction: {
         circle: {
@@ -554,7 +569,7 @@ export async function fetchGoogleHotelCandidates(
   // pool toward one excursion. Generic, coordinate-biased style searches are
   // optional additions so luxury and value remain comparable.
   const pages = request.query
-    ? [await searchHotelText(`${request.query} ${request.area} Japan`, request, apiKey, fetcher)]
+    ? [await searchHotelText(destinationPlaceQuery(`${request.query} ${request.area}`, requestDestination(request)), request, apiKey, fetcher)]
     : await Promise.all([
       searchHotelsNearRouteCenter(request, apiKey, fetcher)
         .catch(() => searchHotelText(request.languageCode === "ja" ? "ホテル" : "hotels", request, apiKey, fetcher)),

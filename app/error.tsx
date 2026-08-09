@@ -9,7 +9,9 @@ export default function TripCheckError({
   reset: () => void;
 }) {
   useEffect(() => {
-    console.error("tripcheck_screen_recovery", error);
+    // Never forward an exception message/stack from a trip screen: provider
+    // libraries may have included traveller input in that object.
+    console.error("tripcheck_screen_recovery", { name: error.name, digest: error.digest ?? null });
   }, [error]);
 
   return (

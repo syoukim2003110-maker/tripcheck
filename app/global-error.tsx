@@ -4,7 +4,9 @@ import { useEffect } from "react";
 
 export default function TripCheckGlobalError({ error }: { error: Error & { digest?: string }; reset: () => void }) {
   useEffect(() => {
-    console.error("tripcheck_global_recovery", error);
+    // Error messages and stacks may contain user-authored itinerary text.
+    // Recovery telemetry is deliberately limited to non-content metadata.
+    console.error("tripcheck_global_recovery", { name: error.name, digest: error.digest ?? null });
   }, [error]);
 
   return (

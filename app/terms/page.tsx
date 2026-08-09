@@ -3,7 +3,7 @@ import Link from "next/link";
 export default function TermsPage() {
   return (
     <main className="legal-page">
-      <header><p>TRIPCHECK / LEGAL / 002</p><h1>Terms.</h1><span>Last updated July 18, 2026</span></header>
+      <header><p>TRIPCHECK / LEGAL / 002</p><h1>Terms.</h1><span>Last updated August 6, 2026</span></header>
       <section>
         <h2>Planning aid, not a guarantee</h2>
         <p>TripCheck is a travel-planning aid. Estimated routes, schedules, airport buffers, venue information and recommendations can be incomplete or change without notice. Confirm important details with the relevant transport operator, venue, airline or official source.</p>
@@ -18,7 +18,7 @@ export default function TermsPage() {
       </section>
       <section>
         <h2>Availability</h2>
-        <p>The product is an early Tokyo-only service and may change, pause or remove prototype features. Where live data is unavailable, TripCheck falls back to clearly labelled planning estimates.</p>
+        <p>The product is an early worldwide beta with deeper local support for a curated set of countries. It may change, pause or remove prototype features. It does not yet optimize flights, ferries, border crossings or multi-time-zone travel between countries. Where live data is unavailable, TripCheck falls back to clearly labelled planning estimates.</p>
       </section>
       <footer><Link href="/">← Return to TripCheck</Link><Link href="/privacy">Privacy →</Link></footer>
     </main>

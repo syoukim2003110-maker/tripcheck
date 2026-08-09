@@ -6,6 +6,7 @@ import {
   type FreshVoicesResult,
 } from "../../../../lib/fresh-voices";
 import { enabledAnthropicApiKey } from "../../../../lib/anthropic-runtime";
+import { paidApiDenialResponse, paidProviderGateway } from "../../../../lib/server/provider-gateway";
 
 const noStoreHeaders = { "Cache-Control": "private, no-store, max-age=0" };
 const cacheTtlMs = 30 * 60 * 1000;
@@ -19,18 +20,8 @@ const inFlight = new Map<string, Promise<FreshVoicesResult>>();
 const clientWindows = new Map<string, { startedAt: number; count: number }>();
 let globalWindow = { startedAt: Date.now(), count: 0 };
 
-function sameOrigin(request: Request) {
-  const origin = request.headers.get("Origin");
-  if (!origin) return process.env.NODE_ENV !== "production";
-  try {
-    return new URL(origin).origin === new URL(request.url).origin;
-  } catch {
-    return false;
-  }
-}
-
-function cacheKey(name: string, area: string, languageCode: string, intent: string, depth: string) {
-  return [name, area, languageCode, intent, depth]
+function cacheKey(name: string, area: string, languageCode: string, intent: string, depth: string, destination: string) {
+  return [name, area, languageCode, intent, depth, destination]
     .map((value) => value.normalize("NFKC").toLocaleLowerCase("en-US").replace(/\s+/g, " ").trim())
     .join("|");
 }
@@ -80,9 +71,8 @@ function settleQuota(reservation: QuotaReservation, reportedSearchCount: number)
 }
 
 export async function POST(request: Request) {
-  if (!sameOrigin(request) || request.headers.get("Sec-Fetch-Site") === "cross-site") {
-    return Response.json({ code: "forbidden" }, { status: 403, headers: noStoreHeaders });
-  }
+  const preflight = paidProviderGateway.preflight(request, "anthropic");
+  if (!preflight.ok) return paidApiDenialResponse(preflight, noStoreHeaders);
   const anthropicApiKey = enabledAnthropicApiKey();
   if (!anthropicApiKey) return Response.json({ code: "not_configured" }, { status: 503, headers: noStoreHeaders });
   let body: unknown;
@@ -96,7 +86,7 @@ export async function POST(request: Request) {
 
   const now = Date.now();
   prune(now);
-  const key = cacheKey(parsed.name, parsed.area, parsed.languageCode, parsed.intent, parsed.depth);
+  const key = cacheKey(parsed.name, parsed.area, parsed.languageCode, parsed.intent, parsed.depth, parsed.destination);
   const cached = resultCache.get(key);
   if (cached && cached.expiresAt > now) {
     return Response.json(cached.result, { headers: { ...noStoreHeaders, "X-TripCheck-Cache": "hit" } });
@@ -109,11 +99,15 @@ export async function POST(request: Request) {
       return Response.json({ code: "unavailable" }, { status: 502, headers: noStoreHeaders });
     }
   }
-  const reservation = takeQuota(request, now, searchBudget(parsed.depth));
+  const providerUnits = searchBudget(parsed.depth);
+  const access = paidProviderGateway.reserve(preflight, "fresh_voices", providerUnits);
+  if (!access.ok) return paidApiDenialResponse(access, noStoreHeaders);
+  const reservation = takeQuota(request, now, providerUnits);
   if (!reservation) {
+    access.complete();
     return Response.json({ code: "rate_limited" }, {
       status: 429,
-      headers: { ...noStoreHeaders, "Retry-After": "3600" },
+      headers: { ...noStoreHeaders, ...access.headers, "Retry-After": "3600" },
     });
   }
 
@@ -122,12 +116,14 @@ export async function POST(request: Request) {
     inFlight.set(key, pending);
     const result = await pending;
     settleQuota(reservation, result.searchCount);
+    access.complete();
     resultCache.set(key, { expiresAt: now + cacheTtlMs, result });
-    return Response.json(result, { headers: { ...noStoreHeaders, "X-TripCheck-Cache": "miss" } });
+    return Response.json(result, { headers: { ...noStoreHeaders, ...access.headers, "X-TripCheck-Cache": "miss" } });
   } catch (error) {
+    access.complete({ failedUnits: providerUnits });
     console.warn("fresh_voices_unavailable", {
       reason: error instanceof FreshVoicesProviderError ? error.reason : "unknown",
     });
-    return Response.json({ code: "unavailable" }, { status: 502, headers: noStoreHeaders });
+    return Response.json({ code: "unavailable" }, { status: 502, headers: { ...noStoreHeaders, ...access.headers } });
   }
 }

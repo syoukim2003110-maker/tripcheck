@@ -1,3 +1,4 @@
+import type { DestinationChoice } from "./destinations.ts";
 import type { Locale } from "./i18n.ts";
 import type { FoodRecommendationSlot } from "./trip-builder.ts";
 import { defaultFoodDiscoveryQuery, type FoodCandidate } from "./google-food.ts";
@@ -23,12 +24,14 @@ type FoodSearchPayload = {
   mealKind: FoodRecommendationSlot["kind"];
   query: string;
   languageCode: "en" | "ja";
+  destination: DestinationChoice;
   visitDate?: string;
   visitTime?: string;
 };
 
 type FoodRequestOptions = {
   signal?: AbortSignal;
+  destination?: DestinationChoice;
 };
 
 export type FoodSlotReconciliation = {
@@ -93,6 +96,10 @@ export class FoodRecommendationsError extends Error {
   }
 }
 
+function isLocale(value: unknown): value is Locale {
+  return value === "en" || value === "ja" || value === "ko" || value === "zh";
+}
+
 function resolveFoodSearchArgs(queryOrLocale: string, maybeLocale?: Locale) {
   const locale = maybeLocale ?? queryOrLocale as Locale;
   const languageCode = locale === "ja" ? "ja" as const : "en" as const;
@@ -103,10 +110,19 @@ function resolveFoodSearchArgs(queryOrLocale: string, maybeLocale?: Locale) {
   };
 }
 
-export function buildFoodSearchPayload(slot: FoodRecommendationSlot, locale: Locale): FoodSearchPayload;
-export function buildFoodSearchPayload(slot: FoodRecommendationSlot, query: string, locale: Locale): FoodSearchPayload;
-export function buildFoodSearchPayload(slot: FoodRecommendationSlot, queryOrLocale: string, maybeLocale?: Locale) {
-  const { languageCode, query } = resolveFoodSearchArgs(queryOrLocale, maybeLocale);
+export function buildFoodSearchPayload(slot: FoodRecommendationSlot, locale: Locale, destination?: DestinationChoice): FoodSearchPayload;
+export function buildFoodSearchPayload(slot: FoodRecommendationSlot, query: string, locale: Locale, destination?: DestinationChoice): FoodSearchPayload;
+export function buildFoodSearchPayload(
+  slot: FoodRecommendationSlot,
+  queryOrLocale: string,
+  maybeLocale?: Locale | DestinationChoice,
+  maybeDestination?: DestinationChoice,
+) {
+  const localeArgument = isLocale(maybeLocale) ? maybeLocale : undefined;
+  const destination = maybeDestination
+    ?? (isLocale(maybeLocale) ? undefined : maybeLocale)
+    ?? "auto";
+  const { languageCode, query } = resolveFoodSearchArgs(queryOrLocale, localeArgument);
   return {
     latitude: slot.latitude,
     longitude: slot.longitude,
@@ -114,9 +130,10 @@ export function buildFoodSearchPayload(slot: FoodRecommendationSlot, queryOrLoca
     mealKind: slot.kind,
     query,
     languageCode,
+    destination,
     ...(slot.date ? {
       visitDate: slot.date,
-      visitTime: slot.kind === "lunch" ? "12:30" : "19:00",
+      visitTime: slot.probeTime ?? (slot.kind === "lunch" ? "12:30" : "19:00"),
     } : {}),
   };
 }
@@ -151,8 +168,8 @@ export function foodCandidateReason(candidate: FoodCandidate, locale: Locale): s
   if (typeof candidate.distanceMeters === "number" && candidate.distanceMeters <= 1_500) {
     const walkMinutes = Math.max(1, Math.round(candidate.distanceMeters / 80));
     parts.push(ja
-      ? `予定の流れから徒歩約${walkMinutes}分`
-      : `about a ${walkMinutes}-minute walk from the day's route`);
+      ? `食事候補エリアから徒歩約${walkMinutes}分`
+      : `about a ${walkMinutes}-minute walk from the meal area`);
   }
   if (candidate.plannedOpen === true) {
     parts.push(ja ? "食事の時間帯も営業予定" : "open for this meal time");
@@ -162,13 +179,17 @@ export function foodCandidateReason(candidate: FoodCandidate, locale: Locale): s
   return ja ? `${sentence}。` : `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}.`;
 }
 
-export function foodSearchLinks(query: string, area: string, locale: Locale) {
+export function foodSearchLinks(query: string, area: string, locale: Locale, destination: DestinationChoice = "auto") {
   const languageCode = locale === "ja" ? "ja" : "en";
   const phrase = query.trim() || defaultFoodDiscoveryQuery(languageCode);
   const search = encodeURIComponent(`${phrase} ${area}`);
   return {
     googleMaps: `https://www.google.com/maps/search/?api=1&query=${search}`,
-    tabelog: `${locale === "ja" ? "https://tabelog.com/rstLst/" : "https://tabelog.com/en/rstLst/"}?sk=${search}`,
+    // Tabelog only covers Japan; offering it elsewhere would send a traveller
+    // to an empty result page.
+    tabelog: destination === "japan"
+      ? `${locale === "ja" ? "https://tabelog.com/rstLst/" : "https://tabelog.com/en/rstLst/"}?sk=${search}`
+      : null,
     x: `https://x.com/search?q=${search}&src=typed_query`,
   };
 }
@@ -183,6 +204,7 @@ export async function requestFoodRecommendations(
 ): Promise<FoodRecommendationsResponse> {
   const maybeLocale = typeof localeOrOptions === "string" ? localeOrOptions : undefined;
   const options = typeof localeOrOptions === "string" ? maybeOptions : localeOrOptions;
+  const destination = options?.destination ?? "auto";
   let response: Response;
   try {
     response = await fetch("/api/food-recommendations", {
@@ -190,8 +212,8 @@ export async function requestFoodRecommendations(
       headers: { "Content-Type": "application/json" },
       signal: options?.signal,
       body: JSON.stringify(maybeLocale
-        ? buildFoodSearchPayload(slot, queryOrLocale, maybeLocale)
-        : buildFoodSearchPayload(slot, queryOrLocale as Locale)),
+        ? buildFoodSearchPayload(slot, queryOrLocale, maybeLocale, destination)
+        : buildFoodSearchPayload(slot, queryOrLocale as Locale, destination)),
     });
   } catch {
     throw new FoodRecommendationsError("unavailable");

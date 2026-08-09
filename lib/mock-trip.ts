@@ -3,6 +3,7 @@ import type { Locale } from "./i18n.ts";
 type Localized = Record<Locale, string>;
 
 export const fullTripDemo = {
+  destination: "japan" as const,
   tripDays: 4,
   tripStartDate: "2026-09-14",
   pace: "balanced" as const,

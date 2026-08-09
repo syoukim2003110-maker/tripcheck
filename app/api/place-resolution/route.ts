@@ -1,21 +1,12 @@
 import { fetchGooglePlaceResolutions, parsePlaceResolutionRequest } from "../../../lib/google-place-resolver";
+import { paidApiDenialResponse, paidProviderGateway } from "../../../lib/server/provider-gateway";
+import { providerFetchWithParentSignal } from "../../../lib/server/provider-resilience";
 
 const noStoreHeaders = { "Cache-Control": "no-store, max-age=0" };
 
-function sameOrigin(request: Request) {
-  const origin = request.headers.get("Origin");
-  if (!origin) return process.env.NODE_ENV !== "production";
-  try {
-    return new URL(origin).origin === new URL(request.url).origin;
-  } catch {
-    return false;
-  }
-}
-
 export async function POST(request: Request) {
-  if (!sameOrigin(request) || request.headers.get("Sec-Fetch-Site") === "cross-site") {
-    return Response.json({ code: "forbidden" }, { status: 403, headers: noStoreHeaders });
-  }
+  const preflight = paidProviderGateway.preflight(request, "google");
+  if (!preflight.ok) return paidApiDenialResponse(preflight, noStoreHeaders);
   const apiKey = process.env.GOOGLE_PLACES_API_KEY;
   if (!apiKey) return Response.json({ code: "not_configured" }, { status: 503, headers: noStoreHeaders });
 
@@ -27,15 +18,20 @@ export async function POST(request: Request) {
   }
   const parsed = parsePlaceResolutionRequest(body);
   if (!parsed) return Response.json({ code: "invalid_request" }, { status: 400, headers: noStoreHeaders });
+  const providerEvents = parsed.queries.length + parsed.providerOverrides.length + (parsed.hotelQuery ? 1 : 0);
+  const access = paidProviderGateway.reserve(preflight, "place_resolution", providerEvents);
+  if (!access.ok) return paidApiDenialResponse(access, noStoreHeaders);
 
   try {
-    const result = await fetchGooglePlaceResolutions(parsed, apiKey);
+    const result = await fetchGooglePlaceResolutions(parsed, apiKey, providerFetchWithParentSignal(request.signal));
+    access.complete();
     return Response.json({
       provider: "google_maps",
       fetchedAt: new Date().toISOString(),
       ...result,
-    }, { headers: noStoreHeaders });
+    }, { headers: { ...noStoreHeaders, ...access.headers } });
   } catch {
-    return Response.json({ code: "unavailable" }, { status: 502, headers: noStoreHeaders });
+    access.complete({ failedUnits: providerEvents });
+    return Response.json({ code: "unavailable" }, { status: 502, headers: { ...noStoreHeaders, ...access.headers } });
   }
 }

@@ -32,6 +32,12 @@ export type GoogleOpeningEvaluationInput = {
   regularOpeningPeriods?: unknown;
 };
 
+export type GoogleCurrentOpeningEvaluationInput = {
+  businessStatus?: string | null;
+  currentOpeningPeriods?: unknown;
+  currentSpecialDays?: unknown;
+};
+
 export type PlannedLocalDateTime = {
   date: string;
   time: string;
@@ -86,8 +92,84 @@ function localDateWeekday(value: string) {
   return date.getUTCDay();
 }
 
+function calendarDate(value: unknown) {
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as Record<string, unknown>;
+  if (!Number.isInteger(candidate.year) || !Number.isInteger(candidate.month) || !Number.isInteger(candidate.day)) return null;
+  const iso = `${String(candidate.year).padStart(4, "0")}-${String(candidate.month).padStart(2, "0")}-${String(candidate.day).padStart(2, "0")}`;
+  return localDateWeekday(iso) === null ? null : iso;
+}
+
+function datedOpeningPoint(value: unknown) {
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as Record<string, unknown>;
+  const date = calendarDate(candidate.date);
+  const hour = candidate.hour;
+  const minute = candidate.minute;
+  if (!date || !Number.isInteger(hour) || !Number.isInteger(minute)) return null;
+  if ((hour as number) < 0 || (hour as number) > 23 || (minute as number) < 0 || (minute as number) > 59) return null;
+  return { date, minutes: (hour as number) * 60 + (minute as number) };
+}
+
+function calendarDayDelta(from: string, to: string) {
+  const left = new Date(`${from}T00:00:00.000Z`).getTime();
+  const right = new Date(`${to}T00:00:00.000Z`).getTime();
+  if (!Number.isFinite(left) || !Number.isFinite(right)) return null;
+  return Math.round((right - left) / 86_400_000);
+}
+
 /**
- * Returns Google-verified opening windows for one Japan-local calendar day.
+ * Uses Google's date-qualified `currentOpeningHours` only when the requested
+ * calendar date is actually inside that payload. Returning `null` tells the
+ * caller to fall back to a typical weekly schedule as an estimate.
+ */
+export function googleCurrentOpeningWindowsForDate(
+  input: GoogleCurrentOpeningEvaluationInput,
+  date: string,
+): LocalOpeningWindow[] | null {
+  if (input.businessStatus === "CLOSED_PERMANENTLY" || input.businessStatus === "CLOSED_TEMPORARILY") return [];
+  if (input.businessStatus && input.businessStatus !== "OPERATIONAL") return null;
+  if (localDateWeekday(date) === null || !Array.isArray(input.currentOpeningPeriods)) return null;
+
+  const specialDateCovered = Array.isArray(input.currentSpecialDays) && input.currentSpecialDays.some((entry) => {
+    if (!entry || typeof entry !== "object") return false;
+    return calendarDate((entry as Record<string, unknown>).date) === date;
+  });
+  let dateCovered = specialDateCovered;
+  const windows: LocalOpeningWindow[] = [];
+  for (const rawPeriod of input.currentOpeningPeriods) {
+    if (!rawPeriod || typeof rawPeriod !== "object") continue;
+    const period = rawPeriod as Record<string, unknown>;
+    const open = datedOpeningPoint(period.open);
+    if (!open) continue;
+    const close = datedOpeningPoint(period.close);
+    if (!close) {
+      if (open.date === date && open.minutes === 0) {
+        dateCovered = true;
+        windows.push({ openMinutes: 0, closeMinutes: MINUTES_PER_DAY });
+      }
+      continue;
+    }
+    const openDelta = calendarDayDelta(date, open.date);
+    const closeDelta = calendarDayDelta(date, close.date);
+    if (openDelta === null || closeDelta === null) continue;
+    const start = openDelta * MINUTES_PER_DAY + open.minutes;
+    const finish = closeDelta * MINUTES_PER_DAY + close.minutes;
+    if (start < MINUTES_PER_DAY && finish > 0) dateCovered = true;
+    const overlapStart = Math.max(0, start);
+    const overlapEnd = Math.min(MINUTES_PER_DAY, finish);
+    if (overlapStart < overlapEnd) windows.push({ openMinutes: overlapStart, closeMinutes: overlapEnd });
+  }
+  if (!dateCovered) return null;
+  return windows
+    .sort((left, right) => left.openMinutes - right.openMinutes)
+    .filter((window, index, values) => index === 0
+      || window.openMinutes !== values[index - 1].openMinutes
+      || window.closeMinutes !== values[index - 1].closeMinutes);
+}
+
+/**
+ * Returns Google-verified opening windows for one place-local calendar day.
  * `null` means the schedule is missing or invalid; an empty array means the
  * place is explicitly unavailable that day.
  */
@@ -143,7 +225,7 @@ function insideWeeklyInterval(target: number, open: number, close: number) {
 }
 
 /**
- * Evaluates Google's structured weekly periods at a Japan-local calendar time.
+ * Evaluates Google's structured weekly periods at a place-local calendar time.
  * Weekday descriptions are deliberately not parsed because their text is localized.
  */
 export function evaluateGoogleOpeningAt(

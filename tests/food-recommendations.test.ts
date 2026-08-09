@@ -23,6 +23,7 @@ const validRequest = {
   mealKind: "dinner" as const,
   query: "small-plate izakaya",
   languageCode: "en" as const,
+  destination: "japan" as const,
 };
 
 const slot: FoodRecommendationSlot = {
@@ -42,7 +43,11 @@ const slot: FoodRecommendationSlot = {
 
 test("accepts legacy food queries and defaults a missing query to local highlights", () => {
   assert.deepEqual(parseFoodSearchRequest(validRequest), validRequest);
-  assert.equal(parseFoodSearchRequest({ ...validRequest, latitude: 80 }), null);
+  assert.equal(parseFoodSearchRequest({ ...validRequest, latitude: 95 }), null);
+  // A Swiss coordinate is a legitimate meal now; only impossible ones are refused.
+  assert.ok(parseFoodSearchRequest({ ...validRequest, latitude: 46.02, longitude: 7.75, destination: "switzerland" }));
+  // An unknown destination degrades to "auto" instead of failing the request.
+  assert.equal(parseFoodSearchRequest({ ...validRequest, destination: "narnia" })?.destination, "auto");
   assert.equal(parseFoodSearchRequest({ ...validRequest, languageCode: "ko" }), null);
   assert.equal(parseFoodSearchRequest({ ...validRequest, query: 42 }), null);
   assert.equal(
@@ -59,6 +64,7 @@ test("client can request local highlights without a genre while preserving the l
     mealKind: "dinner",
     query: defaultFoodDiscoveryQuery("ja"),
     languageCode: "ja",
+    destination: "auto",
     visitDate: "2026-09-19",
     visitTime: "19:00",
   });
@@ -69,9 +75,13 @@ test("client can request local highlights without a genre while preserving the l
     mealKind: "dinner",
     query: "izakaya",
     languageCode: "en",
+    destination: "auto",
     visitDate: "2026-09-19",
     visitTime: "19:00",
   });
+  // The country rides along on both the legacy and the query signature.
+  assert.equal(buildFoodSearchPayload(slot, "ja", "switzerland").destination, "switzerland");
+  assert.equal(buildFoodSearchPayload(slot, "raclette", "en", "switzerland").destination, "switzerland");
 });
 
 test("reuses a meal search for a nearby final anchor but refreshes material moves and date changes", () => {
@@ -112,6 +122,8 @@ test("local highlights use Nearby popularity, collect rich evidence, and return 
     googleMapsUri: `https://maps.google.com/?cid=${id}`,
     websiteUri: `https://${id}.example.com`,
     businessStatus,
+    primaryType: "restaurant",
+    types: ["restaurant", "food", "point_of_interest"],
     primaryTypeDisplayName: { text: "Restaurant" },
     rating,
     userRatingCount,
@@ -138,7 +150,13 @@ test("local highlights use Nearby popularity, collect rich evidence, and return 
   const fetcher = (async (url: string | URL | Request, init?: RequestInit) => {
     captured.value = { url: String(url), init: init ?? {} };
     return Response.json({ places: [
-      { ...makePlace("popular", 4.5, 1_000, true, 0.001), paymentOptions: { acceptsCashOnly: true, acceptsCreditCards: true } },
+      {
+        ...makePlace("popular", 4.5, 1_000, true, 0.001),
+        primaryType: "lodging",
+        types: ["lodging", "restaurant", "food"],
+        primaryTypeDisplayName: { text: "Hotel" },
+        paymentOptions: { acceptsCashOnly: true, acceptsCreditCards: true },
+      },
       makePlace("tiny-sample", 5, 3, true, 0.001),
       makePlace("closed-now", 4.6, 800, false, 0.002),
       makePlace("steady", 4.2, 300, undefined, 0.0015),
@@ -161,13 +179,14 @@ test("local highlights use Nearby popularity, collect rich evidence, and return 
   assert.match(headers["X-Goog-FieldMask"], /places\.websiteUri/);
   const body = JSON.parse(String(captured.value?.init.body));
   assert.equal(body.rankPreference, "POPULARITY");
-  assert.deepEqual(body.includedTypes, ["restaurant"]);
+  assert.deepEqual(body.includedTypes, ["restaurant", "cafe", "coffee_shop", "bakery", "tea_house"]);
   assert.equal(body.maxResultCount, 10);
   assert.equal(body.locationRestriction.circle.radius, 1_500);
 
   assert.deepEqual(results.map(({ id }) => id), ["closed-now", "popular", "steady"]);
   const popular = results.find(({ id }) => id === "popular");
   assert.equal(popular?.rating, 4.5);
+  assert.equal(popular?.type, "Restaurant");
   assert.equal(popular?.userRatingCount, 1_000);
   assert.equal(popular?.openNow, true);
   assert.deepEqual(popular?.hours, ["Monday: 11:00–22:00"]);

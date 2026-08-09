@@ -10,15 +10,20 @@ export type IconName =
   | "car"
   | "check"
   | "close"
+  | "cloud"
   | "external"
+  | "fog"
   | "fork"
   | "mark"
   | "moon"
+  | "rain"
   | "pin"
   | "plus"
   | "search"
   | "signal"
+  | "snow"
   | "spark"
+  | "storm"
   | "sun"
   | "taxi"
   | "train"
@@ -57,10 +62,17 @@ const paths: Record<IconName, React.ReactNode> = {
   ),
   check: <path d="M4.5 12.5 9.6 17.6 19.5 6.8" />,
   close: <path d="M6 6l12 12M18 6 6 18" />,
+  cloud: <path d="M7.3 17.5a4.1 4.1 0 0 1-.6-8.2 5.3 5.3 0 0 1 10.3 1.3 3.5 3.5 0 0 1-.5 6.9Z" />,
   external: (
     <>
       <path d="M7 17 17 7" />
       <path d="M9 7h8v8" />
+    </>
+  ),
+  fog: (
+    <>
+      <path d="M7.6 10.5a4 4 0 0 1 .3-3.7 4.6 4.6 0 0 1 8.6 1.7 3.2 3.2 0 0 1 2.4 2" />
+      <path d="M4.5 13.7h15M6.5 16.7h11M8.5 19.7h7" />
     </>
   ),
   fork: (
@@ -78,6 +90,12 @@ const paths: Record<IconName, React.ReactNode> = {
     </>
   ),
   moon: <path d="M19.7 14.4A8.1 8.1 0 1 1 9.6 4.3a6.6 6.6 0 0 0 10.1 10.1Z" />,
+  rain: (
+    <>
+      <path d="M7.3 13.5a4.1 4.1 0 0 1-.6-8.2 5.3 5.3 0 0 1 10.3 1.3 3.5 3.5 0 0 1-.5 6.9Z" />
+      <path d="M8.4 16.2l-1 3M12.5 16.2l-1 3M16.6 16.2l-1 3" />
+    </>
+  ),
   pin: (
     <>
       <path d="M12 21.3s6.8-6 6.8-11.2a6.8 6.8 0 1 0-13.6 0c0 5.2 6.8 11.2 6.8 11.2Z" />
@@ -98,7 +116,19 @@ const paths: Record<IconName, React.ReactNode> = {
       <path d="M5.2 10.2a9.6 9.6 0 0 1 13.6 0" />
     </>
   ),
+  snow: (
+    <>
+      <path d="M12 4.5v15M5.5 8.2l13 7.6M18.5 8.2l-13 7.6" />
+      <path d="M12 4.5 10.4 6.4M12 4.5l1.6 1.9M12 19.5l-1.6-1.9M12 19.5l1.6-1.9" />
+    </>
+  ),
   spark: <path d="M12 3.5 13.7 10.3 20.5 12 13.7 13.7 12 20.5 10.3 13.7 3.5 12 10.3 10.3Z" />,
+  storm: (
+    <>
+      <path d="M7.3 13.5a4.1 4.1 0 0 1-.6-8.2 5.3 5.3 0 0 1 10.3 1.3 3.5 3.5 0 0 1-.5 6.9" />
+      <path d="M12.8 11.5 10 16h3.4l-2.2 4.3" />
+    </>
+  ),
   sun: (
     <>
       <circle cx="12" cy="12" r="3.6" />
