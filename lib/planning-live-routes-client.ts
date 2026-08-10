@@ -1,6 +1,6 @@
 import type { Locale } from "./i18n.ts";
 import { destinationAirport, destinationById, localDateTimeWithOffset, type MobilityProfile } from "./destinations.ts";
-import type { LiveRouteCoordinate, LiveRouteResult, LiveRouteTravelMode } from "./google-routes.ts";
+import type { LiveRouteCoordinate, LiveRouteResult, LiveRouteTravelMode, TransitStepSummary } from "./google-routes.ts";
 import { decodeGooglePolyline } from "./google-polyline.ts";
 import { estimateTravelOptions, type TravelPreference } from "./time-feasibility.ts";
 import { straightLineDistanceKm, type RouteStop } from "./route-optimizer.ts";
@@ -497,7 +497,10 @@ function parseResult(value: unknown): LiveRouteResult | null {
     ? candidate.transferCount
     : null;
   if (candidate.status === "ok" && (durationMinutes === null || durationMinutes <= 0)) return null;
-  return { id: candidate.id, status: candidate.status, durationMinutes, distanceMeters, encodedPolyline, transferCount };
+  const transitSteps = candidate.status === "ok" && Array.isArray(candidate.transitSteps)
+    ? (candidate.transitSteps as TransitStepSummary[]).filter((step) => step && typeof step.lineName === "string").slice(0, 6)
+    : null;
+  return { id: candidate.id, status: candidate.status, durationMinutes, distanceMeters, encodedPolyline, transferCount, transitSteps };
 }
 
 async function requestBatch(

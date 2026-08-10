@@ -1904,3 +1904,14 @@ div.planner-route-ideas-empty { display: grid; gap: 8px; }
   .planner-print-conditions dd { margin: 0.5mm 0 0; }
   .planner-print-essentials { color: #333; font-size: 9.5px; line-height: 1.55; margin: 2mm 0; }
 }
+
+.planner-transit-line {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 2px 0 4px 56px;
+  font-size: 11px;
+  color: var(--planner-ink-soft, #6b6b74);
+  letter-spacing: 0.01em;
+}
+.planner-transit-line svg { flex-shrink: 0; opacity: 0.7; }

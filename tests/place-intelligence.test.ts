@@ -45,7 +45,10 @@ test("planning scope requests hours and identity without enrichment fields", asy
   );
   assert.equal(result.place.name, "Sample Temple");
   assert.match(fieldMask, /places\.regularOpeningHours/);
-  assert.doesNotMatch(fieldMask, /reviews|photos|paymentOptions|rating/);
+  // The photo LIST intentionally rides along with planning fields (same
+  // Enterprise field-mask tier as hours); rich enrichment stays excluded.
+  assert.doesNotMatch(fieldMask, /reviews|paymentOptions|userRatingCount|,rating/);
+  assert.match(fieldMask, /photos/);
   assert.equal(result.reviews.length, 0);
 });
 
@@ -116,7 +119,8 @@ test("uses exact Place Details for a resolved provider reference", async () => {
   assert.match(requestedUrl, /\/v1\/places\/ChIJexact_123\?languageCode=en$/);
   assert.equal(requestedMethod, "GET");
   assert.match(fieldMask, /regularOpeningHours/);
-  assert.doesNotMatch(fieldMask, /reviews|paymentOptions|photos/);
+  assert.doesNotMatch(fieldMask, /reviews|paymentOptions/);
+  assert.match(fieldMask, /photos/);
   assert.equal(result.place.name, "Sample Cafe");
 });
 

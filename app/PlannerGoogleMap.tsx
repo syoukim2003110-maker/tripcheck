@@ -607,14 +607,36 @@ export default function PlannerGoogleMap({
 
     if (!drawRoute || pathStops.length < 2) return;
     if (routeRequestsPaused) {
-      // Provider fetches stay paused (no date yet), but the visit ORDER is
-      // already decided — sketch it with the dashed connectors so the day
-      // reads as one continuous sequence instead of loose pins. Connectors
-      // cost no API call and are visually distinct from measured routes.
+      // Provider fetches stay paused (no date yet), but the caller may already
+      // hold measured geometry (prefetch/convergence evidence) — draw the real
+      // path solid where it exists, and only sketch the remaining hops with a
+      // dashed connector. Neither costs an API call here.
       for (let pauseIndex = 0; pauseIndex < pathStops.length - 1; pauseIndex += 1) {
         const from = pathStops[pauseIndex];
         const to = pathStops[pauseIndex + 1];
         if (from.latitude === to.latitude && from.longitude === to.longitude) continue;
+        const measured = (transitGeometry[pauseIndex] ?? []).map((point) => ({ lat: point.latitude, lng: point.longitude }));
+        if (plannerRouteGeometryIsDrawable(measured)) {
+          routeLinesRef.current.push(
+            new google.maps.Polyline({
+              map,
+              path: measured,
+              strokeColor: "#ffffff",
+              strokeOpacity: routeView.outlineOpacity,
+              strokeWeight: routeView.outlineWeight,
+              zIndex: Math.max(1, routeView.zIndex - 1),
+            }),
+            new google.maps.Polyline({
+              map,
+              path: measured,
+              strokeColor: routeView.color,
+              strokeOpacity: routeView.strokeOpacity,
+              strokeWeight: routeView.strokeWeight,
+              zIndex: routeView.zIndex,
+            }),
+          );
+          continue;
+        }
         routeLinesRef.current.push(new google.maps.Polyline({
           map,
           path: [
@@ -649,9 +671,9 @@ export default function PlannerGoogleMap({
           mode,
           rawDepartureTime,
           departureTime: (departureTime ?? new Date()).toISOString(),
-          providedTransitPath: mode === "transit"
-            ? (transitGeometry[index] ?? []).map((point) => ({ lat: point.latitude, lng: point.longitude }))
-            : [],
+          // Measured geometry supplied by the caller (convergence evidence or
+          // the post-build prefetch) applies to any mode, not only transit.
+          providedTransitPath: (transitGeometry[index] ?? []).map((point) => ({ lat: point.latitude, lng: point.longitude })),
           cacheKey,
           cached,
         };
@@ -660,7 +682,10 @@ export default function PlannerGoogleMap({
       const requested = new Map<string, { durationMinutes: number | null; encodedPolyline: string | null; status: string; fetchedAt: string | null }>();
       const remainingBudget = Math.max(0, PLANNING_BUDGET.routeEvents - routeBudgetRef.current.used);
       const requestableKeys = new Set(
-        specs.filter((spec) => spec.mode !== "transit" && !spec.cached).slice(0, remainingBudget).map((spec) => spec.cacheKey),
+        specs
+          .filter((spec) => spec.mode !== "transit" && !spec.cached && !plannerRouteGeometryIsDrawable(spec.providedTransitPath))
+          .slice(0, remainingBudget)
+          .map((spec) => spec.cacheKey),
       );
       // Transit is fetched once by the convergence coordinator. The map may
       // spend only the remaining shared budget on walking/taxi geometry and
@@ -705,7 +730,7 @@ export default function PlannerGoogleMap({
       }));
 
       const results = specs.map((spec) => {
-        if (spec.mode === "transit") {
+        if (spec.mode === "transit" || plannerRouteGeometryIsDrawable(spec.providedTransitPath)) {
           return { ...spec, path: spec.providedTransitPath, minutes: null, fetchedAt: null };
         }
         if (spec.cached) return { ...spec, ...spec.cached };

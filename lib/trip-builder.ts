@@ -492,6 +492,33 @@ function buildFoodRecommendationSlots(
       const displayMinutes = kind === "lunch"
         ? Math.min(Math.max(lunchAnchorMinutes, anchorArrival), lunch.end)
         : Math.max(dinner.start, Math.min(lastDeparture, dinner.end));
+      // 「動線上」を名乗る以上、検索の中心は食事時刻に旅行者が実際にいる
+      // 地点に置く: 滞在中ならその場所、移動中ならその区間の中間点、
+      // 最終地点を出た後ならホテルへの帰路の中間点。アンカー1点に候補が
+      // 固まる見え方を避ける。
+      const positionAtMealTime = (minutes: number): { latitude: number; longitude: number } => {
+        for (let index = 0; index < day.stops.length; index += 1) {
+          const stopArrival = clockMinutes(day.stops[index].arrival);
+          const stopDeparture = clockMinutes(day.stops[index].departure);
+          if (stopArrival !== null && minutes < stopArrival) {
+            const previous = index > 0 ? day.stops[index - 1].stop : day.startBase;
+            const current = day.stops[index].stop;
+            return previous
+              ? { latitude: (previous.latitude + current.latitude) / 2, longitude: (previous.longitude + current.longitude) / 2 }
+              : { latitude: current.latitude, longitude: current.longitude };
+          }
+          if (stopDeparture !== null && minutes <= stopDeparture) {
+            const current = day.stops[index].stop;
+            return { latitude: current.latitude, longitude: current.longitude };
+          }
+        }
+        const lastStop = day.stops.at(-1)!.stop;
+        const home = day.endBase;
+        return home
+          ? { latitude: (lastStop.latitude + home.latitude) / 2, longitude: (lastStop.longitude + home.longitude) / 2 }
+          : { latitude: lastStop.latitude, longitude: lastStop.longitude };
+      };
+      const mealPosition = positionAtMealTime(displayMinutes);
       const rationale = kind === "lunch"
         ? {
           en: `Easy to reach around ${anchor.stop.name}, without adding a cross-city detour.`,
@@ -513,8 +540,8 @@ function buildFoodRecommendationSlots(
         kind,
         area: anchor.stop.area,
         anchorStopId: anchor.stop.id,
-        latitude: anchor.stop.latitude,
-        longitude: anchor.stop.longitude,
+        latitude: mealPosition.latitude,
+        longitude: mealPosition.longitude,
         window: kind === "lunch"
           ? `${clock(lunch.start)}–${clock(lunch.end)}`
           : `${clock(dinner.start)}–${clock(dinner.end)}`,

@@ -61,6 +61,7 @@ test("mandatory cases: no walking route or an island/ferry gap never fabricates 
     distanceMeters: null,
     encodedPolyline: null,
     transferCount: null,
+      transitSteps: null,
     status: "unavailable",
   }]);
 });

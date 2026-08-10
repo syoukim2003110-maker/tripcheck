@@ -411,10 +411,12 @@ export async function fetchPlaceIntelligence(
   const planningFields = "id,displayName,formattedAddress,location,googleMapsUri,websiteUri,businessStatus,currentOpeningHours,regularOpeningHours";
   const enrichmentFields = `${planningFields},rating,userRatingCount,paymentOptions,reviews,photos`;
   // An exact resolver identity is already sufficient for planning and should
-  // never be expanded into a reviews/photos/payment SKU implicitly. Rich
-  // fallback search remains available only to the explicitly separate
-  // enrichment scope.
-  const selectedFields = request.providerRef || request.scope === "planning" ? planningFields : enrichmentFields;
+  // never be expanded into a reviews/payment SKU implicitly. Rich fallback
+  // search remains available only to the explicitly separate enrichment
+  // scope. The photo LIST rides along at no extra field-mask tier (the hours
+  // fields already bill Enterprise) so the inspector can show one lazily
+  // proxied photo; photo media itself is only fetched when rendered.
+  const selectedFields = request.providerRef || request.scope === "planning" ? `${planningFields},photos` : enrichmentFields;
   const searchFields = `places.${selectedFields.split(",").join(",places.")}`;
   const exactUrl = request.providerRef
     ? `https://places.googleapis.com/v1/places/${encodeURIComponent(request.providerRef)}?languageCode=${request.languageCode}`

@@ -443,15 +443,32 @@ const lodgingTypes = new Set([
 
 const nearbyLodgingTypes = [...lodgingTypes].filter((type) => type !== "ryokan");
 
+// Camping-style places carry Google's generic "lodging" type too, but a
+// campground pitch or RV site is not what a hotel recommendation should
+// return. Automatic searches exclude them; a query that names one keeps it.
+const campingStyleTypes = new Set([
+  "campground",
+  "camping_cabin",
+  "mobile_home_park",
+  "rv_park",
+]);
+
 export function placeTypesIncludeLodging(placeTypes: readonly string[] | undefined) {
   return Boolean(placeTypes?.some((type) => lodgingTypes.has(type)));
 }
 
-function isOperationalLodging(place: RawGooglePlace) {
-  if (place.businessStatus !== "OPERATIONAL") return false;
+function placeTypeList(place: RawGooglePlace) {
   const types = Array.isArray(place.types) ? place.types.filter((type): type is string => typeof type === "string") : [];
   const primaryType = boundedText(place.primaryType, 1, 100);
-  return (primaryType !== null && lodgingTypes.has(primaryType)) || types.some((type) => lodgingTypes.has(type));
+  return primaryType !== null ? [primaryType, ...types] : types;
+}
+
+function isOperationalLodging(place: RawGooglePlace) {
+  return place.businessStatus === "OPERATIONAL" && placeTypeList(place).some((type) => lodgingTypes.has(type));
+}
+
+function isCampingStyleLodging(place: RawGooglePlace) {
+  return placeTypeList(place).some((type) => campingStyleTypes.has(type));
 }
 
 function normalized(value: string) {
@@ -547,6 +564,9 @@ async function searchHotelsNearRouteCenter(
     },
     body: JSON.stringify({
       includedTypes: nearbyLodgingTypes,
+      // searchNearby can exclude server-side (searchText cannot); the
+      // client-side isCampingStyleLodging filter remains the guarantee.
+      excludedTypes: [...campingStyleTypes],
       maxResultCount: 20,
       languageCode: request.languageCode,
       ...regionBias(request),
@@ -591,6 +611,9 @@ export async function fetchGoogleHotelCandidates(
   pages.forEach((places) => {
     places.forEach((place, apiIndex) => {
       if (!isOperationalLodging(place)) return;
+      // Recommendations never surface campgrounds or RV parks; only a user
+      // who explicitly typed such a place's name gets it back.
+      if (!request.query && isCampingStyleLodging(place)) return;
       const id = boundedText(place.id, 1, 300);
       const name = boundedText(place.displayName?.text, 1, 200);
       const googleMapsUrl = boundedText(place.googleMapsUri, 1, 500);

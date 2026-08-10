@@ -44,7 +44,7 @@ test("requests only the minimum Google route fields and normalizes duration", as
     capturedBody = String(init?.body);
     assert.equal(
       new Headers(init?.headers).get("X-Goog-FieldMask"),
-      "routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline,routes.legs.steps.travelMode",
+      "routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline,routes.legs.steps.travelMode,routes.legs.steps.transitDetails",
     );
     return Response.json({ routes: [{
       duration: "901s",
@@ -80,6 +80,102 @@ test("keeps transfer count unknown when transit step data is incomplete", async 
   assert.equal(missingSteps.status, "ok", "duration evidence remains usable");
   assert.equal(missingSteps.transferCount, null);
   assert.equal(noLegs.transferCount, null);
+  assert.equal(noLegs.transitSteps, null, "no leg data means no ride summaries");
+});
+
+test("surfaces which train or bus to board for each transit ride", async () => {
+  const parsed = parseLiveRoutesRequest(request, now)!;
+  const [result] = await fetchGoogleTransitRoutes(parsed, "private-key", async () => Response.json({
+    routes: [{
+      duration: "2700s",
+      distanceMeters: 4100,
+      legs: [{ steps: [
+        { travelMode: "WALK" },
+        {
+          travelMode: "TRANSIT",
+          transitDetails: {
+            headsign: "Interlaken Ost",
+            stopCount: 3,
+            stopDetails: {
+              departureStop: { name: "  Bern  " },
+              departureTime: "2026-09-14T01:04:00Z",
+            },
+            localizedValues: { departureTime: { time: { text: "10:04" }, timeZone: "Europe/Zurich" } },
+            transitLine: { name: "InterCity 61", nameShort: "IC 61", vehicle: { type: "HEAVY_RAIL" } },
+          },
+        },
+        {
+          travelMode: "TRANSIT",
+          transitDetails: {
+            headsign: "   ",
+            stopCount: 12,
+            stopDetails: { departureStop: { name: "Spiez" }, departureTime: "2026-09-14T01:40:00Z" },
+            transitLine: { nameShort: "B 21", vehicle: { type: "BUS" } },
+          },
+        },
+      ] }],
+    }],
+  }));
+
+  assert.equal(result.status, "ok");
+  assert.deepEqual(result.transitSteps, [
+    {
+      lineName: "InterCity 61",
+      headsign: "Interlaken Ost",
+      departureStop: "Bern",
+      departureTime: "10:04",
+      shortName: "IC 61",
+      vehicleType: "HEAVY_RAIL",
+      stopCount: 3,
+    },
+    {
+      lineName: "B 21",
+      headsign: null,
+      departureStop: "Spiez",
+      departureTime: "2026-09-14T01:40:00Z",
+      shortName: "B 21",
+      vehicleType: "BUS",
+      stopCount: 12,
+    },
+  ], "localized departure text wins; timestamps and nameShort fill the gaps");
+});
+
+test("drops malformed transit ride details without failing the leg", async () => {
+  const parsed = parseLiveRoutesRequest(request, now)!;
+  const [result] = await fetchGoogleTransitRoutes(parsed, "private-key", async () => Response.json({
+    routes: [{ duration: "600s", legs: [{ steps: [
+      { travelMode: "TRANSIT", transitDetails: "not-an-object" },
+      { travelMode: "TRANSIT", transitDetails: { headsign: "Nowhere", transitLine: { vehicle: { type: "BUS" } } } },
+      { travelMode: "TRANSIT" },
+      { travelMode: "TRANSIT", transitDetails: { transitLine: { name: "Ginza Line" }, stopCount: -2 } },
+    ] }] }],
+  }));
+
+  assert.equal(result.status, "ok", "bad ride details never fail the leg");
+  assert.deepEqual(result.transitSteps, [{
+    lineName: "Ginza Line",
+    headsign: null,
+    departureStop: null,
+    departureTime: null,
+    shortName: null,
+    vehicleType: null,
+    stopCount: null,
+  }], "nameless or non-object rides are dropped and a negative stop count is unknown");
+});
+
+test("bounds transit summary text length and caps rides per leg", async () => {
+  const parsed = parseLiveRoutesRequest(request, now)!;
+  const steps = Array.from({ length: 9 }, () => ({
+    travelMode: "TRANSIT",
+    transitDetails: { transitLine: { name: `${"x".repeat(200)}  ` }, headsign: "y".repeat(200) },
+  }));
+  const [result] = await fetchGoogleTransitRoutes(parsed, "private-key", async () => Response.json({
+    routes: [{ duration: "600s", legs: [{ steps }] }],
+  }));
+
+  assert.equal(result.transitSteps?.length, 6);
+  assert.equal(result.transitSteps?.[0].lineName.length, 80);
+  assert.equal(result.transitSteps?.[0].headsign?.length, 80);
 });
 
 test("decodes provider route geometry and rejects a truncated polyline", () => {
@@ -107,6 +203,7 @@ test("requests walking facts without sending a transit departure to Google", asy
 
   assert.equal(results[0].durationMinutes, 10);
   assert.equal(results[0].transferCount, null);
+  assert.equal(results[0].transitSteps, null, "walking legs carry no ride summaries");
   assert.match(capturedBody, /"travelMode":"WALK"/);
   assert.doesNotMatch(capturedBody, /departureTime/);
 });

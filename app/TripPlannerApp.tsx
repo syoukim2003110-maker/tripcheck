@@ -43,6 +43,8 @@ import {
 } from "../lib/planning-live-routes-client";
 import { PlaceResolutionError, placeReviewInputSignature, placeReviewStatus, requestPlaceResolution, type AmbiguousPlaceResolution } from "../lib/place-resolution-client";
 import { PLANNING_BUDGET, takeWithinPlanningBudget } from "../lib/planning-budget";
+import { decodeGooglePolyline } from "../lib/google-polyline";
+import type { TransitStepSummary } from "../lib/google-routes";
 import { poiAccessPolicyForStop } from "../lib/poi-access";
 import { resolveKnownStops, straightLineDistanceKm, type ResolvedInputStop, type RouteStop } from "../lib/route-optimizer";
 import type { Pace } from "../lib/trip-builder";
@@ -1590,6 +1592,13 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   // evidence, split by owner exactly like the positive measurements above.
   const [liveTransitAbsent, setLiveTransitAbsent] = useState<Record<string, boolean>>({});
   const [prefetchTransitAbsent, setPrefetchTransitAbsent] = useState<Record<string, boolean>>({});
+  // Decoded provider route geometry from the post-build prefetch, keyed by
+  // routeLegKey then mode. Display-only: it lets the map draw real measured
+  // paths (like Google Maps) even while the trip date is provisional.
+  const [prefetchGeometry, setPrefetchGeometry] = useState<Record<string, Partial<Record<"transit" | "walk" | "drive", Array<{ latitude: number; longitude: number }>>>>>({});
+  // Which train/bus to board per leg (line, headsign, departure), measured by
+  // the prefetch at the provisional departure time.
+  const [prefetchTransitSteps, setPrefetchTransitSteps] = useState<Record<string, TransitStepSummary[]>>({});
   const [liveTransitTransferCounts, setLiveTransitTransferCounts] = useState<Record<string, number>>({});
   const [liveWalking, setLiveWalking] = useState<Record<string, number>>({});
   const [liveDriving, setLiveDriving] = useState<Record<string, number>>({});
@@ -2549,9 +2558,18 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     return path.slice(0, -1).map((from, index) => {
       const to = path[index + 1];
       const factId = `route:${day.label}:${from.id}:${to.id}`;
-      return routeEvidenceByFactId[factId]?.routeGeometry?.points ?? null;
+      const bound = routeEvidenceByFactId[factId]?.routeGeometry?.points;
+      if (bound) return bound;
+      // Prefetch-measured geometry (provisional departure) keeps the map on
+      // real roads/rails instead of dashed sketches; the leg's recommended
+      // mode wins; any measured mode beats nothing.
+      const measured = prefetchGeometry[routeLegKey(from.id, to.id)];
+      if (!measured) return null;
+      const recommendedMode = routeModes[index];
+      const preferred = recommendedMode === "taxi" ? "drive" : recommendedMode === "walk" ? "walk" : "transit";
+      return measured[preferred] ?? measured.transit ?? measured.drive ?? measured.walk ?? null;
     });
-  }, [base, day, dayEndBase, mapStops, routeEvidenceByFactId]);
+  }, [base, day, dayEndBase, mapStops, prefetchGeometry, routeEvidenceByFactId, routeModes]);
 
   const scheduledRecommendationRoutePoints = useMemo<RouteRecommendationPoint[]>(() => {
     if (!day) return [];
@@ -3091,6 +3109,28 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
           )));
           if (Object.keys(absent).length > 0) {
             setPrefetchTransitAbsent((current) => ({ ...current, ...absent }));
+          }
+          const geometryUpdates = measured.legs.flatMap((leg) => {
+            if (leg.status !== "ok" || !leg.encodedPolyline) return [];
+            const points = decodeGooglePolyline(leg.encodedPolyline);
+            return points.length >= 2 ? [[leg.id, leg.mode, points] as const] : [];
+          });
+          const stepUpdates = Object.fromEntries(measured.legs.flatMap((leg) => (
+            leg.mode === "transit" && leg.status === "ok" && (leg.transitSteps?.length ?? 0) > 0
+              ? [[leg.id, leg.transitSteps!] as const]
+              : []
+          )));
+          if (Object.keys(stepUpdates).length > 0) {
+            setPrefetchTransitSteps((current) => ({ ...current, ...stepUpdates }));
+          }
+          if (geometryUpdates.length > 0) {
+            setPrefetchGeometry((current) => {
+              const next = { ...current };
+              for (const [legId, mode, points] of geometryUpdates) {
+                next[legId] = { ...next[legId], [mode]: points };
+              }
+              return next;
+            });
           }
           if (Object.keys(measured.walkingMinutes).length > 0) {
             setLiveWalking((current) => ({ ...current, ...measured.walkingMinutes }));
@@ -3968,6 +4008,8 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     setPrefetchTransit({});
     setLiveTransitAbsent({});
     setPrefetchTransitAbsent({});
+    setPrefetchGeometry({});
+    setPrefetchTransitSteps({});
     setLiveRouteEvidence({});
     setTransitConvergence(emptyTransitConvergenceState);
     setLegModeOverrides({});
@@ -4122,6 +4164,8 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       setPrefetchTransit({});
       setLiveTransitAbsent({});
       setPrefetchTransitAbsent({});
+      setPrefetchGeometry({});
+      setPrefetchTransitSteps({});
       setLiveRouteEvidence({});
       setTransitConvergence(emptyTransitConvergenceState);
       setMealSelections({});
@@ -4596,6 +4640,8 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     setPrefetchTransit({});
     setLiveTransitAbsent({});
     setPrefetchTransitAbsent({});
+    setPrefetchGeometry({});
+    setPrefetchTransitSteps({});
     setLiveRouteEvidence({});
     setTransitConvergence(emptyTransitConvergenceState);
     setLegModeOverrides({});
@@ -4666,6 +4712,8 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     setPrefetchTransit({});
     setLiveTransitAbsent({});
     setPrefetchTransitAbsent({});
+    setPrefetchGeometry({});
+    setPrefetchTransitSteps({});
     setLiveRouteEvidence({});
     setTransitConvergence(emptyTransitConvergenceState);
     setLegModeOverrides({});
@@ -7045,6 +7093,25 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                               ) : null}
                             </span>
                           </details>
+                        );
+                      })() : null}
+                      {leg && recommended?.mode === "transit" ? (() => {
+                        const steps = prefetchTransitSteps[routeLegKey(leg.from.id, leg.to.id)];
+                        if (!steps?.length) return null;
+                        const first = steps[0];
+                        const lineLabel = [first.shortName ?? first.lineName, first.headsign
+                          ? locale === "ja" ? `${first.headsign}行き` : `toward ${first.headsign}`
+                          : null].filter(Boolean).join(locale === "ja" ? "・" : " ");
+                        const extra = steps.length - 1;
+                        return (
+                          <div className="planner-transit-line">
+                            <Icon name="signal" size={10} />
+                            <span>
+                              {lineLabel}
+                              {first.departureTime ? (locale === "ja" ? ` · ${first.departureTime}発` : ` · dep ${first.departureTime}`) : ""}
+                              {extra > 0 ? (locale === "ja" ? ` · 乗継ぎ${extra}本` : ` · +${extra} connection${extra === 1 ? "" : "s"}`) : ""}
+                            </span>
+                          </div>
                         );
                       })() : null}
                       <button

@@ -18,6 +18,17 @@ export type LiveRoutesRequest = {
 
 export type LiveRouteTravelMode = "TRANSIT" | "WALK" | "DRIVE";
 
+/** Compact "board this ride" summary for one transit step, e.g. "IC 61 → Interlaken Ost". */
+export type TransitStepSummary = {
+  lineName: string;
+  headsign: string | null;
+  departureStop: string | null;
+  departureTime: string | null;
+  shortName: string | null;
+  vehicleType: string | null;
+  stopCount: number | null;
+};
+
 export type LiveRouteResult = {
   id: string;
   durationMinutes: number | null;
@@ -25,6 +36,8 @@ export type LiveRouteResult = {
   encodedPolyline: string | null;
   /** Number of vehicle changes on a transit route; null unless step data is complete. */
   transferCount: number | null;
+  /** Per-ride boarding summaries in travel order; null for non-transit routes or missing step data. */
+  transitSteps: TransitStepSummary[] | null;
   status: "ok" | "unavailable";
 };
 
@@ -98,8 +111,75 @@ type GoogleRoutePayload = {
   duration?: string;
   distanceMeters?: number;
   polyline?: { encodedPolyline?: string };
-  legs?: Array<{ steps?: Array<{ travelMode?: unknown }> }>;
+  legs?: Array<{ steps?: Array<{ travelMode?: unknown; transitDetails?: unknown }> }>;
 };
+
+const MAX_TRANSIT_STEPS_PER_LEG = 6;
+const MAX_TRANSIT_TEXT_LENGTH = 80;
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+/** Trims provider text and bounds it to a display-safe length; empty or non-string becomes null. */
+function boundedText(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed.slice(0, MAX_TRANSIT_TEXT_LENGTH) : null;
+}
+
+/**
+ * Maps one Routes API v2 `transitDetails` payload to a boarding summary. In v2,
+ * `stopDetails.departureStop.name` and `stopDetails.departureTime` are plain
+ * strings while `localizedValues.departureTime.time.text` carries the display
+ * time; the localized text wins when present. A step with no usable line name
+ * is malformed and dropped.
+ */
+function transitStepSummary(details: unknown): TransitStepSummary | null {
+  const record = asRecord(details);
+  if (!record) return null;
+  const transitLine = asRecord(record.transitLine);
+  const shortName = boundedText(transitLine?.nameShort);
+  const lineName = boundedText(transitLine?.name) ?? shortName;
+  if (!lineName) return null;
+  const stopDetails = asRecord(record.stopDetails);
+  const localizedDepartureTime = boundedText(
+    asRecord(asRecord(asRecord(record.localizedValues)?.departureTime)?.time)?.text,
+  );
+  return {
+    lineName,
+    headsign: boundedText(record.headsign),
+    departureStop: boundedText(asRecord(stopDetails?.departureStop)?.name),
+    departureTime: localizedDepartureTime ?? boundedText(stopDetails?.departureTime),
+    shortName,
+    vehicleType: boundedText(asRecord(transitLine?.vehicle)?.type),
+    stopCount: typeof record.stopCount === "number"
+      && Number.isInteger(record.stopCount)
+      && record.stopCount >= 0
+      ? record.stopCount
+      : null,
+  };
+}
+
+function transitStepSummaries(
+  route: GoogleRoutePayload | undefined,
+  travelMode: LiveRouteTravelMode,
+): TransitStepSummary[] | null {
+  if (travelMode !== "TRANSIT") return null;
+  if (!route || !Array.isArray(route.legs) || route.legs.length === 0) return null;
+  const steps = route.legs.flatMap((leg) => Array.isArray(leg.steps) ? leg.steps : []);
+  if (steps.length === 0) return null;
+  const summaries: TransitStepSummary[] = [];
+  for (const step of steps) {
+    if (summaries.length >= MAX_TRANSIT_STEPS_PER_LEG) break;
+    if (!step || typeof step !== "object" || step.travelMode !== "TRANSIT") continue;
+    const summary = transitStepSummary(step.transitDetails);
+    if (summary) summaries.push(summary);
+  }
+  return summaries;
+}
 
 /**
  * Google documents one TRANSIT RouteLegStep per transit ride. A transfer is a
@@ -128,6 +208,7 @@ function unavailableRoute(id: string): LiveRouteResult {
     distanceMeters: null,
     encodedPolyline: null,
     transferCount: null,
+    transitSteps: null,
     status: "unavailable",
   };
 }
@@ -167,7 +248,9 @@ export async function fetchGoogleRoutes(
             "routes.duration",
             "routes.distanceMeters",
             "routes.polyline.encodedPolyline",
-            ...(request.travelMode === "TRANSIT" ? ["routes.legs.steps.travelMode"] : []),
+            ...(request.travelMode === "TRANSIT"
+              ? ["routes.legs.steps.travelMode", "routes.legs.steps.transitDetails"]
+              : []),
           ].join(","),
         },
         body: JSON.stringify({
@@ -193,6 +276,7 @@ export async function fetchGoogleRoutes(
           ? route.polyline.encodedPolyline
           : null,
         transferCount: transferCount(route, request.travelMode),
+        transitSteps: transitStepSummaries(route, request.travelMode),
         status: "ok",
       };
     } catch {

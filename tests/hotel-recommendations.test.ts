@@ -313,6 +313,66 @@ test("a named hotel query is included and Google relevance remains a ranking sig
   assert.equal(results[0].id, "exact");
 });
 
+const vispRequest = {
+  latitude: 46.294,
+  longitude: 7.881,
+  area: "Visp",
+  languageCode: "en" as const,
+  destination: "switzerland" as const,
+};
+const vispPlaces = [
+  {
+    id: "campground",
+    displayName: { text: "Camping Mühleye Visp" },
+    formattedAddress: "Visp",
+    googleMapsUri: "https://maps.google.com/campground",
+    businessStatus: "OPERATIONAL",
+    types: ["campground", "lodging"],
+    location: { latitude: 46.297, longitude: 7.875 },
+    rating: 4.6,
+    userRatingCount: 900,
+  },
+  {
+    id: "real-hotel",
+    displayName: { text: "Hotel Visp" },
+    formattedAddress: "Visp",
+    googleMapsUri: "https://maps.google.com/real-hotel",
+    businessStatus: "OPERATIONAL",
+    types: ["hotel", "lodging"],
+    location: { latitude: 46.293, longitude: 7.882 },
+    rating: 4.3,
+    userRatingCount: 700,
+  },
+];
+
+test("automatic recommendations drop campgrounds and ask Google to exclude them server-side", async () => {
+  const requests: Array<{ url: string; body: Record<string, unknown> }> = [];
+  const fetcher = (async (url: string | URL | Request, init?: RequestInit) => {
+    requests.push({ url: String(url), body: JSON.parse(String(init?.body)) as Record<string, unknown> });
+    return Response.json({ places: vispPlaces });
+  }) as typeof fetch;
+  const results = await fetchGoogleHotelCandidates(vispRequest, "secret", fetcher);
+  assert.ok(results.some((candidate) => candidate.id === "real-hotel"));
+  assert.equal(results.some((candidate) => candidate.id === "campground"), false,
+    "a campground must never appear among automatic hotel recommendations");
+  const nearby = requests.find(({ url }) => url.endsWith(":searchNearby"));
+  assert.ok(nearby, "the automatic path starts with a nearby category search");
+  const excludedTypes = nearby.body.excludedTypes as string[];
+  for (const type of ["campground", "rv_park", "mobile_home_park"]) {
+    assert.ok(excludedTypes.includes(type), `searchNearby must exclude ${type} server-side`);
+  }
+});
+
+test("a query that names the campground still returns it", async () => {
+  const results = await fetchGoogleHotelCandidates(
+    { ...vispRequest, query: "Camping Mühleye Visp" },
+    "secret",
+    (async () => Response.json({ places: vispPlaces })) as typeof fetch,
+  );
+  assert.equal(results[0]?.id, "campground", "an explicitly typed campground name is respected");
+  assert.ok(results.some((candidate) => candidate.id === "real-hotel"));
+});
+
 test("review payment reports are used only when listing evidence is absent", async () => {
   const fetcher = (async () => Response.json({ places: [{
     id: "review-hotel",
