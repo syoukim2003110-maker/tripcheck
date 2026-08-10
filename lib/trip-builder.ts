@@ -147,6 +147,11 @@ export type FoodRecommendationSlot = {
   displayTime: string;
   /** Local clock used when probing "open at the planned meal time". */
   probeTime?: string;
+  /**
+   * Encoded provider polyline of the leg being travelled at mealtime. Set by
+   * the app (never the builder) so the meal search can run along the route.
+   */
+  routePolyline?: string;
   rationale: string;
   queryIdeas: string[];
 };

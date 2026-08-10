@@ -12,6 +12,8 @@ export type FoodSearchRequest = {
   languageCode: "en" | "ja";
   /** Country the meal happens in; decides the region bias. */
   destination: DestinationChoice;
+  /** Provider-derived encoded polyline enabling Search Along Route. */
+  routePolyline?: string;
   visitDate?: string;
   visitTime?: string;
 };
@@ -151,6 +153,15 @@ export function parseFoodSearchRequest(input: unknown): FoodSearchRequest | null
   const hasNoVisitPair = candidate.visitDate == null && candidate.visitTime == null;
   if (!area || (!suppliedQuery && !queryMissing)) return null;
   if (!hasNoVisitPair && (!hasVisitPair || !/^\d{4}-\d{2}-\d{2}$/.test(visitDate!) || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(visitTime!))) return null;
+  // A polyline turns the nearby-circle search into Search Along Route so
+  // mid-leg meals scatter along the actual corridor. Polyline alphabet only,
+  // bounded, and always derived from provider geometry — never user text.
+  const routePolyline = typeof candidate.routePolyline === "string"
+    && candidate.routePolyline.length >= 10
+    && candidate.routePolyline.length <= 10_000
+    && /^[?-~]+$/.test(candidate.routePolyline)
+    ? candidate.routePolyline
+    : null;
   return {
     latitude: candidate.latitude,
     longitude: candidate.longitude,
@@ -159,6 +170,7 @@ export function parseFoodSearchRequest(input: unknown): FoodSearchRequest | null
     query: suppliedQuery ?? defaultFoodDiscoveryQuery(languageCode),
     languageCode,
     destination: isDestinationChoice(candidate.destination) ? candidate.destination : "auto",
+    ...(routePolyline ? { routePolyline } : {}),
     ...(hasVisitPair ? { visitDate: visitDate!, visitTime: visitTime! } : {}),
   };
 }
@@ -447,12 +459,16 @@ export async function fetchGoogleFoodCandidates(
     languageCode: request.languageCode,
     ...regionBias,
     rankPreference: "RELEVANCE",
-    locationBias: {
-      circle: {
-        center: { latitude: request.latitude, longitude: request.longitude },
-        radius: searchRadiusMeters,
-      },
-    },
+    ...(request.routePolyline
+      ? { searchAlongRouteParameters: { polyline: { encodedPolyline: request.routePolyline } } }
+      : {
+        locationBias: {
+          circle: {
+            center: { latitude: request.latitude, longitude: request.longitude },
+            radius: searchRadiusMeters,
+          },
+        },
+      }),
   };
   const fetchPlaces = async (requestBody: typeof body) => {
     const response = await fetcher(url, {

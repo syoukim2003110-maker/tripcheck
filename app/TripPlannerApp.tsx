@@ -1595,7 +1595,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   // Decoded provider route geometry from the post-build prefetch, keyed by
   // routeLegKey then mode. Display-only: it lets the map draw real measured
   // paths (like Google Maps) even while the trip date is provisional.
-  const [prefetchGeometry, setPrefetchGeometry] = useState<Record<string, Partial<Record<"transit" | "walk" | "drive", Array<{ latitude: number; longitude: number }>>>>>({});
+  const [prefetchGeometry, setPrefetchGeometry] = useState<Record<string, Partial<Record<"transit" | "walk" | "drive", { points: Array<{ latitude: number; longitude: number }>; encoded: string }>>>>({});
   // Which train/bus to board per leg (line, headsign, departure), measured by
   // the prefetch at the provisional departure time.
   const [prefetchTransitSteps, setPrefetchTransitSteps] = useState<Record<string, TransitStepSummary[]>>({});
@@ -2567,7 +2567,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       if (!measured) return null;
       const recommendedMode = routeModes[index];
       const preferred = recommendedMode === "taxi" ? "drive" : recommendedMode === "walk" ? "walk" : "transit";
-      return measured[preferred] ?? measured.transit ?? measured.drive ?? measured.walk ?? null;
+      return (measured[preferred] ?? measured.transit ?? measured.drive ?? measured.walk)?.points ?? null;
     });
   }, [base, day, dayEndBase, mapStops, prefetchGeometry, routeEvidenceByFactId, routeModes]);
 
@@ -3113,7 +3113,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
           const geometryUpdates = measured.legs.flatMap((leg) => {
             if (leg.status !== "ok" || !leg.encodedPolyline) return [];
             const points = decodeGooglePolyline(leg.encodedPolyline);
-            return points.length >= 2 ? [[leg.id, leg.mode, points] as const] : [];
+            return points.length >= 2 ? [[leg.id, leg.mode, points, leg.encodedPolyline] as const] : [];
           });
           const stepUpdates = Object.fromEntries(measured.legs.flatMap((leg) => (
             leg.mode === "transit" && leg.status === "ok" && (leg.transitSteps?.length ?? 0) > 0
@@ -3126,8 +3126,8 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
           if (geometryUpdates.length > 0) {
             setPrefetchGeometry((current) => {
               const next = { ...current };
-              for (const [legId, mode, points] of geometryUpdates) {
-                next[legId] = { ...next[legId], [mode]: points };
+              for (const [legId, mode, points, encoded] of geometryUpdates) {
+                next[legId] = { ...next[legId], [mode]: { points, encoded } };
               }
               return next;
             });
@@ -3855,7 +3855,15 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       const boundaryStops = [evening, morning].filter((stop): stop is RouteStop => Boolean(stop));
       const fallback = morning ?? evening ?? planDay.endBase ?? plan.selectedBase;
       if (boundaryStops.length === 0 && !fallback) return null;
-      const center = balancedGeoCenter(boundaryStops);
+      // Sleep where tomorrow starts: the night's hotel leans toward the next
+      // morning's first stop (60/40) so the day does not begin with the long
+      // transfer the traveller just complained about.
+      const center = evening && morning
+        ? {
+          latitude: evening.latitude * 0.4 + morning.latitude * 0.6,
+          longitude: evening.longitude * 0.4 + morning.longitude * 0.6,
+        }
+        : balancedGeoCenter(boundaryStops);
       const latitude = center?.latitude ?? fallback!.latitude;
       const longitude = center?.longitude ?? fallback!.longitude;
       const area = evening?.area ?? fallback?.area ?? destinationName(activeDestination, locale);
@@ -4734,6 +4742,36 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     setMapFocusedStopId(null);
   }
 
+  // The encoded polyline of the leg being travelled at the meal's clock, so
+  // mid-leg meal searches run ALONG the corridor instead of one circle.
+  const mealRoutePolyline = useCallback((slot: FoodRecommendationSlot): string | undefined => {
+    const slotDay = plan?.days[slot.dayIndex];
+    if (!slotDay || !plan) return undefined;
+    const minutes = clockToMinutes(slot.displayTime);
+    if (minutes === null) return undefined;
+    const dayBase = slotDay.startBase ?? plan.selectedBase;
+    const stops = slotDay.stops;
+    const path: Array<{ id: string }> = dayBase
+      ? [dayBase, ...stops.map((entry) => entry.stop), slotDay.endBase ?? dayBase]
+      : stops.map((entry) => entry.stop);
+    if (path.length < 2) return undefined;
+    const offset = dayBase ? 1 : 0;
+    for (let legIndex = 0; legIndex < path.length - 1; legIndex += 1) {
+      const startClock = legIndex === 0 && dayBase
+        ? clockToMinutes(slotDay.startTime)
+        : clockToMinutes(stops[legIndex - offset]?.departure ?? "");
+      const endClock = legIndex === path.length - 2 && dayBase
+        ? clockToMinutes(slotDay.finishTime)
+        : clockToMinutes(stops[legIndex + 1 - offset]?.arrival ?? "");
+      if (startClock === null || endClock === null) continue;
+      if (minutes < startClock || minutes > endClock) continue;
+      const measured = prefetchGeometry[routeLegKey(path[legIndex].id, path[legIndex + 1].id)];
+      const entry = measured?.transit ?? measured?.drive ?? measured?.walk;
+      return entry?.encoded;
+    }
+    return undefined;
+  }, [plan, prefetchGeometry]);
+
   const findFood = useCallback(async (slot: FoodRecommendationSlot, options: { reveal?: boolean } = {}) => {
     const runId = buildRunRef.current;
     const stale = () => buildRunRef.current !== runId;
@@ -4747,7 +4785,12 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     if (options.reveal) setInspector({ kind: "food", slotId: slot.id });
     setFoodSearches((current) => ({ ...current, [slot.id]: { status: "loading", requestKey, query, candidates: [], notes: {}, fresh: {} } }));
     try {
-      const response = await requestFoodRecommendations(slot, locale, { destination: requestDestination });
+      const routePolyline = mealRoutePolyline(slot);
+      const response = await requestFoodRecommendations(
+        routePolyline ? { ...slot, routePolyline } : slot,
+        locale,
+        { destination: requestDestination },
+      );
       if (stale()) return;
       const next: FoodState = { status: "ready", requestKey, query, candidates: response.candidates.slice(0, 3), fetchedAt: response.fetchedAt, notes: {}, fresh: {} };
       setFoodSearches((current) => ({ ...current, [slot.id]: next }));
@@ -4771,7 +4814,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     } finally {
       foodInFlightRef.current.delete(requestKey);
     }
-  }, [locale, requestDestination]);
+  }, [locale, mealRoutePolyline, requestDestination]);
 
   useEffect(() => {
     if (P0_CORE_ONLY) return;

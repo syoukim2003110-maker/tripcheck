@@ -186,6 +186,35 @@ function visibleMapPadding(map: any, inspectorOpen: boolean): MapPadding {
   return { top: 92, right, bottom: 72, left };
 }
 
+function roughGapMeters(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
+  const dLat = (a.lat - b.lat) * 111_320;
+  const dLng = (a.lng - b.lng) * 111_320 * Math.cos(((a.lat + b.lat) / 2) * Math.PI / 180);
+  return Math.hypot(dLat, dLng);
+}
+
+/*
+ * Measured provider geometry can legitimately stop short of the itinerary
+ * POI: mountain summits route to their access station (Eigergletscher for
+ * Jungfraujoch), so the solid line would end mid-mountain and the route
+ * looks broken. Bridge such gaps with the dashed connector so the sequence
+ * stays visually continuous without presenting the missing climb as a road.
+ */
+function accessBridgeSegments(
+  path: Array<{ lat: number; lng: number }>,
+  from: { latitude: number; longitude: number },
+  to: { latitude: number; longitude: number },
+) {
+  if (path.length < 2) return [];
+  const segments: Array<Array<{ lat: number; lng: number }>> = [];
+  const head = path[0];
+  const tail = path[path.length - 1];
+  const fromPoint = { lat: from.latitude, lng: from.longitude };
+  const toPoint = { lat: to.latitude, lng: to.longitude };
+  if (roughGapMeters(head, fromPoint) > 300) segments.push([fromPoint, head]);
+  if (roughGapMeters(tail, toPoint) > 300) segments.push([tail, toPoint]);
+  return segments;
+}
+
 function fitVisibleBounds(map: any, bounds: any, inspectorOpen: boolean) {
   map.fitBounds(bounds, visibleMapPadding(map, inspectorOpen));
   // A day whose stops are metres apart (hotel + the town it sits in) would
@@ -635,6 +664,13 @@ export default function PlannerGoogleMap({
               zIndex: routeView.zIndex,
             }),
           );
+          for (const bridge of accessBridgeSegments(measured, from, to)) {
+            routeLinesRef.current.push(new google.maps.Polyline({
+              map,
+              path: bridge,
+              ...buildPlannerMapConnectorLine(routeView),
+            }));
+          }
           continue;
         }
         routeLinesRef.current.push(new google.maps.Polyline({
@@ -792,6 +828,14 @@ export default function PlannerGoogleMap({
             zIndex: routeView.zIndex,
           }),
         );
+        for (const bridge of accessBridgeSegments(result.path, result.from, result.to)) {
+          bridge.forEach((point) => routeBounds.extend(point));
+          routeLinesRef.current.push(new google.maps.Polyline({
+            map,
+            path: bridge,
+            ...buildPlannerMapConnectorLine(routeView),
+          }));
+        }
       }
       if (liveLegCount === legs.length && dayLayerViews.length === 0) {
         displayStops.forEach((stop) => routeBounds.extend({ lat: stop.latitude, lng: stop.longitude }));

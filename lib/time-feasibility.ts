@@ -81,12 +81,15 @@ function pickRecommended(
     ? Math.max(10, Math.round(taxi.minutes * 0.25))
     : mobility === "balanced" ? Math.max(5, Math.round(taxi.minutes * 0.1)) : -15;
   if (!transit.unroutable && transit.minutes <= taxi.minutes + transitAllowance) return transit;
-  // Asymmetric evidence guard: on transit-first ground a live-measured taxi
-  // must not demote a transit option that is still an unmeasured estimate —
-  // the train exists, we simply have not asked Google about it yet. Once the
-  // transit leg is measured (or the provider answers that no transit route
-  // exists — `unroutable`), real evidence decides instead.
+  // Asymmetric evidence guards on transit-first ground, both directions:
+  // a live-measured taxi must not demote a transit option that is still an
+  // unmeasured estimate, and a MEASURED train must not lose to an optimistic
+  // unmeasured drive estimate (Lauterbrunnen→Zermatt: measured rail 150 min
+  // vs a fantasy 105-minute taxi into a car-free village). Whenever the two
+  // sides carry unequal evidence, the measured transit answer wins; once
+  // both are measured the numeric comparison above decides.
   if (mobility === "transit_first" && !transit.unroutable && taxi.source === "live" && transit.source !== "live") return transit;
+  if (mobility === "transit_first" && !transit.unroutable && transit.source === "live" && taxi.source !== "live") return transit;
   return taxi;
 }
 

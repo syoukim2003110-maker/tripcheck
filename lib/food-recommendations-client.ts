@@ -132,6 +132,7 @@ export function buildFoodSearchPayload(
     query,
     languageCode,
     destination,
+    ...(slot.routePolyline ? { routePolyline: slot.routePolyline } : {}),
     ...(slot.date ? {
       visitDate: slot.date,
       visitTime: slot.probeTime ?? (slot.kind === "lunch" ? "12:30" : "19:00"),

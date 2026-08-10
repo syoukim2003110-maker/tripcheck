@@ -351,3 +351,31 @@ test("composes the one-line food reason only from returned Google evidence", asy
   const bare = foodCandidateReason({ ...base, rating: null, userRatingCount: null, distanceMeters: null, plannedOpen: null }, "ja");
   assert.equal(bare, base.address);
 });
+
+test("a mid-leg meal with a route polyline searches along the corridor instead of one circle", async () => {
+  const captured: { value: { url: string; init: RequestInit } | null } = { value: null };
+  const fetcher = (async (url: string | URL | Request, init?: RequestInit) => {
+    captured.value = { url: String(url), init: init ?? {} };
+    return Response.json({ places: [] });
+  }) as typeof fetch;
+
+  const encoded = "}_p~F~ps|U_ulLnnqC_mqNvxq`@_qpN";
+  const parsed = parseFoodSearchRequest({
+    ...JSON.parse(JSON.stringify(validRequest)),
+    routePolyline: encoded,
+  });
+  assert.ok(parsed, "a valid polyline must parse");
+  assert.equal(parsed!.routePolyline, encoded);
+  await fetchGoogleFoodCandidates(parsed!, "secret", fetcher);
+  const body = JSON.parse(String(captured.value?.init.body));
+  assert.equal(body.searchAlongRouteParameters.polyline.encodedPolyline, encoded);
+  assert.equal(body.locationBias, undefined, "SAR replaces the single-circle bias");
+
+  // Garbage polylines fall back to the circle: never forwarded to Google.
+  const rejected = parseFoodSearchRequest({
+    ...JSON.parse(JSON.stringify(validRequest)),
+    routePolyline: "スイス<script>",
+  });
+  assert.ok(rejected);
+  assert.equal(rejected!.routePolyline, undefined);
+});
