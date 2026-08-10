@@ -7,11 +7,6 @@ export type GoogleRegularOpeningPoint = {
   minute: number;
 };
 
-export type GoogleRegularOpeningPeriod = {
-  open: GoogleRegularOpeningPoint;
-  close?: GoogleRegularOpeningPoint;
-};
-
 export type GoogleOpeningEvaluation = {
   status: "open" | "closed" | "unknown";
   reason:

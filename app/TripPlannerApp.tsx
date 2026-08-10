@@ -453,7 +453,7 @@ function clockRangeContainsVisit(range: string, arrival: string, departure: stri
 
 /* Stop order can change when the route is optimized, so the hotel becomes
  * stale only when a day's actual set of destinations changes. */
-export function hotelPlanSignature(plan: BuiltTripPlan | null) {
+function hotelPlanSignature(plan: BuiltTripPlan | null) {
   if (!plan) return "";
   return plan.days.map((day, dayIndex) => (
     `${dayIndex}:${day.stops.map(({ stop }) => stop.id).sort().join(",")}`
@@ -918,23 +918,14 @@ const ui = {
     flightKindHeading: "フライトの種類",
     flightInternational: "国際線",
     flightDomestic: "国内線",
-    essentialsHeading: (place: string) => `${place}の基本情報`,
     essentialsPlug: "電源プラグ",
-    essentialsTipping: "チップ",
-    essentialsWater: "水道水",
     essentialsEmergency: "緊急通報",
     essentialsEntry: "入国（日本のパスポート）",
     essentialsPass: "交通パス",
     essentialsOfficial: "公式情報",
-    essentialsMoney: "支払い",
-    essentialsTransit: "交通の注意",
     beforeStrike: "スト・運休の確認",
     beforeMedication: "薬の持ち込み",
     beforeMedicationNote: "常用薬は元の箱・説明書きのまま携行（一包化は中身不明扱いのリスク）。向精神薬成分や多量の持込みは事前手続きが必要な国がある。米国はFDA未認可薬だと処方箋があっても没収されることがある。",
-    essentialsFx: "為替の目安",
-    essentialsFxLine: (unit: number, code: string, yen: string, asOf: string) => `${unit} ${code} ≈ ${yen}円（${asOf}時点・参考レート）`,
-    essentialsDcc: "会計・ATMで「日本円で払うか」と聞かれたら必ず現地通貨を選ぶ（円建て＝DCCは3〜10%割高）。日本発行カードは海外事務手数料〜2.2%が別途。",
-    essentialsDisclaimer: "一般的な目安です。制度は変わるため、出発前に必ず公式情報を確認してください。",
     beforeHeading: "出発前チェック",
     beforeOverdue: "要対応",
     beforeDueSoon: "期限接近",
@@ -1231,23 +1222,14 @@ const ui = {
     flightKindHeading: "Flight type",
     flightInternational: "International",
     flightDomestic: "Domestic",
-    essentialsHeading: (place: string) => `${place} basics`,
     essentialsPlug: "Power plug",
-    essentialsTipping: "Tipping",
-    essentialsWater: "Tap water",
     essentialsEmergency: "Emergency",
     essentialsEntry: "Entry (Japan passport)",
     essentialsPass: "Transit pass",
     essentialsOfficial: "Official info",
-    essentialsMoney: "Payments",
-    essentialsTransit: "Transit traps",
     beforeStrike: "Strike / disruption check",
     beforeMedication: "Medication rules",
     beforeMedicationNote: "Carry medicines in their original packaging with documentation. Some countries require advance permits for psychotropic ingredients or large quantities; the US can confiscate non-FDA-approved drugs even with a prescription.",
-    essentialsFx: "Exchange rate",
-    essentialsFxLine: (unit: number, code: string, yen: string, asOf: string) => `${unit} ${code} ≈ ¥${yen} (reference, ${asOf})`,
-    essentialsDcc: "When a terminal or ATM offers to charge in yen, always pick the local currency — DCC adds 3–10%. Japan-issued cards add a ~2.2% foreign-use fee.",
-    essentialsDisclaimer: "General guidance only. Rules change — always verify official sources before departure.",
     beforeHeading: "Before you go",
     beforeOverdue: "Action needed",
     beforeDueSoon: "Due soon",

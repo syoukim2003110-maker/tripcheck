@@ -9,9 +9,8 @@
  *   #       ANTHROPIC_API_KEY=local-claude-cli   (any non-empty value)
  *
  * The app's request and response shapes are exactly the production ones, so
- * every AI feature — concept drafting, food ranking, evidence analysis and
- * the web-search field check — runs the same code path it would run against
- * the paid API. Only this process knows the answers came from `claude -p`.
+ * every AI feature — food ranking, evidence analysis and the web-search
+ * field check — runs the same code path it would run against the paid API. Only this process knows the answers came from `claude -p`.
  *
  * Supported request families (all the shapes this codebase sends):
  *   1. plain text            → one text block

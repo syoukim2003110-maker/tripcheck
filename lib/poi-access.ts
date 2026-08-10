@@ -126,10 +126,6 @@ export function allowedTransportModesForLeg(from: RouteStop, to: RouteStop): rea
   return (["walk", "transit", "taxi"] as const).filter((mode) => fromModes.includes(mode) && toModes.includes(mode));
 }
 
-export function accessPolicyForLeg(from: RouteStop, to: RouteStop) {
-  return poiAccessPolicyForStop(to) ?? poiAccessPolicyForStop(from);
-}
-
 function validCoordinate(value: PoiAccessCoordinate | undefined): PoiAccessCoordinate | null {
   if (!value
     || !Number.isFinite(value.latitude)

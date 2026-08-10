@@ -4,7 +4,6 @@ import test from "node:test";
 
 const appSourceUrl = new URL("../app/TripPlannerApp.tsx", import.meta.url);
 const privacySourceUrl = new URL("../app/privacy/page.tsx", import.meta.url);
-const recentTripsSourceUrl = new URL("../lib/recent-trips.ts", import.meta.url);
 const tripStoreSourceUrl = new URL("../lib/trip-store.ts", import.meta.url);
 const engineSourceUrls = [
   new URL("../lib/route-optimizer.ts", import.meta.url),
@@ -68,9 +67,8 @@ test("keeps deterministic route and time engines free of network calls", async (
 });
 
 test("keeps recent-plan device storage bounded and disclosed", async () => {
-  const [appSource, recentSource, tripStoreSource, privacySource] = await Promise.all([
+  const [appSource, tripStoreSource, privacySource] = await Promise.all([
     readFile(appSourceUrl, "utf8"),
-    readFile(recentTripsSourceUrl, "utf8"),
     readFile(tripStoreSourceUrl, "utf8"),
     readFile(privacySourceUrl, "utf8"),
   ]);
@@ -78,8 +76,7 @@ test("keeps recent-plan device storage bounded and disclosed", async () => {
     .map((match) => match[1]);
 
   assert.deepEqual([...new Set(storedKeys)], ["tripcheck-locale", "tripcheck.passportExpiry"]);
-  assert.match(recentSource, /STORAGE_KEY = "tripcheck-recent-trips"/);
-  assert.match(recentSource, /MAX_ENTRIES = 5/);
+  assert.match(tripStoreSource, /LEGACY_RECENT_TRIPS_KEY = "tripcheck-recent-trips"/);
   assert.match(tripStoreSource, /TRIP_STORE_MAX_RECORDS = 10/);
   assert.match(privacySource, /up to ten recently generated plans/);
   assert.match(privacySource, /Plans use IndexedDB/);
@@ -93,11 +90,10 @@ test("keeps recent-plan device storage bounded and disclosed", async () => {
   assert.match(privacySource, /explicit Place-ID choices/);
 });
 
-test("discloses the holiday and exchange-rate lookups as data-minimal", async () => {
+test("discloses the holiday lookup as data-minimal", async () => {
   const privacySource = await readFile(privacySourceUrl, "utf8");
 
   assert.match(privacySource, /two-letter country code and the bare calendar dates/);
-  assert.match(privacySource, /three-letter currency code/);
   assert.match(privacySource, /No place names, itinerary text or coordinates/);
 });
 
@@ -156,15 +152,3 @@ test("discloses automatic core recommendations and their paid-provider controls"
   assert.doesNotMatch(routeSource, /ROUTE_RECOMMENDATIONS_DAILY_LIMIT/);
 });
 
-test("discloses optional concept drafting and avoids caching the raw concept", async () => {
-  const [privacySource, routeSource] = await Promise.all([
-    readFile(privacySourceUrl, "utf8"),
-    readFile(new URL("../app/api/trip-ideas/route.ts", import.meta.url), "utf8"),
-  ]);
-
-  assert.match(privacySource, /Optional concept drafts/);
-  assert.match(privacySource, /sent to Anthropic/);
-  assert.match(privacySource, /one-way SHA-256 digest/);
-  assert.match(routeSource, /crypto\.subtle\.digest\("SHA-256"/);
-  assert.doesNotMatch(routeSource, /const cacheId = `\$\{parsed\.destination\}[^\n]*parsed\.concept/);
-});

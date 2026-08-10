@@ -18,6 +18,9 @@ export async function generateMetadata(): Promise<Metadata> {
     description,
     applicationName: "TripCheck",
     category: "travel",
+    icons: {
+      icon: [{ url: "/favicon.svg", type: "image/svg+xml" }],
+    },
     keywords: [
       "trip itinerary planner",
       "travel route optimizer",

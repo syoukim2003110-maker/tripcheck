@@ -4,8 +4,6 @@ import test from "node:test";
 import {
   coreRecommendationApiEnabled,
   coreRecommendationApiGate,
-  nonCoreApiGate,
-  nonCoreApisEnabled,
 } from "../lib/server/non-core-api-gate.ts";
 
 const routeHooks = registerHooks({
@@ -25,7 +23,6 @@ const coreRoutes = [
   ["food_recommendations", (await import(new URL("../app/api/food-recommendations/ai/route.ts", import.meta.url).href) as { POST: PostHandler }).POST],
   ["route_recommendations", (await import(new URL("../app/api/route-recommendations/route.ts", import.meta.url).href) as { POST: PostHandler }).POST],
 ] as const;
-const tripIdeasRoute = (await import(new URL("../app/api/trip-ideas/route.ts", import.meta.url).href) as { POST: PostHandler }).POST;
 routeHooks.deregister();
 
 function post() {
@@ -45,51 +42,9 @@ function restore(name: string, value: string | undefined) {
   else process.env[name] = value;
 }
 
-test("only the exact server-side true value enables non-core APIs", () => {
-  assert.equal(nonCoreApisEnabled({}), false);
-  assert.equal(nonCoreApisEnabled({ TRIPCHECK_NON_CORE_APIS_ENABLED: "false" }), false);
-  assert.equal(nonCoreApisEnabled({ TRIPCHECK_NON_CORE_APIS_ENABLED: "TRUE" }), false);
-  assert.equal(nonCoreApisEnabled({ TRIPCHECK_NON_CORE_APIS_ENABLED: "1" }), false);
-  assert.equal(nonCoreApisEnabled({ TRIPCHECK_NON_CORE_APIS_ENABLED: "true" }), true);
-  assert.equal(nonCoreApiGate("trip_ideas", { TRIPCHECK_NON_CORE_APIS_ENABLED: "true" }), null);
-});
-
-test("trip ideas remains non-core and fails closed before reading input or calling a provider", async () => {
-  const originalSwitch = process.env.TRIPCHECK_NON_CORE_APIS_ENABLED;
-  const originalGoogleKey = process.env.GOOGLE_PLACES_API_KEY;
-  const originalAnthropicKey = process.env.ANTHROPIC_API_KEY;
-  const originalFetch = globalThis.fetch;
-  delete process.env.TRIPCHECK_NON_CORE_APIS_ENABLED;
-  process.env.GOOGLE_PLACES_API_KEY = "must-not-be-used";
-  process.env.ANTHROPIC_API_KEY = "must-not-be-used";
-  let providerCalls = 0;
-  globalThis.fetch = (async () => {
-    providerCalls += 1;
-    throw new Error("provider must not be called");
-  }) as typeof fetch;
-  try {
-    const response = await tripIdeasRoute(post());
-    const body = await response.json() as { code: string; reason: string; feature: string };
-    assert.equal(response.status, 503);
-    assert.deepEqual(body, {
-      code: "non_core_api_disabled",
-      reason: "p0_core_only",
-      feature: "trip_ideas",
-    });
-    assert.equal(response.headers.get("Cache-Control"), "private, no-store, max-age=0");
-    assert.equal(response.headers.get("X-TripCheck-Feature-Scope"), "non-core");
-    assert.equal(providerCalls, 0);
-  } finally {
-    restore("TRIPCHECK_NON_CORE_APIS_ENABLED", originalSwitch);
-    restore("GOOGLE_PLACES_API_KEY", originalGoogleKey);
-    restore("ANTHROPIC_API_KEY", originalAnthropicKey);
-    globalThis.fetch = originalFetch;
-  }
-});
-
-test("core recommendations ignore the broad experiment gate but retain individual operator kills", async () => {
+test("core recommendations ignore unrelated environment flags but retain individual operator kills", async () => {
   assert.equal(coreRecommendationApiEnabled("hotel_recommendations", {}), true);
-  assert.equal(coreRecommendationApiEnabled("food_recommendations", { TRIPCHECK_NON_CORE_APIS_ENABLED: "false" }), true);
+  assert.equal(coreRecommendationApiEnabled("food_recommendations", { SOME_UNRELATED_FLAG: "false" }), true);
   assert.equal(coreRecommendationApiEnabled("route_recommendations", { ROUTE_RECOMMENDATIONS_ENABLED: "false" }), false);
   assert.equal(coreRecommendationApiGate("hotel_recommendations", { HOTEL_RECOMMENDATIONS_ENABLED: "true" }), null);
 
@@ -119,15 +74,13 @@ test("core recommendations ignore the broad experiment gate but retain individua
   }
 });
 
-test("enabled core routes and trip ideas reach input validation", async () => {
-  const originalSwitch = process.env.TRIPCHECK_NON_CORE_APIS_ENABLED;
+test("enabled core routes reach input validation", async () => {
   const originalGoogleKey = process.env.GOOGLE_PLACES_API_KEY;
   const originalAnthropicKey = process.env.ANTHROPIC_API_KEY;
   const originalAnthropicSwitch = process.env.ANTHROPIC_REQUESTS_ENABLED;
   const originalRouteSwitch = process.env.ROUTE_RECOMMENDATIONS_ENABLED;
   const originalHotelSwitch = process.env.HOTEL_RECOMMENDATIONS_ENABLED;
   const originalFoodSwitch = process.env.FOOD_RECOMMENDATIONS_ENABLED;
-  process.env.TRIPCHECK_NON_CORE_APIS_ENABLED = "true";
   process.env.HOTEL_RECOMMENDATIONS_ENABLED = "true";
   process.env.FOOD_RECOMMENDATIONS_ENABLED = "true";
   process.env.GOOGLE_PLACES_API_KEY = "test-key";
@@ -135,13 +88,12 @@ test("enabled core routes and trip ideas reach input validation", async () => {
   process.env.ANTHROPIC_REQUESTS_ENABLED = "true";
   process.env.ROUTE_RECOMMENDATIONS_ENABLED = "true";
   try {
-    for (const handler of [tripIdeasRoute, ...coreRoutes.map(([, route]) => route)]) {
+    for (const [, handler] of coreRoutes) {
       const response = await handler(post());
       assert.equal(response.status, 400);
       assert.equal((await response.json() as { code: string }).code, "invalid_request");
     }
   } finally {
-    restore("TRIPCHECK_NON_CORE_APIS_ENABLED", originalSwitch);
     restore("GOOGLE_PLACES_API_KEY", originalGoogleKey);
     restore("ANTHROPIC_API_KEY", originalAnthropicKey);
     restore("ANTHROPIC_REQUESTS_ENABLED", originalAnthropicSwitch);

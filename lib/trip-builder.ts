@@ -14,7 +14,6 @@ import {
 } from "./destinations.ts";
 import type { Locale } from "./i18n.ts";
 import { compareAirportOptions, type FlightKind } from "./airport-comparison.ts";
-export type { FlightKind } from "./airport-comparison.ts";
 export type Pace = "relaxed" | "balanced" | "fast";
 import { parseWishlist, type ParsedWishlistPlace, type WishlistTimeOfDay } from "./wishlist-parser.ts";
 import {
@@ -751,9 +750,6 @@ export function balancedGeoCenter(points: GeoPoint[]): GeoPoint | null {
   }
   return current;
 }
-
-/** @deprecated Kept for older callers; no outlier pull is applied anymore. */
-export const centroidWithOutlierPull = balancedGeoCenter;
 
 function maximumPairDistanceKm(points: GeoPoint[]) {
   let maximum = 0;

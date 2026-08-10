@@ -8,7 +8,6 @@
  * adapted without changing its routing types.
  */
 
-export type ItineraryItemKind = "ANCHOR" | "FILLER" | "CONSTRAINT";
 export type FillerKind = "LUNCH" | "DINNER" | "CAFE" | "MICRO_STOP";
 export type ItineraryItemSource = "USER" | "SYSTEM_RECOMMENDATION";
 export type ItineraryPriority = "MUST" | "PREFER" | "OPTIONAL";

@@ -60,7 +60,7 @@ function optionSourceKey(value: string, label: string) {
  * the component and point that label's htmlFor at `id`. `ariaLabel` provides
  * an accessible name when the surrounding layout does not use a native label.
  */
-export function SearchableCombobox({
+function SearchableCombobox({
   id,
   ariaLabel,
   value,

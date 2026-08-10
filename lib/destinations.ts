@@ -905,20 +905,11 @@ export type DestinationEssentials = {
   /** IEC plug letters and mains voltage, e.g. "C / J · 230V". */
   plug: string;
   tipping: { en: string; ja: string };
-  tapWater: { en: string; ja: string };
   emergency: { en: string; ja: string };
   /** Entry requirement for a Japanese passport; always verify officially. */
   entry: { en: string; ja: string; sourceUrl: string };
   /** The one pass that materially changes trip cost, if the country has one. */
   pass: { en: string; ja: string; url: string } | null;
-  /** Cash-vs-card reality where it bites; the universal DCC warning lives in the UI. */
-  money?: { en: string; ja: string };
-  /**
-   * The transit conventions that fine or strand people precisely because
-   * they are unwritten at home: ticket validation, plain-clothes inspections,
-   * manual door buttons, unlicensed airport taxis.
-   */
-  transitTraps?: { en: string; ja: string };
   /** Official page for planned strikes/disruption, where a reliable one exists. */
   strikeInfo?: { en: string; ja: string; url: string };
 };
@@ -935,7 +926,6 @@ const essentialsById: Partial<Record<DestinationId, DestinationEssentials>> = {
   japan: {
     plug: "A · 100V",
     tipping: { en: "No tipping anywhere.", ja: "チップの習慣なし。" },
-    tapWater: { en: "Tap water is safe.", ja: "水道水はそのまま飲める。" },
     emergency: { en: "110 police · 119 fire/ambulance", ja: "110 警察 / 119 消防・救急" },
     entry: {
       en: "Japanese citizens need no visa or travel authorisation to enter Japan. Non-Japanese companions must check their own passport rules.",
@@ -951,7 +941,6 @@ const essentialsById: Partial<Record<DestinationId, DestinationEssentials>> = {
   switzerland: {
     plug: "C / J · 230V",
     tipping: { en: "Service included; rounding up is plenty.", ja: "サービス料込み。端数を切り上げる程度で十分。" },
-    tapWater: { en: "Tap water (and most public fountains) is excellent.", ja: "水道水も街の噴水式水飲み場も高品質。ボトル持参で汲める。" },
     emergency: { en: "112 general · 117 police · 144 ambulance · 1414 Rega air rescue", ja: "112 共通 / 117 警察 / 144 救急 / 1414 山岳救助(Rega)" },
     entry: schengenEntry("switzerland"),
     pass: {
@@ -959,19 +948,10 @@ const essentialsById: Partial<Record<DestinationId, DestinationEssentials>> = {
       ja: "スイストラベルパスは鉄道・バス・湖船・多くの美術館をカバー。山岳鉄道は半額カード適用。個別購入前にパスの損益分岐を確認する価値あり。",
       url: "https://www.myswitzerland.com/ja/planning/transport/tickets-public-transport/swiss-travel-pass/",
     },
-    money: {
-      en: "Cards work almost everywhere; pay in CHF. Euros may be accepted but change comes back in francs at a poor rate.",
-      ja: "カードはほぼ全店OK。支払いは必ずCHF建てで。ユーロを受け取る店もあるが釣りはフランで返りレートも悪い。",
-    },
-    transitTraps: {
-      en: "No ticket gates — buy before boarding; plain-clothes inspections fine ~CHF 100. Train doors open by button.",
-      ja: "改札はないが検札制。乗車前に切符を（無札は罰金約CHF100）。電車のドアはボタンで手動開扉。",
-    },
   },
   korea: {
     plug: "C / F · 220V",
     tipping: { en: "No tipping.", ja: "チップの習慣なし。" },
-    tapWater: { en: "Officially safe; most locals filter or boil.", ja: "基準上は飲めるが、現地でも浄水・煮沸が一般的。" },
     emergency: { en: "112 police · 119 fire/ambulance", ja: "112 警察 / 119 消防・救急" },
     entry: {
       en: "Japan passport: visa-free short stays; K-ETA requirement is periodically waived — check current status.",
@@ -983,7 +963,6 @@ const essentialsById: Partial<Record<DestinationId, DestinationEssentials>> = {
   taiwan: {
     plug: "A / B · 110V",
     tipping: { en: "No tipping.", ja: "チップの習慣なし。" },
-    tapWater: { en: "Boil or buy bottled outside Taipei's filtered sources.", ja: "水道水は煮沸かボトル購入が無難。" },
     emergency: { en: "110 police · 119 fire/ambulance", ja: "110 警察 / 119 消防・救急" },
     entry: {
       en: "Japan passport: visa-free 90 days.",
@@ -995,7 +974,6 @@ const essentialsById: Partial<Record<DestinationId, DestinationEssentials>> = {
   hongkong: {
     plug: "G · 220V",
     tipping: { en: "10% service charge is usually added; loose change otherwise.", ja: "10%のサービス料が加算されることが多い。追加は小銭程度。" },
-    tapWater: { en: "Safe, though many prefer boiled or bottled.", ja: "基準上は飲めるが煮沸・ボトルが一般的。" },
     emergency: { en: "999 all services", ja: "999（警察・消防・救急共通）" },
     entry: {
       en: "Japan passport: visa-free 90 days.",
@@ -1007,7 +985,6 @@ const essentialsById: Partial<Record<DestinationId, DestinationEssentials>> = {
   singapore: {
     plug: "G · 230V",
     tipping: { en: "No tipping; 10% service charge is built in.", ja: "チップ不要。10%サービス料込みが基本。" },
-    tapWater: { en: "Tap water is safe.", ja: "水道水はそのまま飲める。" },
     emergency: { en: "999 police · 995 fire/ambulance", ja: "999 警察 / 995 消防・救急" },
     entry: {
       en: "Japan passport: visa-free short stays; submit the SG Arrival Card online before landing.",
@@ -1019,7 +996,6 @@ const essentialsById: Partial<Record<DestinationId, DestinationEssentials>> = {
   thailand: {
     plug: "A / B / C / O · 220V",
     tipping: { en: "Not required; small notes appreciated at sit-down places.", ja: "必須ではない。レストランで少額を置く程度。" },
-    tapWater: { en: "Don't drink tap water; bottled is cheap and everywhere.", ja: "水道水は飲まない。ボトル水が安く手に入る。" },
     emergency: { en: "191 police · 1669 ambulance · 1155 tourist police", ja: "191 警察 / 1669 救急 / 1155 ツーリストポリス" },
     entry: {
       en: "Japan passport: visa-free tourist stays; a digital arrival card may be required — check before departure.",
@@ -1027,19 +1003,10 @@ const essentialsById: Partial<Record<DestinationId, DestinationEssentials>> = {
       sourceUrl: mofa("thailand"),
     },
     pass: null,
-    money: {
-      en: "Street food, markets and songthaews are cash-only; city exchange counters beat the airport rate.",
-      ja: "屋台・市場・ソンテウは現金のみ。両替は空港より市中の両替商が好レート。",
-    },
-    transitTraps: {
-      en: "Skip taxis that refuse the meter; Grab/Bolt with plate matching is the reliable route.",
-      ja: "メーターを拒否するタクシーには乗らない。Grab/Bolt＋車両ナンバー照合が確実。",
-    },
   },
   vietnam: {
     plug: "A / C · 220V",
     tipping: { en: "Not expected; appreciated for guides and spas.", ja: "基本不要。ガイドやスパでは歓迎される。" },
-    tapWater: { en: "Don't drink tap water.", ja: "水道水は飲まない。ボトル水を使う。" },
     emergency: { en: "113 police · 115 ambulance", ja: "113 警察 / 115 救急" },
     entry: {
       en: "Japan passport: visa-free 45 days — verify the current limit.",
@@ -1047,19 +1014,10 @@ const essentialsById: Partial<Record<DestinationId, DestinationEssentials>> = {
       sourceUrl: mofa("vietnam"),
     },
     pass: null,
-    money: {
-      en: "Cash society; dong notes have many zeros — count them before handing over.",
-      ja: "現金社会。ドン紙幣は桁が多く紛らわしい。渡す前に0の数を確認。",
-    },
-    transitTraps: {
-      en: "Airport \"ride-hailing\" touts and lookalike apps overcharge — book inside the real Grab app and match the plate before getting in.",
-      ja: "空港の偽配車アプリ・客引きに注意。本物のGrabアプリ内で呼び、車両ナンバーを照合してから乗る。",
-    },
   },
   indonesia: {
     plug: "C / F · 230V",
     tipping: { en: "Not required; 5–10% at upscale places.", ja: "基本不要。高級店では5〜10%程度。" },
-    tapWater: { en: "Don't drink tap water.", ja: "水道水は飲まない。ボトル水を使う。" },
     emergency: { en: "110 police · 118 ambulance · 112 general (rollout)", ja: "110 警察 / 118 救急 / 112 共通(整備中)" },
     entry: {
       en: "Japan passport: Visa on Arrival (paid) at major airports — e-VOA can be bought online in advance.",
@@ -1067,15 +1025,10 @@ const essentialsById: Partial<Record<DestinationId, DestinationEssentials>> = {
       sourceUrl: mofa("indonesia"),
     },
     pass: null,
-    money: {
-      en: "Markets, warungs and tips are cash; use ATMs attached to banks.",
-      ja: "市場・ワルン・チップは現金。ATMは銀行併設のものを使う。",
-    },
   },
   uae: {
     plug: "G · 230V",
     tipping: { en: "10% common; often already on the bill.", ja: "10%程度が一般的。伝票に含まれていることも多い。" },
-    tapWater: { en: "Desalinated and officially safe; bottled is the norm.", ja: "基準上は飲めるがボトル水が一般的。" },
     emergency: { en: "999 police · 998 ambulance", ja: "999 警察 / 998 救急" },
     entry: {
       en: "Japan passport: visa-free 30 days on arrival.",
@@ -1087,18 +1040,9 @@ const essentialsById: Partial<Record<DestinationId, DestinationEssentials>> = {
   france: {
     plug: "C / E · 230V",
     tipping: { en: "Service included; leave coins for great service.", ja: "サービス料込み。良い接客に小銭を置く程度。" },
-    tapWater: { en: "Tap water is safe; ask for « une carafe d'eau ».", ja: "水道水は安全。「カラフドー」で無料の水が頼める。" },
     emergency: { en: "112 general · 17 police · 15 SAMU", ja: "112 共通 / 17 警察 / 15 救急(SAMU)" },
     entry: schengenEntry("france"),
     pass: null,
-    money: {
-      en: "Cards are fine nearly everywhere; markets and bakeries still want coins for small buys.",
-      ja: "カードはほぼ全域OK。マルシェやパン屋の少額会計だけ現金・小銭が要る。",
-    },
-    transitTraps: {
-      en: "Keep your metro/train ticket until you exit — inspections are frequent and fines are on the spot. Doors open by button or lever.",
-      ja: "メトロ・鉄道の切符は出場まで必ず保持（検札が多く、その場で罰金）。ドアはボタン/レバーで手動開扉。",
-    },
     strikeInfo: {
       en: "French transport strikes are announced in advance — check SNCF traffic info for your dates.",
       ja: "フランスの交通ストは事前告知制。旅程の日付でSNCFの運行情報を確認。",
@@ -1108,18 +1052,9 @@ const essentialsById: Partial<Record<DestinationId, DestinationEssentials>> = {
   italy: {
     plug: "C / F / L · 230V",
     tipping: { en: "No tipping needed; coperto (cover charge) appears on bills.", ja: "チップ不要。コペルト（席料）が伝票に載るのは正規の慣習。" },
-    tapWater: { en: "Tap water is safe; free fountains (nasoni) in Rome.", ja: "水道水は安全。ローマの街頭水飲み場も利用可。" },
     emergency: { en: "112 all services", ja: "112（共通）" },
     entry: schengenEntry("italy"),
     pass: null,
-    money: {
-      en: "Card acceptance is broad now, but bars, small trattorie and taxis still ask for cash.",
-      ja: "カードは普及したが、バール・小さな食堂・タクシーでは現金を求められることがある。",
-    },
-    transitTraps: {
-      en: "Paper regional-train tickets MUST be stamped in the platform validator before boarding — inspectors fine ~€50+ on the spot, no excuses accepted. High-speed trains are all-reserved instead.",
-      ja: "地方列車の紙切符はホームの刻印機で乗車前に打刻必須（未打刻は言い訳不可でその場で罰金€50超の実例多数）。高速列車は全席指定なので打刻不要。",
-    },
     strikeInfo: {
       en: "Italian strikes are pre-announced on the transport ministry's official calendar — check it against your dates; guaranteed-service trains still run.",
       ja: "イタリアのストは交通省の公式カレンダーで事前告知される。旅程の日付と照合を。スト中も「運行保証便」は走る。",
@@ -1129,7 +1064,6 @@ const essentialsById: Partial<Record<DestinationId, DestinationEssentials>> = {
   spain: {
     plug: "C / F · 230V",
     tipping: { en: "Not expected; rounding up is fine.", ja: "基本不要。端数の切り上げ程度。" },
-    tapWater: { en: "Tap water is safe in cities.", ja: "都市部の水道水は安全。" },
     emergency: { en: "112 all services", ja: "112（共通）" },
     entry: schengenEntry("spain"),
     pass: null,
@@ -1137,7 +1071,6 @@ const essentialsById: Partial<Record<DestinationId, DestinationEssentials>> = {
   portugal: {
     plug: "C / F · 230V",
     tipping: { en: "Round up ~5–10% for table service.", ja: "テーブルサービスで5〜10%目安の切り上げ。" },
-    tapWater: { en: "Tap water is safe.", ja: "水道水は安全。" },
     emergency: { en: "112 all services", ja: "112（共通）" },
     entry: schengenEntry("portugal"),
     pass: null,
@@ -1145,7 +1078,6 @@ const essentialsById: Partial<Record<DestinationId, DestinationEssentials>> = {
   uk: {
     plug: "G · 230V",
     tipping: { en: "10–12.5% at restaurants when service isn't added.", ja: "サービス料がなければレストランで10〜12.5%。" },
-    tapWater: { en: "Tap water is safe.", ja: "水道水は安全。" },
     emergency: { en: "999 (or 112) all services", ja: "999（112も可・共通）" },
     entry: {
       en: "Japan passport: ETA (electronic travel authorisation) required before travel; visa-free up to 6 months.",
@@ -1153,30 +1085,13 @@ const essentialsById: Partial<Record<DestinationId, DestinationEssentials>> = {
       sourceUrl: mofa("uk"),
     },
     pass: null,
-    money: {
-      en: "Almost fully contactless — the Tube and buses take a tapped card directly; cash is rarely needed.",
-      ja: "ほぼ完全非接触カード社会。地下鉄・バスはカードをタッチしてそのまま乗れる。現金の出番はほぼない。",
-    },
-    transitTraps: {
-      en: "Tap in AND out with the same card on the Tube, or you're charged the maximum fare.",
-      ja: "地下鉄は入場と出場を必ず同じカードでタッチ。片方だけだと最大運賃が課金される。",
-    },
   },
   germany: {
     plug: "C / F · 230V",
     tipping: { en: "Round up 5–10%; say the total when paying.", ja: "5〜10%の切り上げ。支払い時に合計額を告げる方式。" },
-    tapWater: { en: "Tap water is safe; restaurants expect you to buy water.", ja: "水道水は安全だが、店では水は注文するのが通例。" },
     emergency: { en: "112 fire/ambulance · 110 police", ja: "112 消防・救急 / 110 警察" },
     entry: schengenEntry("germany"),
     pass: null,
-    money: {
-      en: "Bakeries, stalls and many independent shops are still cash-only — keep €30–50 on you.",
-      ja: "パン屋・屋台・個人商店は今も現金オンリーが多い。常に€30〜50の現金を携行。",
-    },
-    transitTraps: {
-      en: "No gates ≠ free ride: buy (and where marked, validate) before boarding; plain-clothes checks fine €60. Doors open by button.",
-      ja: "改札がない＝無賃OKではない。乗車前に購入（表示があれば刻印も）。私服検札で€60の罰金。ドアはボタン開扉。",
-    },
     strikeInfo: {
       en: "Check DB's live disruption page close to travel — rail strikes are announced, not spontaneous.",
       ja: "鉄道ストは事前告知制。直前にDBの運行情報ページを確認。",
@@ -1186,19 +1101,13 @@ const essentialsById: Partial<Record<DestinationId, DestinationEssentials>> = {
   austria: {
     plug: "C / F · 230V",
     tipping: { en: "Round up 5–10%.", ja: "5〜10%の切り上げが目安。" },
-    tapWater: { en: "Tap water is excellent (alpine sources).", ja: "水道水は高品質（アルプス水源）。" },
     emergency: { en: "112 general · 133 police · 144 ambulance", ja: "112 共通 / 133 警察 / 144 救急" },
     entry: schengenEntry("austria"),
     pass: null,
-    transitTraps: {
-      en: "Validate paper tickets before boarding trams and metro; plain-clothes inspections fine €105+. Doors open by button.",
-      ja: "トラム・地下鉄は乗車前に刻印必須。私服検札で€105以上の罰金。ドアはボタン開扉。",
-    },
   },
   netherlands: {
     plug: "C / F · 230V",
     tipping: { en: "Not expected; round up if you like.", ja: "基本不要。端数の切り上げ程度。" },
-    tapWater: { en: "Tap water is safe.", ja: "水道水は安全。" },
     emergency: { en: "112 all services", ja: "112（共通）" },
     entry: schengenEntry("netherlands"),
     pass: null,
@@ -1206,7 +1115,6 @@ const essentialsById: Partial<Record<DestinationId, DestinationEssentials>> = {
   iceland: {
     plug: "C / F · 230V",
     tipping: { en: "No tipping.", ja: "チップの習慣なし。" },
-    tapWater: { en: "Tap water is among the world's best; hot taps smell of sulphur (harmless).", ja: "水道水は世界屈指の品質。お湯の硫黄臭は温泉由来で無害。" },
     emergency: { en: "112 all services", ja: "112（共通）" },
     entry: schengenEntry("iceland"),
     pass: null,
@@ -1214,7 +1122,6 @@ const essentialsById: Partial<Record<DestinationId, DestinationEssentials>> = {
   norway: {
     plug: "C / F · 230V",
     tipping: { en: "Not expected; round up for good service.", ja: "基本不要。良い接客に切り上げ程度。" },
-    tapWater: { en: "Tap water is excellent.", ja: "水道水は高品質。" },
     emergency: { en: "112 police · 113 ambulance · 110 fire", ja: "112 警察 / 113 救急 / 110 消防" },
     entry: schengenEntry("norway"),
     pass: null,
@@ -1222,7 +1129,6 @@ const essentialsById: Partial<Record<DestinationId, DestinationEssentials>> = {
   usa: {
     plug: "A / B · 120V",
     tipping: { en: "18–20% expected at sit-down restaurants; tip counter service less.", ja: "レストランで18〜20%が事実上必須。カウンター店は少なめ。" },
-    tapWater: { en: "Tap water is safe.", ja: "水道水は安全。" },
     emergency: { en: "911 all services", ja: "911（共通）" },
     entry: {
       en: "Japan passport: ESTA required before travel (Visa Waiver Program).",
@@ -1230,19 +1136,10 @@ const essentialsById: Partial<Record<DestinationId, DestinationEssentials>> = {
       sourceUrl: mofa("usa"),
     },
     pass: null,
-    money: {
-      en: "Card country; carry little cash. Terminals will present a tip screen even at counters.",
-      ja: "カード社会で現金はほぼ不要。カウンター店でも端末にチップ選択画面が出る。",
-    },
-    transitTraps: {
-      en: "Never ride with drivers soliciting in the arrivals hall (unlicensed cabs, a JFK staple) — use the official taxi line or match the app's plate number.",
-      ja: "到着ロビーで声をかけてくるドライバーには乗らない（JFKで多発する白タク）。公式タクシー乗り場か、配車アプリのナンバー照合を。",
-    },
   },
   canada: {
     plug: "A / B · 120V",
     tipping: { en: "15–20% at restaurants.", ja: "レストランで15〜20%が一般的。" },
-    tapWater: { en: "Tap water is safe.", ja: "水道水は安全。" },
     emergency: { en: "911 all services", ja: "911（共通）" },
     entry: {
       en: "Japan passport: eTA required before flying in.",
@@ -1254,7 +1151,6 @@ const essentialsById: Partial<Record<DestinationId, DestinationEssentials>> = {
   australia: {
     plug: "I · 230V",
     tipping: { en: "Not expected.", ja: "チップは基本不要。" },
-    tapWater: { en: "Tap water is safe.", ja: "水道水は安全。" },
     emergency: { en: "000 all services", ja: "000（共通）" },
     entry: {
       en: "Japan passport: ETA (subclass 601) required before travel.",
@@ -1266,7 +1162,6 @@ const essentialsById: Partial<Record<DestinationId, DestinationEssentials>> = {
   newzealand: {
     plug: "I · 230V",
     tipping: { en: "Not expected.", ja: "チップは基本不要。" },
-    tapWater: { en: "Tap water is safe.", ja: "水道水は安全。" },
     emergency: { en: "111 all services", ja: "111（共通）" },
     entry: {
       en: "Japan passport: NZeTA required before travel (plus IVL levy).",

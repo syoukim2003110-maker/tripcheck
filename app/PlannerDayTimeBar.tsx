@@ -9,20 +9,6 @@ import {
   type PlannerDayTimeSegmentKind,
 } from "../lib/planner-day-time-bar";
 
-export {
-  buildPlannerDayTimeBarModel,
-  plannerDayTimeBarAriaLabel,
-} from "../lib/planner-day-time-bar";
-export type {
-  PlannerDayTimeBarDay,
-  PlannerDayTimeBarFit,
-  PlannerDayTimeBarLocale,
-  PlannerDayTimeBarModel,
-  PlannerDayTimeMarker,
-  PlannerDayTimeSegment,
-  PlannerDayTimeSegmentKind,
-} from "../lib/planner-day-time-bar";
-
 export type PlannerDayTimeBarProps = {
   day: PlannerDayTimeBarDay;
   fit?: PlannerDayTimeBarFit | null;

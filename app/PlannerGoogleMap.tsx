@@ -24,7 +24,7 @@ import { tripRequestHeaders } from "../lib/trip-request-identity";
 type MapLocale = "en" | "ja";
 type RouteState = "idle" | "paused_date" | "loading" | "live" | "partial" | "unavailable";
 
-export type { PlannerMapDayLayer, PlannerMapDayLayerStop } from "../lib/planner-map-model";
+export type { PlannerMapDayLayer } from "../lib/planner-map-model";
 
 export type FoodPin = {
   id: string;

@@ -117,10 +117,6 @@ export function createTripRequestIdentity(options: TripRequestIdentityOptions = 
 
 const browserIdentity = createTripRequestIdentity();
 
-export function currentTripRequestToken() {
-  return browserIdentity.currentToken();
-}
-
 export function rotateTripRequestToken() {
   return browserIdentity.rotateToken();
 }
