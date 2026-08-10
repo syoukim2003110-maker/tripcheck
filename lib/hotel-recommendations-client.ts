@@ -45,6 +45,65 @@ export function buildHotelSearchPayload(
   };
 }
 
+export type HotelRankingCandidatePayload = {
+  id: string;
+  name: string;
+  area: string;
+  rating: number | null;
+  reviewCount: number | null;
+  totalTravelMinutes: number | null;
+  styles: string[];
+  priceHint: string | null;
+};
+
+export type HotelRankingResponse = {
+  provider: "anthropic";
+  recommendedId: string;
+  ranked: Array<{ id: string; reason: string; tag: string }>;
+};
+
+/**
+ * Asks the AI selector to research the shortlisted hotels and pick the base.
+ * Facts stay Google-owned: the model can only reorder the supplied ids.
+ */
+export async function requestHotelRanking(
+  input: {
+    destination: string;
+    area: string;
+    tripDays: number;
+    purpose: string;
+    candidates: HotelRankingCandidatePayload[];
+  },
+  locale: Locale,
+  signal?: AbortSignal,
+): Promise<HotelRankingResponse> {
+  let response: Response;
+  try {
+    response = await fetch("/api/hotel-recommendations/ai", {
+      method: "POST",
+      headers: tripRequestHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({
+        destination: input.destination,
+        area: input.area,
+        tripDays: input.tripDays,
+        purpose: input.purpose,
+        languageCode: locale === "ja" ? "ja" as const : "en" as const,
+        candidates: input.candidates,
+      }),
+      signal,
+    });
+  } catch {
+    throw new HotelRecommendationsError("unavailable");
+  }
+  const payload = await response.json().catch(() => null) as (HotelRankingResponse & { code?: string }) | null;
+  if (!response.ok || !payload || !Array.isArray(payload.ranked) || typeof payload.recommendedId !== "string") {
+    if (payload?.code === "not_configured") throw new HotelRecommendationsError("not_configured");
+    if (response.status === 429 || payload?.code === "budget_exhausted") throw new HotelRecommendationsError("quota_exhausted");
+    throw new HotelRecommendationsError("unavailable");
+  }
+  return payload;
+}
+
 export async function requestHotelRecommendations(
   input: HotelSearchInput,
   locale: Locale,

@@ -22,7 +22,7 @@ import {
 import { requestLinkPreview } from "../lib/link-preview-client";
 import { defaultFoodDiscoveryQuery, type FoodCandidate } from "../lib/google-food";
 import { bayesianWeightedRating, restaurantRatingPrior } from "../lib/rating-confidence";
-import { requestHotelRecommendations } from "../lib/hotel-recommendations-client";
+import { requestHotelRecommendations, requestHotelRanking } from "../lib/hotel-recommendations-client";
 import { placeTypesIncludeLodging, type HotelCandidate, type HotelPriceLevel, type HotelStyle } from "../lib/google-hotels";
 import { fullTripDemo } from "../lib/mock-trip";
 import { requestFreshVoices, requestPlaceIntelligence, PlaceIntelligenceError } from "../lib/place-intelligence-client";
@@ -45,6 +45,12 @@ import { PlaceResolutionError, placeReviewInputSignature, placeReviewStatus, req
 import { PLANNING_BUDGET, takeWithinPlanningBudget } from "../lib/planning-budget";
 import { decodeGooglePolyline } from "../lib/google-polyline";
 import type { TransitStepSummary } from "../lib/google-routes";
+
+type TransitLegBoarding = {
+  steps: TransitStepSummary[];
+  walkToStopMinutes: number | null;
+  walkFromStopMinutes: number | null;
+};
 import { poiAccessPolicyForStop } from "../lib/poi-access";
 import { resolveKnownStops, straightLineDistanceKm, type ResolvedInputStop, type RouteStop } from "../lib/route-optimizer";
 import type { Pace } from "../lib/trip-builder";
@@ -230,6 +236,8 @@ type FoodState = {
   candidates: FoodCandidate[];
   fetchedAt?: string;
   notes: Record<string, { reason: string; tag: string }>;
+  /** True once the AI selector's order has replaced the Google-score order. */
+  aiOrdered?: boolean;
   fresh: Record<string, FreshState>;
 };
 type IntelligenceState = {
@@ -240,11 +248,17 @@ type FreshState = {
   status: "idle" | "loading" | "ready" | "unavailable" | "paused";
   result: FreshVoicesResult | null;
 };
+type HotelAiState = {
+  status: "idle" | "loading" | "ready" | "unavailable";
+  notes: Record<string, { reason: string; tag: string }>;
+  recommendedId: string | null;
+};
 type HotelState = {
   status: "idle" | "loading" | "ready" | "unavailable";
   candidates: HotelCandidate[];
   selectedId: string | null;
   fresh: FreshState;
+  ai: HotelAiState;
 };
 type HotelStayMode = "single" | "nightly";
 type HotelStyleChoice = "recommended" | HotelStyle;
@@ -283,7 +297,8 @@ type SourcePreviewState = { status: "loading" | "ready" | "failed"; imageUrl: st
 type ManualPlaceDraft = { address: string; latitude: string; longitude: string };
 
 const emptyFreshState: FreshState = { status: "idle", result: null };
-const emptyHotelState: HotelState = { status: "idle", candidates: [], selectedId: null, fresh: emptyFreshState };
+const emptyHotelAi: HotelAiState = { status: "idle", notes: {}, recommendedId: null };
+const emptyHotelState: HotelState = { status: "idle", candidates: [], selectedId: null, fresh: emptyFreshState, ai: emptyHotelAi };
 const emptyNightlyHotelState: NightlyHotelState = { status: "idle", nights: [] };
 const emptyRouteRecommendationState: RouteRecommendationState = { status: "idle", fetchedAt: null, candidates: [] };
 
@@ -1454,7 +1469,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   const [prefetchGeometry, setPrefetchGeometry] = useState<Record<string, Partial<Record<"transit" | "walk" | "drive", { points: Array<{ latitude: number; longitude: number }>; encoded: string }>>>>({});
   // Which train/bus to board per leg (line, headsign, departure), measured by
   // the prefetch at the provisional departure time.
-  const [prefetchTransitSteps, setPrefetchTransitSteps] = useState<Record<string, TransitStepSummary[]>>({});
+  const [prefetchTransitSteps, setPrefetchTransitSteps] = useState<Record<string, TransitLegBoarding>>({});
   const [liveTransitTransferCounts, setLiveTransitTransferCounts] = useState<Record<string, number>>({});
   const [liveWalking, setLiveWalking] = useState<Record<string, number>>({});
   const [liveDriving, setLiveDriving] = useState<Record<string, number>>({});
@@ -2923,6 +2938,18 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
         evidence.status === "unknown" ? [[legId, true] as const] : []
       ))));
       setLiveTransitTransferCounts(transferCounts);
+      const boardingByLeg: Record<string, TransitLegBoarding> = {};
+      for (const observation of result.observations) {
+        if (observation.status !== "verified" || !observation.transitSteps?.length) continue;
+        boardingByLeg[observation.legId] = {
+          steps: [...observation.transitSteps],
+          walkToStopMinutes: observation.walkToStopMinutes ?? null,
+          walkFromStopMinutes: observation.walkFromStopMinutes ?? null,
+        };
+      }
+      if (Object.keys(boardingByLeg).length > 0) {
+        setPrefetchTransitSteps((current) => ({ ...current, ...boardingByLeg }));
+      }
       setLiveRouteEvidence(evidenceByRequest);
       setTransitConvergence({
         inputKey: transitConvergenceInputKey,
@@ -2997,7 +3024,11 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
           });
           const stepUpdates = Object.fromEntries(measured.legs.flatMap((leg) => (
             leg.mode === "transit" && leg.status === "ok" && (leg.transitSteps?.length ?? 0) > 0
-              ? [[leg.id, leg.transitSteps!] as const]
+              ? [[leg.id, {
+                steps: leg.transitSteps!,
+                walkToStopMinutes: leg.walkToStopMinutes,
+                walkFromStopMinutes: leg.walkFromStopMinutes,
+              } satisfies TransitLegBoarding] as const]
               : []
           )));
           if (Object.keys(stepUpdates).length > 0) {
@@ -3081,6 +3112,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
         routePoints: routeContext.routePoints,
       }, locale, requestDestination, controller.signal);
       if (controller.signal.aborted || hotelPlanSignatureRef.current !== signatureAtStart) return;
+      const travelMinutesById = new Map<string, number>();
       const rankedCandidates = response.candidates
         .map((candidate) => ({
           candidate,
@@ -3092,6 +3124,10 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
             { ...activePlannerContext, resolvedBase: hotelAsResolvedBase(candidate, hotelQuery, searchAnchor.area, response.fetchedAt) },
           )),
         }))
+        .map((entry) => {
+          travelMinutesById.set(entry.candidate.id, entry.travelMinutes);
+          return entry;
+        })
         .sort((left, right) => left.travelMinutes - right.travelMinutes
           || right.candidate.score - left.candidate.score
           || left.candidate.id.localeCompare(right.candidate.id))
@@ -3107,11 +3143,13 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
               ? rankedCandidates.find((candidate) => candidate.id === axes.valueId) ?? rankedCandidates[0] ?? null
               : rankedCandidates[0] ?? null;
       if (!selected) throw new Error("no_hotel_candidates");
+      const shortlist = hotelShortlist(rankedCandidates, selected.id);
       setHotelState({
         status: "ready",
-        candidates: hotelShortlist(rankedCandidates, selected.id),
+        candidates: shortlist,
         selectedId: selected.id,
         fresh: { status: "loading", result: null },
+        ai: { status: "idle", notes: {}, recommendedId: null },
       });
       setResolvedBase(hotelAsResolvedBase(selected, hotelQuery, selected.address.slice(0, 100) || searchAnchor.area, response.fetchedAt));
       setHotelSearchSignature(signatureAtStart);
@@ -3142,6 +3180,58 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
           ? { ...current, fresh: { status: "unavailable", result: null } }
           : current);
       });
+      // The deterministic order above is the instant answer. The AI selector
+      // then researches the same shortlist (bounded web search) and may
+      // promote a different base — but it can only choose among these ids,
+      // and only while the user has not intervened.
+      if (shortlist.length >= 2) {
+        setHotelState((current) => ({ ...current, ai: { ...current.ai, status: "loading" } }));
+        void requestHotelRanking({
+          destination: locale === "ja" ? activeDestination.names.ja : activeDestination.names.en,
+          area: searchAnchor.area,
+          tripDays,
+          purpose: hotelPurpose,
+          candidates: shortlist.slice(0, 6).map((candidate) => ({
+            id: candidate.id,
+            name: candidate.name,
+            area: candidate.address.slice(0, 100) || searchAnchor.area,
+            rating: candidate.rating,
+            reviewCount: candidate.userRatingCount,
+            totalTravelMinutes: travelMinutesById.get(candidate.id) ?? null,
+            styles: candidate.styles,
+            priceHint: candidate.rakuten?.minCharge
+              ? `~¥${candidate.rakuten.minCharge.toLocaleString("ja-JP")}/night`
+              : null,
+          })),
+        }, locale, controller.signal).then((ai) => {
+          if (controller.signal.aborted || hotelPlanSignatureRef.current !== signatureAtStart) return;
+          let userUntouched = false;
+          setHotelState((current) => {
+            if (current.status !== "ready") return current;
+            userUntouched = current.selectedId === selected.id;
+            const order = new Map(ai.ranked.map((item, index) => [item.id, index]));
+            const reordered = [...current.candidates].sort((left, right) => (
+              (order.get(left.id) ?? 99) - (order.get(right.id) ?? 99)
+            ));
+            return {
+              ...current,
+              candidates: reordered,
+              ai: {
+                status: "ready",
+                notes: Object.fromEntries(ai.ranked.map((item) => [item.id, { reason: item.reason, tag: item.tag }])),
+                recommendedId: ai.recommendedId,
+              },
+            };
+          });
+          const pick = shortlist.find((candidate) => candidate.id === ai.recommendedId);
+          if (pick && userUntouched && pick.id !== selected.id && hotelStyleRef.current === "recommended") {
+            selectHotelCandidate(pick, "balanced");
+          }
+        }).catch(() => {
+          if (controller.signal.aborted) return;
+          setHotelState((current) => ({ ...current, ai: { ...current.ai, status: "unavailable" } }));
+        });
+      }
     } catch {
       if (!controller.signal.aborted) setHotelRefreshFailed(true);
     } finally {
@@ -3441,13 +3531,20 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
 
   function renderHotelComparison() {
     if (!selectedHotel || hotelState.candidates.length <= 1) return null;
-    const comparisonCandidates = hotelShortlist(hotelState.candidates, selectedHotel.id);
+    const comparisonCandidates = hotelState.ai.status === "ready"
+      ? hotelState.candidates
+      : hotelShortlist(hotelState.candidates, selectedHotel.id);
     return (
       <section className="planner-hotel-compare">
         <header><span>{text.hotelCompareHeading}</span><small>{comparisonCandidates.length}</small></header>
+        {hotelState.ai.status === "loading" ? (
+          <p className="planner-hotel-ai-status">{locale === "ja" ? "AIが候補の評判を照合しています…" : "AI is researching these candidates…"}</p>
+        ) : null}
         <div className="planner-hotel-compare-list">
           {comparisonCandidates.map((candidate) => {
+            const aiNote = hotelState.ai.notes[candidate.id];
             const tags = [
+              ...(hotelState.ai.recommendedId === candidate.id ? [locale === "ja" ? "AIのおすすめ" : "AI pick"] : []),
               ...hotelAxisLabels(candidate),
               ...(candidate.styles.includes("luxury") ? [text.styleLuxury] : []),
             ];
@@ -3485,6 +3582,9 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                     ) : null}
                     {candidate.rakuten?.reviewAverage ? (
                       <small className="is-rakuten-line">{text.rakutenTag(candidate.rakuten.reviewAverage, candidate.rakuten.reviewCount ?? 0)}</small>
+                    ) : null}
+                    {aiNote ? (
+                      <small className="planner-hotel-ai-line">AI: {aiNote.reason}</small>
                     ) : null}
                   </span>
                 </button>
@@ -4241,7 +4341,8 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       ?? (draft.baseRecommendations[0]?.base
         ? provisionalBaseAsResolved(draft.baseRecommendations[0].base)
         : null);
-    let localHotelState: HotelState = { status: "unavailable", candidates: [], selectedId: null, fresh: emptyFreshState };
+    let localHotelState: HotelState = { status: "unavailable", candidates: [], selectedId: null, fresh: emptyFreshState, ai: emptyHotelAi };
+    const buildHotelTravelMinutes = new Map<string, number>();
     if (!P0_CORE_ONLY && hotelAnchor) {
       try {
         const hotelResponse = await requestHotelRecommendations({
@@ -4266,6 +4367,9 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
           .sort((left, right) => left.travelMinutes - right.travelMinutes
             || right.candidate.score - left.candidate.score
             || left.candidate.id.localeCompare(right.candidate.id));
+        for (const entry of hotelCandidatesByTripTime) {
+          buildHotelTravelMinutes.set(entry.candidate.id, entry.travelMinutes);
+        }
         const rankedHotelCandidates = hotelCandidatesByTripTime.map(({ candidate }) => candidate);
         const recommended = rankedHotelCandidates[0] ?? null;
         const matchedExact = resolvedHotel ? matchingHotelCandidate(resolvedHotel, rankedHotelCandidates) : null;
@@ -4286,9 +4390,9 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
         const candidates = selected
           ? [selected, ...rankedHotelCandidates.filter((candidate) => candidate.id !== selected.id)]
           : rankedHotelCandidates;
-        localHotelState = { status: "ready", candidates: hotelShortlist(candidates, selected?.id), selectedId: selected?.id ?? null, fresh: emptyFreshState };
+        localHotelState = { status: "ready", candidates: hotelShortlist(candidates, selected?.id), selectedId: selected?.id ?? null, fresh: emptyFreshState, ai: emptyHotelAi };
       } catch {
-        localHotelState = { status: "unavailable", candidates: [], selectedId: null, fresh: emptyFreshState };
+        localHotelState = { status: "unavailable", candidates: [], selectedId: null, fresh: emptyFreshState, ai: emptyHotelAi };
       }
     }
     if (cancelled()) return;
@@ -4298,6 +4402,64 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       setResolvedBase(effectiveBase);
       setBuildProgress((current) => ({ ...current, current: 1, total: 1 }));
     })) return;
+
+    // AI takes over the "which hotel" decision once the deterministic
+    // shortlist exists: it researches the same candidates (bounded web
+    // search) and may promote a different base. It can only pick among the
+    // shortlisted ids, and a user choice made meanwhile always wins.
+    if (aiEnabledRef.current && localHotelState.status === "ready" && localHotelState.candidates.length >= 2 && hotelAnchor) {
+      const aiShortlist = localHotelState.candidates;
+      const aiInitialSelectedId = localHotelState.selectedId;
+      const aiMaySwitch = useRecommendedHotelForBuild && aiInitialSelectedId !== null;
+      setHotelState((current) => current.status === "ready"
+        ? { ...current, ai: { ...current.ai, status: "loading" } }
+        : current);
+      void requestHotelRanking({
+        destination: locale === "ja" ? destinationById(draft.destination).names.ja : destinationById(draft.destination).names.en,
+        area: hotelAnchor.area,
+        tripDays,
+        purpose: useRecommendedHotelForBuild ? "balanced" : "picked",
+        candidates: aiShortlist.slice(0, 6).map((candidate) => ({
+          id: candidate.id,
+          name: candidate.name,
+          area: candidate.address.slice(0, 100) || hotelAnchor.area,
+          rating: candidate.rating,
+          reviewCount: candidate.userRatingCount,
+          totalTravelMinutes: buildHotelTravelMinutes.get(candidate.id) ?? null,
+          styles: candidate.styles,
+          priceHint: candidate.rakuten?.minCharge
+            ? `~¥${candidate.rakuten.minCharge.toLocaleString("ja-JP")}/night`
+            : null,
+        })),
+      }, locale, controller.signal).then((ai) => {
+        if (cancelled()) return;
+        let userUntouched = false;
+        setHotelState((current) => {
+          if (current.status !== "ready") return current;
+          userUntouched = current.selectedId === aiInitialSelectedId;
+          const order = new Map(ai.ranked.map((item, index) => [item.id, index]));
+          const reordered = [...current.candidates].sort((left, right) => (
+            (order.get(left.id) ?? 99) - (order.get(right.id) ?? 99)
+          ));
+          return {
+            ...current,
+            candidates: reordered,
+            ai: {
+              status: "ready",
+              notes: Object.fromEntries(ai.ranked.map((item) => [item.id, { reason: item.reason, tag: item.tag }])),
+              recommendedId: ai.recommendedId,
+            },
+          };
+        });
+        const pick = aiShortlist.find((candidate) => candidate.id === ai.recommendedId);
+        if (pick && userUntouched && aiMaySwitch && pick.id !== aiInitialSelectedId && hotelStyleRef.current === "recommended") {
+          selectHotelCandidate(pick, "balanced");
+        }
+      }).catch(() => {
+        if (cancelled()) return;
+        setHotelState((current) => ({ ...current, ai: { ...current.ai, status: "unavailable" } }));
+      });
+    }
 
     draft = buildTripFromWishlist(itinerary, tripDays, pace, locale, plannerContext(effectiveBase));
     const uniqueStops = [...new Map(
@@ -4696,10 +4858,17 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
         void requestFoodRanking(slot, query, next.candidates, locale).then((ranking) => {
           if (stale()) return;
           const notes = Object.fromEntries(ranking.ranked.map((item) => [item.id, { reason: item.reason, tag: item.tag }]));
+          // The AI chooses which candidate leads: its order becomes the
+          // display order. Ids stay Google-verified — an id the AI did not
+          // return keeps its Google position after the ranked ones.
+          const order = new Map(ranking.ranked.map((item, index) => [item.id, index]));
           setFoodSearches((current) => {
             const entry = current[slot.id];
             if (!entry || entry.status !== "ready" || entry.requestKey !== requestKey) return current;
-            return { ...current, [slot.id]: { ...entry, notes } };
+            const candidates = [...entry.candidates].sort((left, right) => (
+              (order.get(left.id) ?? 99) - (order.get(right.id) ?? 99)
+            ));
+            return { ...current, [slot.id]: { ...entry, candidates, notes, aiOrdered: order.size > 0 } };
           });
         }).catch(() => { /* Deterministic Google evidence remains visible. */ });
       }
@@ -5848,7 +6017,11 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                         <i className="planner-food-badge">{index + 1}</i>
                       </a>
                       <div>
-                        <small>{note?.tag ?? (index === 0 ? (locale === "ja" ? "この土地なら、まずここ" : "Start here") : candidate.type)}</small>
+                        <small>
+                          {activeFoodState.aiOrdered && index === 0
+                            ? `${locale === "ja" ? "AIのおすすめ" : "AI pick"}${note?.tag ? ` · ${note.tag}` : ""}`
+                            : note?.tag ?? (index === 0 ? (locale === "ja" ? "この土地なら、まずここ" : "Start here") : candidate.type)}
+                        </small>
                         <h3>{candidate.name}</h3>
                         <p>{note?.reason ?? foodCandidateReason(candidate, locale)}</p>
                         <div className="planner-food-stats">
@@ -7038,21 +7211,37 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                         );
                       })() : null}
                       {leg && recommended?.mode === "transit" ? (() => {
-                        const steps = prefetchTransitSteps[routeLegKey(leg.from.id, leg.to.id)];
+                        const boarding = prefetchTransitSteps[routeLegKey(leg.from.id, leg.to.id)];
+                        const steps = boarding?.steps;
                         if (!steps?.length) return null;
                         const first = steps[0];
+                        const last = steps[steps.length - 1];
                         const lineLabel = [first.shortName ?? first.lineName, first.headsign
                           ? locale === "ja" ? `${first.headsign}行き` : `toward ${first.headsign}`
                           : null].filter(Boolean).join(locale === "ja" ? "・" : " ");
                         const extra = steps.length - 1;
+                        const walkTo = boarding.walkToStopMinutes;
+                        const walkFrom = boarding.walkFromStopMinutes;
+                        const parts: string[] = [];
+                        if (locale === "ja") {
+                          if (walkTo !== null && walkTo > 0 && first.departureStop) parts.push(`徒歩約${walkTo}分 →`);
+                          if (first.departureStop) parts.push(`${first.departureStop} ${first.departureTime ? `${first.departureTime}発` : ""}`.trim());
+                          parts.push(first.departureStop ? `${lineLabel}` : `${lineLabel}${first.departureTime ? ` · ${first.departureTime}発` : ""}`);
+                          if (extra > 0) parts.push(`乗継ぎ${extra}本`);
+                          if (last.arrivalStop) parts.push(`→ ${last.arrivalStop}${extra === 0 && first.stopCount ? `(${first.stopCount}駅)` : ""}`);
+                          if (walkFrom !== null && walkFrom > 0 && last.arrivalStop) parts.push(`→ 徒歩約${walkFrom}分`);
+                        } else {
+                          if (walkTo !== null && walkTo > 0 && first.departureStop) parts.push(`~${walkTo} min walk →`);
+                          if (first.departureStop) parts.push(`${first.departureStop}${first.departureTime ? ` dep ${first.departureTime}` : ""}`);
+                          parts.push(first.departureStop ? lineLabel : `${lineLabel}${first.departureTime ? ` · dep ${first.departureTime}` : ""}`);
+                          if (extra > 0) parts.push(`+${extra} connection${extra === 1 ? "" : "s"}`);
+                          if (last.arrivalStop) parts.push(`→ ${last.arrivalStop}${extra === 0 && first.stopCount ? ` (${first.stopCount} stops)` : ""}`);
+                          if (walkFrom !== null && walkFrom > 0 && last.arrivalStop) parts.push(`→ ~${walkFrom} min walk`);
+                        }
                         return (
                           <div className="planner-transit-line">
                             <Icon name="signal" size={10} />
-                            <span>
-                              {lineLabel}
-                              {first.departureTime ? (locale === "ja" ? ` · ${first.departureTime}発` : ` · dep ${first.departureTime}`) : ""}
-                              {extra > 0 ? (locale === "ja" ? ` · 乗継ぎ${extra}本` : ` · +${extra} connection${extra === 1 ? "" : "s"}`) : ""}
-                            </span>
+                            <span>{parts.join(locale === "ja" ? " " : " ")}</span>
                           </div>
                         );
                       })() : null}

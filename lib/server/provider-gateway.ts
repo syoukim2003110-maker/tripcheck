@@ -9,6 +9,7 @@ export type PaidOperation =
   | "hotel_recommendations"
   | "food_recommendations"
   | "food_ranking"
+  | "hotel_ranking"
   | "route_recommendations";
 export type QuotaScope = "trip" | "session" | "process_day";
 
@@ -38,6 +39,7 @@ export const PAID_OPERATION_POLICIES: PaidOperationPolicies = Object.freeze({
   hotel_recommendations: Object.freeze({ provider: "google", maxPerRequest: 4, maxPerTrip: 60, maxPerSession: 180, maxPerProcessDay: 600 }),
   food_recommendations: Object.freeze({ provider: "google", maxPerRequest: 2, maxPerTrip: 112, maxPerSession: 336, maxPerProcessDay: 2_000 }),
   food_ranking: Object.freeze({ provider: "anthropic", maxPerRequest: 1, maxPerTrip: 28, maxPerSession: 56, maxPerProcessDay: 192 }),
+  hotel_ranking: Object.freeze({ provider: "anthropic", maxPerRequest: 1, maxPerTrip: 12, maxPerSession: 24, maxPerProcessDay: 96 }),
   route_recommendations: Object.freeze({ provider: "google", maxPerRequest: 3, maxPerTrip: 84, maxPerSession: 168, maxPerProcessDay: 300 }),
 });
 

@@ -76,6 +76,14 @@ const PAID_API_ROUTES: Readonly<Record<string, PaidApiRoute>> = Object.freeze({
       { name: "ANTHROPIC_REQUESTS_ENABLED", mode: "explicit-on" },
     ] as const),
   }),
+  "/api/hotel-recommendations/ai": Object.freeze({
+    provider: "anthropic",
+    operation: "hotel_ranking",
+    featureFlags: Object.freeze([
+      { name: "HOTEL_RECOMMENDATIONS_ENABLED", mode: "default-on" },
+      { name: "ANTHROPIC_REQUESTS_ENABLED", mode: "explicit-on" },
+    ] as const),
+  }),
   "/api/route-recommendations": Object.freeze({
     provider: "google",
     operation: "route_recommendations",
@@ -217,6 +225,7 @@ async function paidRequestUnits(request: Request, operation: DurableQuotaOperati
     return 2;
   }
   if (operation === "food_ranking") return 1;
+  if (operation === "hotel_ranking") return 1;
   if (operation === "route_recommendations") {
     // Search Along Route may fall back to both route endpoints.
     return 3;

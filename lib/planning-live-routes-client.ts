@@ -500,7 +500,21 @@ function parseResult(value: unknown): LiveRouteResult | null {
   const transitSteps = candidate.status === "ok" && Array.isArray(candidate.transitSteps)
     ? (candidate.transitSteps as TransitStepSummary[]).filter((step) => step && typeof step.lineName === "string").slice(0, 6)
     : null;
-  return { id: candidate.id, status: candidate.status, durationMinutes, distanceMeters, encodedPolyline, transferCount, transitSteps };
+  const boundedWalk = (value: unknown) => candidate.status === "ok"
+    && typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 600
+    ? value
+    : null;
+  return {
+    id: candidate.id,
+    status: candidate.status,
+    durationMinutes,
+    distanceMeters,
+    encodedPolyline,
+    transferCount,
+    transitSteps,
+    walkToStopMinutes: boundedWalk(candidate.walkToStopMinutes),
+    walkFromStopMinutes: boundedWalk(candidate.walkFromStopMinutes),
+  };
 }
 
 async function requestBatch(
@@ -596,6 +610,9 @@ export async function fetchPlanningTransitEvidence(
                 points,
                 distanceMeters: result.distanceMeters,
               } } : {}),
+              ...(result.transitSteps?.length ? { transitSteps: result.transitSteps } : {}),
+              walkToStopMinutes: result.walkToStopMinutes,
+              walkFromStopMinutes: result.walkFromStopMinutes,
             }
           : {
               requestKey: request.requestKey,

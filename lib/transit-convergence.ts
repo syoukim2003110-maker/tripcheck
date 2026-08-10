@@ -23,6 +23,18 @@ export type SelectedTransitLegRequest = Readonly<{
   requestKey: string;
 }>;
 
+export type TransitBoardingStep = Readonly<{
+  lineName: string;
+  headsign: string | null;
+  departureStop: string | null;
+  arrivalStop: string | null;
+  departureTime: string | null;
+  shortName: string | null;
+  vehicleType: string | null;
+  stopCount: number | null;
+  rideMinutes: number | null;
+}>;
+
 export type TransitProviderObservation = Readonly<{
   requestKey: string;
   status: TransitEvidenceStatus;
@@ -32,6 +44,10 @@ export type TransitProviderObservation = Readonly<{
   fetchedAt?: string;
   providerRef?: string;
   routeGeometry?: TransitRouteGeometry;
+  /** Per-ride boarding summaries ("which station, which line") for display. */
+  transitSteps?: readonly TransitBoardingStep[] | null;
+  walkToStopMinutes?: number | null;
+  walkFromStopMinutes?: number | null;
 }>;
 
 export type TransitRouteGeometry = Readonly<{
@@ -54,6 +70,9 @@ export type TransitLegEvidence = Readonly<{
   status: TransitEvidenceStatus;
   provenance: TransitRouteProvenance;
   routeGeometry?: TransitRouteGeometry;
+  transitSteps?: readonly TransitBoardingStep[];
+  walkToStopMinutes?: number | null;
+  walkFromStopMinutes?: number | null;
   reason?: TransitEvidenceReason;
 }>;
 
@@ -233,6 +252,19 @@ function normalizedProviderEvidence(
     provenance: provenanceFor(request, observation),
     ...(validGeometry
       ? { routeGeometry }
+      : {}),
+    ...(Array.isArray(observation.transitSteps) && observation.transitSteps.length > 0
+      ? {
+        transitSteps: observation.transitSteps
+          .filter((step) => step && typeof step.lineName === "string" && step.lineName.length > 0)
+          .slice(0, 6),
+      }
+      : {}),
+    ...(typeof observation.walkToStopMinutes === "number" && Number.isFinite(observation.walkToStopMinutes) && observation.walkToStopMinutes >= 0
+      ? { walkToStopMinutes: observation.walkToStopMinutes }
+      : {}),
+    ...(typeof observation.walkFromStopMinutes === "number" && Number.isFinite(observation.walkFromStopMinutes) && observation.walkFromStopMinutes >= 0
+      ? { walkFromStopMinutes: observation.walkFromStopMinutes }
       : {}),
   };
 }

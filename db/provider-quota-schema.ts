@@ -22,6 +22,7 @@ export const PROVIDER_QUOTA_OPERATIONS = [
   "hotel_recommendations",
   "food_recommendations",
   "food_ranking",
+  "hotel_ranking",
   "route_recommendations",
 ] as const;
 

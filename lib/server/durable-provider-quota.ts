@@ -14,6 +14,7 @@ export type DurableQuotaOperation =
   | "hotel_recommendations"
   | "food_recommendations"
   | "food_ranking"
+  | "hotel_ranking"
   | "route_recommendations";
 export type DurableQuotaScope = "trip" | "session" | "day" | "month";
 
@@ -99,6 +100,14 @@ export const DURABLE_PROVIDER_QUOTA_POLICIES: DurableQuotaPolicies = Object.free
     maxPerSessionDay: 56,
     maxPerDay: 192,
     maxPerMonth: 1_920,
+  }),
+  hotel_ranking: Object.freeze({
+    provider: "anthropic",
+    maxPerRequest: 1,
+    maxPerTrip: 12,
+    maxPerSessionDay: 24,
+    maxPerDay: 96,
+    maxPerMonth: 960,
   }),
   // Search Along Route can fall back to the two route endpoints. Reserve all
   // three searches even when the first one is sufficient.

@@ -112,6 +112,9 @@ test("discloses bounded AI enrichment and on-demand public-web search", async ()
   assert.match(source, /encoded route geometry so the map can follow actual roads and transit paths/);
   assert.match(source, /supplied candidate names, public addresses, place types, meal period and area to Anthropic/);
   assert.match(source, /AI cannot add a restaurant or invent ratings, opening hours, prices or menu facts/);
+  assert.match(source, /chooses the recommended order/);
+  assert.match(source, /up to three web searches/);
+  assert.match(source, /decides only among the shortlisted hotels and supplied candidates/);
   assert.match(source, /Structured opening periods are checked against each travel date/);
 });
 

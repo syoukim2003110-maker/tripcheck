@@ -23,10 +23,14 @@ export type TransitStepSummary = {
   lineName: string;
   headsign: string | null;
   departureStop: string | null;
+  /** Name of the stop where this ride ends, e.g. "吉祥寺駅". */
+  arrivalStop: string | null;
   departureTime: string | null;
   shortName: string | null;
   vehicleType: string | null;
   stopCount: number | null;
+  /** In-vehicle minutes for this ride, from the step's static duration. */
+  rideMinutes: number | null;
 };
 
 export type LiveRouteResult = {
@@ -38,6 +42,10 @@ export type LiveRouteResult = {
   transferCount: number | null;
   /** Per-ride boarding summaries in travel order; null for non-transit routes or missing step data. */
   transitSteps: TransitStepSummary[] | null;
+  /** Walking minutes before boarding the first ride; null when unknown or not transit. */
+  walkToStopMinutes: number | null;
+  /** Walking minutes after leaving the last ride; null when unknown or not transit. */
+  walkFromStopMinutes: number | null;
   status: "ok" | "unavailable";
 };
 
@@ -111,7 +119,7 @@ type GoogleRoutePayload = {
   duration?: string;
   distanceMeters?: number;
   polyline?: { encodedPolyline?: string };
-  legs?: Array<{ steps?: Array<{ travelMode?: unknown; transitDetails?: unknown }> }>;
+  legs?: Array<{ steps?: Array<{ travelMode?: unknown; transitDetails?: unknown; staticDuration?: unknown }> }>;
 };
 
 const MAX_TRANSIT_STEPS_PER_LEG = 6;
@@ -137,7 +145,7 @@ function boundedText(value: unknown): string | null {
  * time; the localized text wins when present. A step with no usable line name
  * is malformed and dropped.
  */
-function transitStepSummary(details: unknown): TransitStepSummary | null {
+function transitStepSummary(details: unknown, stepDuration: unknown): TransitStepSummary | null {
   const record = asRecord(details);
   if (!record) return null;
   const transitLine = asRecord(record.transitLine);
@@ -152,6 +160,7 @@ function transitStepSummary(details: unknown): TransitStepSummary | null {
     lineName,
     headsign: boundedText(record.headsign),
     departureStop: boundedText(asRecord(stopDetails?.departureStop)?.name),
+    arrivalStop: boundedText(asRecord(stopDetails?.arrivalStop)?.name),
     departureTime: localizedDepartureTime ?? boundedText(stopDetails?.departureTime),
     shortName,
     vehicleType: boundedText(asRecord(transitLine?.vehicle)?.type),
@@ -160,6 +169,7 @@ function transitStepSummary(details: unknown): TransitStepSummary | null {
       && record.stopCount >= 0
       ? record.stopCount
       : null,
+    rideMinutes: durationMinutes(stepDuration),
   };
 }
 
@@ -175,7 +185,7 @@ function transitStepSummaries(
   for (const step of steps) {
     if (summaries.length >= MAX_TRANSIT_STEPS_PER_LEG) break;
     if (!step || typeof step !== "object" || step.travelMode !== "TRANSIT") continue;
-    const summary = transitStepSummary(step.transitDetails);
+    const summary = transitStepSummary(step.transitDetails, step.staticDuration);
     if (summary) summaries.push(summary);
   }
   return summaries;
@@ -201,6 +211,34 @@ function transferCount(route: GoogleRoutePayload | undefined, travelMode: LiveRo
   return Math.max(0, rideCount - 1);
 }
 
+/**
+ * Sums WALK-step minutes strictly before the first ride (or strictly after the
+ * last ride). Google Maps shows the same breakdown ("徒歩11分 → 大久保駅").
+ * Any malformed step in the span makes the answer unknown, never zero.
+ */
+function walkMinutesAroundRides(
+  route: GoogleRoutePayload | undefined,
+  travelMode: LiveRouteTravelMode,
+  side: "before" | "after",
+): number | null {
+  if (travelMode !== "TRANSIT") return null;
+  if (!route || !Array.isArray(route.legs) || route.legs.length === 0) return null;
+  const steps = route.legs.flatMap((leg) => Array.isArray(leg.steps) ? leg.steps : []);
+  const ordered = side === "before" ? steps : [...steps].reverse();
+  let total = 0;
+  let sawWalk = false;
+  for (const step of ordered) {
+    if (!step || typeof step !== "object") return null;
+    if (step.travelMode === "TRANSIT") break;
+    if (step.travelMode !== "WALK") return null;
+    const minutes = durationMinutes(step.staticDuration);
+    if (minutes === null) return null;
+    total += minutes;
+    sawWalk = true;
+  }
+  return sawWalk ? total : 0;
+}
+
 function unavailableRoute(id: string): LiveRouteResult {
   return {
     id,
@@ -209,6 +247,8 @@ function unavailableRoute(id: string): LiveRouteResult {
     encodedPolyline: null,
     transferCount: null,
     transitSteps: null,
+    walkToStopMinutes: null,
+    walkFromStopMinutes: null,
     status: "unavailable",
   };
 }
@@ -249,7 +289,7 @@ export async function fetchGoogleRoutes(
             "routes.distanceMeters",
             "routes.polyline.encodedPolyline",
             ...(request.travelMode === "TRANSIT"
-              ? ["routes.legs.steps.travelMode", "routes.legs.steps.transitDetails"]
+              ? ["routes.legs.steps.travelMode", "routes.legs.steps.staticDuration", "routes.legs.steps.transitDetails"]
               : []),
           ].join(","),
         },
@@ -277,6 +317,8 @@ export async function fetchGoogleRoutes(
           : null,
         transferCount: transferCount(route, request.travelMode),
         transitSteps: transitStepSummaries(route, request.travelMode),
+        walkToStopMinutes: walkMinutesAroundRides(route, request.travelMode, "before"),
+        walkFromStopMinutes: walkMinutesAroundRides(route, request.travelMode, "after"),
         status: "ok",
       };
     } catch {

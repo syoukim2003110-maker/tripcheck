@@ -1469,6 +1469,8 @@ div.planner-route-ideas-empty { display: grid; gap: 8px; }
 .planner-hotel-card small.is-rakuten-line { color: #b0272d; font-weight: 650; }
 .planner-hotel-card-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 1px; }
 .planner-hotel-card-tags i { background: var(--pl-good-soft); border-radius: 6px; color: var(--pl-good); font-size: 9px; font-style: normal; font-weight: 750; padding: 2px 6px; }
+.planner-hotel-ai-line { color: var(--pl-ink-2); font-size: 9.8px; font-weight: 650; line-height: 1.45; }
+.planner-hotel-ai-status { color: var(--pl-muted); font-size: 10px; font-weight: 650; margin: 6px 0 0; }
 .planner-hotel-card > footer { align-items: center; border-top: 1px solid var(--pl-line); display: flex; gap: 8px; justify-content: space-between; min-height: 30px; padding: 0 9px; }
 .planner-hotel-card > footer a { color: var(--pl-muted); font-size: 8.5px; max-width: 165px; overflow: hidden; text-decoration: none; text-overflow: ellipsis; white-space: nowrap; }
 .planner-hotel-card > footer a:last-child { color: var(--pl-ink); flex: 0 0 auto; font-size: 9.5px; font-weight: 750; }

@@ -44,7 +44,7 @@ test("requests only the minimum Google route fields and normalizes duration", as
     capturedBody = String(init?.body);
     assert.equal(
       new Headers(init?.headers).get("X-Goog-FieldMask"),
-      "routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline,routes.legs.steps.travelMode,routes.legs.steps.transitDetails",
+      "routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline,routes.legs.steps.travelMode,routes.legs.steps.staticDuration,routes.legs.steps.transitDetails",
     );
     return Response.json({ routes: [{
       duration: "901s",
@@ -90,14 +90,16 @@ test("surfaces which train or bus to board for each transit ride", async () => {
       duration: "2700s",
       distanceMeters: 4100,
       legs: [{ steps: [
-        { travelMode: "WALK" },
+        { travelMode: "WALK", staticDuration: "660s" },
         {
           travelMode: "TRANSIT",
+          staticDuration: "1080s",
           transitDetails: {
             headsign: "Interlaken Ost",
             stopCount: 3,
             stopDetails: {
               departureStop: { name: "  Bern  " },
+              arrivalStop: { name: "Spiez" },
               departureTime: "2026-09-14T01:04:00Z",
             },
             localizedValues: { departureTime: { time: { text: "10:04" }, timeZone: "Europe/Zurich" } },
@@ -123,21 +125,26 @@ test("surfaces which train or bus to board for each transit ride", async () => {
       lineName: "InterCity 61",
       headsign: "Interlaken Ost",
       departureStop: "Bern",
+      arrivalStop: "Spiez",
       departureTime: "10:04",
       shortName: "IC 61",
       vehicleType: "HEAVY_RAIL",
       stopCount: 3,
+      rideMinutes: 18,
     },
     {
       lineName: "B 21",
       headsign: null,
       departureStop: "Spiez",
+      arrivalStop: null,
       departureTime: "2026-09-14T01:40:00Z",
       shortName: "B 21",
       vehicleType: "BUS",
       stopCount: 12,
+      rideMinutes: null,
     },
   ], "localized departure text wins; timestamps and nameShort fill the gaps");
+  assert.equal(result.walkToStopMinutes, 11, "walk before the first ride is summed for display");
 });
 
 test("drops malformed transit ride details without failing the leg", async () => {
@@ -156,10 +163,12 @@ test("drops malformed transit ride details without failing the leg", async () =>
     lineName: "Ginza Line",
     headsign: null,
     departureStop: null,
+    arrivalStop: null,
     departureTime: null,
     shortName: null,
     vehicleType: null,
     stopCount: null,
+    rideMinutes: null,
   }], "nameless or non-object rides are dropped and a negative stop count is unknown");
 });
 

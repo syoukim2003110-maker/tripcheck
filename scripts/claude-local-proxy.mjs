@@ -186,6 +186,31 @@ Rules: every claim's url must appear in sources. Only include facts the search r
   };
 }
 
+/*
+ * Search-then-JSON requests (e.g. the hotel selector) want the real API's
+ * behavior: tool blocks followed by the model's final text verbatim. The
+ * citation-chopping emulation above is specific to fresh-voices; reusing it
+ * here would destroy the JSON answer.
+ */
+async function answerWebSearchJson(body) {
+  const maxUses = body.tools?.find((tool) => tool?.name === "web_search")?.max_uses ?? 2;
+  const raw = await runClaude(
+    `${flattenMessages(body)}\n\nUse the WebSearch tool (at most ${maxUses} search${maxUses === 1 ? "" : "es"}) to research, then follow the system instructions exactly: reply with ONLY the demanded JSON object — no commentary, no code fences.`,
+    { model: body.model, allowWebSearch: true },
+  );
+  const parsed = extractJson(raw);
+  if (parsed === null) throw new Error("search_json_answer_not_json");
+  return {
+    content: [
+      { type: "server_tool_use", id: "srvtoolu_local", name: "web_search", input: {} },
+      { type: "web_search_tool_result", tool_use_id: "srvtoolu_local", content: [] },
+      { type: "text", text: JSON.stringify(parsed) },
+    ],
+    stop_reason: "end_turn",
+    usage: { server_tool_use: { web_search_requests: 1 } },
+  };
+}
+
 const server = createServer((request, response) => {
   if (request.method !== "POST" || !request.url?.startsWith("/v1/messages")) {
     response.writeHead(404, { "Content-Type": "application/json" });
@@ -205,14 +230,17 @@ const server = createServer((request, response) => {
     }
     const wantsSearch = Array.isArray(body.tools) && body.tools.some((tool) => tool?.name === "web_search");
     const wantsSchema = body.output_config?.format?.type === "json_schema";
-    const kind = wantsSearch ? "web_search" : wantsSchema ? "json_schema" : "plain";
+    const wantsSearchJson = wantsSearch && /ONLY a JSON object/i.test(typeof body.system === "string" ? body.system : "");
+    const kind = wantsSearchJson ? "web_search_json" : wantsSearch ? "web_search" : wantsSchema ? "json_schema" : "plain";
     log(`→ ${kind} (${body.model ?? "?"})`);
     try {
-      const payload = wantsSearch
-        ? await answerWebSearch(body)
-        : wantsSchema
-          ? await answerJsonSchema(body)
-          : await answerPlain(body);
+      const payload = wantsSearchJson
+        ? await answerWebSearchJson(body)
+        : wantsSearch
+          ? await answerWebSearch(body)
+          : wantsSchema
+            ? await answerJsonSchema(body)
+            : await answerPlain(body);
       response.writeHead(200, { "Content-Type": "application/json" });
       response.end(JSON.stringify({
         id: `msg_local_${Date.now().toString(36)}`,

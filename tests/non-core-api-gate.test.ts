@@ -21,6 +21,7 @@ const coreRoutes = [
   ["hotel_recommendations", (await import(new URL("../app/api/hotel-recommendations/route.ts", import.meta.url).href) as { POST: PostHandler }).POST],
   ["food_recommendations", (await import(new URL("../app/api/food-recommendations/route.ts", import.meta.url).href) as { POST: PostHandler }).POST],
   ["food_recommendations", (await import(new URL("../app/api/food-recommendations/ai/route.ts", import.meta.url).href) as { POST: PostHandler }).POST],
+  ["hotel_recommendations", (await import(new URL("../app/api/hotel-recommendations/ai/route.ts", import.meta.url).href) as { POST: PostHandler }).POST],
   ["route_recommendations", (await import(new URL("../app/api/route-recommendations/route.ts", import.meta.url).href) as { POST: PostHandler }).POST],
 ] as const;
 routeHooks.deregister();
