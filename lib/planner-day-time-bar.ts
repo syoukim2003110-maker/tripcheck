@@ -180,7 +180,7 @@ export function buildPlannerDayTimeBarModel(
   const markers: PlannerDayTimeMarker[] = [];
   day.stops.forEach((stop, stopIndex) => {
     const positionClock = stop.fixedTime ?? stop.arrival;
-    const positionPercentage = markerPosition(day, positionClock, stopIndex, availableMinutes || plannedMinutes + slackMinutes);
+    const positionPercentage = markerPosition(day, positionClock, stopIndex, plannedMinutes + slackMinutes || availableMinutes);
     if (stop.isReservation) {
       markers.push({
         id: `reservation-${stopIndex}`,

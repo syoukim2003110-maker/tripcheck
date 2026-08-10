@@ -432,7 +432,9 @@ function heuristicOpenPath(stops: RouteStop[]) {
 }
 
 export function buildGoogleMapsUrl(stops: RouteStop[], travelMode: "transit" | "walking" | "driving" = "transit") {
-  const visibleStops = stops.slice(0, 10);
+  // Google Maps URLs accept at most 10 points; drop middle waypoints but
+  // keep the real destination so the final leg never vanishes.
+  const visibleStops = stops.length > 10 ? [...stops.slice(0, 9), stops[stops.length - 1]] : stops;
   const coordinate = (stop: RouteStop) => `${stop.latitude},${stop.longitude}`;
   const params = new URLSearchParams({
     api: "1",

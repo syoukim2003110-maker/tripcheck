@@ -24,14 +24,11 @@ export type PlannerMapRouteView = {
   color: string;
   dayIndex: number;
   dayNumber: number;
-  dayLabel: string;
-  className: string;
   strokeWeight: number;
   strokeOpacity: number;
   outlineWeight: number;
   outlineOpacity: number;
   zIndex: number;
-  lineStyle: "solid";
   /** Dash opacity for unmeasured-leg connectors; below the solid route's. */
   connectorOpacity: number;
   /** Dash stroke weight for unmeasured-leg connectors; thinner than the solid route. */
@@ -116,14 +113,11 @@ export function buildPlannerMapRouteView(input: {
     color: plannerMapDayColor(dayIndex, input.dayColor),
     dayIndex,
     dayNumber,
-    dayLabel: `Day ${dayNumber}`,
-    className: `planner-map-route is-day-${dayNumber}${active ? " is-active" : " is-inactive"}`,
     strokeWeight: active ? 5 : 2,
     strokeOpacity: active ? 0.95 : 0.28,
     outlineWeight: active ? 9 : 4,
     outlineOpacity: active ? 0.92 : 0.38,
     zIndex: active ? 5 : 2,
-    lineStyle: "solid",
     connectorOpacity: active ? 0.55 : 0.22,
     connectorWeight: active ? 2 : 1.5,
   };

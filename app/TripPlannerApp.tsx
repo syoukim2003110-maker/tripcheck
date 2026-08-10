@@ -809,10 +809,7 @@ const ui = {
     airportSearch: "空港名・都市・3レターコードで検索",
     noMatchingOption: "一致する候補がありません",
     optionCount: (count: number) => `${count}件の候補`,
-    localNotes: (place: string) => `${place}で予定が崩れやすいところ`,
     newTrip: "新しい旅",
-    headline: "どこへ行きたい？",
-    subhead: "行きたい場所を、思いつくまま入れてください。近い場所を同じ日にまとめて、地図に一日の流れを描きます。",
     inputLabel: "行きたい場所",
     placeholder: "例）\n1日目\n浅草寺\nチームラボプラネッツ 15:30 予約\n2日目\n三鷹の森ジブリ美術館 必須\n渋谷スカイ 時間があれば",
     sample: "サンプルを見る",
@@ -820,7 +817,6 @@ const ui = {
     parseHint: "改行のほか「・」「／」「,」でまとめて貼っても、場所ごとに分けます。「1日目」、時刻、予約、必須、滞在時間も読み取ります。地名は現地表記でも英語でも大丈夫です。",
     previewHeading: (count: number) => `${count}か所として読み取り`,
     previewFormat: "1件ずつに整える",
-    previewCheck: "違う場所があれば、上の入力欄で直せます",
     previewDay: (day: number) => `${day}日目`,
     previewUnparsed: "場所名として読み取れない行",
     previewStay: (minutes: number) => `滞在${minutes}分`,
@@ -828,13 +824,11 @@ const ui = {
     date: "初日",
     hotel: "ホテル名・泊まりたいエリア",
     hotelPlaceholder: "例：中央駅の近く（未定でもOK）",
-    details: "空港・ペース・食事の設定",
     arrival: "到着空港",
     arrivalTime: "到着時刻",
     departure: "出発空港",
     departureTime: "出発時刻",
     pace: "旅のペース",
-    meal: "食事の提案",
     travelHeading: "移動手段",
     travelAuto: "おまかせ（効率重視）",
     travelCar: "レンタカー・車",
@@ -846,14 +840,6 @@ const ui = {
     dayEndHeading: "1日の終わり",
     dayEndNone: "標準 22:00",
     curfewOver: (time: string) => `${time} までに収まっていません`,
-    conceptLabel: "コンセプトから作る",
-    conceptPlaceholder: "例：大阪 食い倒れ 2泊3日",
-    conceptRun: "たたき台を出す",
-    conceptRunning: "候補を考えています…",
-    conceptNote: "この文章は候補作成時だけAnthropicへ送信されます。個人情報は書かないでください。候補の実在はGoogleで確認します。",
-    conceptUnavailable: "いまは提案を作れませんでした。少し待って再試行してください。",
-    conceptNotConfigured: "AI提案は一時停止中、または未設定です。",
-    conceptRateLimited: "提案の回数上限に達しました。しばらくしてからどうぞ。",
     recentHeading: "最近の旅程",
     recentNote: "この端末の中だけに保存されます",
     recentDays: (days: number) => `${days}日間`,
@@ -867,11 +853,6 @@ const ui = {
     relaxed: "ゆったり",
     balanced: "標準",
     fast: "たくさん回る",
-    allMeals: "昼・夜",
-    dinner: "夜だけ",
-    noMeals: "表示しない",
-    build: "地図にする",
-    building: "場所を確認しています…",
     buildingTitle: "予定をつくっています",
     buildingBody: "場所・営業時間・拠点を確認し、固定条件を破らない予定を計算します。",
     buildingBodyNoSocial: "場所・営業時間・拠点を確認し、固定条件を破らない予定を計算します。経路データは表示後に反映します。",
@@ -899,9 +880,7 @@ const ui = {
     routeIdeasAdded: "追加済み",
     routeIdeasNote: "評価はGoogle Maps、近さは取得できたGoogle実経路（未取得区間は予定地点）への概算距離です。追加後の順番と移動時間はTripCheckが再計算します。自動では追加しません。",
     edit: "入力にもどる",
-    planSummary: (days: number, stops: number) => `${days}日間 · ${stops}か所`,
     openMaps: "Google Mapsで開く",
-    stay: "滞在",
     removeStop: "この行き先を予定から外す",
     removedHeading: "自分で外した場所",
     restoreStop: "もどす",
@@ -962,7 +941,6 @@ const ui = {
     foodFresh: (count: number) => `最近の公開情報 ${count}件`,
     hotelChip: "ホテル",
     hotelCandidate: "おすすめのホテル",
-    hotelAlternatives: "ほかの候補",
     hotelNoAvailability: "料金・空室は宿泊サイトで最終確認してください。",
     hotelUnavailable: "ホテル候補を取得できませんでした。",
     hotelSearch: "Google Mapsでホテルを探す",
@@ -980,7 +958,6 @@ const ui = {
     nightlyNightMissing: "この夜は候補を取得できず、共通のホテルのままです。",
     styleRecommended: "おすすめ",
     styleLuxury: "ラグジュアリー",
-    styleValue: "参考価格あり",
     styleNote: "参考価格は日付・空室未指定のため、コスパ順位には使いません。",
     hotelRankNote: "各日の行き先を1日1票で比較し、直線距離の平均と最も遠い日の負担が小さいホテルを優先。そこへGoogle評価と口コミ量を加えて総合順位を決めます。実際の所要時間は地図の経路で確認します。",
     hotelCompareHeading: "候補を比べる（タップで切り替え）",
@@ -997,7 +974,6 @@ const ui = {
     hotelPurposeBalanced: "総合",
     hotelPurposeNearest: "移動を少なく",
     hotelPurposeRated: "評価重視",
-    hotelPurposeValue: "価格比較は準備中",
     hotelPurposeHelp: "総移動時間と評価を比較します。価格・空室は予約サイトで確認してください。",
     axisNearest: "全日程に行きやすい目安",
     axisTopRated: "最高評価",
@@ -1006,7 +982,6 @@ const ui = {
     useThisHotel: "このホテルに切り替え",
     tonightHotel: (name: string) => `今夜の宿 · ${name}`,
     publicSources: "公開SNS・記事の出典",
-    reviewReport: "口コミでの支払い報告",
     reservation: "予約",
     timePinned: "時間指定",
     lateBy: (minutes: number) => `指定時刻に約${minutes}分間に合わない見込み`,
@@ -1021,51 +996,14 @@ const ui = {
     openingAdjusted: "営業時間に合わせて訪問時刻を調整",
     openingConflict: "営業時間と予約時刻を再確認",
     openingClosedDay: "この日は休業の可能性 — 日の移動を検討",
-    openingUnknown: "営業時間 未確認",
     excludedHeading: "予定から外した場所",
     excludedClosed: "休業・営業時間が合わない",
     excludedPace: "ペースに収まらない任意の場所",
     overCapacity: "1日に収まりきらない日があります。日数を増やすか、任意の場所を減らすと現実的になります。",
-    fitHeading: "この旅は入る？",
     fitSelectedDays: "日数を変えて再計算",
     fitDaysValue: (days: number) => `${days}日間`,
     fitDaysDecrease: "旅行を1日短くする",
     fitDaysIncrease: "旅行を1日長くする",
-    fitNeedsMore: (minimum: number, extra: number) => `全部回るなら最低${minimum}日。いまの設定よりあと${extra}日必要です。`,
-    fitNoSolution: (limit: number) => `${limit}日まで比較しても、固定時刻とペースを守った全件案は作れませんでした。`,
-    fitConflict: "選んだ日程には固定時刻・予約・営業時間の衝突があります。該当日の条件を見直してください。",
-    fitIncompleteHeadline: "確認できない場所があるため、必要日数はまだ確定できません。",
-    fitFits: (minimum: number) => `現在の前提では成立します。最短日数は${minimum}日です。`,
-    fitExact: "選んだ日数で、確認できた行き先はすべて収まります。",
-    fitTight: "一応収まりますが、余白が1時間未満の日があります。",
-    fitIncomplete: "未確認または休業日の場所を除いた判定です。場所を確認すると必要日数が変わることがあります。",
-    fitUseDays: (days: number) => `${days}日案にする`,
-    fitUsable: "実質使える時間",
-    fitPlanned: (minutes: string) => `予定 ${minutes}`,
-    fitWindow: (start: string, end: string) => `${start}—${end}`,
-    fitOver: (minutes: string) => `${minutes}不足`,
-    fitScheduleConflict: "固定時刻・予約・営業時間が衝突",
-    fitCutHeading: (count: number) => `日数を増やさないなら、少なくとも${count}か所を見直す`,
-    fitCutNote: "Must・予約・時刻固定は候補から外しています。通常優先の場所は、こちらで勝手に削除しません。",
-    fitRemove: "予定から外す",
-    fitAssumption: (time: string) => `1日の終了指定がない場合は${time}までとして比較。AIや追加APIは使わず、同じ経路・滞在データを決定論的に再計算しています。`,
-    publicEvidenceFound: (count: number, social: number) => social > 0 ? `公開情報 ${count}件（SNS ${social}件）` : `公開情報 ${count}件・SNS投稿は見つからず`,
-    publicEvidenceMissing: "公開情報チェックは各場所から必要な時だけ実行",
-    routeEvidenceFound: (count: number) => `経路データ取得済み ${count}区間`,
-    routeEvidenceMissing: "移動は推定値。日付・経路を要確認",
-    assumptionsHeading: "この結果の前提",
-    assumptionDate: (date: string) => `${date}出発として曜日・営業時間を判定`,
-    assumptionDateDefault: (date: string) => `日付未指定のため、仮に${date}出発として判定`,
-    assumptionDateShifted: (arrivalDate: string, activityDate: string) => `${arrivalDate}の深夜到着後、市内で動ける初日を${activityDate}として曜日・営業時間を判定`,
-    assumptionHotel: (name: string) => `${name}を移動拠点として計算`,
-    assumptionHotelAutomatic: (name: string) => `ホテル未指定のため、${name}を仮の移動拠点として計算`,
-    assumptionNoHotel: "ホテル未指定・候補未取得のため、ホテル往復は計算外",
-    assumptionNoArrival: "到着便未入力：初日は朝から使える前提",
-    assumptionNoDeparture: "出発便未入力：最終日は夜まで使える前提",
-    assumptionArrival: (airport: string, flight: string, airportMinutes: number, transferMinutes: number, city: string, nextDay: boolean) =>
-      `${airport} ${flight}着 → 空港内${airportMinutes}分 + 市街地移動約${transferMinutes}分 → 初日は${nextDay ? "翌日" : ""}${city}から行動できる推定`,
-    assumptionDeparture: (airport: string, flight: string, airportMinutes: number, transferMinutes: number, city: string, previousDay: boolean) =>
-      `${airport} ${flight}発 → 空港へ${airportMinutes}分前 + 市街地移動約${transferMinutes}分 → ${previousDay ? "前日" : ""}${city}に市街地を出る推定`,
     walkingSafety: "徒歩経路はベータ版。安全状況は現地で確認してください。",
     deadlineOver: (time: string) => `空港へ向かう目安 ${time} を超えています`,
     language: "言語",
@@ -1094,7 +1032,6 @@ const ui = {
     freshPaused: "公開SNSチェックはいま休止中です。Googleの営業情報・口コミだけで表示しています。",
     freshSource: { social: "SNS", news: "ニュース", blog: "体験記", web: "公開情報" },
     freshAgeUnknown: "更新日不明",
-    freshCheckedAt: "確認",
     freshAiRole: "Claudeが公開の投稿・記事だけを検索して要約します（非公開・ログイン限定の投稿は対象外）。日程と移動はルール計算です。",
     official: "公式サイト",
     latestX: "Xで最新の声",
@@ -1113,10 +1050,7 @@ const ui = {
     airportSearch: "Search airport, city or IATA code",
     noMatchingOption: "No matching option",
     optionCount: (count: number) => `${count} option${count === 1 ? "" : "s"}`,
-    localNotes: (place: string) => `What tends to break a plan in ${place}`,
     newTrip: "New trip",
-    headline: "Where do you want to go?",
-    subhead: "Drop in places as they come to mind. We group what's near, then draw each day on the map.",
     inputLabel: "Places you want to visit",
     placeholder: "Example\nDay 1\nSenso-ji\nteamLab Planets 15:30 booked\nDay 2\nGhibli Museum must\nShibuya Sky optional",
     sample: "Try a sample",
@@ -1124,7 +1058,6 @@ const ui = {
     parseHint: "Paste one per line, or use commas, slashes and middle dots; we separate the places. Day headings, times, booked / must / optional and stay length are also read. Local-language names are fine.",
     previewHeading: (count: number) => `Read as ${count} place${count === 1 ? "" : "s"}`,
     previewFormat: "Make one per line",
-    previewCheck: "If anything looks wrong, edit the field above",
     previewDay: (day: number) => `Day ${day}`,
     previewUnparsed: "Can't read this line as a place",
     previewStay: (minutes: number) => `Stay ${minutes} min`,
@@ -1132,13 +1065,11 @@ const ui = {
     date: "First day",
     hotel: "Hotel or preferred area",
     hotelPlaceholder: "e.g. near the main station (optional)",
-    details: "Airports, pace and meals",
     arrival: "Arrival airport",
     arrivalTime: "Arrival time",
     departure: "Departure airport",
     departureTime: "Departure time",
     pace: "Pace",
-    meal: "Food ideas",
     travelHeading: "Getting around",
     travelAuto: "Recommended · efficient",
     travelCar: "Rental car",
@@ -1150,14 +1081,6 @@ const ui = {
     dayEndHeading: "Day ends by",
     dayEndNone: "Standard 22:00",
     curfewOver: (time: string) => `Runs past your ${time} target`,
-    conceptLabel: "Start from a concept",
-    conceptPlaceholder: "e.g. Osaka street food, 3 days",
-    conceptRun: "Draft a list",
-    conceptRunning: "Thinking…",
-    conceptNote: "This text is sent to Anthropic only when you draft suggestions. Do not include personal information. Places are then checked on Google.",
-    conceptUnavailable: "Couldn't draft ideas right now. Try again shortly.",
-    conceptNotConfigured: "AI drafts are paused or not configured.",
-    conceptRateLimited: "Draft limit reached — try again later.",
     recentHeading: "Recent trips",
     recentNote: "Stored only on this device",
     recentDays: (days: number) => `${days} days`,
@@ -1171,11 +1094,6 @@ const ui = {
     relaxed: "Relaxed",
     balanced: "Balanced",
     fast: "See more",
-    allMeals: "Lunch + dinner",
-    dinner: "Dinner only",
-    noMeals: "Hide",
-    build: "Put it on the map",
-    building: "Checking your places…",
     buildingTitle: "Building your trip",
     buildingBody: "We confirm places, hours and the base, then calculate a plan that keeps every hard constraint.",
     buildingBodyNoSocial: "We confirm places, hours and the base, then calculate every hard constraint. Route data blends in after the result appears.",
@@ -1203,9 +1121,7 @@ const ui = {
     routeIdeasAdded: "Already added",
     routeIdeasNote: "Ratings are from Google Maps. Proximity is an approximate distance from available Google route geometry, falling back to planned stops for any missing leg. TripCheck reroutes after you add one; nothing is added automatically.",
     edit: "Back to input",
-    planSummary: (days: number, stops: number) => `${days} days · ${stops} places`,
     openMaps: "Open in Google Maps",
-    stay: "Stay",
     removeStop: "Remove from the plan",
     removedHeading: "Removed by you",
     restoreStop: "Put back",
@@ -1266,7 +1182,6 @@ const ui = {
     foodFresh: (count: number) => `${count} recent public signals`,
     hotelChip: "Hotel",
     hotelCandidate: "Recommended hotel",
-    hotelAlternatives: "Other options",
     hotelNoAvailability: "Confirm price and availability with a booking provider.",
     hotelUnavailable: "Hotel options didn't load.",
     hotelSearch: "Search hotels on Google Maps",
@@ -1284,7 +1199,6 @@ const ui = {
     nightlyNightMissing: "No option loaded for this night — the shared hotel stays.",
     styleRecommended: "Best match",
     styleLuxury: "Luxury",
-    styleValue: "Reference price available",
     styleNote: "Reference prices are dateless and availability is unknown, so they do not determine a value winner.",
     hotelRankNote: "Every day gets one equal vote. Hotels with a lower average and worst-day straight-line distance rank higher, then Google rating and review strength are added. Confirm actual travel time on the mapped routes.",
     hotelCompareHeading: "Compare picks — tap to switch",
@@ -1301,7 +1215,6 @@ const ui = {
     hotelPurposeBalanced: "Overall",
     hotelPurposeNearest: "Less travel",
     hotelPurposeRated: "Top rated",
-    hotelPurposeValue: "Price comparison pending",
     hotelPurposeHelp: "Compare total travel and rating here; confirm price and availability with a booking provider.",
     axisNearest: "Best access estimate",
     axisTopRated: "Top rated",
@@ -1310,7 +1223,6 @@ const ui = {
     useThisHotel: "Switch to this hotel",
     tonightHotel: (name: string) => `Tonight · ${name}`,
     publicSources: "Public social and article sources",
-    reviewReport: "Payment reported in a review",
     reservation: "Booked",
     timePinned: "Timed",
     lateBy: (minutes: number) => `Runs about ${minutes} min past the set time`,
@@ -1325,51 +1237,14 @@ const ui = {
     openingAdjusted: "Timed to verified opening hours",
     openingConflict: "Recheck opening hours and booking time",
     openingClosedDay: "Likely closed this day — consider moving it",
-    openingUnknown: "Hours unverified",
     excludedHeading: "Left out of this plan",
     excludedClosed: "closed or hours don't fit",
     excludedPace: "optional stop beyond this pace",
     overCapacity: "Some days hold more than this pace fits. Add a day or trim optional stops.",
-    fitHeading: "Does this trip fit?",
     fitSelectedDays: "Change days and recalculate",
     fitDaysValue: (days: number) => `${days} day${days === 1 ? "" : "s"}`,
     fitDaysDecrease: "Make this trip one day shorter",
     fitDaysIncrease: "Add one day to this trip",
-    fitNeedsMore: (minimum: number, extra: number) => `To keep every place, you need at least ${minimum} days — ${extra} more than selected.`,
-    fitNoSolution: (limit: number) => `No all-in plan could keep the fixed times and pace within ${limit} days.`,
-    fitConflict: "The selected schedule still has a fixed-time, booking or opening-hours conflict. Review the flagged day.",
-    fitIncompleteHeadline: "Some places could not be confirmed, so the required day count is not final yet.",
-    fitFits: (minimum: number) => `The plan is feasible under the current assumptions. The minimum is ${minimum} days.`,
-    fitExact: "Every confirmed place fits in the days you selected.",
-    fitTight: "It fits, but at least one day has under an hour of breathing room.",
-    fitIncomplete: "This result excludes unresolved or unavailable places. Confirming them can change the day count.",
-    fitUseDays: (days: number) => `Use ${days} days`,
-    fitUsable: "Usable trip time",
-    fitPlanned: (minutes: string) => `${minutes} planned`,
-    fitWindow: (start: string, end: string) => `${start}—${end}`,
-    fitOver: (minutes: string) => `${minutes} short`,
-    fitScheduleConflict: "Fixed time, booking or opening-hours conflict",
-    fitCutHeading: (count: number) => `Or review at least ${count} place${count === 1 ? "" : "s"}`,
-    fitCutNote: "Must-do, booked and fixed-time places are protected. We never silently choose between your normal-priority places.",
-    fitRemove: "Remove",
-    fitAssumption: (time: string) => `When no day end is set, scenarios assume sightseeing ends by ${time}. This uses the same route and stay data with deterministic code — no extra AI or provider call.`,
-    publicEvidenceFound: (count: number, social: number) => social > 0 ? `${count} public sources · ${social} social` : `${count} public sources · no social post found`,
-    publicEvidenceMissing: "Public-source checks run only when you request one for a place",
-    routeEvidenceFound: (count: number) => `${count} route legs retrieved`,
-    routeEvidenceMissing: "Travel uses estimates · recheck date and route",
-    assumptionsHeading: "Assumptions in this result",
-    assumptionDate: (date: string) => `Weekdays and opening hours use a ${date} trip start`,
-    assumptionDateDefault: (date: string) => `No date was chosen, so ${date} is used provisionally`,
-    assumptionDateShifted: (arrivalDate: string, activityDate: string) => `After the late ${arrivalDate} arrival, the first usable activity date is ${activityDate}; weekdays and opening hours use that date`,
-    assumptionHotel: (name: string) => `${name} is used as the routing base`,
-    assumptionHotelAutomatic: (name: string) => `No hotel was entered; ${name} is a provisional routing base`,
-    assumptionNoHotel: "No hotel base was available, so hotel round trips are excluded",
-    assumptionNoArrival: "No arrival flight: Day 1 is treated as available from the morning",
-    assumptionNoDeparture: "No departure flight: the final day is treated as available through the evening",
-    assumptionArrival: (airport: string, flight: string, airportMinutes: number, transferMinutes: number, city: string, nextDay: boolean) =>
-      `${airport} arrival ${flight} + ${airportMinutes} min airport process + ~${transferMinutes} min city transfer → Day 1 starts ${nextDay ? "next day at " : "at "}${city} (estimate)`,
-    assumptionDeparture: (airport: string, flight: string, airportMinutes: number, transferMinutes: number, city: string, previousDay: boolean) =>
-      `${airport} departure ${flight} − ${airportMinutes} min airport buffer − ~${transferMinutes} min city transfer → leave the city ${previousDay ? "the previous day at " : "at "}${city} (estimate)`,
     walkingSafety: "Walking routes are beta. Check real-world safety conditions.",
     deadlineOver: (time: string) => `Runs past the ${time} airport cutoff`,
     language: "Language",
@@ -1398,7 +1273,6 @@ const ui = {
     freshPaused: "Public social checks are paused for now. Showing Google hours and reviews only.",
     freshSource: { social: "Social", news: "News", blog: "Firsthand", web: "Web" },
     freshAgeUnknown: "Date unknown",
-    freshCheckedAt: "Checked",
     freshAiRole: "Claude searches and summarizes public posts only — private or login-only posts can't be read. Schedule and routing stay rule-based.",
     official: "Official site",
     latestX: "Latest on X",
@@ -1910,6 +1784,11 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   const applySharedTripInput = useCallback((shared: ShareableTripInput) => {
     rotateTripRequestToken();
     analyticsMilestonesRef.current = new Set();
+    // Same reasoning as loadDemo: a review racing this hydration must not
+    // repopulate resolvedStops after the effect below builds the saved trip.
+    placeReviewAbortRef.current?.abort();
+    placeReviewAbortRef.current = null;
+    setIsResolvingPlaces(false);
     // A saved/share payload contains only stable traveller-authored state.
     // Provider responses from the currently open trip must never satisfy the
     // new payload's review signature, even when its raw itinerary is identical.
@@ -2081,7 +1960,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     return Object.keys(record).length > 0 ? record : undefined;
   }, [hotelStayMode, nightlyHotels]);
 
-  const plannerContextWithoutTransit = useMemo<TripPlannerContext>(() => ({
+  const plannerContextStable = useMemo<TripPlannerContext>(() => ({
     destination: destinationChoice,
     tripStartDate,
     hotelQuery,
@@ -2101,8 +1980,8 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     lastEntryTimes,
     earlyVisitStopIds,
     liveTransitMinutes: {},
-    liveWalkingMinutes: liveWalking,
-    liveDrivingMinutes: liveDriving,
+    liveWalkingMinutes: {},
+    liveDrivingMinutes: {},
     travelPreference,
     legModeOverrides,
     dayOverrides,
@@ -2114,7 +1993,21 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     maxTransfersPerLeg: maxTransfersPerLeg ?? undefined,
     excludedStopIds: removedStops.map((entry) => entry.id),
     openingWindowsByDay,
-  }), [arrivalAirport, arrivalTime, dayEndTarget, dayEndTimes, dayOverrides, dayStartDefault, dayStartTimes, departureAirport, departureTime, destinationChoice, durationOverrides, earlyVisitStopIds, flightKind, hotelQuery, lastEntryTimes, legModeOverrides, liveDriving, liveWalking, lockedOrderByDay, maxTransfersPerLeg, maxWalkingMinutesPerLeg, mealPlan, nightBases, openingWindowsByDay, removedStops, resolvedBase, resolvedStops, transferBufferMinutes, travelPreference, tripStartDate, userStayMinutes]);
+  }), [arrivalAirport, arrivalTime, dayEndTarget, dayEndTimes, dayOverrides, dayStartDefault, dayStartTimes, departureAirport, departureTime, destinationChoice, durationOverrides, earlyVisitStopIds, flightKind, hotelQuery, lastEntryTimes, legModeOverrides, lockedOrderByDay, maxTransfersPerLeg, maxWalkingMinutesPerLeg, mealPlan, nightBases, openingWindowsByDay, removedStops, resolvedBase, resolvedStops, transferBufferMinutes, travelPreference, tripStartDate, userStayMinutes]);
+  // Walking/driving prefetch results must repaint the plan (via the memo
+  // below) without restarting the transit-convergence effect, whose reset
+  // erases transit evidence that was already paid for. The effect therefore
+  // depends on the stable context and reads the freshest measurements from
+  // these refs at run time.
+  const liveWalkingRef = useRef(liveWalking);
+  const liveDrivingRef = useRef(liveDriving);
+  useEffect(() => { liveWalkingRef.current = liveWalking; }, [liveWalking]);
+  useEffect(() => { liveDrivingRef.current = liveDriving; }, [liveDriving]);
+  const plannerContextWithoutTransit = useMemo<TripPlannerContext>(() => ({
+    ...plannerContextStable,
+    liveWalkingMinutes: liveWalking,
+    liveDrivingMinutes: liveDriving,
+  }), [liveDriving, liveWalking, plannerContextStable]);
   const activePlannerContext = useMemo<TripPlannerContext>(() => ({
     ...plannerContextWithoutTransit,
     liveTransitMinutes: { ...prefetchTransit, ...liveTransit },
@@ -2126,8 +2019,8 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     tripDays,
     pace,
     locale,
-    plannerContextWithoutTransit,
-  ]), [itinerary, locale, pace, plannerContextWithoutTransit, tripDays]);
+    plannerContextStable,
+  ]), [itinerary, locale, pace, plannerContextStable, tripDays]);
 
   const plan = useMemo(() => hasPlan
     ? buildTripFromWishlist(itinerary, tripDays, pace, locale, activePlannerContext)
@@ -2921,6 +2814,11 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     if (!hasPlan || isBuilding) return;
     const runId = ++transitConvergenceRunRef.current;
     const controller = new AbortController();
+    const convergenceContext = (): TripPlannerContext => ({
+      ...plannerContextStable,
+      liveWalkingMinutes: liveWalkingRef.current,
+      liveDrivingMinutes: liveDrivingRef.current,
+    });
     if (!tripDateTouched) {
       setLiveTransit({});
       setLiveTransitAbsent({});
@@ -2951,7 +2849,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
 
     let initialPlan: BuiltTripPlan;
     try {
-      initialPlan = buildTripFromWishlist(itinerary, tripDays, pace, locale, plannerContextWithoutTransit);
+      initialPlan = buildTripFromWishlist(itinerary, tripDays, pace, locale, convergenceContext());
     } catch {
       setTransitConvergence({
         inputKey: transitConvergenceInputKey,
@@ -2985,7 +2883,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
           evidence.status === "unknown" ? [[legId, true] as const] : []
         )));
         const rebuilt = buildTripFromWishlist(itinerary, tripDays, pace, locale, {
-          ...plannerContextWithoutTransit,
+          ...convergenceContext(),
           liveTransitMinutes: measured,
           liveTransitAbsentLegs: absent,
           liveTransitTransferCounts: transferCounts,
@@ -3046,7 +2944,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       });
     });
     return () => controller.abort();
-  }, [hasPlan, isBuilding, itinerary, locale, pace, plannerContextWithoutTransit, transitConvergenceInputKey, tripDateTouched, tripDays]);
+  }, [hasPlan, isBuilding, itinerary, locale, pace, plannerContextStable, transitConvergenceInputKey, tripDateTouched, tripDays]);
 
   // When a plan change introduces legs Google has not measured yet (switching
   // hotels, nightly bases), fetch just those legs within a small post-build
@@ -3568,7 +3466,11 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                     <b>{candidate.name}</b>
                     <small>
                       {[
-                        candidate.rating !== null ? `★ ${candidate.rating.toFixed(1)}（${candidate.userRatingCount?.toLocaleString(locale === "ja" ? "ja-JP" : "en-US") ?? "—"}）` : null,
+                        candidate.rating !== null
+                          ? locale === "ja"
+                            ? `★ ${candidate.rating.toFixed(1)}（${candidate.userRatingCount?.toLocaleString("ja-JP") ?? "—"}）`
+                            : `★ ${candidate.rating.toFixed(1)} (${candidate.userRatingCount?.toLocaleString("en-US") ?? "—"})`
+                          : null,
                         hotelTravelMinutesById[candidate.id] !== undefined
                           ? locale === "ja"
                             ? `全日程の移動 約${hotelTravelMinutesById[candidate.id]}分${Number.isFinite(bestHotelTravelMinutes) && hotelTravelMinutesById[candidate.id] > bestHotelTravelMinutes ? `（最短比 +${hotelTravelMinutesById[candidate.id] - bestHotelTravelMinutes}分）` : ""}`
@@ -3883,6 +3785,9 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   function changeLocale(next: PlannerLocale) {
     if (next === locale) return;
     transitConvergenceRunRef.current += 1;
+    placeReviewAbortRef.current?.abort();
+    placeReviewAbortRef.current = null;
+    setIsResolvingPlaces(false);
     // Switching language must not throw away the built plan or its evidence
     // (coordinates, measured routes, reviews, public sources). Labels and the
     // schedule text rebuild instantly from the same data; already-fetched
@@ -3923,6 +3828,11 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     buildAbortRef.current = null;
     hotelRefreshAbortRef.current?.abort();
     hotelRefreshAbortRef.current = null;
+    // A place review still in flight belongs to the previous text; letting it
+    // land would overwrite the demo's cleared state and yank the step forward.
+    placeReviewAbortRef.current?.abort();
+    placeReviewAbortRef.current = null;
+    setIsResolvingPlaces(false);
     buildRunRef.current += 1;
     transitConvergenceRunRef.current += 1;
     routeRecommendationRequestRef.current += 1;
@@ -3991,6 +3901,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     setDayStartTimes({});
     setDayEndTimes({});
     setPreviewStops([]);
+    attemptedLegKeysRef.current.clear();
     setLiveTransit({});
     setLiveTransitTransferCounts({});
     setLiveWalking({});
@@ -4147,6 +4058,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       setDurationOverrides({});
       setEarlyVisitStopIds([]);
       setPreviewStops([]);
+      attemptedLegKeysRef.current.clear();
       setLiveTransit({});
       setLiveTransitTransferCounts({});
       setLiveWalking({});
@@ -4623,6 +4535,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     setDayStartTimes({});
     setDayEndTimes({});
     setPreviewStops([]);
+    attemptedLegKeysRef.current.clear();
     setLiveTransit({});
     setLiveTransitTransferCounts({});
     setLiveWalking({});
@@ -4695,6 +4608,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     setDayStartTimes({});
     setDayEndTimes({});
     setPreviewStops([]);
+    attemptedLegKeysRef.current.clear();
     setLiveTransit({});
     setLiveTransitTransferCounts({});
     setLiveWalking({});
@@ -5705,11 +5619,9 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
             {(() => {
               if (hotelStayMode !== "nightly") return null;
               const nightCandidates = nightlyHotels.status === "ready" ? nightlyHotels.nights.flatMap((night) => night.candidates) : [];
-              const styleAvailable = (style: HotelStyle) => style === "value"
-                ? false
-                : hotelState.candidates.some((candidate) => candidate.styles.includes(style))
-                  || nightCandidates.some((candidate) => candidate.styles.includes(style));
-              if (!styleAvailable("luxury") && !styleAvailable("value")) return null;
+              const styleAvailable = (style: HotelStyle) => hotelState.candidates.some((candidate) => candidate.styles.includes(style))
+                || nightCandidates.some((candidate) => candidate.styles.includes(style));
+              if (!styleAvailable("luxury")) return null;
               const choices: Array<{ value: HotelStyleChoice; label: string; enabled: boolean }> = [
                 { value: "recommended", label: text.styleRecommended, enabled: true },
                 { value: "luxury", label: text.styleLuxury, enabled: styleAvailable("luxury") },
@@ -6051,7 +5963,10 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                 })}
                 {!routeAlternativesExpanded && activeRouteRecommendationState.candidates.length > 1 ? (
                   <button className="planner-route-alternatives" onClick={() => setRouteAlternativesExpanded(true)} type="button">
-                    {locale === "ja" ? `他の候補を2件見る` : `See ${Math.min(2, activeRouteRecommendationState.candidates.length - 1)} alternatives`}
+                    {(() => {
+                      const extraCount = Math.min(2, activeRouteRecommendationState.candidates.length - 1);
+                      return locale === "ja" ? `他の候補を${extraCount}件見る` : `See ${extraCount} ${extraCount === 1 ? "alternative" : "alternatives"}`;
+                    })()}
                   </button>
                 ) : null}
                 <p className="planner-route-ideas-note">{text.routeIdeasNote}</p>
@@ -6123,6 +6038,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                       setReviewedInputSignature("");
                       setResolvedStops([]);
                       setAmbiguousPlaces([]);
+                      setManualPlaceDrafts({});
                       setResolutionOverrides([]);
                       setPreviewStops([]);
                       setPlanReady(false);
@@ -6237,6 +6153,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                       setReviewedInputSignature("");
                       setResolvedStops([]);
                       setAmbiguousPlaces([]);
+                      setManualPlaceDrafts({});
                       setResolutionOverrides([]);
                       setPreviewStops([]);
                       setPlanReady(false);

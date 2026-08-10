@@ -13,7 +13,6 @@ export type PlannerDayTimeBarProps = {
   day: PlannerDayTimeBarDay;
   fit?: PlannerDayTimeBarFit | null;
   locale: PlannerDayTimeBarLocale;
-  className?: string;
 };
 
 const segmentStyles: Record<PlannerDayTimeSegmentKind, CSSProperties> = {
@@ -24,14 +23,14 @@ const segmentStyles: Record<PlannerDayTimeSegmentKind, CSSProperties> = {
   },
 };
 
-export default function PlannerDayTimeBar({ day, fit, locale, className = "" }: PlannerDayTimeBarProps) {
+export default function PlannerDayTimeBar({ day, fit, locale }: PlannerDayTimeBarProps) {
   const model = buildPlannerDayTimeBarModel(day, fit);
   const labels = locale === "ja"
     ? { visit: "訪問", travel: "移動", slack: "余裕", reservation: "予約", conflict: "衝突", empty: "予定はまだありません" }
     : { visit: "Visits", travel: "Travel", slack: "Spare", reservation: "Reservation", conflict: "Conflict", empty: "No scheduled time yet" };
 
   return (
-    <section className={`planner-day-time-bar${model.hasConflict ? " has-conflict" : ""}${className ? ` ${className}` : ""}`}>
+    <section className={`planner-day-time-bar${model.hasConflict ? " has-conflict" : ""}`}>
       <div
         aria-label={plannerDayTimeBarAriaLabel(model, locale)}
         className="planner-day-time-bar-track"

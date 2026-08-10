@@ -20,13 +20,11 @@ test("day route view uses a stable day palette instead of transport-mode colours
   assert.equal(active.color, PLANNER_MAP_DAY_COLORS[1]);
   assert.equal(active.strokeWeight, 5);
   assert.equal(active.strokeOpacity, 0.95);
-  assert.match(active.className, /is-day-2 is-active/);
 
   const inactive = buildPlannerMapRouteView({ dayIndex: 1, active: false });
   assert.equal(inactive.color, active.color);
   assert.equal(inactive.strokeWeight, 2);
   assert.ok(inactive.strokeOpacity < active.strokeOpacity);
-  assert.match(inactive.className, /is-inactive/);
 });
 
 test("unmeasured-leg connectors are dashed, thinner and fainter than the measured route", () => {

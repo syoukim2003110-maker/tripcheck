@@ -228,9 +228,17 @@ function fitVisibleBounds(map: any, bounds: any, inspectorOpen: boolean) {
     const zoom = map.getZoom?.();
     if (typeof zoom === "number" && zoom > 16) map.setZoom(16);
   };
-  const maps = (globalThis as { google?: { maps?: { event?: { addListenerOnce?: (target: unknown, eventName: string, handler: () => void) => void } } } }).google?.maps;
-  if (maps?.event?.addListenerOnce) maps.event.addListenerOnce(map, "idle", clampZoom);
-  else clampZoom();
+  const maps = (globalThis as { google?: { maps?: { event?: { addListenerOnce?: (target: unknown, eventName: string, handler: () => void) => { remove?: () => void } } } } }).google?.maps;
+  if (maps?.event?.addListenerOnce) {
+    // fitBounds that changes nothing fires no "idle"; an armed one-shot from
+    // such a fit would snap the user's next manual deep zoom. Keep at most
+    // one armed clamp per map and disarm the previous one first.
+    (map.__tripcheckZoomClamp as { remove?: () => void } | undefined)?.remove?.();
+    map.__tripcheckZoomClamp = maps.event.addListenerOnce(map, "idle", () => {
+      map.__tripcheckZoomClamp = null;
+      clampZoom();
+    });
+  } else clampZoom();
 }
 
 function focusVisiblePoint(map: any, position: { lat: number; lng: number }, inspectorOpen: boolean) {
@@ -503,7 +511,7 @@ export default function PlannerGoogleMap({
   };
   const dayLayerViews = buildPlannerMapDayLayerViews(dayLayers, { activeDayIndex: dayIndex, locale });
   const warningStopIdSet = new Set(warningStopIds);
-  const stopsSignature = `${destination.id}:${destination.regionCode ?? "worldwide"}|${locale}|${onSelectHotel ? "hotel-on" : "hotel-off"}|${displayStops.map((stop) => `${stop.id}@${stop.latitude.toFixed(5)},${stop.longitude.toFixed(5)}:${itemKinds[stop.id] ?? "anchor"}:${warningStopIdSet.has(stop.id) ? "warning" : "clear"}`).join("|")}`;
+  const stopsSignature = `${destination.id}:${destination.regionCode ?? "worldwide"}|${locale}|${onSelectHotel ? "hotel-on" : "hotel-off"}|${displayStops.map((stop) => `${stop.id}@${stop.name}@${stop.latitude.toFixed(5)},${stop.longitude.toFixed(5)}:${itemKinds[stop.id] ?? "anchor"}:${warningStopIdSet.has(stop.id) ? "warning" : "clear"}`).join("|")}`;
   const transitGeometrySignature = transitGeometry.map((points) => points
     ? points.map((point) => `${point.latitude.toFixed(5)},${point.longitude.toFixed(5)}`).join(";")
     : "-").join("|");
@@ -524,6 +532,7 @@ export default function PlannerGoogleMap({
   useEffect(() => {
     let cancelled = false;
     let tilesListener: any = null;
+    let clickListener: any = null;
     async function boot() {
       if (!containerRef.current) return;
       try {
@@ -548,7 +557,7 @@ export default function PlannerGoogleMap({
           styles: warmMapStyle,
           backgroundColor: "#f4f4f5",
         });
-        map.addListener("click", (event: any) => {
+        clickListener = map.addListener("click", (event: any) => {
           if (Date.now() < suppressMapClickUntilRef.current) return;
           const clickedElement = event?.domEvent?.target;
           if (clickedElement instanceof Element && clickedElement.closest(".planner-map-chip")) return;
@@ -580,6 +589,7 @@ export default function PlannerGoogleMap({
       routeLinesRef.current.forEach((line) => line.setMap(null));
       dayLayerLinesRef.current.forEach((line) => line.setMap(null));
       if (tilesListener) tilesListener.remove();
+      if (clickListener) clickListener.remove();
       engineRef.current = null;
     };
   }, [apiKey]);
@@ -597,7 +607,6 @@ export default function PlannerGoogleMap({
 
     chipsRef.current = displayStops.map((stop, index) => {
       const isHotel = Boolean(base) && (index === 0 || (Boolean(finishBase) && index === displayStops.length - 1));
-      const selectHotel = onSelectHotelRef.current;
       const sequence = base ? index : index + 1;
       const view = buildPlannerMapPinView({
         kind: isHotel ? "hotel" : itemKinds[stop.id] ?? "anchor",
@@ -613,7 +622,7 @@ export default function PlannerGoogleMap({
         stopId: stop.id,
         dayAppearance: activeDayAppearance,
         onClick: isHotel
-          ? (selectHotel ? () => { suppressMapClickUntilRef.current = Date.now() + 250; selectHotel(); } : undefined)
+          ? (onSelectHotelRef.current ? () => { suppressMapClickUntilRef.current = Date.now() + 250; onSelectHotelRef.current?.(); } : undefined)
           : () => { suppressMapClickUntilRef.current = Date.now() + 250; onSelectStopRef.current(stop.id); },
       });
       chip.setSelected(chip.stopId === selectedStopIdRef.current);
@@ -650,6 +659,7 @@ export default function PlannerGoogleMap({
             new google.maps.Polyline({
               map,
               path: measured,
+              clickable: false,
               strokeColor: "#ffffff",
               strokeOpacity: routeView.outlineOpacity,
               strokeWeight: routeView.outlineWeight,
@@ -658,6 +668,7 @@ export default function PlannerGoogleMap({
             new google.maps.Polyline({
               map,
               path: measured,
+              clickable: false,
               strokeColor: routeView.color,
               strokeOpacity: routeView.strokeOpacity,
               strokeWeight: routeView.strokeWeight,
@@ -814,6 +825,7 @@ export default function PlannerGoogleMap({
           new google.maps.Polyline({
             map,
             path: result.path,
+            clickable: false,
             strokeColor: "#ffffff",
             strokeOpacity: routeView.outlineOpacity,
             strokeWeight: routeView.outlineWeight,
@@ -822,6 +834,7 @@ export default function PlannerGoogleMap({
           new google.maps.Polyline({
             map,
             path: result.path,
+            clickable: false,
             strokeColor: routeView.color,
             strokeOpacity: routeView.strokeOpacity,
             strokeWeight: routeView.strokeWeight,

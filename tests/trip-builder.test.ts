@@ -605,6 +605,7 @@ test("keeps an early departure cutoff on the previous calendar day", () => {
   assert.equal(departure.cityTimeDayOffset, -1);
   assert.equal(plan.days[0].date, "2026-09-14");
   assert.equal(plan.days[0].deadline, "22:00");
+  assert.equal(plan.days[0].deadlinePreviousDay, true);
   assert.ok(plan.days[0].deadlineOverrunMinutes > 0);
 });
 

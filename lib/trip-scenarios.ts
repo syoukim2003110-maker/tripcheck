@@ -12,7 +12,7 @@ import {
 const DEFAULT_DAY_END = "22:00";
 const MAX_SCENARIO_DAYS = 14;
 
-export type TripFitLimit = "pace" | "day_end" | "airport" | "curfew";
+export type TripFitLimit = "airport" | "curfew";
 
 export type TripFitDay = {
   dayIndex: number;
@@ -149,18 +149,20 @@ function dayWindow(day: BuiltPlanDay, dayIndex: number, pace: Pace, dayEnd: stri
   // A 02:00 airport cutoff on the final calendar day is before a 09:00
   // sightseeing start, not 17 hours after it. Do not silently roll it into
   // the following day.
-  const clockWindow = deadline === null
-    ? Math.max(0, ordinaryEnd - start)
-    : Math.max(0, Math.min(ordinaryEnd, deadline) - start);
+  const clockWindow = day.deadlinePreviousDay
+    ? 0
+    : deadline === null
+      ? Math.max(0, ordinaryEnd - start)
+      : Math.max(0, Math.min(ordinaryEnd, deadline) - start);
   // Pace and a preferred number of stops are comfort signals, not hard facts.
   // Only the traveller's usable clock window can make a day impossible.
   const availableMinutes = clockWindow;
   const placeCount = day.stops.filter((stop) => stop.kind === "place").length;
   const capacity = paceCapacity(pace);
   const overrunMinutes = Math.max(0, day.totalMinutes - availableMinutes);
-  const limitedBy: TripFitLimit = deadline !== null && deadline <= ordinaryEnd
-    ? day.deadlineKind === "airport" ? "airport" : "curfew"
-    : "day_end";
+  const limitedBy: TripFitLimit = deadline !== null && deadline <= ordinaryEnd && day.deadlineKind === "airport"
+    ? "airport"
+    : "curfew";
   return {
     dayIndex,
     label: day.label,

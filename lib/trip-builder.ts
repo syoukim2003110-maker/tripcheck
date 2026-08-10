@@ -100,6 +100,12 @@ export type BuiltPlanDay = {
   startBase: TripBase | null;
   endBase: TripBase | null;
   deadline: string | null;
+  /**
+   * True when the airport boundary lands on the previous calendar day. The
+   * deadline string keeps the boundary's clock face, so readers need this
+   * flag to know the day has no usable window at all.
+   */
+  deadlinePreviousDay?: boolean;
   deadlineKind: "airport" | "curfew" | null;
   deadlineOverrunMinutes: number;
   reservationConflictCount: number;
@@ -471,6 +477,7 @@ function buildFoodRecommendationSlots(
   const slots: FoodRecommendationSlot[] = [];
   days.forEach((day, dayIndex) => {
     if (day.stops.length === 0) return;
+    if (day.deadlinePreviousDay) return;
     const requestedKinds: MealKind[] = mealPlan === "all" ? ["lunch", "dinner"] : ["dinner"];
     const firstArrival = clockMinutes(day.stops[0].arrival);
     const lastDepartureRaw = clockMinutes(day.stops.at(-1)!.departure);
@@ -489,8 +496,13 @@ function buildFoodRecommendationSlots(
       // Lunch anchors on the stop the traveller is at (or has most recently
       // reached) inside lunch hours — never a stop the route only reaches
       // after the window, which would put the meal row after a later visit.
+      const unwrappedArrival = (stop: BuiltPlanStop) => {
+        const value = clockMinutes(stop.arrival);
+        if (value === null) return Number.MAX_SAFE_INTEGER;
+        return value < firstArrival ? value + 1440 : value;
+      };
       const anchor = kind === "lunch"
-        ? [...day.stops].filter((stop) => (clockMinutes(stop.arrival) ?? Number.MAX_SAFE_INTEGER) <= lunch.end).at(-1) ?? day.stops[0]
+        ? [...day.stops].filter((stop) => unwrappedArrival(stop) <= lunch.end).at(-1) ?? day.stops[0]
         : day.stops.at(-1)!;
       const anchorArrival = clockMinutes(anchor.arrival) ?? lunchAnchorMinutes;
       const displayMinutes = kind === "lunch"
@@ -876,8 +888,7 @@ function buildAirportConstraints(
         ...(measuredTransferMinutes === null ? {} : { transferMinutes: measuredTransferMinutes }),
       }],
     }).options[0];
-    if (!comparison) return constraints;
-    constraints.push({
+    if (comparison) constraints.push({
       direction: "arrival",
       airport: arrival.code,
       flightTime: clock(arrivalTime),
@@ -909,8 +920,7 @@ function buildAirportConstraints(
         ...(measuredTransferMinutes === null ? {} : { transferMinutes: measuredTransferMinutes }),
       }],
     }).options[0];
-    if (!comparison) return constraints;
-    constraints.push({
+    if (comparison) constraints.push({
       direction: "departure",
       airport: departure.code,
       flightTime: clock(departureTime),
@@ -1295,9 +1305,11 @@ function scheduleOrderScore(
   let travelMinutes = 0;
   let earlyVisitPenalty = 0;
   if (base && ordered[0]) {
+    // routeTravelMinutes already includes the transfer buffer once, matching
+    // the real clock in buildDay.
     const travel = routeTravelMinutes(base, ordered[0], travelInputs);
     travelMinutes += travel;
-    cursor += travel + (travelInputs.bufferMinutes ?? 10);
+    cursor += travel;
   }
   ordered.forEach((stop, index) => {
     const constraint = constraints.get(stop.id);
@@ -1341,7 +1353,7 @@ function scheduleOrderScore(
     if (ordered[index + 1]) {
       const travel = routeTravelMinutes(stop, ordered[index + 1], travelInputs);
       travelMinutes += travel;
-      cursor += travel + (travelInputs.bufferMinutes ?? 10);
+      cursor += travel;
     }
   });
   if (base && ordered.at(-1)) {
@@ -1668,6 +1680,7 @@ function buildDay(
     startBase,
     endBase: finishBase,
     deadline: deadlineMinutes === null ? null : clock(deadlineMinutes),
+    ...(deadlineMinutes !== null && deadlineMinutes < 0 ? { deadlinePreviousDay: true } : {}),
     deadlineKind,
     deadlineOverrunMinutes: deadlineMinutes === null ? 0 : Math.max(0, cursor - deadlineMinutes),
     reservationConflictCount: scheduledStops.filter((stop) => stop.reservationLateMinutes > 0).length,
