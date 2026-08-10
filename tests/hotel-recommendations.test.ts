@@ -7,6 +7,7 @@ import {
   requestHotelRecommendations,
 } from "../lib/hotel-recommendations-client.ts";
 import { fetchGoogleHotelCandidates, hotelStyles, parseHotelSearchRequest, placeTypesIncludeLodging } from "../lib/google-hotels.ts";
+import { bayesianWeightedRating, hotelRatingPrior, restaurantRatingPrior } from "../lib/rating-confidence.ts";
 
 // App routes use bundler-style extensionless imports. This narrow test hook
 // lets Node's type-stripping runner load the real handler without changing the
@@ -61,6 +62,50 @@ test("accepts a bounded hotel search with an optional hotel name", () => {
   assert.equal(parseHotelSearchRequest({ ...validRequest, destination: "narnia" })?.destination, "auto");
   assert.equal(parseHotelSearchRequest({ ...validRequest, query: 42 }), null);
   assert.equal(parseHotelSearchRequest({ ...validRequest, languageCode: "ko" }), null);
+});
+
+test("rating and review count are judged together, never as independent bonuses", () => {
+  const thinStellar = bayesianWeightedRating(4.9, 8);
+  const broadNormal = bayesianWeightedRating(4.3, 3_000);
+  const broadStrong = bayesianWeightedRating(4.6, 2_100);
+  assert.ok(thinStellar !== null && broadNormal !== null && broadStrong !== null);
+  assert.ok(thinStellar < broadNormal, "a 4.9★ over 8 reviews must trail a 4.3★ over 3,000 reviews");
+  assert.ok(broadNormal < broadStrong, "with real volume the better average wins again");
+  // Eight reviews barely move the prior: the raw 4.9 average is not yet believed.
+  assert.ok(Math.abs(thinStellar - hotelRatingPrior.priorMean) < 0.05);
+  // Volume alone cannot invent quality, and zero volume collapses to the prior.
+  assert.equal(bayesianWeightedRating(null, 100_000), null);
+  assert.equal(bayesianWeightedRating(4.8, null), hotelRatingPrior.priorMean);
+  assert.equal(bayesianWeightedRating(4.8, 0), hotelRatingPrior.priorMean);
+  // The restaurant prior trusts a given sample sooner than the hotel prior.
+  const hotelView = bayesianWeightedRating(4.9, 200, hotelRatingPrior);
+  const restaurantView = bayesianWeightedRating(4.9, 200, restaurantRatingPrior);
+  assert.ok(hotelView !== null && restaurantView !== null && hotelView < restaurantView);
+});
+
+test("a thin-sample stellar average neither leads the shortlist nor claims the best-rated seat", async () => {
+  const hotel = (id: string, name: string, rating: number, userRatingCount: number, latitudeOffset: number) => ({
+    id,
+    displayName: { text: name },
+    formattedAddress: "Tokyo",
+    googleMapsUri: `https://maps.google.com/${id}`,
+    businessStatus: "OPERATIONAL",
+    types: ["hotel", "lodging"],
+    location: { latitude: validRequest.latitude + latitudeOffset, longitude: validRequest.longitude },
+    rating,
+    userRatingCount,
+  });
+  const places = [
+    hotel("near-average", "Near Average Hotel", 3.9, 2_000, 0),
+    hotel("crowd-proven", "Crowd Proven Hotel", 4.4, 8_000, 0.002),
+    hotel("tiny-gem", "Tiny Gem Hotel", 4.9, 60, 0.004),
+    hotel("mid-value", "Mid Value Hotel", 4.2, 1_500, 0.001),
+  ];
+  const results = await fetchGoogleHotelCandidates(validRequest, "secret", (async () => Response.json({ places })) as typeof fetch);
+  // 4.9★×60 is a thin sample: its weighted rating sits near the prior, so the
+  // broadly proven 4.4★×8,000 leads overall AND takes the best-rated seat;
+  // the tiny gem enters only as the last ordinary fill.
+  assert.deepEqual(results.map(({ id }) => id), ["crowd-proven", "near-average", "mid-value", "tiny-gem"]);
 });
 
 test("whole-itinerary access outranks closeness to the single search anchor", async () => {

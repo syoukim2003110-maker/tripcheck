@@ -1,6 +1,7 @@
 import type { DestinationChoice } from "./destinations.ts";
 import { destinationById, isDestinationChoice } from "./destinations.ts";
 import { evaluateGoogleOpeningAt } from "./google-opening-hours.ts";
+import { bayesianWeightedRating, restaurantRatingPrior } from "./rating-confidence.ts";
 
 export type FoodSearchRequest = {
   latitude: number;
@@ -92,8 +93,6 @@ const validMealKinds = new Set(["lunch", "dinner"]);
 const searchRadiusMeters = 1_500;
 const sparseSearchRadiusMeters = 3_000;
 const foodPlaceTypes = ["restaurant", "cafe", "coffee_shop", "bakery", "tea_house"] as const;
-const popularityPriorRating = 4.0;
-const popularityPriorReviews = 120;
 
 const fieldMask = [
   "places.id",
@@ -325,9 +324,11 @@ function distanceMeters(fromLatitude: number, fromLongitude: number, toLatitude:
 
 export function foodPopularityScore(candidate: Pick<FoodCandidate, "rating" | "userRatingCount" | "openNow" | "distanceMeters">) {
   const reviewCount = Math.max(0, candidate.userRatingCount ?? 0);
-  const rating = candidate.rating ?? popularityPriorRating;
-  const bayesianRating = (rating * reviewCount + popularityPriorRating * popularityPriorReviews)
-    / (reviewCount + popularityPriorReviews);
+  // Rating and review count are judged together: an unrated place sits at the
+  // prior, and a thin sample stays close to it until reviews earn its average
+  // the right to stand on its own.
+  const bayesianRating = bayesianWeightedRating(candidate.rating, reviewCount, restaurantRatingPrior)
+    ?? restaurantRatingPrior.priorMean;
   const reviewVolume = Math.log10(reviewCount + 1);
   // Proximity matters, but lightly: a notably better local place can still win.
   const distanceAdjustment = Math.min(0.4, (candidate.distanceMeters ?? searchRadiusMeters) / 5_000);

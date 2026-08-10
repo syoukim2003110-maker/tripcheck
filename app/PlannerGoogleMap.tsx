@@ -10,6 +10,7 @@ import type { RouteStop } from "../lib/route-optimizer";
 import type { TransportMode } from "../lib/time-feasibility";
 import { PLANNING_BUDGET } from "../lib/planning-budget";
 import {
+  buildPlannerMapConnectorLine,
   buildPlannerMapDayLayerViews,
   buildPlannerMapPinView,
   buildPlannerMapRouteView,
@@ -606,6 +607,23 @@ export default function PlannerGoogleMap({
 
     if (!drawRoute || pathStops.length < 2) return;
     if (routeRequestsPaused) {
+      // Provider fetches stay paused (no date yet), but the visit ORDER is
+      // already decided — sketch it with the dashed connectors so the day
+      // reads as one continuous sequence instead of loose pins. Connectors
+      // cost no API call and are visually distinct from measured routes.
+      for (let pauseIndex = 0; pauseIndex < pathStops.length - 1; pauseIndex += 1) {
+        const from = pathStops[pauseIndex];
+        const to = pathStops[pauseIndex + 1];
+        if (from.latitude === to.latitude && from.longitude === to.longitude) continue;
+        routeLinesRef.current.push(new google.maps.Polyline({
+          map,
+          path: [
+            { lat: from.latitude, lng: from.longitude },
+            { lat: to.latitude, lng: to.longitude },
+          ],
+          ...buildPlannerMapConnectorLine(routeView),
+        }));
+      }
       onRouteGeometryRef.current([]);
       return;
     }
@@ -705,7 +723,24 @@ export default function PlannerGoogleMap({
       const routeBounds = new LatLngBounds();
       const geometry: Array<{ latitude: number; longitude: number }> = [];
       for (const result of results) {
-        if (!plannerRouteGeometryIsDrawable(result.path)) continue;
+        if (!plannerRouteGeometryIsDrawable(result.path)) {
+          // v0.3 §14.4: a straight line must never present as the real route.
+          // Unmeasured legs get an explicitly-dashed, thinner, fainter
+          // connector so the day still reads as one sequence. Connectors are
+          // display-only: they count neither toward liveLegCount nor toward
+          // the measured geometry handed to onRouteGeometryRef.
+          routeLinesRef.current.push(
+            new google.maps.Polyline({
+              map,
+              path: [
+                { lat: result.from.latitude, lng: result.from.longitude },
+                { lat: result.to.latitude, lng: result.to.longitude },
+              ],
+              ...buildPlannerMapConnectorLine(routeView),
+            }),
+          );
+          continue;
+        }
         liveLegCount += 1;
         result.path.forEach((point: any) => routeBounds.extend(point));
         for (const point of result.path) {
@@ -799,6 +834,17 @@ export default function PlannerGoogleMap({
             strokeOpacity: layer.route.strokeOpacity,
             strokeWeight: layer.route.strokeWeight,
             zIndex: layer.route.zIndex,
+          }),
+        );
+      }
+      for (const segment of layer.connectorSegments) {
+        // Legs without measured geometry stay visually connected via a dashed
+        // display-only connector; never a solid line (spec §14.4).
+        dayLayerLinesRef.current.push(
+          new google.maps.Polyline({
+            map,
+            path: segment,
+            ...buildPlannerMapConnectorLine(layer.route),
           }),
         );
       }

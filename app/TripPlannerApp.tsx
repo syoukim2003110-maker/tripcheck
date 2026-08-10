@@ -21,6 +21,7 @@ import {
 } from "../lib/food-recommendations-client";
 import { requestLinkPreview } from "../lib/link-preview-client";
 import { defaultFoodDiscoveryQuery, type FoodCandidate } from "../lib/google-food";
+import { bayesianWeightedRating, restaurantRatingPrior } from "../lib/rating-confidence";
 import { requestHotelRecommendations } from "../lib/hotel-recommendations-client";
 import { placeTypesIncludeLodging, type HotelCandidate, type HotelPriceLevel, type HotelStyle } from "../lib/google-hotels";
 import { fullTripDemo } from "../lib/mock-trip";
@@ -3466,8 +3467,8 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     const addedTravelMinutes = Math.max(0, builtPlanTravelMinutes(candidatePlan) - builtPlanTravelMinutes(plan));
     const distanceScore = boundedRecommendationScore(100 - (candidate.distanceMeters ?? 1_500) / 18);
     const qualityScore = boundedRecommendationScore(
-      (candidate.rating === null ? 60 : candidate.rating / 5 * 82)
-      + Math.min(18, Math.log10(Math.max(1, candidate.userRatingCount ?? 1)) * 6),
+      (bayesianWeightedRating(candidate.rating, candidate.userRatingCount, restaurantRatingPrior) ?? restaurantRatingPrior.priorMean) / 5 * 82
+      + Math.min(18, Math.log10((candidate.userRatingCount ?? 0) + 1) * 6),
     );
     const recommendation = createRecommendation({
       id: `meal:${slot.id}:${candidate.id}`,
@@ -4250,12 +4251,12 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
         .sort((left, right) => evidencePriority(left) - evidencePriority(right) || left.stop.id.localeCompare(right.stop.id))
         .map(({ stop }) => [stop.id, stop] as const),
     ).values()];
-    // A placeholder date must not consume an Enterprise-hours call or turn an
-    // arbitrary weekday into a hard closure. The result stays explicit and
-    // conditional until the traveller confirms a date.
-    const preHotelEvidenceStops = !tripDateTouched
-      ? []
-      : takeWithinPlanningBudget(preHotelStops, PLANNING_BUDGET.openingHours);
+    // Weekly opening hours are date-independent evidence, so they are fetched
+    // even while the trip date is provisional — otherwise every hours fact
+    // stays "unknown" forever on an undated trip. What remains date-gated is
+    // APPLYING the windows to the schedule (below), so a placeholder weekday
+    // still never turns into a hard closure.
+    const preHotelEvidenceStops = takeWithinPlanningBudget(preHotelStops, PLANNING_BUDGET.openingHours);
     let placeReviewCount = 0;
     const loadPlaceIntelligence = async (stop: RouteStop): Promise<readonly [string, IntelligenceState]> => {
       try {

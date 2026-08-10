@@ -1,5 +1,6 @@
 import type { DestinationChoice } from "./destinations.ts";
 import { destinationById, destinationPlaceQuery, isDestinationChoice } from "./destinations.ts";
+import { bayesianWeightedRating, hotelRatingPrior } from "./rating-confidence.ts";
 
 export type HotelSearchRequest = {
   latitude: number;
@@ -466,15 +467,21 @@ function scoreCandidate(
   name: string,
   query?: string,
 ) {
-  const ratingPoints = rating === null ? 0 : Math.max(0, Math.min(32, (rating - 3) * 16));
-  const reviewPoints = userRatingCount === null ? 0 : Math.min(24, Math.log10(userRatingCount + 1) * 7);
+  // Rating and review count are judged together, not added independently: the
+  // Bayesian weighted rating shrinks a thin-sample 4.9★ toward the prior while
+  // thousands of reviews let a merely-good average keep its full value. The
+  // small volume bonus keeps a broad review base worth something on its own.
+  const weightedRating = bayesianWeightedRating(rating, userRatingCount, hotelRatingPrior);
+  const confidencePoints = weightedRating === null ? 0 : Math.max(0, Math.min(44, (weightedRating - 3) * 24));
+  const volumePoints = Math.min(12, Math.log10((userRatingCount ?? 0) + 1) * 4);
+  const qualityPoints = confidencePoints + volumePoints;
   // Absolute route fit remains meaningful on compact and multi-city trips;
   // unlike a linear cutoff it does not collapse every candidate to zero just
   // because one excursion day is far away.
   const routePoints = 18 / (1 + routeBurden / 12_000) + 8 / (1 + routeWorstDistance / 25_000);
   const relevancePoints = query ? Math.max(5, 35 - apiIndex * 6) : Math.max(0, 5 - apiIndex);
   const exactNamePoints = query && normalized(name).includes(normalized(query)) ? 18 : 0;
-  return Math.round((ratingPoints + reviewPoints + routePoints + relevancePoints + exactNamePoints) * 100) / 100;
+  return Math.round((qualityPoints + routePoints + relevancePoints + exactNamePoints) * 100) / 100;
 }
 
 function routeDistanceSummary(request: HotelSearchRequest, latitude: number, longitude: number) {
@@ -654,7 +661,11 @@ export async function fetchGoogleHotelCandidates(
   addPick([...ranked].sort((left, right) => left.routeBurdenMeters - right.routeBurdenMeters || left.routeWorstDistanceMeters - right.routeWorstDistanceMeters)[0]);
   addPick([...ranked]
     .filter((candidate) => candidate.rating !== null && (candidate.userRatingCount ?? 0) >= 50)
-    .sort((left, right) => (right.rating ?? 0) - (left.rating ?? 0) || (right.userRatingCount ?? 0) - (left.userRatingCount ?? 0))[0]);
+    .sort((left, right) => (
+      (bayesianWeightedRating(right.rating, right.userRatingCount, hotelRatingPrior) ?? 0)
+        - (bayesianWeightedRating(left.rating, left.userRatingCount, hotelRatingPrior) ?? 0)
+      || (right.userRatingCount ?? 0) - (left.userRatingCount ?? 0)
+    ))[0]);
   addPick(ranked.find((candidate) => candidate.styles.includes("value")));
   addPick(ranked.find((candidate) => candidate.styles.includes("luxury")));
   for (const candidate of ranked) {

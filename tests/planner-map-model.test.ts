@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   PLANNER_MAP_DAY_COLORS,
+  buildPlannerMapConnectorLine,
   buildPlannerMapDayLayerViews,
   buildPlannerMapPinView,
   buildPlannerMapRouteView,
@@ -26,6 +27,28 @@ test("day route view uses a stable day palette instead of transport-mode colours
   assert.equal(inactive.strokeWeight, 2);
   assert.ok(inactive.strokeOpacity < active.strokeOpacity);
   assert.match(inactive.className, /is-inactive/);
+});
+
+test("unmeasured-leg connectors are dashed, thinner and fainter than the measured route", () => {
+  for (const active of [true, false]) {
+    const route = buildPlannerMapRouteView({ dayIndex: 0, active });
+    assert.ok(route.connectorOpacity < route.strokeOpacity);
+    assert.ok(route.connectorWeight < route.strokeWeight);
+
+    const line = buildPlannerMapConnectorLine(route);
+    // The polyline itself must be invisible: only the dash symbols render, so
+    // a straight connector can never read as a solid measured route.
+    assert.equal(line.strokeOpacity, 0);
+    assert.equal(line.geodesic, true);
+    assert.equal(line.clickable, false);
+    assert.ok(line.zIndex < route.zIndex);
+    assert.equal(line.icons.length, 1);
+    assert.equal(line.icons[0].icon.path, "M 0,-1 0,1");
+    assert.equal(line.icons[0].icon.strokeColor, route.color);
+    assert.equal(line.icons[0].icon.strokeOpacity, route.connectorOpacity);
+    assert.equal(line.icons[0].icon.strokeWeight, route.connectorWeight);
+    assert.equal(line.icons[0].repeat, "12px");
+  }
 });
 
 test("pin view models distinguish anchor, filler, meal, hotel and warnings without colour alone", () => {
@@ -87,7 +110,7 @@ test("multi-day layers keep stable colours, numbers and active/inactive emphasis
   assert.equal(layers[1].pinOpacity, 1);
 });
 
-test("multi-day layers discard missing and malformed geometry instead of joining stop coordinates", () => {
+test("multi-day layers never promote missing or malformed geometry to a drawable route", () => {
   const [layer] = buildPlannerMapDayLayerViews([{
     dayIndex: 0,
     stops: [
@@ -103,4 +126,60 @@ test("multi-day layers discard missing and malformed geometry instead of joining
 
   assert.equal(layer.stops.length, 2);
   assert.deepEqual(layer.drawableSegments, []);
+  // The unmeasured leg surfaces only as a display-only dashed connector span.
+  assert.deepEqual(layer.connectorSegments, [[{ lat: 35, lng: 139 }, { lat: 36, lng: 140 }]]);
+});
+
+test("day layers bridge only unmeasured legs with connector spans, keeping measured legs solid", () => {
+  const [layer] = buildPlannerMapDayLayerViews([{
+    dayIndex: 0,
+    stops: [
+      { id: "a", name: "A", latitude: 35, longitude: 139 },
+      { id: "b", name: "B", latitude: 35.1, longitude: 139.1 },
+      { id: "c", name: "C", latitude: 35.2, longitude: 139.2 },
+    ],
+    routeSegments: [
+      [{ latitude: 35, longitude: 139 }, { latitude: 35.1, longitude: 139.1 }],
+      null,
+    ],
+  }]);
+
+  assert.equal(layer.drawableSegments.length, 1);
+  assert.deepEqual(layer.connectorSegments, [[{ lat: 35.1, lng: 139.1 }, { lat: 35.2, lng: 139.2 }]]);
+});
+
+test("day layers with one segment per stop treat the trailing leg as the loop back to the first stop", () => {
+  const hotel = { id: "hotel", name: "Hotel", latitude: 35, longitude: 139, kind: "hotel" as const };
+  const [layer] = buildPlannerMapDayLayerViews([{
+    dayIndex: 0,
+    stops: [
+      hotel,
+      { id: "a", name: "A", latitude: 35.1, longitude: 139.1 },
+    ],
+    // Two segments for two stops: hotel -> a, then a -> hotel (round trip).
+    routeSegments: [
+      [{ latitude: 35, longitude: 139 }, { latitude: 35.1, longitude: 139.1 }],
+      null,
+    ],
+  }]);
+
+  assert.equal(layer.drawableSegments.length, 1);
+  assert.deepEqual(layer.connectorSegments, [[{ lat: 35.1, lng: 139.1 }, { lat: 35, lng: 139 }]]);
+});
+
+test("day layers with no route evidence connect every consecutive stop pair with dashed spans", () => {
+  const [layer] = buildPlannerMapDayLayerViews([{
+    dayIndex: 1,
+    stops: [
+      { id: "a", name: "A", latitude: 35, longitude: 139 },
+      { id: "b", name: "B", latitude: 35.1, longitude: 139.1 },
+      { id: "c", name: "C", latitude: 35.2, longitude: 139.2 },
+    ],
+  }]);
+
+  assert.deepEqual(layer.drawableSegments, []);
+  assert.deepEqual(layer.connectorSegments, [
+    [{ lat: 35, lng: 139 }, { lat: 35.1, lng: 139.1 }],
+    [{ lat: 35.1, lng: 139.1 }, { lat: 35.2, lng: 139.2 }],
+  ]);
 });

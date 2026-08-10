@@ -32,6 +32,10 @@ export type PlannerMapRouteView = {
   outlineOpacity: number;
   zIndex: number;
   lineStyle: "solid";
+  /** Dash opacity for unmeasured-leg connectors; below the solid route's. */
+  connectorOpacity: number;
+  /** Dash stroke weight for unmeasured-leg connectors; thinner than the solid route. */
+  connectorWeight: number;
 };
 
 export type PlannerMapLayerCoordinate = {
@@ -55,8 +59,12 @@ export type PlannerMapDayLayer = {
   dayColor?: string;
   stops: readonly PlannerMapDayLayerStop[];
   /**
-   * Provider-backed paths for individual legs. A missing leg stays missing;
-   * consumers must never join adjacent stop coordinates as a fake route.
+   * Provider-backed paths for individual legs, aligned with consecutive stop
+   * pairs. When there is exactly one segment per stop, the trailing segment
+   * is the leg looping back to the first stop (a day that starts and ends at
+   * the same hotel). A missing leg stays missing; consumers must never draw
+   * adjacent stop coordinates as if they were a real route — at most an
+   * explicitly-dashed connector distinct from measured geometry.
    */
   routeSegments?: readonly (readonly PlannerMapLayerCoordinate[] | null)[];
 };
@@ -72,6 +80,12 @@ export type PlannerMapDayLayerView = {
   stops: readonly (PlannerMapDayLayerStop & { pin: PlannerMapPinView })[];
   /** Only valid provider-backed segments survive. No fallback segment exists. */
   drawableSegments: readonly (readonly { lat: number; lng: number }[])[];
+  /**
+   * Two-point straight spans for legs with no drawable measured geometry.
+   * Display-only: they must be rendered dashed/faint (see
+   * buildPlannerMapConnectorLine) so they never read as a real route.
+   */
+  connectorSegments: readonly (readonly { lat: number; lng: number }[])[];
 };
 
 function normalizedDayIndex(value: number | undefined) {
@@ -110,6 +124,35 @@ export function buildPlannerMapRouteView(input: {
     outlineOpacity: active ? 0.92 : 0.38,
     zIndex: active ? 5 : 2,
     lineStyle: "solid",
+    connectorOpacity: active ? 0.55 : 0.22,
+    connectorWeight: active ? 2 : 1.5,
+  };
+}
+
+/**
+ * Polyline options for a leg whose route was never measured. The line itself
+ * is fully transparent; only the repeated dash symbol renders, so a straight
+ * connector can never be mistaken for a provider-backed route (spec §14.4):
+ * dashed, thinner and fainter than the solid measured route, and layered
+ * beneath it.
+ */
+export function buildPlannerMapConnectorLine(route: PlannerMapRouteView) {
+  return {
+    clickable: false as const,
+    geodesic: true as const,
+    strokeOpacity: 0 as const,
+    zIndex: Math.max(1, route.zIndex - 1),
+    icons: [{
+      icon: {
+        path: "M 0,-1 0,1",
+        strokeOpacity: route.connectorOpacity,
+        strokeWeight: route.connectorWeight,
+        scale: 2,
+        strokeColor: route.color,
+      },
+      offset: "0",
+      repeat: "12px",
+    }],
   };
 }
 
@@ -239,10 +282,30 @@ export function buildPlannerMapDayLayerViews(
             locale,
           }),
         }));
-      const drawableSegments = (layer.routeSegments ?? []).flatMap((segment) => {
-        if (!segment) return [];
+      const segmentPaths = (layer.routeSegments ?? []).map((segment) => {
+        if (!segment) return null;
         const path = segment.map((point) => ({ lat: point.latitude, lng: point.longitude }));
-        return plannerRouteGeometryIsDrawable(path) ? [path] : [];
+        return plannerRouteGeometryIsDrawable(path) ? path : null;
+      });
+      const drawableSegments = segmentPaths.flatMap((path) => (path ? [path] : []));
+      // Leg endpoints follow stop order; with exactly one segment per stop the
+      // trailing leg loops back to the first stop (same start/end hotel).
+      const orderedStops = layer.stops;
+      const legEnds: Array<readonly [PlannerMapDayLayerStop, PlannerMapDayLayerStop]> = [];
+      for (let index = 0; index < orderedStops.length - 1; index += 1) {
+        legEnds.push([orderedStops[index], orderedStops[index + 1]]);
+      }
+      if (orderedStops.length >= 2 && (layer.routeSegments?.length ?? 0) === orderedStops.length) {
+        legEnds.push([orderedStops[orderedStops.length - 1], orderedStops[0]]);
+      }
+      const connectorSegments = legEnds.flatMap(([from, to], legIndex) => {
+        if (segmentPaths[legIndex]) return [];
+        if (!layerCoordinateIsValid(from) || !layerCoordinateIsValid(to)) return [];
+        if (from.latitude === to.latitude && from.longitude === to.longitude) return [];
+        return [[
+          { lat: from.latitude, lng: from.longitude },
+          { lat: to.latitude, lng: to.longitude },
+        ]];
       });
       return {
         dayIndex: layer.dayIndex,
@@ -254,6 +317,7 @@ export function buildPlannerMapDayLayerViews(
         pinZIndex: active ? 3 : 0,
         stops,
         drawableSegments,
+        connectorSegments,
       };
     })
     .sort((left, right) => left.dayIndex - right.dayIndex);

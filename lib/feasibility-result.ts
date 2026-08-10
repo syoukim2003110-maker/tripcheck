@@ -309,14 +309,21 @@ export function createPlannerEvidenceSnapshot(
     } : {};
 
     if (mode === "transit" && routeEvidence?.status !== "verified") {
+      // The schedule value came from a live measurement at the provisional
+      // departure (post-build prefetch) even though no convergence-bound
+      // evidence exists yet — that is a live-informed estimate, not an
+      // untouched unknown.
+      const provisionallyMeasured = planSource === "live" && !routeEvidence;
       facts.push(fact(
         id,
         "route_leg",
         label,
-        null,
-        routeEvidence?.status ?? "unknown",
-        routeEvidence?.providerRef ? "google" : "other",
-        metadata,
+        provisionallyMeasured ? minutes : null,
+        provisionallyMeasured ? "estimated" : routeEvidence?.status ?? "unknown",
+        provisionallyMeasured || routeEvidence?.providerRef ? "google" : "other",
+        provisionallyMeasured
+          ? { explanation: "Measured live for the provisional date; confirming the trip date binds it to an exact departure." }
+          : metadata,
       ));
       return;
     }
@@ -338,6 +345,11 @@ export function createPlannerEvidenceSnapshot(
     routeMinutes: number | null,
     count: number | null,
   ) => {
+    // Transfer counts only exist for a concrete departure time. Without a
+    // confirmed trip date they are structurally unobtainable, so listing them
+    // as unresolved critical facts would be an impossible to-do; the date
+    // assumption row already carries the one real action.
+    if (!options.dateWasProvided) return;
     const routeEvidence = options.routeEvidenceByFactId?.[routeFactId];
     const hasBoundProvenance = routeEvidence?.mode === "transit"
       && routeEvidence.requestKey.length > 0
@@ -383,11 +395,17 @@ export function createPlannerEvidenceSnapshot(
         hoursEvidence?.dateSpecific
         || (day.date && hoursEvidence?.dateSpecificDates?.includes(day.date)),
       );
-      const hoursStatus: EvidenceStatus = !hoursKnown || !hoursEvidence
+      // Fetched weekly hours that are not yet bound to a confirmed date (or a
+      // place with no listed hours at all) are known-but-unbound evidence:
+      // "estimated", never the actionable-critical "unknown" reserved for
+      // hours nobody has fetched.
+      const hoursStatus: EvidenceStatus = !hoursEvidence
         ? "unknown"
-        : isDateSpecific
-          ? "verified"
-          : "estimated";
+        : !hoursKnown
+          ? "estimated"
+          : isDateSpecific
+            ? "verified"
+            : "estimated";
       facts.push(fact(
         `hours:${built.stop.id}:${day.date ?? day.label}`,
         "opening_hours",
@@ -395,7 +413,9 @@ export function createPlannerEvidenceSnapshot(
         hoursKnown ? built.openingStatus : null,
         hoursStatus,
         hoursEvidence ? "google" : "other",
-        hoursEvidence ?? {},
+        hoursEvidence
+          ? { ...hoursEvidence, ...(!hoursKnown ? { explanation: "Weekly hours are fetched; confirm the trip date to bind them to exact days." } : {}) }
+          : {},
       ));
       const lastEntryEvidence = options.lastEntryEvidenceByStop?.[built.stop.id];
       if (lastEntryEvidence) {

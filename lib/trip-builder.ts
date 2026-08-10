@@ -1658,6 +1658,7 @@ type DayAssignmentScore = readonly [
   totalOverrunMinutes: number,
   emptyDayCount: number,
   overloadMinutes: number,
+  underfillMinutes: number,
   travelMinutes: number,
   maximumDayMinutes: number,
   loadSpreadMinutes: number,
@@ -1712,6 +1713,23 @@ function scoreDayAssignment(
   const overloadMinutes = days.reduce((sum, day, index) => sum
     + Math.max(0, (clusters[index]?.length ?? 0) - limits.paceCapacity) * 240
     + Math.max(0, day.totalMinutes - limits.dayBudgetMinutes), 0);
+  // A two-hour "day" next to a stuffed one wastes a requested day. When there
+  // is more material than days, a non-empty day should carry a sensible
+  // minimum of CONTENT — stay minutes, never elapsed time, so the optimizer
+  // cannot "fill" a day with pointless crosstown travel. The deficit is
+  // SQUARED: a linear sum is invariant under redistribution while every day
+  // sits below the floor, which strands the search in 1-stop local optima;
+  // the convex form makes each evening-out move strictly better. Ranked
+  // below overload so spreading never creates a violation, and above travel
+  // so saving one hotel transfer cannot hollow a day out again.
+  const underfillFloor = Math.min(240, Math.round(limits.dayBudgetMinutes * 0.45));
+  const underfillMinutes = totalStops > clusters.length
+    ? clusters.reduce((sum, cluster) => {
+      if (cluster.length === 0) return sum;
+      const deficit = Math.max(0, underfillFloor - cluster.reduce((stay, stop) => stay + stop.planningDurationMinutes, 0));
+      return sum + deficit * deficit;
+    }, 0)
+    : 0;
   // Hard facts and clock-window overruns are compared before any route or
   // comfort preference. An opening conflict cannot be hidden by a shorter day.
   return [
@@ -1721,6 +1739,7 @@ function scoreDayAssignment(
     totalOverrunMinutes,
     emptyDayCount,
     overloadMinutes,
+    underfillMinutes,
     travelMinutes,
     maximumDayMinutes,
     maximumDayMinutes - minimumDayMinutes,
