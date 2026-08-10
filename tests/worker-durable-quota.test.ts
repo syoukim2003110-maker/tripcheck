@@ -7,6 +7,7 @@ import type {
   D1RunResultLike,
 } from "../lib/server/durable-provider-quota.ts";
 import { googleProviderCircuit } from "../lib/server/provider-resilience.ts";
+import { PROVIDER_QUOTA_SCHEMA_SQL, PROVIDER_QUOTA_TABLE_INFO_SQL } from "../db/provider-quota-schema.ts";
 
 type AppFetch = (request: Request, env: unknown, context: unknown) => Promise<Response>;
 const testGlobal = globalThis as typeof globalThis & { __tripCheckAppFetch?: AppFetch };
@@ -68,6 +69,9 @@ class WorkerTestStatement implements D1PreparedStatementLike {
   }
 
   run(): Promise<D1RunResultLike> {
+    if (this.sql === PROVIDER_QUOTA_TABLE_INFO_SQL) {
+      return Promise.resolve({ success: true, results: [{ sql: PROVIDER_QUOTA_SCHEMA_SQL }] });
+    }
     this.database.schemaRuns += 1;
     return Promise.resolve({ success: true, results: [] });
   }

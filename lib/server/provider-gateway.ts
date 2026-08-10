@@ -28,14 +28,17 @@ export type PaidOperationPolicies = Readonly<Record<PaidOperation, PaidOperation
  * truncation. A malformed or modified client cannot raise them.
  */
 export const PAID_OPERATION_POLICIES: PaidOperationPolicies = Object.freeze({
-  live_routes: Object.freeze({ provider: "google", maxPerRequest: 20, maxPerTrip: 20, maxPerSession: 60, maxPerProcessDay: 2_000 }),
-  place_resolution: Object.freeze({ provider: "google", maxPerRequest: 12, maxPerTrip: 12, maxPerSession: 36, maxPerProcessDay: 1_200 }),
-  place_intelligence: Object.freeze({ provider: "google", maxPerRequest: 1, maxPerTrip: 10, maxPerSession: 30, maxPerProcessDay: 1_000 }),
+  // Kept in step with DURABLE_PROVIDER_QUOTA_POLICIES: the per-trip/session
+  // rows must cover a real planning session (one build alone can spend ~20
+  // live-route events), while the process-day rows remain the cost guard.
+  live_routes: Object.freeze({ provider: "google", maxPerRequest: 20, maxPerTrip: 120, maxPerSession: 360, maxPerProcessDay: 2_000 }),
+  place_resolution: Object.freeze({ provider: "google", maxPerRequest: 12, maxPerTrip: 36, maxPerSession: 108, maxPerProcessDay: 1_200 }),
+  place_intelligence: Object.freeze({ provider: "google", maxPerRequest: 1, maxPerTrip: 30, maxPerSession: 90, maxPerProcessDay: 1_000 }),
   fresh_voices: Object.freeze({ provider: "anthropic", maxPerRequest: 2, maxPerTrip: 24, maxPerSession: 48, maxPerProcessDay: 192 }),
-  hotel_recommendations: Object.freeze({ provider: "google", maxPerRequest: 4, maxPerTrip: 20, maxPerSession: 60, maxPerProcessDay: 600 }),
-  food_recommendations: Object.freeze({ provider: "google", maxPerRequest: 2, maxPerTrip: 56, maxPerSession: 112, maxPerProcessDay: 2_000 }),
+  hotel_recommendations: Object.freeze({ provider: "google", maxPerRequest: 4, maxPerTrip: 60, maxPerSession: 180, maxPerProcessDay: 600 }),
+  food_recommendations: Object.freeze({ provider: "google", maxPerRequest: 2, maxPerTrip: 112, maxPerSession: 336, maxPerProcessDay: 2_000 }),
   food_ranking: Object.freeze({ provider: "anthropic", maxPerRequest: 1, maxPerTrip: 28, maxPerSession: 56, maxPerProcessDay: 192 }),
-  route_recommendations: Object.freeze({ provider: "google", maxPerRequest: 3, maxPerTrip: 42, maxPerSession: 84, maxPerProcessDay: 75 }),
+  route_recommendations: Object.freeze({ provider: "google", maxPerRequest: 3, maxPerTrip: 84, maxPerSession: 168, maxPerProcessDay: 300 }),
 });
 
 export const PROCESS_LOCAL_QUOTA_METADATA = Object.freeze({

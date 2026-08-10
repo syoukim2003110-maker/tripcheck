@@ -12,6 +12,7 @@ import Icon, { type IconName } from "./PlannerIcons";
 import AirportOptionComparison from "./AirportOptionComparison";
 import SearchableCombobox, { type SearchableOption } from "./SearchableCombobox";
 import {
+  FoodRecommendationsError,
   foodCandidateReason,
   foodRecommendationRequestKey,
   foodSearchLinks,
@@ -219,6 +220,8 @@ function safeRemovedStopLabels(
 }
 type FoodState = {
   status: "idle" | "loading" | "ready" | "unavailable";
+  /** Why an unavailable state happened; "quota" = daily allowance exhausted. */
+  reason?: "quota";
   requestKey: string;
   query: string;
   candidates: FoodCandidate[];
@@ -421,6 +424,11 @@ function builtPlanTravelMinutes(plan: BuiltTripPlan) {
     + (planDay.hotelInboundMinutes ?? 0)
     + planDay.legs.reduce((legSum, leg) => legSum + leg.comparison.recommended.minutes, 0)
   ), 0);
+}
+
+function clockToMinutes(value: string) {
+  const match = /^(?:([01]?\d|2[0-3])):([0-5]\d)$/.exec(value);
+  return match ? Number(match[1]) * 60 + Number(match[2]) : null;
 }
 
 function clockRangeContainsVisit(range: string, arrival: string, departure: string) {
@@ -756,6 +764,20 @@ function alternativeLossCopy(alternative: AlternativePlan, locale: PlannerLocale
 
 function minimumDaysCopy(result: FeasibilityResult, locale: PlannerLocale) {
   if (result.minimumDays === null) {
+    // Name the actual blocker instead of reciting every theoretical cause.
+    const unresolved = result.unresolvedPlaceNames;
+    if (unresolved.length > 0) {
+      const names = unresolved.slice(0, 2).join(locale === "ja" ? "・" : ", ")
+        + (unresolved.length > 2 ? (locale === "ja" ? ` 他${unresolved.length - 2}件` : ` +${unresolved.length - 2} more`) : "");
+      if (result.partialMinimumDays !== null) {
+        return locale === "ja"
+          ? `「${names}」が未確定のため判定を保留しています。確定済みの場所だけなら最短${result.partialMinimumDays}日です。上の「確認する」から場所を確定してください。`
+          : `On hold because “${names}” is not settled yet. The confirmed places alone need at least ${result.partialMinimumDays} day${result.partialMinimumDays === 1 ? "" : "s"}. Use “Confirm” above to settle the place.`;
+      }
+      return locale === "ja"
+        ? `「${names}」が未確定のため、最短日数はまだ判定できません。上の「確認する」から場所を確定するか、入力を直してください。`
+        : `Minimum days are withheld because “${names}” is not settled. Use “Confirm” above to pick the place, or edit the input.`;
+    }
     if (result.searchedThroughDays > 0) return locale === "ja"
       ? `${result.searchedThroughDays}日まで探索しましたが、重要な事実が足りないか固定条件が競合しています。`
       : `Searched through ${result.searchedThroughDays} days; critical evidence is missing or a fixed constraint conflicts.`;
@@ -1553,11 +1575,20 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   const [resolvedBase, setResolvedBase] = useState<ResolvedInputStop | null>(null);
   const [hasPlan, setHasPlan] = useState(false);
   const [isBuilding, setIsBuilding] = useState(false);
-  const [placeWarning, setPlaceWarning] = useState(false);
+  const [placeWarning, setPlaceWarning] = useState<false | "unavailable" | "quota_exhausted">(false);
   const [activeDay, setActiveDay] = useState(0);
   const [inspector, setInspector] = useState<Inspector>(null);
   const [mapFocusedStopId, setMapFocusedStopId] = useState<string | null>(null);
   const [liveTransit, setLiveTransit] = useState<Record<string, number>>({});
+  // Transit minutes measured by the post-build prefetch. Kept apart from the
+  // convergence-owned liveTransit so the convergence effect's resets cannot
+  // erase evidence the prefetch already paid Google for; the two records merge
+  // (convergence wins per key) where the planner context is assembled.
+  const [prefetchTransit, setPrefetchTransit] = useState<Record<string, number>>({});
+  // Legs where the provider answered "no transit route" — negative live
+  // evidence, split by owner exactly like the positive measurements above.
+  const [liveTransitAbsent, setLiveTransitAbsent] = useState<Record<string, boolean>>({});
+  const [prefetchTransitAbsent, setPrefetchTransitAbsent] = useState<Record<string, boolean>>({});
   const [liveTransitTransferCounts, setLiveTransitTransferCounts] = useState<Record<string, number>>({});
   const [liveWalking, setLiveWalking] = useState<Record<string, number>>({});
   const [liveDriving, setLiveDriving] = useState<Record<string, number>>({});
@@ -2094,9 +2125,10 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   }), [arrivalAirport, arrivalTime, dayEndTarget, dayEndTimes, dayOverrides, dayStartDefault, dayStartTimes, departureAirport, departureTime, destinationChoice, durationOverrides, earlyVisitStopIds, flightKind, hotelQuery, lastEntryTimes, legModeOverrides, liveDriving, liveWalking, lockedOrderByDay, maxTransfersPerLeg, maxWalkingMinutesPerLeg, mealPlan, nightBases, openingWindowsByDay, removedStops, resolvedBase, resolvedStops, transferBufferMinutes, travelPreference, tripStartDate, userStayMinutes]);
   const activePlannerContext = useMemo<TripPlannerContext>(() => ({
     ...plannerContextWithoutTransit,
-    liveTransitMinutes: liveTransit,
+    liveTransitMinutes: { ...prefetchTransit, ...liveTransit },
+    liveTransitAbsentLegs: { ...prefetchTransitAbsent, ...liveTransitAbsent },
     liveTransitTransferCounts,
-  }), [liveTransit, liveTransitTransferCounts, plannerContextWithoutTransit]);
+  }), [liveTransit, liveTransitAbsent, liveTransitTransferCounts, plannerContextWithoutTransit, prefetchTransit, prefetchTransitAbsent]);
   const transitConvergenceInputKey = useMemo(() => JSON.stringify([
     itinerary,
     tripDays,
@@ -2890,6 +2922,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     const controller = new AbortController();
     if (!tripDateTouched) {
       setLiveTransit({});
+      setLiveTransitAbsent({});
       setLiveTransitTransferCounts({});
       setLiveRouteEvidence({});
       setTransitConvergence({
@@ -2911,6 +2944,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       stopReason: null,
     });
     setLiveTransit({});
+    setLiveTransitAbsent({});
     setLiveTransitTransferCounts({});
     setLiveRouteEvidence({});
 
@@ -2946,9 +2980,13 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
             ? [[legId, evidence.transferCount] as const]
             : []
         )));
+        const absent = Object.fromEntries(Object.entries(conservativeEvidenceByLeg).flatMap(([legId, evidence]) => (
+          evidence.status === "unknown" ? [[legId, true] as const] : []
+        )));
         const rebuilt = buildTripFromWishlist(itinerary, tripDays, pace, locale, {
           ...plannerContextWithoutTransit,
           liveTransitMinutes: measured,
+          liveTransitAbsentLegs: absent,
           liveTransitTransferCounts: transferCounts,
         });
         return buildPlanningTransitIteration(rebuilt);
@@ -2982,6 +3020,9 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
         } satisfies RouteFactEvidence,
       ]));
       setLiveTransit(measured);
+      setLiveTransitAbsent(Object.fromEntries(Object.entries(result.conservativeEvidenceByLeg).flatMap(([legId, evidence]) => (
+        evidence.status === "unknown" ? [[legId, true] as const] : []
+      ))));
       setLiveTransitTransferCounts(transferCounts);
       setLiveRouteEvidence(evidenceByRequest);
       setTransitConvergence({
@@ -3042,7 +3083,13 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
         .then((measured) => {
           if (buildRunRef.current !== runId) return;
           if (Object.keys(measured.transitMinutes).length > 0) {
-            setLiveTransit((current) => ({ ...current, ...measured.transitMinutes }));
+            setPrefetchTransit((current) => ({ ...current, ...measured.transitMinutes }));
+          }
+          const absent = Object.fromEntries(measured.legs.flatMap((leg) => (
+            leg.mode === "transit" && leg.status === "unavailable" ? [[leg.id, true] as const] : []
+          )));
+          if (Object.keys(absent).length > 0) {
+            setPrefetchTransitAbsent((current) => ({ ...current, ...absent }));
           }
           if (Object.keys(measured.walkingMinutes).length > 0) {
             setLiveWalking((current) => ({ ...current, ...measured.walkingMinutes }));
@@ -3252,32 +3299,50 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     setActiveDay(dayIndex);
   }
 
-  // Confirmed meal picks appear inside the timeline: lunch after its anchor
-  // stop, dinner after the day's last stop, each opening its food panel.
-  function mealRowsAfter(stopId: string, isLastStop: boolean) {
+  // Meal slots interleave with the stop rows by TIME: a slot renders after
+  // the last stop the route has reached by the slot's clock, so a 12:45 lunch
+  // can never appear below a 15:40 visit. The anchor id only drives the geo
+  // query behind the recommendation.
+  function mealRowsAfter(stopIndex: number) {
+    if (!day) return [];
+    const rowStops = day.stops;
     return daySlots
       .filter((slot) => {
-        return slot.kind === "lunch" ? slot.anchorStopId === stopId : isLastStop;
+        const slotMinutes = clockToMinutes(slot.displayTime);
+        if (slotMinutes === null) return stopIndex === rowStops.length - 1;
+        let insertAfter = 0;
+        rowStops.forEach((candidate, index) => {
+          const arrival = clockToMinutes(candidate.arrival);
+          if (arrival !== null && arrival <= slotMinutes) insertAfter = index;
+        });
+        return insertAfter === stopIndex;
       })
-      .sort((left, right) => (left.kind === right.kind ? 0 : left.kind === "lunch" ? -1 : 1))
+      .sort((left, right) => (
+        (clockToMinutes(left.displayTime) ?? 0) - (clockToMinutes(right.displayTime) ?? 0)
+        || (left.kind === right.kind ? 0 : left.kind === "lunch" ? -1 : 1)
+      ))
       .flatMap((slot) => {
         const state = foodSearches[slot.id];
         if (state?.status !== "ready") return [(
-          <li className="planner-meal-row is-proposed is-pending" key={`meal-${slot.id}`}>
+          <li className={`planner-meal-row is-proposed${state?.status === "unavailable" ? "" : " is-pending"}`} key={`meal-${slot.id}`}>
             <span className="planner-meal-stop">
-              <time>{slot.window.split("–")[0]}</time>
+              <time>{slot.displayTime}</time>
               <span className="planner-meal-dot" aria-hidden="true"><Icon name="fork" size={13} /></span>
               <span className="planner-stop-main">
                 <small className="planner-filler-label"><Icon name="spark" size={10} />{locale === "ja" ? "おすすめ枠" : "Recommendation slot"}</small>
-                <b>{slot.kind === "lunch" ? (locale === "ja" ? "動線上の昼食を確認中" : "Checking lunch along the route") : (locale === "ja" ? "帰路の夕食を確認中" : "Checking dinner on the way back")}</b>
+                <b>{state?.status === "unavailable"
+                  ? slot.kind === "lunch" ? (locale === "ja" ? "昼食候補を取得できませんでした" : "Lunch suggestions did not load") : (locale === "ja" ? "夕食候補を取得できませんでした" : "Dinner suggestions did not load")
+                  : slot.kind === "lunch" ? (locale === "ja" ? "動線上の昼食を確認中" : "Checking lunch along the route") : (locale === "ja" ? "帰路の夕食を確認中" : "Checking dinner on the way back")}</b>
                 <small>{state?.status === "unavailable"
-                  ? locale === "ja" ? "候補を取得できませんでした。旅程はそのまま使えます。" : "Candidates did not load. The itinerary still works without one."
+                  ? state.reason === "quota"
+                    ? locale === "ja" ? "候補取得が本日の上限に達しました。旅程はそのまま使えます。時間をおいてお試しください。" : "The suggestion allowance is used up for now. The itinerary still works; try again later."
+                    : locale === "ja" ? "旅程はそのまま使えます。あとで再試行できます。" : "The itinerary still works without one. You can retry later."
                   : locale === "ja" ? "営業時間と動線を確認してから候補を表示します。" : "A candidate appears only after its route and hours are checked."}</small>
               </span>
             </span>
             <span className="planner-filler-actions">
               <button disabled={state?.status === "loading"} onClick={() => void findFood(slot, { reveal: true })} type="button">
-                {state?.status === "loading" ? (locale === "ja" ? "確認中" : "Checking") : (locale === "ja" ? "候補を見る" : "Find options")}
+                {state?.status === "loading" ? (locale === "ja" ? "確認中" : "Checking") : state?.status === "unavailable" ? (locale === "ja" ? "再試行" : "Retry") : (locale === "ja" ? "候補を見る" : "Find options")}
               </button>
             </span>
           </li>
@@ -3295,7 +3360,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
               onClick={() => setInspector({ kind: "food", slotId: slot.id, candidateId: candidate.id })}
               type="button"
             >
-              <time>{slot.window.split("–")[0]}</time>
+              <time>{slot.displayTime}</time>
               <span className="planner-meal-dot" aria-hidden="true"><Icon name="fork" size={13} /></span>
               <span className="planner-stop-main">
                 <small className="planner-filler-label"><Icon name="spark" size={10} />{accepted ? (locale === "ja" ? "旅程に追加済み" : "Added to this day") : (locale === "ja" ? "おすすめ" : "Recommended")}</small>
@@ -3353,7 +3418,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       return;
     }
     const inputIndex = parsedWishlistPlaces(itinerary).length;
-    const input = fillerOccurrenceLine(inputIndex, fillerKind, slot.window.split("–")[0]);
+    const input = fillerOccurrenceLine(inputIndex, fillerKind, slot.displayTime);
     const resolvedId = recommendationStopId(candidate.id);
     const resolved: ResolvedInputStop = {
       id: resolvedId,
@@ -3386,7 +3451,9 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     const candidatePlan = buildTripFromWishlist(candidateItinerary, tripDays, pace, locale, candidateContext);
     const candidateFit = assessTripFit(candidateItinerary, tripDays, pace, locale, candidateContext, candidatePlan);
     const scheduledMeal = candidatePlan.days[slot.dayIndex]?.stops.find(({ stop }) => stop.id === resolved.id);
-    if (!scheduledMeal || !clockRangeContainsVisit(slot.window, scheduledMeal.arrival, scheduledMeal.departure)) {
+    // The meal must BEGIN inside the meal window; finishing a little past it
+    // (a 13:30 lunch running to 14:30) is normal restaurant reality.
+    if (!scheduledMeal || !clockRangeContainsVisit(slot.window, scheduledMeal.arrival, scheduledMeal.arrival)) {
       setFoodRecommendationNotice(locale === "ja"
         ? "この候補は食事時間内に収まらないため、旅程へ追加しませんでした。"
         : "We did not add this option because it does not fit inside the meal window.");
@@ -3409,7 +3476,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       fillerKind: slot.kind === "lunch" ? "LUNCH" : "DINNER",
       slotId: slot.id,
       proposedDayIndex: slot.dayIndex,
-      proposedStartAt: slot.window.split("–")[0],
+      proposedStartAt: slot.displayTime,
       addedTravelMinutes,
       score: {
         total: distanceScore * 0.35 + qualityScore * 0.4 + 25,
@@ -3897,6 +3964,9 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     setLiveTransitTransferCounts({});
     setLiveWalking({});
     setLiveDriving({});
+    setPrefetchTransit({});
+    setLiveTransitAbsent({});
+    setPrefetchTransitAbsent({});
     setLiveRouteEvidence({});
     setTransitConvergence(emptyTransitConvergenceState);
     setLegModeOverrides({});
@@ -3950,7 +4020,9 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
         ambiguous = response.ambiguous;
       } catch (error) {
         if (controller.signal.aborted) return;
-        setPlaceWarning(error instanceof PlaceResolutionError);
+        setPlaceWarning(error instanceof PlaceResolutionError
+          ? error.code === "quota_exhausted" ? "quota_exhausted" : "unavailable"
+          : false);
       }
       if (controller.signal.aborted) return;
       const known = parsedWishlistPlaces(rawAtStart).flatMap((place) => resolveKnownStops(place.name, locale));
@@ -4046,6 +4118,9 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       setLiveTransitTransferCounts({});
       setLiveWalking({});
       setLiveDriving({});
+      setPrefetchTransit({});
+      setLiveTransitAbsent({});
+      setPrefetchTransitAbsent({});
       setLiveRouteEvidence({});
       setTransitConvergence(emptyTransitConvergenceState);
       setMealSelections({});
@@ -4114,7 +4189,9 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
         setManualPlaceDrafts({});
         setResolvedBase(null);
         setPreviewStops(places);
-        setPlaceWarning(error instanceof PlaceResolutionError);
+        setPlaceWarning(error instanceof PlaceResolutionError
+          ? error.code === "quota_exhausted" ? "quota_exhausted" : "unavailable"
+          : false);
       })) return;
     }
     if (cancelled()) return;
@@ -4515,6 +4592,9 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     setLiveTransitTransferCounts({});
     setLiveWalking({});
     setLiveDriving({});
+    setPrefetchTransit({});
+    setLiveTransitAbsent({});
+    setPrefetchTransitAbsent({});
     setLiveRouteEvidence({});
     setTransitConvergence(emptyTransitConvergenceState);
     setLegModeOverrides({});
@@ -4582,6 +4662,9 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     setLiveTransitTransferCounts({});
     setLiveWalking({});
     setLiveDriving({});
+    setPrefetchTransit({});
+    setLiveTransitAbsent({});
+    setPrefetchTransitAbsent({});
     setLiveRouteEvidence({});
     setTransitConvergence(emptyTransitConvergenceState);
     setLegModeOverrides({});
@@ -4632,9 +4715,10 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
           });
         }).catch(() => { /* Deterministic Google evidence remains visible. */ });
       }
-    } catch {
+    } catch (error) {
       if (stale()) return;
-      setFoodSearches((current) => ({ ...current, [slot.id]: { status: "unavailable", requestKey, query, candidates: [], notes: {}, fresh: {} } }));
+      const reason = error instanceof FoodRecommendationsError && error.code === "quota_exhausted" ? "quota" as const : undefined;
+      setFoodSearches((current) => ({ ...current, [slot.id]: { status: "unavailable", ...(reason ? { reason } : {}), requestKey, query, candidates: [], notes: {}, fresh: {} } }));
     } finally {
       foodInFlightRef.current.delete(requestKey);
     }
@@ -6145,7 +6229,9 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                   </div>
                 ) : null}
 
-                {placeWarning ? <p className="planner-inline-status is-warning" role="status">{locale === "ja" ? "位置情報サービスに接続できませんでした。分かる場所だけで続け、残りは未解決として表示します。" : "Place lookup is unavailable. Known places will continue and the rest will stay unresolved."}</p> : null}
+                {placeWarning ? <p className="planner-inline-status is-warning" role="status">{placeWarning === "quota_exhausted"
+                  ? locale === "ja" ? "本日の場所検索の上限に達しました。分かっている場所だけで続け、残りは未解決として表示します（上限は毎日リセットされます）。" : "Today's place-search allowance is used up. Known places continue; the rest stay unresolved (the allowance resets daily)."
+                  : locale === "ja" ? "位置情報サービスに接続できませんでした。分かる場所だけで続け、残りは未解決として表示します。" : "Place lookup is unavailable. Known places will continue and the rest will stay unresolved."}</p> : null}
                 <button className="planner-build-button planner-review-button" disabled={!canBuild} onClick={() => void buildPlan()} type="button">
                   <span>{isBuilding ? (locale === "ja" ? "旅程を作成中…" : "Building your itinerary…") : (locale === "ja" ? "旅程を作る" : "Build my itinerary")}</span><b aria-hidden="true"><Icon name="arrow" size={19} /></b>
                 </button>
@@ -6714,7 +6800,15 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                       {locale === "ja" ? "その他の注意" : "Other notices"}
                     </summary>
                     <div>
-                      {placeWarning && plan.unknownEntries.length === 0 ? <p>{text.placeFallback}</p> : null}
+                      {placeWarning ? (
+                        <p>
+                          {plan.unknownEntries.length > 0
+                            ? locale === "ja"
+                              ? `${placeWarning === "quota_exhausted" ? "場所検索が本日の上限に達したため" : "位置情報サービスに接続できず"}、${plan.unknownEntries.length}件（${plan.unknownEntries.slice(0, 3).join("・")}${plan.unknownEntries.length > 3 ? " ほか" : ""}）が未解決のままです。時間をおいて作り直すか、入力にもどって確認してください。`
+                              : `${placeWarning === "quota_exhausted" ? "Place search hit its allowance" : "Place lookup failed"}, so ${plan.unknownEntries.length} entr${plan.unknownEntries.length === 1 ? "y" : "ies"} (${plan.unknownEntries.slice(0, 3).join(", ")}${plan.unknownEntries.length > 3 ? ", …" : ""}) stayed unresolved. Rebuild later or go back to the input to settle them.`
+                            : text.placeFallback}
+                        </p>
+                      ) : null}
                       {!P0_CORE_ONLY && hotelState.status === "unavailable" ? (
                         <p>{text.hotelUnavailable}{" "}<a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${hotelQuery.trim() || mapStops[0]?.area || destinationName(activeDestination, locale)} ${locale === "ja" ? "ホテル" : "hotels"}`)}`} rel="noreferrer" target="_blank">{text.hotelSearch} ↗</a></p>
                       ) : null}
@@ -6836,9 +6930,11 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                     <b>{index + 1}</b>
                     <span>
                       {locale === "ja" ? `${index + 1}日目` : `Day ${index + 1}`}
-                      {` · ${candidate.stops.length <= 2
-                        ? locale === "ja" ? "ゆったり" : "easy"
-                        : locale === "ja" ? `${candidate.stops.length}か所` : `${candidate.stops.length} stops`}`}
+                      {` · ${candidate.stops.length === 0
+                        ? locale === "ja" ? "予定なし" : "empty"
+                        : candidate.stops.length <= 2
+                          ? locale === "ja" ? "ゆったり" : "easy"
+                          : locale === "ja" ? `${candidate.stops.length}か所` : `${candidate.stops.length} stops`}`}
                     </span>
                   </button>
                 );
@@ -6996,7 +7092,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                         </button>
                       ) : null}
                     </li>
-                    {!P0_CORE_ONLY ? mealRowsAfter(builtStop.stop.id, index === day.stops.length - 1) : null}
+                    {!P0_CORE_ONLY ? mealRowsAfter(index) : null}
                     {index === day.stops.length - 1 && dayEndBase && day.hotelInboundMinutes !== null ? (
                       <li className="planner-hotel-leg is-return">
                         <span aria-hidden="true"><Icon name="bed" size={12} /></span>

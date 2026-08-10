@@ -218,7 +218,7 @@ export async function fetchGoogleResolvedPlaceCandidates(
       "X-Goog-FieldMask": `places.${routeBuildingFieldMask.split(",").join(",places.")}`,
     },
     body: JSON.stringify({
-      textQuery: destinationPlaceQuery(input, destination),
+      textQuery: destinationPlaceQuery(input, destination, languageCode),
       pageSize: 3,
       languageCode,
       ...(destination.regionCode ? { regionCode: destination.regionCode } : {}),
@@ -282,13 +282,45 @@ export async function fetchGoogleResolvedPlace(
   return (await fetchGoogleResolvedPlaceCandidates(input, languageCode, apiKey, fetcher, destination))[0] ?? null;
 }
 
+/*
+ * A lone Google result with no textual overlap AND a plainly non-visit type
+ * ("ベルン旧市街" → Universität Bern) is a mis-ranking, not an answer. It goes
+ * back to the traveller instead of being silently planned around.
+ */
+const nonVisitPrimaryTypes = new Set([
+  "university",
+  "school",
+  "primary_school",
+  "secondary_school",
+  "hospital",
+  "doctor",
+  "corporate_office",
+  "local_government_office",
+  "real_estate_agency",
+  "insurance_agency",
+  "accounting",
+  "lawyer",
+]);
+
+function exactNameCandidate(input: string, candidates: ResolvedInputStop[]) {
+  const normalized = normalizePlaceName(input);
+  const matches = candidates.filter((candidate) => normalizePlaceName(candidate.name) === normalized);
+  return matches.length === 1 ? matches[0] : null;
+}
+
 function needsTravellerChoice(
   input: string,
   candidates: ResolvedInputStop[],
   destinationChoice: DestinationChoice,
 ) {
-  if (candidates.length <= 1) return false;
   const normalized = normalizePlaceName(input);
+  if (candidates.length === 0) return false;
+  if (candidates.length === 1) {
+    const only = candidates[0];
+    const name = normalizePlaceName(only.name);
+    const textualMatch = name.includes(normalized) || normalized.includes(name);
+    return !textualMatch && (only.placeTypes ?? []).some((type) => nonVisitPrimaryTypes.has(type));
+  }
   if (candidates.filter((candidate) => normalizePlaceName(candidate.name) === normalized).length > 1) return true;
 
   // In worldwide/auto mode Google relevance alone is not permission to pick a
@@ -297,6 +329,11 @@ function needsTravellerChoice(
   // unsafe. A cross-country shortlist always goes back to the traveller.
   const countries = new Set(candidates.map((candidate) => candidate.countryCode).filter(Boolean));
   if (destinationChoice === "auto" && countries.size > 1) return true;
+
+  // Exactly one candidate carries the input's own name: that IS the answer.
+  // Its derivative facility names ("ゴルナーグラート鉄道", "X station") are
+  // ways to reach the same place, not competing interpretations of it.
+  if (exactNameCandidate(input, candidates)) return false;
 
   // If more than one returned name is a plausible textual match, retain the
   // whole shortlist. A strong first result may still auto-resolve when every
@@ -332,7 +369,10 @@ export async function fetchGooglePlaceResolutions(
       ambiguous.push({ input, candidates: candidates.slice(0, 3) });
       return [];
     }
-    return candidates[0] ? [candidates[0]] : [];
+    // The auto-pick prefers the candidate whose name IS the query over a
+    // merely-first derivative ("ゴルナーグラート" over "ゴルネルグラート").
+    const preferred = exactNameCandidate(input, candidates) ?? candidates[0];
+    return preferred ? [preferred] : [];
   });
   const hotel = request.hotelQuery ? results.at(-1)?.[0] ?? null : null;
   return { places: [...exactResults.filter((stop): stop is ResolvedInputStop => stop !== null), ...places], hotel, ambiguous };

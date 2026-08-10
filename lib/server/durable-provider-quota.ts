@@ -1,4 +1,9 @@
-import { PROVIDER_QUOTA_SCHEMA_SQL } from "../../db/provider-quota-schema.ts";
+import {
+  PROVIDER_QUOTA_MIGRATION_SQL,
+  PROVIDER_QUOTA_OPERATIONS,
+  PROVIDER_QUOTA_SCHEMA_SQL,
+  PROVIDER_QUOTA_TABLE_INFO_SQL,
+} from "../../db/provider-quota-schema.ts";
 
 export type DurableQuotaProvider = "google" | "anthropic";
 export type DurableQuotaOperation =
@@ -24,28 +29,37 @@ export type DurableQuotaPolicy = Readonly<{
 
 export type DurableQuotaPolicies = Readonly<Record<DurableQuotaOperation, DurableQuotaPolicy>>;
 
+/*
+ * Sizing note (2026-08-10): one plan build alone can issue ~20 live-route
+ * events and a handful of recommendation searches, and every edit rebuilds.
+ * The original per-trip ceilings equalled ONE build, so a normal planning
+ * session ended in 429 budget_exhausted and every downstream surface (meal
+ * slots, transit evidence, hotel shortlists) looked broken. Per-trip and
+ * per-session-day ceilings now cover a real planning session; the global
+ * per-day/per-month rows remain the actual cost guard.
+ */
 export const DURABLE_PROVIDER_QUOTA_POLICIES: DurableQuotaPolicies = Object.freeze({
   live_routes: Object.freeze({
     provider: "google",
     maxPerRequest: 20,
-    maxPerTrip: 20,
-    maxPerSessionDay: 60,
+    maxPerTrip: 120,
+    maxPerSessionDay: 360,
     maxPerDay: 2_000,
     maxPerMonth: 20_000,
   }),
   place_resolution: Object.freeze({
     provider: "google",
     maxPerRequest: 12,
-    maxPerTrip: 12,
-    maxPerSessionDay: 36,
+    maxPerTrip: 36,
+    maxPerSessionDay: 108,
     maxPerDay: 1_200,
     maxPerMonth: 12_000,
   }),
   place_intelligence: Object.freeze({
     provider: "google",
     maxPerRequest: 1,
-    maxPerTrip: 10,
-    maxPerSessionDay: 30,
+    maxPerTrip: 30,
+    maxPerSessionDay: 90,
     maxPerDay: 1_000,
     maxPerMonth: 10_000,
   }),
@@ -63,18 +77,18 @@ export const DURABLE_PROVIDER_QUOTA_POLICIES: DurableQuotaPolicies = Object.free
   hotel_recommendations: Object.freeze({
     provider: "google",
     maxPerRequest: 4,
-    maxPerTrip: 20,
-    maxPerSessionDay: 60,
+    maxPerTrip: 60,
+    maxPerSessionDay: 180,
     maxPerDay: 600,
     maxPerMonth: 6_000,
   }),
-  // Nearby food discovery may make one bounded radius expansion. A fourteen
-  // day trip can have lunch and dinner slots, hence 56 provider events/trip.
+  // Nearby food discovery may make one bounded radius expansion; the ceiling
+  // covers a fourteen-day trip's lunch+dinner slots with headroom for retries.
   food_recommendations: Object.freeze({
     provider: "google",
     maxPerRequest: 2,
-    maxPerTrip: 56,
-    maxPerSessionDay: 112,
+    maxPerTrip: 112,
+    maxPerSessionDay: 336,
     maxPerDay: 2_000,
     maxPerMonth: 20_000,
   }),
@@ -91,10 +105,10 @@ export const DURABLE_PROVIDER_QUOTA_POLICIES: DurableQuotaPolicies = Object.free
   route_recommendations: Object.freeze({
     provider: "google",
     maxPerRequest: 3,
-    maxPerTrip: 42,
-    maxPerSessionDay: 84,
-    maxPerDay: 75,
-    maxPerMonth: 2_250,
+    maxPerTrip: 84,
+    maxPerSessionDay: 168,
+    maxPerDay: 300,
+    maxPerMonth: 9_000,
   }),
 });
 
@@ -294,14 +308,34 @@ function remainingHeaders(
 /**
  * Creates the D1 table at runtime. Calls are coalesced per binding in one
  * isolate; CREATE TABLE IF NOT EXISTS keeps concurrent isolates safe.
+ *
+ * A table deployed before an operation was added carries an outdated
+ * `operation IN (...)` CHECK, so every reservation for the new operation
+ * fails as "check constraint failed" — which the enforcer would misread as a
+ * permanently exhausted budget (the production food/hotel/route 429s of
+ * 2026-08-10). Such tables are migrated in place: rename, recreate with the
+ * current CHECK, copy every counter, drop the legacy copy. The four
+ * statements run in one transactional D1 batch, so a concurrent isolate's
+ * losing race rolls back cleanly and retries against the migrated table.
  */
 export async function initializeDurableProviderQuotaSchema(db: D1DatabaseLike) {
   const key = db as object;
   const existing = initializedDatabases.get(key);
   if (existing) return existing;
-  const pending = db.prepare(PROVIDER_QUOTA_SCHEMA_SQL).run().then((result) => {
-    if (result.success !== true) throw new Error("quota schema initialization failed");
-  });
+  const pending = (async () => {
+    const created = await db.prepare(PROVIDER_QUOTA_SCHEMA_SQL).run();
+    if (created.success !== true) throw new Error("quota schema initialization failed");
+    const info = await db.prepare(PROVIDER_QUOTA_TABLE_INFO_SQL).run();
+    if (info.success !== true) throw new Error("quota schema inspection failed");
+    const tableSql = typeof info.results?.[0]?.sql === "string" ? info.results[0].sql : "";
+    // The table was just ensured, so an empty probe is an anomaly; failing
+    // closed here beats silently keeping an outdated CHECK in service.
+    if (tableSql === "") throw new Error("quota schema inspection returned no table");
+    const outdated = PROVIDER_QUOTA_OPERATIONS.some((operation) => !tableSql.includes(`'${operation}'`));
+    if (!outdated) return;
+    const migrated = await db.batch(PROVIDER_QUOTA_MIGRATION_SQL.map((statement) => db.prepare(statement)));
+    if (migrated.some((result) => result.success !== true)) throw new Error("quota schema migration failed");
+  })();
   initializedDatabases.set(key, pending);
   try {
     await pending;
@@ -342,8 +376,14 @@ async function enforceWithOptions(
   const now = (options.now ?? Date.now)();
   if (!Number.isFinite(now) || now < 0) return denial("quota_store_unavailable", 503);
 
+  // Schema/migration failures are infrastructure problems; they must never be
+  // classified as an exhausted budget by the constraint-cap check below.
   try {
     await initializeDurableProviderQuotaSchema(db);
+  } catch {
+    return denial("quota_store_unavailable", 503);
+  }
+  try {
     const digest = options.digest ?? defaultDigest;
     const { day, month } = utcBuckets(now);
     const [sessionHash, tripHash, aggregateHash] = await Promise.all([

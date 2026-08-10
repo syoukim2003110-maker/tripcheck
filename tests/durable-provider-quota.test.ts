@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { PROVIDER_QUOTA_SCHEMA_SQL } from "../db/provider-quota-schema.ts";
+import {
+  PROVIDER_QUOTA_MIGRATION_SQL,
+  PROVIDER_QUOTA_OPERATIONS,
+  PROVIDER_QUOTA_SCHEMA_SQL,
+  PROVIDER_QUOTA_TABLE_INFO_SQL,
+} from "../db/provider-quota-schema.ts";
 import {
   DURABLE_PROVIDER_QUOTA_POLICIES,
   createDurableProviderQuotaEnforcer,
@@ -51,6 +56,8 @@ class FakeD1 implements D1DatabaseLike {
   schemaRuns = 0;
   failSchema = false;
   failBatches = false;
+  /** What sqlite_master reports for the counters table (simulates deployments). */
+  tableSql = PROVIDER_QUOTA_SCHEMA_SQL;
   private transactionTail: Promise<void> = Promise.resolve();
 
   prepare(query: string) {
@@ -63,6 +70,9 @@ class FakeD1 implements D1DatabaseLike {
       this.schemaRuns += 1;
       return { success: true, results: [] };
     }
+    if (statement.sql === PROVIDER_QUOTA_TABLE_INFO_SQL) {
+      return { success: true, results: [{ sql: this.tableSql }] };
+    }
     throw new Error("unexpected direct statement");
   }
 
@@ -73,6 +83,12 @@ class FakeD1 implements D1DatabaseLike {
       if (this.failBatches) throw new Error("D1 unavailable");
       const nextRows = new Map([...this.rows].map(([key, row]) => [key, { ...row }]));
       const results: D1RunResultLike[] = [];
+      const isMigrationBatch = concrete.length === PROVIDER_QUOTA_MIGRATION_SQL.length
+        && concrete.every((statement, index) => statement.sql === PROVIDER_QUOTA_MIGRATION_SQL[index]);
+      if (isMigrationBatch) {
+        this.tableSql = PROVIDER_QUOTA_SCHEMA_SQL;
+        return PROVIDER_QUOTA_MIGRATION_SQL.map(() => ({ success: true, results: [] }));
+      }
       for (const statement of concrete) {
         if (statement.sql.startsWith("INSERT INTO provider_quota_counters")) {
           results.push(this.reserve(nextRows, statement.bindings));
@@ -189,7 +205,10 @@ test("schema keeps only constrained opaque counters and uses CHECK for atomic ca
   assert.match(PROVIDER_QUOTA_SCHEMA_SQL, /length\(subject_hash\) = 64/);
   assert.match(PROVIDER_QUOTA_SCHEMA_SQL, /provider_quota_used_within_limit/);
   assert.match(PROVIDER_QUOTA_SCHEMA_SQL, /used_count <= hard_limit/);
-  assert.doesNotMatch(PROVIDER_QUOTA_SCHEMA_SQL, /itinerary|place_name|hotel|reservation|travel_date/i);
+  // Operation enum values legitimately contain words like "hotel"; the
+  // privacy sweep targets column/data shapes, not the operation catalogue.
+  const schemaWithoutOperationList = PROVIDER_QUOTA_SCHEMA_SQL.replace(/operation IN \([^)]*\)/, "operation IN (:ops:)");
+  assert.doesNotMatch(schemaWithoutOperationList, /itinerary|place_name|hotel|reservation|travel_date/i);
 });
 
 test("request cap rejects before schema initialization or a D1 reservation", async () => {
@@ -351,4 +370,48 @@ test("serialized D1 batch semantics admit only one concurrent reservation at the
   assert.ok(db.batchCalls.every((batch) => batch.length === 4));
   assert.equal(db.rows.size, 4);
   assert.ok([...db.rows.values()].every((row) => row.used === 1));
+});
+
+
+const LEGACY_TABLE_SQL = PROVIDER_QUOTA_SCHEMA_SQL
+  .replace(/operation IN \([^)]*\)/, "operation IN ('live_routes', 'place_resolution', 'place_intelligence', 'fresh_voices')");
+
+test("schema lists every chargeable operation so new reservations cannot fail the CHECK", () => {
+  for (const operation of PROVIDER_QUOTA_OPERATIONS) {
+    assert.ok(PROVIDER_QUOTA_SCHEMA_SQL.includes(`'${operation}'`), `${operation} missing from schema CHECK`);
+  }
+  assert.ok(PROVIDER_QUOTA_OPERATIONS.includes("food_recommendations"));
+  assert.ok(PROVIDER_QUOTA_OPERATIONS.includes("route_recommendations"));
+});
+
+test("a table created by an older schema is migrated before the first reservation", async () => {
+  const db = new FakeD1();
+  db.tableSql = LEGACY_TABLE_SQL;
+  const enforce = createDurableProviderQuotaEnforcer({ now: () => 1_754_000_000_000 });
+  const result = await enforce({
+    provider: "google",
+    operation: "food_recommendations",
+    units: 2,
+    anonymousSessionId: "session_migration_check",
+    tripId: "trip_migration_check",
+  }, db, environment());
+  assert.equal(result.ok, true, "reservation must succeed once the schema is migrated");
+  const migrationBatch = db.batchCalls.find((batch) => batch.some((statement) => statement.sql.startsWith("ALTER TABLE provider_quota_counters RENAME")));
+  assert.ok(migrationBatch, "the legacy table must be migrated in one transactional batch");
+  assert.deepEqual(migrationBatch!.map((statement) => statement.sql), [...PROVIDER_QUOTA_MIGRATION_SQL]);
+  assert.equal(db.tableSql, PROVIDER_QUOTA_SCHEMA_SQL);
+});
+
+test("a current table is never migrated", async () => {
+  const db = new FakeD1();
+  const enforce = createDurableProviderQuotaEnforcer({ now: () => 1_754_000_000_000 });
+  const result = await enforce({
+    provider: "google",
+    operation: "food_recommendations",
+    units: 2,
+    anonymousSessionId: "session_current_check",
+    tripId: "trip_current_check",
+  }, db, environment());
+  assert.equal(result.ok, true);
+  assert.ok(db.batchCalls.every((batch) => batch.every((statement) => !statement.sql.startsWith("ALTER TABLE"))));
 });

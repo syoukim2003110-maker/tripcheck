@@ -33,8 +33,31 @@ test("an intercity leg is never a 200-minute taxi crawl", () => {
   assert.ok(taxi.minutes < 160, `taxi should ride the expressway tier, got ${taxi.minutes}`);
   assert.ok(transit.minutes < 180, `transit should ride the express tier, got ${transit.minutes}`);
   assert.notEqual(comparison.recommended.mode, "walk");
-  // The recommendation must stay within ten minutes of the outright fastest option.
-  assert.ok(comparison.recommended.minutes <= comparison.fastest.minutes + 10);
+  // On transit-first ground rail may be preferred over a somewhat faster taxi,
+  // but never beyond the proportional allowance.
+  assert.ok(comparison.recommended.minutes <= comparison.fastest.minutes + Math.max(10, Math.round(taxi.minutes * 0.25)));
+});
+
+test("transit-first intercity legs prefer rail, even against a live-measured taxi with unmeasured transit", () => {
+  // Interlaken → Bern, ~44 km straight line: Swiss rail territory.
+  const interlaken = stopAt("interlaken", 46.6863, 7.8632);
+  const bern = stopAt("bern", 46.948, 7.4474);
+  const estimate = estimateTravelOptions(interlaken, bern, "auto", "transit_first");
+  assert.equal(estimate.recommended.mode, "transit");
+  // Asymmetric evidence: a live 47-minute drive with only an estimated train
+  // must not flip the leg to taxi — the train simply has not been measured.
+  const driveOnly = applyLiveTransitMinutes(estimate, undefined, undefined, 47, "auto", "transit_first");
+  assert.equal(driveOnly.recommended.mode, "transit");
+  // Once transit is measured, real numbers decide (52 vs 47 + allowance).
+  const measured = applyLiveTransitMinutes(estimate, 52, undefined, 47, "auto", "transit_first");
+  assert.equal(measured.recommended.mode, "transit");
+  assert.equal(measured.recommended.minutes, 52);
+  // A provider-answered "no transit route" is negative live evidence: the
+  // fabricated train estimate may no longer outrank the measured drive.
+  const unroutable = applyLiveTransitMinutes(estimate, undefined, undefined, 47, "auto", "transit_first", true);
+  assert.equal(unroutable.recommended.mode, "taxi");
+  assert.equal(unroutable.recommended.minutes, 47);
+  assert.equal(unroutable.options.find((option) => option.mode === "transit")?.unroutable, true);
 });
 
 test("short hops recommend walking, city legs recommend the fastest sane mode", () => {

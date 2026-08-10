@@ -45,7 +45,7 @@ export function placeReviewStatus(input: {
 }
 
 export class PlaceResolutionError extends Error {
-  code: "not_configured" | "invalid_request" | "unavailable";
+  code: "not_configured" | "invalid_request" | "quota_exhausted" | "unavailable";
 
   constructor(code: PlaceResolutionError["code"]) {
     super(code);
@@ -170,6 +170,9 @@ export async function requestPlaceResolution(
   if (!response.ok || !body) {
     if (body?.code === "not_configured") throw new PlaceResolutionError("not_configured");
     if (body?.code === "invalid_request") throw new PlaceResolutionError("invalid_request");
+    // The durable provider ceiling answers 429 budget_exhausted; telling the
+    // traveller "try again tomorrow" beats a generic connection error.
+    if (response.status === 429 || body?.code === "budget_exhausted") throw new PlaceResolutionError("quota_exhausted");
     throw new PlaceResolutionError("unavailable");
   }
   return { ...body, ambiguous: Array.isArray(body.ambiguous) ? body.ambiguous : [] };

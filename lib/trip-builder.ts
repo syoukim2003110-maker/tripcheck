@@ -139,6 +139,12 @@ export type FoodRecommendationSlot = {
   latitude: number;
   longitude: number;
   window: string;
+  /**
+   * Schedule-aware local clock for this meal: the destination meal window
+   * pulled toward when the route actually passes the anchor. This is what the
+   * timeline displays and sorts by; `window` remains the static range chip.
+   */
+  displayTime: string;
   /** Local clock used when probing "open at the planned meal time". */
   probeTime?: string;
   rationale: string;
@@ -173,6 +179,13 @@ export type TripPlannerContext = {
   durationOverrides?: Record<string, number>;
   earlyVisitStopIds?: string[];
   liveTransitMinutes?: Record<string, number>;
+  /**
+   * Legs (routeLegKey) where the provider explicitly answered that no transit
+   * route exists for the requested departure. Negative live evidence: it lets
+   * the recommendation fall back to a measured drive instead of pinning an
+   * invented train forever.
+   */
+  liveTransitAbsentLegs?: Record<string, boolean>;
   /**
    * Google transit ride changes keyed by routeLegKey. Callers must derive this
    * from the bounded convergence result, not a pair-only first-write cache;
@@ -455,16 +468,30 @@ function buildFoodRecommendationSlots(
   days.forEach((day, dayIndex) => {
     if (day.stops.length === 0) return;
     const requestedKinds: MealKind[] = mealPlan === "all" ? ["lunch", "dinner"] : ["dinner"];
+    const firstArrival = clockMinutes(day.stops[0].arrival);
+    const lastDepartureRaw = clockMinutes(day.stops.at(-1)!.departure);
+    if (firstArrival === null || lastDepartureRaw === null) return;
+    // A schedule that runs past midnight wraps to 00:xx; unwrap it so the
+    // meal-window overlap gates see the real end of the day.
+    const lastDeparture = lastDepartureRaw < firstArrival ? lastDepartureRaw + 1440 : lastDepartureRaw;
     for (const kind of requestedKinds) {
       const deadlineMinutes = clockMinutes(day.deadline ?? undefined);
-      if (kind === "lunch" && clockMinutes(day.startTime)! > lunch.end) continue;
+      // Meals belong to the schedule that actually exists: a day whose route
+      // never touches the meal window gets no slot, so a morning-only day
+      // cannot grow an 18:00 「帰路の夕食」 row below its 10:42 finish.
+      if (kind === "lunch" && (firstArrival > lunch.end || lastDeparture < lunch.start)) continue;
       if (kind === "dinner" && deadlineMinutes !== null && deadlineMinutes < dinner.start) continue;
+      if (kind === "dinner" && lastDeparture < dinner.start - 120) continue;
+      // Lunch anchors on the stop the traveller is at (or has most recently
+      // reached) inside lunch hours — never a stop the route only reaches
+      // after the window, which would put the meal row after a later visit.
       const anchor = kind === "lunch"
-        ? day.stops.reduce((closest, stop) => {
-          const target = lunchAnchorMinutes;
-          return Math.abs((clockMinutes(stop.arrival) ?? target) - target) < Math.abs((clockMinutes(closest.arrival) ?? target) - target) ? stop : closest;
-        })
+        ? [...day.stops].filter((stop) => (clockMinutes(stop.arrival) ?? Number.MAX_SAFE_INTEGER) <= lunch.end).at(-1) ?? day.stops[0]
         : day.stops.at(-1)!;
+      const anchorArrival = clockMinutes(anchor.arrival) ?? lunchAnchorMinutes;
+      const displayMinutes = kind === "lunch"
+        ? Math.min(Math.max(lunchAnchorMinutes, anchorArrival), lunch.end)
+        : Math.max(dinner.start, Math.min(lastDeparture, dinner.end));
       const rationale = kind === "lunch"
         ? {
           en: `Easy to reach around ${anchor.stop.name}, without adding a cross-city detour.`,
@@ -491,7 +518,8 @@ function buildFoodRecommendationSlots(
         window: kind === "lunch"
           ? `${clock(lunch.start)}–${clock(lunch.end)}`
           : `${clock(dinner.start)}–${clock(dinner.end)}`,
-        probeTime: kind === "lunch" ? clock(lunchAnchorMinutes) : clock(Math.round((dinner.start + dinner.end) / 2)),
+        displayTime: clock(displayMinutes),
+        probeTime: clock(displayMinutes),
         rationale,
         queryIdeas: foodIdeasForArea(anchor.stop.area, locale, destination),
       });
@@ -1034,6 +1062,8 @@ type TravelInputs = {
   /** Which mode the destination actually rewards when nothing else decides. */
   mobility?: MobilityProfile;
   transit?: Record<string, number>;
+  /** Legs where the provider answered that no transit route exists. */
+  transitAbsent?: Record<string, boolean>;
   transfers?: Record<string, number>;
   walking?: Record<string, number>;
   driving?: Record<string, number>;
@@ -1068,6 +1098,7 @@ function routeComparison(from: RouteStop, to: RouteStop, travel: TravelInputs) {
     fullLegProviderEvidence ? travel.driving?.[key] : undefined,
     travel.preference,
     mobility,
+    fullLegProviderEvidence && travel.transitAbsent?.[key] === true,
   );
   const unfilteredComparison = fullLegProviderEvidence ? providerComparison : {
     options: providerComparison.options.map((option) => ({ ...option, source: "estimate" as const })),
@@ -1625,6 +1656,8 @@ type DayAssignmentScore = readonly [
   hardViolationMagnitude: number,
   overrunDayCount: number,
   totalOverrunMinutes: number,
+  emptyDayCount: number,
+  overloadMinutes: number,
   travelMinutes: number,
   maximumDayMinutes: number,
   loadSpreadMinutes: number,
@@ -1636,14 +1669,23 @@ function compareDayAssignmentScore(left: DayAssignmentScore, right: DayAssignmen
     const difference = (left[index] as number) - (right[index] as number);
     if (difference !== 0) return difference;
   }
-  return left[7].localeCompare(right[7]);
+  return (left.at(-1) as string).localeCompare(right.at(-1) as string);
 }
+
+type DayAssignmentLimits = {
+  paceCapacity: number;
+  dayBudgetMinutes: number;
+};
 
 function dayAssignmentSignature(clusters: RouteStop[][]) {
   return clusters.map((cluster) => cluster.map((stop) => stop.id).sort().join("\u0000")).join("\u0001");
 }
 
-function scoreDayAssignment(days: BuiltPlanDay[], clusters: RouteStop[][]): DayAssignmentScore {
+function scoreDayAssignment(
+  days: BuiltPlanDay[],
+  clusters: RouteStop[][],
+  limits: DayAssignmentLimits,
+): DayAssignmentScore {
   const openingViolations = days.reduce((sum, day) => sum + day.openingConflictCount, 0);
   const reservationViolations = days.reduce((sum, day) => sum + day.reservationConflictCount, 0);
   const reservationLateMinutes = days.reduce((sum, day) => sum + day.stops.reduce(
@@ -1658,6 +1700,18 @@ function scoreDayAssignment(days: BuiltPlanDay[], clusters: RouteStop[][]): DayA
   const loads = days.map((day) => day.totalMinutes);
   const maximumDayMinutes = loads.length > 0 ? Math.max(...loads) : 0;
   const minimumDayMinutes = loads.length > 0 ? Math.min(...loads) : 0;
+  // Emptying a day deletes its whole hotel round trip from travelMinutes, so
+  // raw travel comparison actively rewards cramming every stop onto one or
+  // two mega-days. When there is enough material to use every requested day,
+  // an empty day is a comfort violation ranked above travel; likewise a day
+  // stuffed past the pace's stop count or waking-time budget.
+  const totalStops = clusters.reduce((sum, cluster) => sum + cluster.length, 0);
+  const emptyDayCount = totalStops >= clusters.length
+    ? clusters.filter((cluster) => cluster.length === 0).length
+    : 0;
+  const overloadMinutes = days.reduce((sum, day, index) => sum
+    + Math.max(0, (clusters[index]?.length ?? 0) - limits.paceCapacity) * 240
+    + Math.max(0, day.totalMinutes - limits.dayBudgetMinutes), 0);
   // Hard facts and clock-window overruns are compared before any route or
   // comfort preference. An opening conflict cannot be hidden by a shorter day.
   return [
@@ -1665,6 +1719,8 @@ function scoreDayAssignment(days: BuiltPlanDay[], clusters: RouteStop[][]): DayA
     openingViolations * 24 * 60 + reservationLateMinutes + totalOverrunMinutes,
     overrunDays.length,
     totalOverrunMinutes,
+    emptyDayCount,
+    overloadMinutes,
     travelMinutes,
     maximumDayMinutes,
     maximumDayMinutes - minimumDayMinutes,
@@ -1683,6 +1739,7 @@ function optimizeDayAssignments(
   constraints: Map<string, WishlistStopConstraint>,
   lockedDayByStop: ReadonlyMap<string, number>,
   build: (cluster: RouteStop[], dayIndex: number) => BuiltPlanDay,
+  limits: DayAssignmentLimits,
 ) {
   const stopCount = initial.reduce((sum, cluster) => sum + cluster.length, 0);
   if (initial.length <= 1 || stopCount <= 1 || stopCount > MAX_DAY_ASSIGNMENT_STOPS) {
@@ -1697,7 +1754,7 @@ function optimizeDayAssignments(
     if (cached) return cached;
     if (evaluationCount >= MAX_DAY_ASSIGNMENT_EVALUATIONS) return null;
     evaluationCount += 1;
-    const value = scoreDayAssignment(clusters.map((cluster, dayIndex) => build(cluster, dayIndex)), clusters);
+    const value = scoreDayAssignment(clusters.map((cluster, dayIndex) => build(cluster, dayIndex)), clusters, limits);
     scoreCache.set(signature, value);
     return value;
   };
@@ -1730,6 +1787,11 @@ function optimizeDayAssignments(
       for (const stop of sourceStops) {
         for (let targetDay = 0; targetDay < current.length && evaluationCount < MAX_DAY_ASSIGNMENT_EVALUATIONS; targetDay += 1) {
           if (targetDay === sourceDay) continue;
+          // No hard capacity bound here: overloadMinutes in the score tuple
+          // already penalizes over-capacity days BELOW hard booking/opening
+          // violations, so a relocation into a full day stays available as
+          // the only repair when the receiving day's stops are locked — while
+          // never winning merely to save travel minutes.
           const candidate = copy(current);
           candidate[sourceDay] = candidate[sourceDay].filter((entry) => entry.id !== stop.id);
           candidate[targetDay].push(stop);
@@ -1938,6 +2000,7 @@ export function buildTripFromWishlist(
     preference: context.travelPreference ?? "auto",
     mobility: destination.mobility,
     transit: context.liveTransitMinutes,
+    transitAbsent: context.liveTransitAbsentLegs,
     transfers: context.liveTransitTransferCounts,
     walking: context.liveWalkingMinutes,
     driving: context.liveDrivingMinutes,
@@ -2044,15 +2107,22 @@ export function buildTripFromWishlist(
   // Time-based ceiling on top of the count-based one: a day is ~10 waking
   // hours; drop trailing optionals when the stays alone exceed what fits.
   const dayBudgetMinutes = pace === "relaxed" ? 480 : pace === "fast" ? 660 : 570;
-  for (const cluster of clusters) {
-    const clusterMinutes = () => cluster.reduce((sum, stop) => sum + stop.planningDurationMinutes, 0)
-      + Math.max(0, cluster.length - 1) * 35;
-    while (clusterMinutes() > dayBudgetMinutes) {
-      const optionalIndex = cluster.findLastIndex((stop) => constraints.get(stop.id)?.priority === "optional");
-      if (optionalIndex < 0) break;
-      deferredOptionalStops.push(...cluster.splice(optionalIndex, 1));
+  const trimClustersToDayBudget = () => {
+    for (const cluster of clusters) {
+      const clusterMinutes = () => cluster.reduce((sum, stop) => sum + stop.planningDurationMinutes, 0)
+        + Math.max(0, cluster.length - 1) * 35;
+      while (clusterMinutes() > dayBudgetMinutes) {
+        // A day-pinned optional was placed there on purpose; an over-budget
+        // day surfaces honestly rather than silently dropping it.
+        const optionalIndex = cluster.findLastIndex((stop) => (
+          constraints.get(stop.id)?.priority === "optional" && constraints.get(stop.id)?.fixedDay == null
+        ));
+        if (optionalIndex < 0) break;
+        deferredOptionalStops.push(...cluster.splice(optionalIndex, 1));
+      }
     }
-  }
+  };
+  trimClustersToDayBudget();
   const scheduledKnownStops = fullClusters.flat();
   const baseRecommendations = recommendBases(scheduledKnownStops, fullClusters, locale, Boolean(context.resolvedStops?.length));
   const earlyVisitStopIds = new Set(context.earlyVisitStopIds ?? []);
@@ -2100,8 +2170,15 @@ export function buildTripFromWishlist(
       : context.dayEndTimes?.[index] ?? context.dayEndTarget,
     context.lockedOrderByDay?.[index] ?? (context.optimizeExistingOrder ? [] : parsedOrderByDay[index] ?? []),
   );
-  const optimizedClusters = optimizeDayAssignments(clusters, constraints, lockedDayByStop, buildCandidateDay);
+  const optimizedClusters = optimizeDayAssignments(clusters, constraints, lockedDayByStop, buildCandidateDay, {
+    paceCapacity,
+    dayBudgetMinutes,
+  });
   clusters.splice(0, clusters.length, ...optimizedClusters);
+  // A swap can still assemble an over-budget day out of two in-budget ones;
+  // shed trailing optionals once more so the returned schedule honours the
+  // same ceiling the seed clusters were trimmed to.
+  trimClustersToDayBudget();
   const days = clusters.map(buildCandidateDay);
   const lastIndex = days.length - 1;
   if (lastIndex >= 0) {

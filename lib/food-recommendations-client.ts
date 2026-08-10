@@ -3,6 +3,7 @@ import type { Locale } from "./i18n.ts";
 import type { FoodRecommendationSlot } from "./trip-builder.ts";
 import { defaultFoodDiscoveryQuery, type FoodCandidate } from "./google-food.ts";
 import type { FoodRankingItem } from "./ai-food-ranking.ts";
+import { tripRequestHeaders } from "./trip-request-identity.ts";
 
 export type FoodRecommendationsResponse = {
   provider: "google_maps";
@@ -88,7 +89,7 @@ export function foodRecommendationRequestKey(slot: FoodRecommendationSlot, local
 }
 
 export class FoodRecommendationsError extends Error {
-  code: "not_configured" | "invalid_request" | "unavailable";
+  code: "not_configured" | "invalid_request" | "quota_exhausted" | "unavailable";
 
   constructor(code: FoodRecommendationsError["code"]) {
     super(code);
@@ -209,7 +210,7 @@ export async function requestFoodRecommendations(
   try {
     response = await fetch("/api/food-recommendations", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: tripRequestHeaders({ "Content-Type": "application/json" }),
       signal: options?.signal,
       body: JSON.stringify(maybeLocale
         ? buildFoodSearchPayload(slot, queryOrLocale, maybeLocale, destination)
@@ -222,6 +223,7 @@ export async function requestFoodRecommendations(
   if (!response.ok || !payload) {
     if (payload?.code === "not_configured") throw new FoodRecommendationsError("not_configured");
     if (payload?.code === "invalid_request") throw new FoodRecommendationsError("invalid_request");
+    if (response.status === 429 || payload?.code === "budget_exhausted") throw new FoodRecommendationsError("quota_exhausted");
     throw new FoodRecommendationsError("unavailable");
   }
   return payload;
@@ -235,7 +237,7 @@ export async function requestFoodRanking(
 ): Promise<FoodRankingResponse> {
   const response = await fetch("/api/food-recommendations/ai", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: tripRequestHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify(buildFoodRankingPayload(slot, query, candidates, locale)),
   }).catch(() => null);
   if (!response?.ok) throw new Error("ai_ranking_unavailable");

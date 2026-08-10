@@ -5,12 +5,35 @@
  * subject hashes and server-derived UTC buckets. It must never receive an
  * itinerary, place, hotel, reservation, or traveller-supplied date.
  */
-export const PROVIDER_QUOTA_SCHEMA_SQL = `
-CREATE TABLE IF NOT EXISTS provider_quota_counters (
+
+/**
+ * Every operation the durable ledger may charge. The runtime schema check in
+ * initializeDurableProviderQuotaSchema keys off this list: a deployed table
+ * whose CHECK constraint predates an entry here is migrated in place,
+ * because an outdated CHECK makes every new operation's reservation fail as
+ * "check constraint failed" — which the enforcer would misread as a
+ * permanently exhausted budget.
+ */
+export const PROVIDER_QUOTA_OPERATIONS = [
+  "live_routes",
+  "place_resolution",
+  "place_intelligence",
+  "fresh_voices",
+  "hotel_recommendations",
+  "food_recommendations",
+  "food_ranking",
+  "route_recommendations",
+] as const;
+
+const operationCheckList = PROVIDER_QUOTA_OPERATIONS.map((operation) => `'${operation}'`).join(", ");
+
+function schemaSql(tableName: string) {
+  return `
+CREATE TABLE IF NOT EXISTS ${tableName} (
   provider TEXT NOT NULL
     CHECK (provider IN ('google', 'anthropic')),
   operation TEXT NOT NULL
-    CHECK (operation IN ('live_routes', 'place_resolution', 'place_intelligence', 'fresh_voices')),
+    CHECK (operation IN (${operationCheckList})),
   scope TEXT NOT NULL
     CHECK (scope IN ('trip', 'session', 'day', 'month')),
   subject_hash TEXT NOT NULL
@@ -36,3 +59,18 @@ CREATE TABLE IF NOT EXISTS provider_quota_counters (
   PRIMARY KEY (provider, operation, scope, subject_hash, bucket)
 ) WITHOUT ROWID
 `.trim();
+}
+
+export const PROVIDER_QUOTA_SCHEMA_SQL = schemaSql("provider_quota_counters");
+
+/** Statements that upgrade a table created by an older schema, transactionally. */
+export const PROVIDER_QUOTA_MIGRATION_SQL = [
+  "DROP TABLE IF EXISTS provider_quota_counters_legacy",
+  "ALTER TABLE provider_quota_counters RENAME TO provider_quota_counters_legacy",
+  schemaSql("provider_quota_counters"),
+  "INSERT INTO provider_quota_counters SELECT * FROM provider_quota_counters_legacy",
+  "DROP TABLE provider_quota_counters_legacy",
+] as const;
+
+export const PROVIDER_QUOTA_TABLE_INFO_SQL =
+  "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'provider_quota_counters'";

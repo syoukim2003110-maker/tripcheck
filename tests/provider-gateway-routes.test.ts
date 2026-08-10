@@ -210,7 +210,7 @@ test("food discovery reserves its two-call sparse-area ceiling and uses the pare
     }));
     assert.equal(response.status, 200);
     assert.equal(providerCalls, 2, "an empty nearby result performs one bounded expansion");
-    assert.equal(response.headers.get("X-TripCheck-Quota-Remaining-Trip"), "54");
+    assert.equal(response.headers.get("X-TripCheck-Quota-Remaining-Trip"), "110");
     assert.equal(response.headers.get("X-TripCheck-Quota-Scope"), "process-local");
   } finally {
     restore("GOOGLE_PLACES_API_KEY", originalKey);
@@ -249,7 +249,7 @@ test("route recommendation failure remains charged at the three-search ceiling",
     assert.equal(response.status, 502);
     assert.equal(providerCalls, 1, "the Worker, not the origin handler, owns retries");
     assert.equal(response.headers.get("X-TripCheck-Provider-Failed-Units"), "3");
-    assert.equal(response.headers.get("X-TripCheck-Quota-Remaining-Trip"), "39");
+    assert.equal(response.headers.get("X-TripCheck-Quota-Remaining-Trip"), "81");
   } finally {
     restore("GOOGLE_PLACES_API_KEY", originalKey);
     restore("ROUTE_RECOMMENDATIONS_ENABLED", originalFeature);

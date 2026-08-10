@@ -569,7 +569,7 @@ export async function fetchGoogleHotelCandidates(
   // pool toward one excursion. Generic, coordinate-biased style searches are
   // optional additions so luxury and value remain comparable.
   const pages = request.query
-    ? [await searchHotelText(destinationPlaceQuery(`${request.query} ${request.area}`, requestDestination(request)), request, apiKey, fetcher)]
+    ? [await searchHotelText(destinationPlaceQuery(`${request.query} ${request.area}`, requestDestination(request), request.languageCode), request, apiKey, fetcher)]
     : await Promise.all([
       searchHotelsNearRouteCenter(request, apiKey, fetcher)
         .catch(() => searchHotelText(request.languageCode === "ja" ? "ホテル" : "hotels", request, apiKey, fetcher)),

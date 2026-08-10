@@ -187,6 +187,20 @@ function visibleMapPadding(map: any, inspectorOpen: boolean): MapPadding {
 
 function fitVisibleBounds(map: any, bounds: any, inspectorOpen: boolean) {
   map.fitBounds(bounds, visibleMapPadding(map, inspectorOpen));
+  // A day whose stops are metres apart (hotel + the town it sits in) would
+  // otherwise fit at zoom ~21: a featureless grey close-up. Only such
+  // degenerate fits register the clamp, so a deliberate later deep zoom is
+  // never snapped back by a stale one-shot listener.
+  const span = bounds?.toSpan?.();
+  const degenerate = span && Math.max(span.lat?.() ?? 0, span.lng?.() ?? 0) < 0.006;
+  if (!degenerate) return;
+  const clampZoom = () => {
+    const zoom = map.getZoom?.();
+    if (typeof zoom === "number" && zoom > 16) map.setZoom(16);
+  };
+  const maps = (globalThis as { google?: { maps?: { event?: { addListenerOnce?: (target: unknown, eventName: string, handler: () => void) => void } } } }).google?.maps;
+  if (maps?.event?.addListenerOnce) maps.event.addListenerOnce(map, "idle", clampZoom);
+  else clampZoom();
 }
 
 function focusVisiblePoint(map: any, position: { lat: number; lng: number }, inspectorOpen: boolean) {

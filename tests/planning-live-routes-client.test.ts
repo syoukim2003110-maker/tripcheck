@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { LiveRoutesError } from "../lib/planning-live-routes-client.ts";
+import { straightLineDistanceKm } from "../lib/route-optimizer.ts";
 import {
   buildPlanningRouteLegs,
   buildPlanningTransitIteration,
@@ -120,19 +121,27 @@ test("mountain transit uses a distinct access-node endpoint and discloses the as
   assert.equal(evidence.status, "verified", "the access-node segment itself is verified, not the full summit journey");
 });
 
-test("convergence requests include only selected transit legs with exact time provenance", () => {
+test("convergence requests cover selected transit legs and plausible-transit taxi legs", () => {
   const draft = buildTripFromWishlist("Senso-ji\nTokyo Skytree", 1, "balanced", "en", {
     tripStartDate: "2026-09-14",
     hotelQuery: "Shinjuku",
   });
   const requests = buildSelectedTransitLegRequests(draft);
   const iteration = buildPlanningTransitIteration(draft);
+  // Transit is measured for the legs the schedule uses AND for taxi legs of
+  // rail-plausible length, so a leg demoted on estimates can earn its transit
+  // measurement back instead of staying taxi forever.
+  const measuresTransit = (mode: string | null, from: { latitude: number; longitude: number }, to: { latitude: number; longitude: number }) => (
+    mode === "transit" || (mode === "taxi" && straightLineDistanceKm(from as never, to as never) >= 4)
+  );
   const selectedTransitFacts = new Set([
-    ...draft.days.flatMap((day) => day.legs.filter((leg) => leg.comparison.recommended.mode === "transit").map((leg) => `route:${day.label}:${leg.from.id}:${leg.to.id}`)),
-    ...draft.days.flatMap((day) => day.hotelOutboundMode === "transit" && day.startBase && day.stops[0]
+    ...draft.days.flatMap((day) => day.legs
+      .filter((leg) => measuresTransit(leg.comparison.recommended.mode, leg.from, leg.to))
+      .map((leg) => `route:${day.label}:${leg.from.id}:${leg.to.id}`)),
+    ...draft.days.flatMap((day) => day.startBase && day.stops[0] && measuresTransit(day.hotelOutboundMode, day.startBase, day.stops[0].stop)
       ? [`route:${day.label}:${day.startBase.id}:${day.stops[0].stop.id}`]
       : []),
-    ...draft.days.flatMap((day) => day.hotelInboundMode === "transit" && day.endBase && day.stops.at(-1)
+    ...draft.days.flatMap((day) => day.endBase && day.stops.at(-1) && measuresTransit(day.hotelInboundMode, day.stops.at(-1)!.stop, day.endBase)
       ? [`route:${day.label}:${day.stops.at(-1)!.stop.id}:${day.endBase.id}`]
       : []),
   ]);

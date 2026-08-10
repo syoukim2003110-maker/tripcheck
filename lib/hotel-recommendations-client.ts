@@ -1,6 +1,7 @@
 import type { DestinationChoice } from "./destinations.ts";
 import type { Locale } from "./i18n.ts";
 import type { HotelCandidate } from "./google-hotels.ts";
+import { tripRequestHeaders } from "./trip-request-identity.ts";
 
 export type HotelSearchInput = {
   latitude: number;
@@ -18,7 +19,7 @@ export type HotelRecommendationsResponse = {
 };
 
 export class HotelRecommendationsError extends Error {
-  code: "not_configured" | "invalid_request" | "unavailable";
+  code: "not_configured" | "invalid_request" | "quota_exhausted" | "unavailable";
 
   constructor(code: HotelRecommendationsError["code"]) {
     super(code);
@@ -54,7 +55,7 @@ export async function requestHotelRecommendations(
   try {
     response = await fetch("/api/hotel-recommendations", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: tripRequestHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify(buildHotelSearchPayload(input, locale, destination)),
       signal,
     });
@@ -65,6 +66,7 @@ export async function requestHotelRecommendations(
   if (!response.ok || !payload) {
     if (payload?.code === "not_configured") throw new HotelRecommendationsError("not_configured");
     if (payload?.code === "invalid_request") throw new HotelRecommendationsError("invalid_request");
+    if (response.status === 429 || payload?.code === "budget_exhausted") throw new HotelRecommendationsError("quota_exhausted");
     throw new HotelRecommendationsError("unavailable");
   }
   return payload;

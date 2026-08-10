@@ -37,6 +37,7 @@ const slot: FoodRecommendationSlot = {
   latitude: 35.6595,
   longitude: 139.7005,
   window: "17:30–21:00",
+  displayTime: "18:30",
   rationale: "Easy to reach.",
   queryIdeas: ["izakaya"],
 };

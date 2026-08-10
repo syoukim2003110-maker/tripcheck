@@ -937,3 +937,89 @@ test("treats last entry as a hard admission cutoff distinct from closing time", 
   assert.equal(onTime.days[0].stops[0].openingStatus, "verified_open");
   assert.equal(onTime.days[0].stops[0].departure, "17:05", "the visit may finish after last entry while still finishing before closing");
 });
+
+const swissSample = `ルツェルン カペル橋
+リギ山
+インターラーケン
+ユングフラウヨッホ — 必須
+ラウターブルンネン
+ツェルマット
+ゴルナーグラート
+ベルン旧市街`;
+
+function swissResolvedStops() {
+  const definitions = [
+    { id: "g-kapellbruecke", name: "カペル橋", latitude: 47.0517, longitude: 8.3073, minutes: 75 },
+    { id: "g-rigi", name: "リギ山", latitude: 47.0567, longitude: 8.4854, minutes: 240 },
+    { id: "g-interlaken", name: "インターラーケン", latitude: 46.6863, longitude: 7.8632, minutes: 90 },
+    { id: "g-jungfraujoch", name: "ユングフラウヨッホ", latitude: 46.5474, longitude: 7.9854, minutes: 75 },
+    { id: "g-lauterbrunnen", name: "ラウターブルンネン", latitude: 46.5936, longitude: 7.9081, minutes: 90 },
+    { id: "g-zermatt", name: "ツェルマット", latitude: 46.0207, longitude: 7.7491, minutes: 90 },
+    { id: "g-gornergrat", name: "ゴルナーグラート", latitude: 45.9833, longitude: 7.7842, minutes: 60 },
+    { id: "g-bern-old-town", name: "ベルン旧市街", latitude: 46.948, longitude: 7.4474, minutes: 75 },
+  ];
+  return definitions.map(({ id, name, latitude, longitude, minutes }, inputIndex) => ({
+    id,
+    input: name,
+    inputIndex,
+    name,
+    area: name,
+    address: `${name}, Switzerland`,
+    countryCode: "CH",
+    latitude,
+    longitude,
+    sourceUrl: `https://maps.google.com/?q=${id}`,
+    verifiedAt: "2026-08-09T00:00:00Z",
+    confidence: "medium" as const,
+    planningDurationMinutes: minutes,
+    isAnchor: false,
+  }));
+}
+
+test("a hotel-based multi-day trip uses every requested day instead of cramming mega-days", () => {
+  const resolvedStops = swissResolvedStops();
+  const resolvedBase = {
+    id: "hotel-interlaken",
+    input: "Hotel Interlaken",
+    name: "Hotel Interlaken",
+    area: "インターラーケン",
+    address: "Interlaken, Switzerland",
+    countryCode: "CH",
+    latitude: 46.6866,
+    longitude: 7.8654,
+    sourceUrl: "https://maps.google.com/?q=hotel-interlaken",
+    verifiedAt: "2026-08-09T00:00:00Z",
+    confidence: "medium" as const,
+    planningDurationMinutes: 0,
+    isAnchor: false,
+  };
+  for (const pace of ["relaxed", "balanced"] as const) {
+    const paceCapacity = pace === "relaxed" ? 3 : 4;
+    const dayBudgetMinutes = pace === "relaxed" ? 480 : 570;
+    const plan = buildTripFromWishlist(swissSample, 4, pace, "ja", {
+      destination: "switzerland",
+      resolvedStops,
+      resolvedBase,
+      tripStartDate: "2026-09-14",
+    });
+    // Emptying a day deletes its hotel round trip from the travel score, so
+    // without the empty-day/overload guards the optimizer returned 0/4/4/0.
+    assert.ok(
+      plan.days.every((day) => day.stops.length > 0),
+      `${pace}: no requested day may stay empty, got ${plan.days.map((day) => day.stops.length).join("/")}`,
+    );
+    assert.ok(
+      plan.days.every((day) => day.stops.length <= paceCapacity),
+      `${pace}: pace capacity must hold after optimization, got ${plan.days.map((day) => day.stops.length).join("/")}`,
+    );
+    for (const day of plan.days) {
+      const stayMinutes = day.stops.reduce((sum, stop) => sum + stop.stop.planningDurationMinutes, 0)
+        + Math.max(0, day.stops.length - 1) * 35;
+      assert.ok(
+        stayMinutes <= dayBudgetMinutes,
+        `${pace}: stays must fit the day budget, got ${stayMinutes} > ${dayBudgetMinutes}`,
+      );
+    }
+    assert.equal(plan.scheduleConflictCount, 0, `${pace}: balancing days must not invent conflicts`);
+  }
+});

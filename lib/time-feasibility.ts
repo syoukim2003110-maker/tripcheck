@@ -5,7 +5,13 @@ export type TransportMode = "walk" | "transit" | "taxi";
 /** "auto" recommends the fastest sane mode; "car" plans the trip around a rental car. */
 export type TravelPreference = "auto" | "car";
 
-export type ModeEstimate = { mode: TransportMode; minutes: number; source?: "estimate" | "live" };
+export type ModeEstimate = {
+  mode: TransportMode;
+  minutes: number;
+  source?: "estimate" | "live";
+  /** The provider answered "no such route" for this mode; the minutes are a fiction. */
+  unroutable?: boolean;
+};
 export type ModeComparison = {
   options: ModeEstimate[];
   fastest: ModeEstimate;
@@ -68,10 +74,19 @@ function pickRecommended(
   if (preference === "car") return walk.minutes <= Math.min(10, taxi.minutes) ? walk : taxi;
   if (walk.minutes <= 25 || (walk.minutes <= transit.minutes && walk.minutes <= taxi.minutes)) return walk;
   // How many minutes slower transit may be and still be the better answer.
-  // `transit_first` keeps the long-standing +10: waiting, parking and cost
-  // make a marginally slower train the better plan where rail is dense.
-  const transitAllowance = mobility === "transit_first" ? 10 : mobility === "balanced" ? 5 : -15;
-  if (transit.minutes <= taxi.minutes + transitAllowance) return transit;
+  // The allowance scales with the taxi's own duration: on rail-dense ground a
+  // 95-minute intercity train beats an 80-minute drive on cost, parking and
+  // reliability, while a fixed +10 only ever expressed that for short hops.
+  const transitAllowance = mobility === "transit_first"
+    ? Math.max(10, Math.round(taxi.minutes * 0.25))
+    : mobility === "balanced" ? Math.max(5, Math.round(taxi.minutes * 0.1)) : -15;
+  if (!transit.unroutable && transit.minutes <= taxi.minutes + transitAllowance) return transit;
+  // Asymmetric evidence guard: on transit-first ground a live-measured taxi
+  // must not demote a transit option that is still an unmeasured estimate —
+  // the train exists, we simply have not asked Google about it yet. Once the
+  // transit leg is measured (or the provider answers that no transit route
+  // exists — `unroutable`), real evidence decides instead.
+  if (mobility === "transit_first" && !transit.unroutable && taxi.source === "live" && transit.source !== "live") return transit;
   return taxi;
 }
 
@@ -106,16 +121,22 @@ export function applyLiveTransitMinutes(
   drivingMinutes?: number,
   preference: TravelPreference = "auto",
   mobility: MobilityProfile = "transit_first",
+  transitUnroutable = false,
 ) {
   const hasTransit = typeof minutes === "number" && Number.isFinite(minutes) && minutes > 0;
   const hasWalking = typeof walkingMinutes === "number" && Number.isFinite(walkingMinutes) && walkingMinutes > 0;
   const hasDriving = typeof drivingMinutes === "number" && Number.isFinite(drivingMinutes) && drivingMinutes > 0;
-  if (!hasTransit && !hasWalking && !hasDriving) return finalizeComparison(comparison.options, preference, mobility);
+  if (!hasTransit && !hasWalking && !hasDriving && !transitUnroutable) {
+    return finalizeComparison(comparison.options, preference, mobility);
+  }
   const options = comparison.options.map((option): ModeEstimate => {
     if (option.mode === "transit" && hasTransit) return { ...option, minutes: Math.round(minutes!), source: "live" };
     if (option.mode === "walk" && hasWalking) return { ...option, minutes: Math.round(walkingMinutes!), source: "live" };
     if (option.mode === "taxi" && hasDriving) return { ...option, minutes: Math.round(drivingMinutes!), source: "live" };
-    return { ...option, source: option.source ?? "estimate" };
+    const base: ModeEstimate = { ...option, source: option.source ?? "estimate" };
+    // A provider-answered "no transit route" is negative live evidence: the
+    // estimate stays visible for context but may not win the recommendation.
+    return option.mode === "transit" && transitUnroutable ? { ...base, unroutable: true } : base;
   });
   return finalizeComparison(options, preference, mobility);
 }

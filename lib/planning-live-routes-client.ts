@@ -274,7 +274,16 @@ function selectedTransitOccurrencesForDay(plan: BuiltTripPlan, dayIndex: number)
           ? day.hotelInboundMode
           : day.legs[index - 1]?.comparison.recommended.mode
       : day.legs[index]?.comparison.recommended.mode;
-    if (mode !== "transit") return [];
+    // Measure transit for the legs the schedule uses AND for taxi legs where
+    // rail is a realistic contender that has simply never been measured.
+    // Without the second group a leg demoted to taxi on estimates could never
+    // earn its transit measurement back (the selection would skip it, so the
+    // evidence gap that caused the demotion became permanent).
+    const transitContender = mode === "taxi"
+      && plan.travelPreference !== "car"
+      && destinationProfile.mobility !== "car_first"
+      && straightLineDistanceKm(origin, destination) >= 4;
+    if (mode !== "transit" && !transitContender) return [];
 
     const endpoints = providerEndpointsForLeg(origin, destination);
     if (!endpoints) return [];
@@ -641,9 +650,12 @@ export async function prefetchPlanningRouteDurations(
 
   const fetcher = options.fetcher ?? fetch;
   const concurrency = boundedInteger(options.concurrency, 2, 4);
-  const batches = await mapWithConcurrency(tasks, concurrency, ({ mode, batch }) => (
-    requestBatch(batch, mode, locale, fetcher, options.signal)
-  ));
+  // One failed mode batch (a transit 502, a quota denial) must not void the
+  // measurements the other batches already paid for; each task fails alone.
+  const batches = (await mapWithConcurrency(tasks, concurrency, ({ mode, batch }) => (
+    requestBatch(batch, mode, locale, fetcher, options.signal).catch(() => null)
+  ))).filter((batch): batch is Awaited<ReturnType<typeof requestBatch>> => batch !== null);
+  if (batches.length === 0) throw new LiveRoutesError("unavailable");
   const routeResults = batches.flatMap((batch) => batch.legs);
   const transitMinutes: Record<string, number> = {};
   const walkingMinutes: Record<string, number> = {};

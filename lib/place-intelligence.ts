@@ -434,7 +434,7 @@ export async function fetchPlaceIntelligence(
       "X-Goog-FieldMask": searchFields,
     },
     body: JSON.stringify({
-      textQuery: destinationPlaceQuery(`${request.name} ${request.area}`, destination),
+      textQuery: destinationPlaceQuery(`${request.name} ${request.area}`, destination, request.languageCode),
       pageSize: 1,
       languageCode: request.languageCode,
       ...(destination.regionCode ? { regionCode: destination.regionCode } : {}),

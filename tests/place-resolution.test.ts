@@ -290,3 +290,86 @@ test("a stale exact provider ID stays unresolved without fuzzy Text Search fallb
   assert.deepEqual(result.ambiguous, []);
   assert.deepEqual(calls, ["https://places.googleapis.com/v1/places/ChIJ_deleted?languageCode=en"]);
 });
+
+test("one exact-name candidate auto-resolves over its own facility derivatives", async () => {
+  const result = await fetchGooglePlaceResolutions({
+    queries: ["ゴルナーグラート"],
+    providerOverrides: [],
+    hotelQuery: null,
+    languageCode: "ja",
+    destination: "switzerland",
+  }, "test-key", async () => Response.json({ places: [
+    {
+      id: "gornergrat-variant",
+      displayName: { text: "ゴルネルグラート" },
+      formattedAddress: "〒3920 ツェルマット ゴルネルグラート, スイス",
+      addressComponents: [{ types: ["country"], shortText: "CH" }],
+      location: { latitude: 45.9833, longitude: 7.7842 },
+      googleMapsUri: "https://maps.google.com/gornergrat-variant",
+      types: ["natural_feature"],
+    },
+    {
+      id: "gornergrat-railway",
+      displayName: { text: "ゴルナーグラート鉄道" },
+      formattedAddress: "Bahnhofpl. 1, 3920 Zermatt, スイス",
+      addressComponents: [{ types: ["country"], shortText: "CH" }],
+      location: { latitude: 46.0235, longitude: 7.7465 },
+      googleMapsUri: "https://maps.google.com/gornergrat-railway",
+      types: ["tourist_attraction"],
+    },
+    {
+      id: "gornergrat-peak",
+      displayName: { text: "ゴルナーグラート" },
+      formattedAddress: "〒3920 ツェルマット ゴルナーグラート, スイス",
+      addressComponents: [{ types: ["country"], shortText: "CH" }],
+      location: { latitude: 45.9833, longitude: 7.7842 },
+      googleMapsUri: "https://maps.google.com/gornergrat-peak",
+      types: ["mountain_peak"],
+    },
+  ] }));
+
+  assert.equal(result.ambiguous.length, 0, "the exact-name summit must not be flagged ambiguous by its own railway");
+  assert.equal(result.places.length, 1);
+  assert.equal(result.places[0].name, "ゴルナーグラート");
+  assert.equal(result.places[0].providerRef, "gornergrat-peak");
+});
+
+test("a lone non-visit result with no textual overlap goes back to the traveller", async () => {
+  const result = await fetchGooglePlaceResolutions({
+    queries: ["ベルン旧市街"],
+    providerOverrides: [],
+    hotelQuery: null,
+    languageCode: "ja",
+    destination: "switzerland",
+  }, "test-key", async () => Response.json({ places: [
+    {
+      id: "bern-university",
+      displayName: { text: "ベルン大学" },
+      formattedAddress: "Hochschulstrasse 6, 3012 Bern, スイス",
+      addressComponents: [{ types: ["country"], shortText: "CH" }],
+      location: { latitude: 46.9503, longitude: 7.4386 },
+      googleMapsUri: "https://maps.google.com/bern-university",
+      primaryType: "university",
+      types: ["university", "point_of_interest"],
+    },
+  ] }));
+
+  assert.deepEqual(result.places, [], "a university must never be silently planned for an old-town query");
+  assert.equal(result.ambiguous.length, 1);
+  assert.equal(result.ambiguous[0].candidates[0].name, "ベルン大学");
+});
+
+test("ja queries carry the localized country suffix to Google", async () => {
+  let requestedQuery = "";
+  await fetchGooglePlaceResolutions({
+    queries: ["ベルン旧市街"],
+    providerOverrides: [],
+    hotelQuery: null,
+    languageCode: "ja",
+    destination: "switzerland",
+  }, "test-key", async (_url, init) => {
+    requestedQuery = (JSON.parse(String(init?.body)) as { textQuery: string }).textQuery;
+    return Response.json({ places: [] });
+  });
+  assert.equal(requestedQuery, "ベルン旧市街 スイス");
+});

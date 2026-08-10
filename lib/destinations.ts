@@ -1605,8 +1605,13 @@ export function destinationForCoordinate(latitude: number, longitude: number): D
 }
 
 /** The disambiguating text query Google receives for a bare place name. */
-export function destinationPlaceQuery(input: string, destination: Destination) {
-  return destination.querySuffix ? `${input} ${destination.querySuffix}` : input;
+export function destinationPlaceQuery(input: string, destination: Destination, languageCode: "en" | "ja" = "en") {
+  if (!destination.querySuffix) return input;
+  // A Japanese query with an English country word degrades Google's ranking
+  // ("ベルン旧市街 Switzerland" returns the university, not the Old Town), so
+  // the disambiguating suffix follows the query's language.
+  const suffix = languageCode === "ja" ? destination.names.ja : destination.querySuffix;
+  return suffix ? `${input} ${suffix}` : input;
 }
 
 /** Google's four relative price levels rendered in the local currency glyph. */

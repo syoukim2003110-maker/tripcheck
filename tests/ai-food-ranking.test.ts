@@ -50,6 +50,7 @@ test("client sends candidate metadata but strips Google URLs and itinerary field
     longitude: 139.7005,
     anchorStopId: "shibuya-crossing",
     window: "17:30–21:00",
+  displayTime: "18:30",
     rationale: "移動しやすい",
     queryIdeas: ["焼き鳥"],
   };

@@ -42,6 +42,12 @@ export type TripFitAssessment = {
   status: "fits" | "tight" | "needs_change" | "incomplete" | "timed_out";
   requestedDays: number;
   minimumDays: number | null;
+  /**
+   * Minimum days for the places that DID resolve, computed while the full
+   * verdict is withheld by unresolved/unavailable entries. Clearly qualified
+   * in the UI; never a substitute for minimumDays.
+   */
+  partialMinimumDays: number | null;
   additionalDaysNeeded: number | null;
   spareDays: number | null;
   searchedThroughDays: number;
@@ -328,16 +334,20 @@ export function assessTripFit(
   let minimumPlan: BuiltTripPlan | null = null;
 
   // A minimum-day answer is only meaningful when every requested place took
-  // part in the comparison. Besides avoiding a false "two days is enough"
-  // conclusion, this short-circuits up to fourteen deterministic rebuilds
-  // while place resolution or opening availability is incomplete.
-  if (!incomplete && firstAllowedDays <= searchLimit) {
+  // part in the comparison. While place resolution or opening availability is
+  // incomplete the same search still runs over the resolvable subset, but its
+  // answer is returned separately as partialMinimumDays so a false "two days
+  // is enough" can never be presented as the settled verdict.
+  let partialMinimumDays: number | null = null;
+  if (firstAllowedDays <= searchLimit) {
     for (let days = firstAllowedDays; days <= searchLimit; days += 1) {
       if (now() >= deadline) {
-        solverTimedOut = true;
+        // A timeout during the qualified partial search must not relabel the
+        // verdict: unresolved places remain the operative blocker.
+        if (!incomplete) solverTimedOut = true;
         break;
       }
-      searchedThroughDays = days;
+      if (!incomplete) searchedThroughDays = days;
       const candidatePlan = days === normalizedRequestedDays
         ? plan
         : buildTripFromWishlist(raw, days, pace, locale, context);
@@ -345,13 +355,18 @@ export function assessTripFit(
         ? current
         : evaluateCapacity(candidatePlan, pace, context);
       if (candidateFit.fitsAllKnownStops) {
-        minimumDays = days;
-        minimumPlan = candidatePlan;
+        if (incomplete) partialMinimumDays = days;
+        else {
+          minimumDays = days;
+          minimumPlan = candidatePlan;
+        }
         break;
       }
       if (now() >= deadline) {
-        solverTimedOut = true;
-        minimumDays = null;
+        if (!incomplete) {
+          solverTimedOut = true;
+          minimumDays = null;
+        }
         break;
       }
     }
@@ -370,6 +385,7 @@ export function assessTripFit(
     status,
     requestedDays: normalizedRequestedDays,
     minimumDays,
+    partialMinimumDays,
     additionalDaysNeeded: minimumDays === null ? null : Math.max(0, minimumDays - normalizedRequestedDays),
     // A shorter scenario does not repair a reservation/opening conflict in
     // the plan the traveller actually selected. Never turn that into an

@@ -123,6 +123,10 @@ export type CriticalFactCounts = {
 export type FeasibilityResult = {
   state: FeasibilityState;
   minimumDays: number | null;
+  /** Qualified subset answer while unresolved/unavailable entries block the verdict. */
+  partialMinimumDays: number | null;
+  /** Wishlist entries that never resolved to a place; they gate the verdict. */
+  unresolvedPlaceNames: string[];
   searchedThroughDays: number;
   minimumDaysAssumptions: MinimumDaysAssumptions;
   scheduledDays: BuiltTripPlan["days"];
@@ -808,6 +812,8 @@ export function deriveFeasibilityResult(
   return {
     state,
     minimumDays: fit.minimumDays,
+    partialMinimumDays: fit.partialMinimumDays,
+    unresolvedPlaceNames: [...plan.unknownEntries],
     searchedThroughDays: fit.searchedThroughDays,
     minimumDaysAssumptions: fit.minimumDaysAssumptions,
     scheduledDays: plan.days,

@@ -1,5 +1,6 @@
 import type { DestinationChoice } from "./destinations.ts";
 import type { RouteRecommendation, RouteRecommendationPoint } from "./route-recommendations.ts";
+import { tripRequestHeaders } from "./trip-request-identity.ts";
 
 export class RouteRecommendationsError extends Error {
   code: "not_configured" | "rate_limited" | "unavailable";
@@ -23,7 +24,7 @@ export async function requestRouteRecommendations(request: Request, signal?: Abo
   try {
     response = await fetch("/api/route-recommendations", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: tripRequestHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify(request),
       signal,
     });
