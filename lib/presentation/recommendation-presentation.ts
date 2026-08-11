@@ -3,6 +3,7 @@
 // classification that feed it. Pure functions - no React.
 import type { RouteRecommendation } from "../route-recommendations.ts";
 import type { FillerKind } from "../itinerary-domain.ts";
+import type { FoodCandidate } from "../google-food.ts";
 import type { HotelCandidate } from "../google-hotels.ts";
 import type { HotelStyleChoice } from "../planner-app-state.ts";
 
@@ -66,6 +67,99 @@ export function hotelAxisWinners(candidates: HotelCandidate[]) {
     }
   }
   return { nearestId: nearest.id, topRatedId: topRated?.id ?? null, valueId: null as string | null };
+}
+
+/* ---- Enhancement builders (spec v2.1 section 5) --------------------------
+ * Total, deterministic mappings from the three domain candidate shapes onto
+ * the unified Enhancement model. They never throw on partial input: every
+ * numeric fact is checked before it is formatted, and absent facts simply
+ * produce fewer evidence lines. */
+
+function clampedMinutes(value: number | null | undefined) {
+  return typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.round(value)) : 0;
+}
+
+function ratingEvidence(rating: number | null | undefined, userRatingCount: number | null | undefined) {
+  if (typeof rating !== "number" || !Number.isFinite(rating)) return null;
+  const count = typeof userRatingCount === "number" && Number.isFinite(userRatingCount)
+    ? ` (${Math.max(0, Math.round(userRatingCount))})`
+    : "";
+  return `★ ${rating.toFixed(1)}${count}`;
+}
+
+/**
+ * Hotel candidate as an Enhancement. `travelMinutes` is the whole-trip
+ * travel-minute saving versus the alternative base (the caller computes the
+ * delta); anything absent, negative or non-finite counts as 0 saved.
+ */
+export function hotelEnhancement(
+  candidate: HotelCandidate,
+  opts: { travelMinutes?: number | null; note?: string | null } = {},
+): Enhancement {
+  const evidence: string[] = [];
+  const rating = ratingEvidence(candidate.rating, candidate.userRatingCount);
+  if (rating !== null) evidence.push(rating);
+  const rakuten = candidate.rakuten ?? null;
+  if (rakuten && typeof rakuten.reviewAverage === "number" && Number.isFinite(rakuten.reviewAverage)) {
+    const count = typeof rakuten.reviewCount === "number" && Number.isFinite(rakuten.reviewCount)
+      ? ` (${Math.max(0, Math.round(rakuten.reviewCount))})`
+      : "";
+    evidence.push(`Rakuten ★ ${rakuten.reviewAverage.toFixed(1)}${count}`);
+  }
+  if (rakuten && typeof rakuten.minCharge === "number" && Number.isFinite(rakuten.minCharge)) {
+    evidence.push(`¥${Math.max(0, Math.round(rakuten.minCharge))}~`);
+  }
+  return {
+    type: "HOTEL",
+    id: candidate.id,
+    title: candidate.name,
+    reason: opts.note ?? "",
+    impact: { addedMinutes: 0, savedMinutes: clampedMinutes(opts.travelMinutes) },
+    evidence,
+  };
+}
+
+/** Meal candidate as an Enhancement; the detour is the added travel cost. */
+export function mealEnhancement(
+  candidate: FoodCandidate,
+  opts: { slotKind: "lunch" | "dinner"; detourMinutes?: number | null; reason?: string | null },
+): Enhancement {
+  const evidence: string[] = [];
+  const rating = ratingEvidence(candidate.rating, candidate.userRatingCount);
+  if (rating !== null) evidence.push(rating);
+  if (candidate.plannedOpen === true) evidence.push("open at the planned time");
+  else if (candidate.plannedOpen == null && candidate.openNow === true) evidence.push("open now");
+  const payment = Array.isArray(candidate.paymentEvidence) ? candidate.paymentEvidence[0] : undefined;
+  if (payment && typeof payment.label === "string" && payment.label.length > 0) evidence.push(payment.label);
+  return {
+    type: "MEAL",
+    id: `meal:${opts.slotKind}:${candidate.id}`,
+    title: candidate.name,
+    reason: opts.reason ?? "",
+    impact: { addedMinutes: clampedMinutes(opts.detourMinutes), savedMinutes: 0 },
+    evidence,
+  };
+}
+
+/** Gap-filler candidate as an Enhancement, typed by its place classification. */
+export function gapEnhancement(
+  candidate: RouteRecommendation,
+  opts: { addedMinutes?: number | null; reason?: string | null } = {},
+): Enhancement {
+  const evidence: string[] = [];
+  const rating = ratingEvidence(candidate.rating, candidate.userRatingCount);
+  if (rating !== null) evidence.push(rating);
+  if (typeof candidate.routeDistanceMeters === "number" && Number.isFinite(candidate.routeDistanceMeters)) {
+    evidence.push(`${Math.max(0, Math.round(candidate.routeDistanceMeters))}m off the route`);
+  }
+  return {
+    type: routeRecommendationFillerKind(candidate) === "CAFE" ? "CAFE" : "MICRO_STOP",
+    id: candidate.id,
+    title: candidate.name,
+    reason: opts.reason ?? "",
+    impact: { addedMinutes: clampedMinutes(opts.addedMinutes), savedMinutes: 0 },
+    evidence,
+  };
 }
 
 /** Keep the current choice visible, then protect price and satisfaction axes. */

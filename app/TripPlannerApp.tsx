@@ -1,7 +1,7 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import PlannerGoogleMap, {
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
   type FoodPin,
   type HotelPin,
   type PlannerMapDayLayer,
@@ -22,6 +22,10 @@ import IssueCard from "./components/planner/summary/IssueCard";
 import ShareDialog from "./components/planner/dialogs/ShareDialog";
 import DayTimeline from "./components/planner/timeline/DayTimeline";
 import ItineraryTimeline from "./components/planner/timeline/ItineraryTimeline";
+import TripMap from "./components/planner/map/TripMap";
+import HotelRecommendationCard from "./components/planner/recommendation/HotelRecommendationCard";
+import MealRecommendationCard from "./components/planner/recommendation/MealRecommendationCard";
+import TripEnhancementPanel from "./components/planner/recommendation/TripEnhancementPanel";
 import {
   FoodRecommendationsError,
   foodCandidateReason,
@@ -2670,52 +2674,30 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
               ...(candidate.styles.includes("luxury") ? [text.styleLuxury] : []),
             ];
             return (
-              <article className={`planner-hotel-card${candidate.id === selectedHotel.id ? " is-selected" : ""}`} key={candidate.id}>
-                <button aria-pressed={candidate.id === selectedHotel.id} onClick={() => selectHotelCandidate(candidate)} title={text.useThisHotel} type="button">
-                  <span className="planner-hotel-card-image">
-                    {candidate.photo ? <>
-                      {/* Google photo names are fetched at request time and never persisted. */}
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img alt={candidate.name} loading="lazy" onError={handlePhotoError} src={`/api/place-photo?name=${encodeURIComponent(candidate.photo.name)}`} />
-                    </> : <span aria-hidden="true"><Icon name="bed" size={22} /></span>}
-                    <em>{hotelPriceLabel(candidate)}</em>
-                  </span>
-                  <span className="planner-hotel-card-copy">
-                    <b>{candidate.name}</b>
-                    <small>
-                      {[
-                        candidate.rating !== null
-                          ? locale === "ja"
-                            ? `★ ${candidate.rating.toFixed(1)}（${candidate.userRatingCount?.toLocaleString("ja-JP") ?? "—"}）`
-                            : `★ ${candidate.rating.toFixed(1)} (${candidate.userRatingCount?.toLocaleString("en-US") ?? "—"})`
-                          : null,
-                        hotelTravelMinutesById[candidate.id] !== undefined
-                          ? locale === "ja"
-                            ? `全日程の移動 約${hotelTravelMinutesById[candidate.id]}分${Number.isFinite(bestHotelTravelMinutes) && hotelTravelMinutesById[candidate.id] > bestHotelTravelMinutes ? `（最短比 +${hotelTravelMinutesById[candidate.id] - bestHotelTravelMinutes}分）` : ""}`
-                            : `~${hotelTravelMinutesById[candidate.id]} min total travel${Number.isFinite(bestHotelTravelMinutes) && hotelTravelMinutesById[candidate.id] > bestHotelTravelMinutes ? ` (+${hotelTravelMinutesById[candidate.id] - bestHotelTravelMinutes} vs best)` : ""}`
-                          : text.distanceFrom(formatDistanceMeters(candidate.routeAverageDistanceMeters)),
-                      ].filter(Boolean).join(" · ")}
-                    </small>
-                    {tags.length > 0 ? (
-                      <span className="planner-hotel-card-tags">
-                        {tags.map((tag) => <i key={tag}>{tag}</i>)}
-                      </span>
-                    ) : null}
-                    {candidate.rakuten?.reviewAverage ? (
-                      <small className="is-rakuten-line">{text.rakutenTag(candidate.rakuten.reviewAverage, candidate.rakuten.reviewCount ?? 0)}</small>
-                    ) : null}
-                    {aiNote ? (
-                      <small className="planner-hotel-ai-line">AI: {aiNote.reason}</small>
-                    ) : null}
-                  </span>
-                </button>
-                <footer>
-                  {candidate.photo?.attribution
-                    ? <a href={candidate.photo.attribution.uri} rel="noreferrer" target="_blank">{text.photoLabel} {candidate.photo.attribution.name}</a>
-                    : <span />}
-                  <a href={candidate.rakuten?.url ?? candidate.googleMapsUrl} rel="noreferrer" target="_blank">{candidate.rakuten ? "Rakuten" : "Maps"} ↗</a>
-                </footer>
-              </article>
+              <HotelRecommendationCard
+                aiNote={aiNote}
+                candidate={candidate}
+                facts={[
+                  candidate.rating !== null
+                    ? locale === "ja"
+                      ? `★ ${candidate.rating.toFixed(1)}（${candidate.userRatingCount?.toLocaleString("ja-JP") ?? "—"}）`
+                      : `★ ${candidate.rating.toFixed(1)} (${candidate.userRatingCount?.toLocaleString("en-US") ?? "—"})`
+                    : null,
+                  hotelTravelMinutesById[candidate.id] !== undefined
+                    ? locale === "ja"
+                      ? `全日程の移動 約${hotelTravelMinutesById[candidate.id]}分${Number.isFinite(bestHotelTravelMinutes) && hotelTravelMinutesById[candidate.id] > bestHotelTravelMinutes ? `（最短比 +${hotelTravelMinutesById[candidate.id] - bestHotelTravelMinutes}分）` : ""}`
+                      : `~${hotelTravelMinutesById[candidate.id]} min total travel${Number.isFinite(bestHotelTravelMinutes) && hotelTravelMinutesById[candidate.id] > bestHotelTravelMinutes ? ` (+${hotelTravelMinutesById[candidate.id] - bestHotelTravelMinutes} vs best)` : ""}`
+                    : text.distanceFrom(formatDistanceMeters(candidate.routeAverageDistanceMeters)),
+                ].filter(Boolean).join(" · ")}
+                isSelected={candidate.id === selectedHotel.id}
+                key={candidate.id}
+                locale={locale}
+                onPhotoError={handlePhotoError}
+                onSelect={() => selectHotelCandidate(candidate)}
+                priceLabel={hotelPriceLabel(candidate)}
+                rakutenLine={candidate.rakuten?.reviewAverage ? text.rakutenTag(candidate.rakuten.reviewAverage, candidate.rakuten.reviewCount ?? 0) : null}
+                tags={tags}
+              />
             );
           })}
         </div>
@@ -4427,138 +4409,72 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
         </div>
       </header>
 
-      <div className={`planner-map-canvas${displayedMapStops.length > 8 ? " is-dense" : ""}`} role="region" aria-label={text.mapReady}>
-        {hasPlan ? (
-          <div className="planner-map-scope" role="group" aria-label={locale === "ja" ? "地図に表示する日程" : "Days shown on map"}>
-            <button aria-pressed={mapScope === "all"} className={mapScope === "all" ? "is-active" : ""} onClick={() => setMapScope("all")} type="button">{locale === "ja" ? "全日程" : "All days"}</button>
-            <button aria-pressed={mapScope === "day"} className={mapScope === "day" ? "is-active" : ""} onClick={() => setMapScope("day")} type="button">{locale === "ja" ? "この日" : "This day"}</button>
-          </div>
-        ) : null}
-        {hasPlan && plan && plan.days.length > 1 ? (
-          <div className="planner-map-day-legend" role="group" aria-label={locale === "ja" ? "日別ルートの色" : "Route colours by day"}>
-            {plan.days.map((planDay, index) => (
-              <button
-                aria-label={locale === "ja" ? `${index + 1}日目を選択` : `Select Day ${index + 1}`}
-                aria-pressed={index === activeDay}
-                className={index === activeDay ? "is-active" : ""}
-                key={planDay.label}
-                onClick={() => switchDay(index)}
-                style={{ "--planner-day-color": plannerDayColors[index % plannerDayColors.length] } as CSSProperties}
-                type="button"
-              ><i aria-hidden="true" />{locale === "ja" ? `${index + 1}日` : `D${index + 1}`}</button>
-            ))}
-            <span className="planner-map-line-legend">
-              <i aria-hidden="true" className="is-solid" />{locale === "ja" ? "実経路" : "measured"}
-              <i aria-hidden="true" className="is-dashed" />{locale === "ja" ? "推定" : "estimated"}
-            </span>
-          </div>
-        ) : null}
-        {inputStep !== "places" || hasPlan || isBuilding ? <PlannerGoogleMap
-          apiKey={mapsApiKey}
-          base={displayedMapBase}
-          endBase={hasPlan ? dayEndBase : null}
-          departureTimes={routeDepartureTimes}
-          destination={activeDestination}
-          drawRoute={hasPlan}
-          foodPins={P0_CORE_ONLY ? [] : foodPins}
-          hotelPins={P0_CORE_ONLY ? [] : hotelPins}
-          recommendationPins={P0_CORE_ONLY ? [] : recommendationPins}
-          routeBudgetKey={`${buildRunRef.current}:${transitConvergenceInputKey}`}
-          routeBudgetUsed={currentTransitConvergence?.eventCount ?? 0}
-          routeRequestsPaused={!tripDateTouched || Boolean(plan && !currentTransitConvergence)}
-          routePauseReason={!tripDateTouched ? "date_required" : plan && !currentTransitConvergence ? "checking" : null}
-          transitGeometry={routeTransitGeometry}
-          coordinatePickActive={!hasPlan && inputStep === "conditions" && manualPinTarget !== null}
-          coordinatePick={manualPinCoordinate}
-          inspectorOpen={Boolean(inspector)}
-          dayActive
-          dayColor={plannerDayColors[activeDay % plannerDayColors.length]}
-          dayIndex={activeDay}
-          dayLayers={mapScope === "all" ? mapDayLayers : []}
-          itemKinds={mapItemKinds}
-          locale={locale}
-          onRouteGeometry={handleRouteGeometry}
-          onPickCoordinate={(point) => {
-            if (manualPinTarget === null) return;
-            setManualPlaceDrafts((current) => ({
-              ...current,
-              [manualPinTarget]: {
-                ...(current[manualPinTarget] ?? { address: "", latitude: "", longitude: "" }),
-                latitude: point.latitude.toFixed(6),
-                longitude: point.longitude.toFixed(6),
-              },
-            }));
-          }}
-          onSelectFood={handleSelectFoodPin}
-          onSelectHotel={selectedHotel ? () => setInspector({ kind: "hotel" }) : undefined}
-          onSelectHotelCandidate={(candidateId) => {
-            const candidate = hotelState.candidates.find((entry) => entry.id === candidateId);
-            if (candidate) selectHotelCandidate(candidate);
-          }}
-          onSelectRecommendation={selectRouteRecommendation}
-          onSelectDayStop={(dayIndex, stopId) => {
-            setActiveDay(dayIndex);
-            handleSelectStop(stopId);
-          }}
-          onSelectStop={handleSelectStop}
-          routeModes={routeModes}
-          selectedFoodPinId={inspector?.kind === "food" ? inspector.candidateId ?? null : null}
-          selectedHotelPinId={selectedHotel?.id ?? null}
-          selectedRecommendationPinId={selectedRouteRecommendation?.id ?? null}
-          selectedStopId={inspector?.kind === "stop" ? inspector.stopId : inspector?.kind === "hotel" ? displayedMapBase?.id ?? null : mapFocusedStopId}
-          stops={displayedMapStops}
-          warningStopIds={mapWarningStopIds}
-        /> : null}
-
-        {!day && !hasPlan && !isBuilding && displayedMapStops.length === 0 ? <div className="planner-map-empty"><span aria-hidden="true"><Icon name="pin" size={16} /></span><p>{text.mapEmpty}</p></div> : null}
-
-        {day ? (
-          <div className="planner-map-bottom">
-            {!P0_CORE_ONLY && selectedHotel ? (
-              <button
-                className={`planner-hotel-chip${inspector?.kind === "hotel" ? " is-active" : ""}`}
-                onClick={() => setInspector(inspector?.kind === "hotel" ? null : { kind: "hotel" })}
-                type="button"
-              >
-                <span aria-hidden="true"><Icon name="bed" size={15} /></span>{text.hotelChip}
-              </button>
-            ) : null}
-            {!P0_CORE_ONLY ? daySlots.map((slot) => {
-              const slotState = foodSearches[slot.id];
-              return (
-                <button
-                  className={`planner-meal-chip is-${slot.kind}${inspector?.kind === "food" && inspector.slotId === slot.id ? " is-active" : ""}`}
-                  key={slot.id}
-                  onClick={() => openFoodSlot(slot)}
-                  type="button"
-                >
-                  <span aria-hidden="true"><Icon name={slot.kind === "lunch" ? "sun" : "moon"} size={15} /></span>
-                  {slot.kind === "lunch" ? text.lunchChip : text.dinnerChip}
-                  {slotState?.status === "ready" && slotState.candidates.length > 0 ? <b>{slotState.candidates.length}</b> : null}
-                </button>
-              );
-            }) : null}
-            {!P0_CORE_ONLY && primaryRecommendationGap ? (
-              <button
-                className={`planner-recommendation-chip${inspector?.kind === "recommendations" ? " is-active" : ""}`}
-                onClick={openRouteRecommendations}
-                type="button"
-              >
-                <span aria-hidden="true"><Icon name="spark" size={14} /></span>
-                {text.routeIdeasChip}
-                {activeRouteRecommendationState.status === "ready" && activeRouteRecommendationState.candidates.length > 0
-                  ? <b>{activeRouteRecommendationState.candidates.length}</b>
-                  : null}
-              </button>
-            ) : null}
-            {day.googleMapsUrl ? (
-              <a className="planner-open-maps" href={day.googleMapsUrl} rel="noreferrer" target="_blank">
-                {text.openMaps}<span aria-hidden="true"><Icon name="external" size={14} /></span>
-              </a>
-            ) : null}
-          </div>
-        ) : null}
-
+      <TripMap
+        activeDay={activeDay}
+        activeDestination={activeDestination}
+        activeRouteRecommendationState={activeRouteRecommendationState}
+        currentTransitConvergence={currentTransitConvergence}
+        day={day}
+        dayEndBase={dayEndBase}
+        daySlots={daySlots}
+        displayedMapBase={displayedMapBase}
+        displayedMapStops={displayedMapStops}
+        foodPins={foodPins}
+        foodSearches={foodSearches}
+        hasPlan={hasPlan}
+        hotelPins={hotelPins}
+        inputStep={inputStep}
+        inspector={inspector}
+        isBuilding={isBuilding}
+        locale={locale}
+        manualPinCoordinate={manualPinCoordinate}
+        manualPinTarget={manualPinTarget}
+        mapDayLayers={mapDayLayers}
+        mapFocusedStopId={mapFocusedStopId}
+        mapItemKinds={mapItemKinds}
+        mapScope={mapScope}
+        mapWarningStopIds={mapWarningStopIds}
+        mapsApiKey={mapsApiKey}
+        onChangeMapScope={setMapScope}
+        onOpenFoodSlot={openFoodSlot}
+        onOpenHotelInspector={() => setInspector({ kind: "hotel" })}
+        onOpenRouteRecommendations={openRouteRecommendations}
+        onPickCoordinate={(point) => {
+          if (manualPinTarget === null) return;
+          setManualPlaceDrafts((current) => ({
+            ...current,
+            [manualPinTarget]: {
+              ...(current[manualPinTarget] ?? { address: "", latitude: "", longitude: "" }),
+              latitude: point.latitude.toFixed(6),
+              longitude: point.longitude.toFixed(6),
+            },
+          }));
+        }}
+        onRouteGeometry={handleRouteGeometry}
+        onSelectDayStop={(dayIndex, stopId) => {
+          setActiveDay(dayIndex);
+          handleSelectStop(stopId);
+        }}
+        onSelectFood={handleSelectFoodPin}
+        onSelectHotelCandidate={(candidateId) => {
+          const candidate = hotelState.candidates.find((entry) => entry.id === candidateId);
+          if (candidate) selectHotelCandidate(candidate);
+        }}
+        onSelectRecommendation={selectRouteRecommendation}
+        onSelectStop={handleSelectStop}
+        onSwitchDay={switchDay}
+        onToggleHotelInspector={() => setInspector(inspector?.kind === "hotel" ? null : { kind: "hotel" })}
+        plan={plan}
+        primaryRecommendationGap={primaryRecommendationGap}
+        recommendationPins={recommendationPins}
+        routeBudgetKey={`${buildRunRef.current}:${transitConvergenceInputKey}`}
+        routeDepartureTimes={routeDepartureTimes}
+        routeModes={routeModes}
+        routeTransitGeometry={routeTransitGeometry}
+        selectedHotel={selectedHotel}
+        selectedRouteRecommendationId={selectedRouteRecommendation?.id ?? null}
+        tripDateTouched={tripDateTouched}
+      >
         {selectedBuiltStop ? (
           <aside
             aria-labelledby="planner-stop-inspector-title"
@@ -4920,41 +4836,26 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                       {selected ? (
                         <div className="planner-night-options">
                           {shortlist.map((candidate) => (
-                            <article className={`planner-hotel-card${candidate.id === selected.id ? " is-selected" : ""}`} key={candidate.id}>
-                              <button
-                                aria-pressed={candidate.id === selected.id}
-                                onClick={() => selectNightCandidate(nightIndex, candidate.id)}
-                                title={text.useThisHotel}
-                                type="button"
-                              >
-                                <span className="planner-hotel-card-image">
-                                  {candidate.photo ? (
-                                    // eslint-disable-next-line @next/next/no-img-element
-                                    <img alt={candidate.name} loading="lazy" onError={handlePhotoError} src={`/api/place-photo?name=${encodeURIComponent(candidate.photo.name)}`} />
-                                  ) : <span aria-hidden="true"><Icon name="bed" size={22} /></span>}
-                                  <em>{hotelPriceLabel(candidate)}</em>
-                                </span>
-                                <span className="planner-hotel-card-copy">
-                                  <b>{candidate.name}</b>
-                                  <small>{[
-                                    candidate.rating !== null ? `★ ${candidate.rating.toFixed(1)} (${candidate.userRatingCount?.toLocaleString(locale === "ja" ? "ja-JP" : "en-US") ?? "—"})` : null,
-                                    text.distanceFrom(formatDistanceMeters(candidate.routeAverageDistanceMeters)),
-                                  ].filter(Boolean).join(" · ")}</small>
-                                  <span className="planner-hotel-card-tags">
-                                    {candidate.id === night.candidates[0]?.id ? <i>{text.hotelPurposeBalanced}</i> : null}
-                                    {candidate.id === nightAxes.nearestId ? <i>{text.hotelPurposeNearest}</i> : null}
-                                    {candidate.id === nightAxes.topRatedId ? <i>{text.hotelPurposeRated}</i> : null}
-                                    {candidate.styles.includes("luxury") ? <i>{text.styleLuxury}</i> : null}
-                                  </span>
-                                </span>
-                              </button>
-                              <footer>
-                                {candidate.photo?.attribution
-                                  ? <a href={candidate.photo.attribution.uri} rel="noreferrer" target="_blank">{text.photoLabel} {candidate.photo.attribution.name}</a>
-                                  : <span />}
-                                <a href={candidate.rakuten?.url ?? candidate.googleMapsUrl} rel="noreferrer" target="_blank">{candidate.rakuten ? "Rakuten" : "Maps"} ↗</a>
-                              </footer>
-                            </article>
+                            <HotelRecommendationCard
+                              candidate={candidate}
+                              facts={[
+                                candidate.rating !== null ? `★ ${candidate.rating.toFixed(1)} (${candidate.userRatingCount?.toLocaleString(locale === "ja" ? "ja-JP" : "en-US") ?? "—"})` : null,
+                                text.distanceFrom(formatDistanceMeters(candidate.routeAverageDistanceMeters)),
+                              ].filter(Boolean).join(" · ")}
+                              isSelected={candidate.id === selected.id}
+                              key={candidate.id}
+                              locale={locale}
+                              onPhotoError={handlePhotoError}
+                              onSelect={() => selectNightCandidate(nightIndex, candidate.id)}
+                              priceLabel={hotelPriceLabel(candidate)}
+                              showEmptyTags
+                              tags={([
+                                candidate.id === night.candidates[0]?.id ? text.hotelPurposeBalanced : null,
+                                candidate.id === nightAxes.nearestId ? text.hotelPurposeNearest : null,
+                                candidate.id === nightAxes.topRatedId ? text.hotelPurposeRated : null,
+                                candidate.styles.includes("luxury") ? text.styleLuxury : null,
+                              ] as Array<string | null>).filter((tag): tag is string => tag !== null)}
+                            />
                           ))}
                         </div>
                       ) : <p className="planner-food-status">{text.nightlyNightMissing}</p>}
@@ -5093,54 +4994,21 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
             ) : null}
             {activeFoodState.status === "ready" ? (
               <div className="planner-food-results">
-                {(mealCandidatesBySlot[activeFoodSlot.id] ?? []).map((candidate, index) => {
-                  const note = activeFoodState.notes[candidate.id];
-                  const foodFresh = activeFoodState.fresh[candidate.id]?.result;
-                  return (
-                    <article
-                      className={inspector?.kind === "food" && inspector.candidateId === candidate.id ? "is-selected" : undefined}
-                      data-food-candidate={candidate.id}
-                      key={candidate.id}
-                    >
-                      <a className="planner-food-image" href={candidate.googleMapsUrl} rel="noreferrer" target="_blank">
-                        {candidate.photoName ? <>
-                          {/* Google place photos are short-lived, server-proxied URLs and cannot use a static Next image allowlist. */}
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img alt={candidate.name} loading="lazy" onError={handlePhotoError} src={`/api/place-photo?name=${encodeURIComponent(candidate.photoName)}`} />
-                        </> : <span aria-hidden="true"><Icon name="fork" size={20} /></span>}
-                        <i className="planner-food-badge">{index + 1}</i>
-                      </a>
-                      <div>
-                        <small>
-                          {activeFoodState.aiOrdered && index === 0
-                            ? `${locale === "ja" ? "AIのおすすめ" : "AI pick"}${note?.tag ? ` · ${note.tag}` : ""}`
-                            : note?.tag ?? (index === 0 ? (locale === "ja" ? "この土地なら、まずここ" : "Start here") : candidate.type)}
-                        </small>
-                        <h3>{candidate.name}</h3>
-                        <p>{note?.reason ?? foodCandidateReason(candidate, locale)}</p>
-                        <div className="planner-food-stats">
-                          {candidate.rating !== null ? <span className="is-rating">★ {candidate.rating.toFixed(1)} · {candidate.userRatingCount?.toLocaleString(locale === "ja" ? "ja-JP" : "en-US") ?? "—"}</span> : null}
-                          {candidate.plannedOpen === true ? <span>{text.plannedOpen}</span> : candidate.plannedOpen == null && candidate.openNow === true ? <span>{text.openNow}</span> : null}
-                          {candidate.paymentEvidence[0] ? <span>{candidate.paymentEvidence[0].label}</span> : null}
-                          {foodFresh?.findings.length ? <span className="is-fresh">{text.foodFresh(foodFresh.findings.length)}</span> : null}
-                        </div>
-                        <button
-                          className={`planner-meal-choose${mealSelections[activeFoodSlot.id] === candidate.id ? " is-active" : ""}`}
-                          onClick={() => toggleMealSelection(activeFoodSlot.id, candidate.id)}
-                          type="button"
-                        >
-                          {mealSelections[activeFoodSlot.id] === candidate.id ? (<><Icon name="check" size={11} />{text.mealChosen}</>) : text.mealChoose}
-                        </button>
-                        {candidate.reviewSnippets[0] ? <p className="planner-food-proof">“{candidate.reviewSnippets[0].text}” <a href={candidate.reviewSnippets[0].googleMapsUrl ?? candidate.googleMapsUrl} rel="noreferrer" target="_blank">{candidate.reviewSnippets[0].authorName} · {candidate.reviewSnippets[0].relativeTime} ↗</a></p> : null}
-                        {candidate.photoAttribution ? (
-                          <a className="planner-photo-credit" href={candidate.photoAttribution.uri} rel="noreferrer" target="_blank">{text.photoLabel} {candidate.photoAttribution.name}</a>
-                        ) : null}
-                        {foodFresh?.findings[0] ? <a className="planner-photo-credit" href={foodFresh.findings[0].url} rel="noreferrer" target="_blank">{text.freshSource[foodFresh.findings[0].sourceKind]} · {foodFresh.findings[0].title} ↗</a> : null}
-                      </div>
-                      <a className="planner-food-map" href={candidate.googleMapsUrl} rel="noreferrer" target="_blank">{text.maps}<span aria-hidden="true">↗</span></a>
-                    </article>
-                  );
-                })}
+                {(mealCandidatesBySlot[activeFoodSlot.id] ?? []).map((candidate, index) => (
+                  <MealRecommendationCard
+                    aiOrdered={activeFoodState.aiOrdered}
+                    candidate={candidate}
+                    foodFresh={activeFoodState.fresh[candidate.id]?.result}
+                    index={index}
+                    isChosen={mealSelections[activeFoodSlot.id] === candidate.id}
+                    isSelected={inspector?.kind === "food" && inspector.candidateId === candidate.id}
+                    key={candidate.id}
+                    locale={locale}
+                    note={activeFoodState.notes[candidate.id]}
+                    onChoose={() => toggleMealSelection(activeFoodSlot.id, candidate.id)}
+                    onPhotoError={handlePhotoError}
+                  />
+                ))}
                 <p className="planner-food-note">{text.foodNote}</p>
               </div>
             ) : null}
@@ -5148,100 +5016,27 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
         ) : null}
 
         {inspector?.kind === "recommendations" && inspector.dayIndex === activeDay ? (
-          <aside
-            aria-labelledby="planner-route-ideas-title"
-            className={`planner-inspector is-recommendations${inspectorSheetExpanded ? " is-sheet-full" : ""}`}
-            ref={inspectorPanelRef}
-            role="dialog"
-            tabIndex={-1}
-          >
-            <button className="planner-inspector-close" onClick={() => { setInspector(null); setRouteAlternativesExpanded(false); }} type="button" aria-label={text.close}><Icon name="close" size={13} /></button><button aria-label={locale === "ja" ? (inspectorSheetExpanded ? "シートを縮小" : "シートを全画面に広げる") : (inspectorSheetExpanded ? "Collapse sheet" : "Expand sheet")} className="planner-inspector-expand" onClick={() => setInspectorSheetExpanded((current) => !current)} type="button">{inspectorSheetExpanded ? "▾" : "▴"}</button>
-            <header className="planner-inspector-head">
-              <span className="planner-inspector-num is-recommendation" aria-hidden="true"><Icon name="spark" size={17} /></span>
-              <div>
-                <h2 id="planner-route-ideas-title">{text.routeIdeasTitle}</h2>
-                <p>{day?.label}{activeRouteRecommendationState.fetchedAt ? ` · ${formatCheckedAt(activeRouteRecommendationState.fetchedAt, locale)}` : ""}</p>
-              </div>
-            </header>
-            <p className="planner-route-ideas-intro">{text.routeIdeasSubtitle}</p>
-            {primaryRecommendationGap ? (
-              <p className="planner-route-gap-note">
-                {locale === "ja"
-                  ? `${primaryRecommendationGap.startAt}〜${primaryRecommendationGap.endAt}の${primaryRecommendationGap.availableMinutes}分に収まる候補です。`
-                  : `Fits the ${primaryRecommendationGap.availableMinutes}-minute gap from ${primaryRecommendationGap.startAt} to ${primaryRecommendationGap.endAt}.`}
-              </p>
-            ) : null}
-            {routeRecommendationNotice ? <p className="planner-route-ideas-feedback" role="status">{routeRecommendationNotice}</p> : null}
-            {activeRouteRecommendationState.status === "loading" ? (
-              <p className="planner-route-ideas-status" role="status"><i aria-hidden="true" />{text.routeIdeasLoading}</p>
-            ) : null}
-            {activeRouteRecommendationState.status === "unavailable" ? (
-              <div className="planner-route-ideas-empty" role="status">
-                <p>{text.routeIdeasUnavailable}</p>
-                <button onClick={() => void findRouteRecommendations()} type="button">{text.routeIdeasChip}</button>
-              </div>
-            ) : null}
-            {activeRouteRecommendationState.status === "rate_limited" ? (
-              <p className="planner-route-ideas-empty" role="status">{text.routeIdeasRateLimited}</p>
-            ) : null}
-            {activeRouteRecommendationState.status === "ready" && activeRouteRecommendationState.candidates.length === 0 ? (
-              <p className="planner-route-ideas-empty" role="status">{text.routeIdeasEmpty}</p>
-            ) : null}
-            {activeRouteRecommendationState.status === "ready" && activeRouteRecommendationState.candidates.length > 0 ? (
-              <div className="planner-route-ideas-list">
-                {activeRouteRecommendationState.candidates.slice(0, routeAlternativesExpanded ? 3 : 1).map((candidate, index) => {
-                  const added = plannedStopIds.has(recommendationStopId(candidate.id));
-                  const selected = inspector.candidateId === candidate.id;
-                  return (
-                    <article className={selected ? "is-selected" : undefined} key={candidate.id}>
-                      <button
-                        aria-pressed={selected}
-                        className="planner-route-idea-main"
-                        onClick={() => selectRouteRecommendation(candidate.id)}
-                        type="button"
-                      >
-                        <span className="planner-route-idea-image">
-                          {candidate.photoName ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img alt={candidate.name} loading="lazy" onError={handlePhotoError} src={`/api/place-photo?name=${encodeURIComponent(candidate.photoName)}`} />
-                          ) : <span aria-hidden="true"><Icon name="pin" size={20} /></span>}
-                          <i>{index + 1}</i>
-                        </span>
-                        <span className="planner-route-idea-copy">
-                          <small>{candidate.type}</small>
-                          <b>{candidate.name}</b>
-                          <span>
-                            {candidate.rating !== null ? <em>★ {candidate.rating.toFixed(1)} · {candidate.userRatingCount?.toLocaleString(locale === "ja" ? "ja-JP" : "en-US") ?? "—"}</em> : null}
-                            <em>{text.routeIdeasDistance(candidate.routeDistanceMeters)}</em>
-                          </span>
-                        </span>
-                      </button>
-                      <footer>
-                        <button disabled={added} onClick={() => addRouteRecommendation(candidate)} type="button">
-                          {added ? <><Icon name="check" size={12} />{text.routeIdeasAdded}</> : <><Icon name="plus" size={12} />{text.routeIdeasAdd}</>}
-                        </button>
-                        <a href={candidate.googleMapsUrl} rel="noreferrer" target="_blank">Maps ↗</a>
-                      </footer>
-                      {candidate.photoAttribution ? (
-                        <a className="planner-photo-credit" href={candidate.photoAttribution.uri} rel="noreferrer" target="_blank">{text.photoLabel} {candidate.photoAttribution.name}</a>
-                      ) : null}
-                    </article>
-                  );
-                })}
-                {!routeAlternativesExpanded && activeRouteRecommendationState.candidates.length > 1 ? (
-                  <button className="planner-route-alternatives" onClick={() => setRouteAlternativesExpanded(true)} type="button">
-                    {(() => {
-                      const extraCount = Math.min(2, activeRouteRecommendationState.candidates.length - 1);
-                      return locale === "ja" ? `他の候補を${extraCount}件見る` : `See ${extraCount} ${extraCount === 1 ? "alternative" : "alternatives"}`;
-                    })()}
-                  </button>
-                ) : null}
-                <p className="planner-route-ideas-note">{text.routeIdeasNote}</p>
-              </div>
-            ) : null}
-          </aside>
+          <TripEnhancementPanel
+            alternativesExpanded={routeAlternativesExpanded}
+            dayLabel={day?.label}
+            gap={primaryRecommendationGap}
+            locale={locale}
+            notice={routeRecommendationNotice}
+            onAddCandidate={addRouteRecommendation}
+            onClose={() => { setInspector(null); setRouteAlternativesExpanded(false); }}
+            onExpandAlternatives={() => setRouteAlternativesExpanded(true)}
+            onPhotoError={handlePhotoError}
+            onRetry={() => void findRouteRecommendations()}
+            onSelectCandidate={selectRouteRecommendation}
+            onToggleSheet={() => setInspectorSheetExpanded((current) => !current)}
+            panelRef={inspectorPanelRef}
+            plannedStopIds={plannedStopIds}
+            selectedCandidateId={inspector.candidateId}
+            sheetExpanded={inspectorSheetExpanded}
+            state={activeRouteRecommendationState}
+          />
         ) : null}
-      </div>
+      </TripMap>
 
       <section className="planner-sheet">
         {isBuilding ? (
