@@ -64,34 +64,62 @@ test("server-renders the input-first TripCheck itinerary builder", async () => {
   assert.match(html, /og-feasibility\.png/);
 });
 
-test("keeps P0 trust, print and adoption contracts explicit in the planner UI", async () => {
-  const [source, css] = await Promise.all([
-    readFile(new URL("../app/TripPlannerApp.tsx", import.meta.url), "utf8"),
-    readFile(new URL("../app/planner.css", import.meta.url), "utf8"),
-  ]);
-  const printStart = source.indexOf("{printMode && plan ? (");
-  const printEnd = source.indexOf('<header className="planner-topbar">', printStart);
-  const printSource = source.slice(printStart, printEnd);
-  const autoSaveStart = source.indexOf("// Save meaningful user-authored changes");
-  const autoSaveEnd = source.indexOf("const currentHotelPlanSignature", autoSaveStart);
-  const autoSaveSource = source.slice(autoSaveStart, autoSaveEnd);
+/* The planner surface is split across TripPlannerApp, extracted planner
+ * components and the lib presentation layer (refactor spec v2.1). Contract
+ * checks must hold wherever the code lives, so they scan all of it. */
+async function plannerSurfaceSources() {
+  const { readdir } = await import("node:fs/promises");
+  const roots = [
+    { url: new URL("../app/", import.meta.url), filter: /\.tsx$/ },
+    { url: new URL("../lib/presentation/", import.meta.url), filter: /\.ts$/ },
+  ];
+  const sources = [{
+    path: "lib/planner-app-state.ts",
+    text: await readFile(new URL("../lib/planner-app-state.ts", import.meta.url), "utf8"),
+  }];
+  for (const root of roots) {
+    const entries = await readdir(root.url, { recursive: true, withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isFile() || !root.filter.test(entry.name)) continue;
+      const fileUrl = new URL(`${entry.parentPath.replace(/\/?$/, "/")}${entry.name}`, "file://");
+      sources.push({ path: fileUrl.pathname, text: await readFile(fileUrl, "utf8") });
+    }
+  }
+  return sources;
+}
 
-  assert.ok(printStart >= 0 && printEnd > printStart);
+test("keeps P0 trust, print and adoption contracts explicit in the planner UI", async () => {
+  const sources = await plannerSurfaceSources();
+  const all = sources.map((entry) => entry.text).join("\n");
+  const css = await readFile(new URL("../app/planner.css", import.meta.url), "utf8");
+
+  const printFile = sources.find((entry) => entry.text.includes("{printMode && plan ? ("));
+  assert.ok(printFile, "print sheet JSX exists somewhere in the planner surface");
+  const printStart = printFile.text.indexOf("{printMode && plan ? (");
+  const printEnd = printFile.text.indexOf('<header className="planner-topbar">', printStart);
+  const printSource = printFile.text.slice(printStart, printEnd > printStart ? printEnd : undefined);
   assert.match(printSource, /plan\.unknownEntries/);
   assert.match(printSource, /plan\.deferredUnavailableStops/);
   assert.match(printSource, /plan\.deferredOptionalStops/);
   assert.match(printSource, /removedStops/);
   assert.match(printSource, /maxTransfersPerLeg/);
   assert.match(printSource, /printTransferCopy/);
-  assert.match(source, /function printTransferCopy[\s\S]*leg\.transferCount/);
+  assert.match(all, /function printTransferCopy[\s\S]*leg\.transferCount/);
   assert.match(printSource, /!P0_CORE_ONLY && activeEssentials/);
+
+  const autoSaveFile = sources.find((entry) => entry.text.includes("// Save meaningful user-authored changes"));
+  assert.ok(autoSaveFile, "autosave effect exists somewhere in the planner surface");
+  const autoSaveStart = autoSaveFile.text.indexOf("// Save meaningful user-authored changes");
+  const autoSaveEnd = autoSaveFile.text.indexOf("const currentHotelPlanSignature", autoSaveStart);
+  const autoSaveSource = autoSaveFile.text.slice(autoSaveStart, autoSaveEnd > autoSaveStart ? autoSaveEnd : undefined);
   assert.doesNotMatch(autoSaveSource, /plan_saved_or_shared/);
-  assert.match(source, /planner-one-warning/);
-  assert.match(source, /planner-verdict-details/);
-  assert.match(source, /<PlannerDayTimeBar/);
-  assert.doesNotMatch(source, /className="is-checked"><Icon name="check"/);
-  assert.match(source, /planner-verdict-label/);
-  assert.match(source, /feasibilityStateIcon\(feasibilityResult\.state\)/);
+
+  assert.match(all, /planner-one-warning/);
+  assert.match(all, /planner-verdict-details/);
+  assert.match(all, /<PlannerDayTimeBar/);
+  assert.doesNotMatch(all, /className="is-checked"><Icon name="check"/);
+  assert.match(all, /planner-verdict-label/);
+  assert.match(all, /feasibilityStateIcon\(feasibilityResult\.state\)/);
   assert.match(css, /planner-stop-flags \.is-unknown/);
   assert.match(css, /planner-privacy > span \{ display: none; \}/);
 });
