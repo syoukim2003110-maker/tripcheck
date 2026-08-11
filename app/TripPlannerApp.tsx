@@ -14,6 +14,12 @@ import SearchableCombobox, { type SearchableOption } from "./SearchableCombobox"
 import { feasibilityStateIcon, modeIcon, weatherIconByKind } from "./components/planner/icon-maps";
 import ErrorState from "./components/planner/states/ErrorState";
 import LoadingState from "./components/planner/states/LoadingState";
+import TripPrintSheet from "./components/planner/summary/TripPrintSheet";
+import ResultHeader from "./components/planner/summary/ResultHeader";
+import TripSummaryCard from "./components/planner/summary/TripSummaryCard";
+import BeforeYouGoChecklist from "./components/planner/summary/BeforeYouGoChecklist";
+import IssueCard from "./components/planner/summary/IssueCard";
+import ShareDialog from "./components/planner/dialogs/ShareDialog";
 import DayTimeline from "./components/planner/timeline/DayTimeline";
 import ItineraryTimeline from "./components/planner/timeline/ItineraryTimeline";
 import {
@@ -4384,144 +4390,27 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   return (
     <main className={`trip-planner-app ${isBuilding ? "is-building" : hasPlan ? `is-result is-mobile-${mobileResultView}` : inputStep === "conditions" ? "is-conditions" : "is-places"}`}>
       {printMode && plan ? (
-        <section className="planner-print-sheet">
-          <header className="planner-print-header">
-            <p>
-              TripCheck · {tripDateTouched
-                ? tripStartDate
-                : locale === "ja" ? "日付未定" : "Date not decided"}
-              {locale === "ja" ? ` · ${plan.requestedDays}日間` : ` · ${plan.requestedDays} days`}
-            </p>
-            <h1>{resultStateCopy?.headline ?? plan.days[0]?.theme ?? "Trip plan"}</h1>
-            {feasibilityResult ? (
-              <div className="planner-print-verdict">
-                <b>{resultStateCopy?.label}</b>
-                <span>
-                  {locale === "ja"
-                    ? `重要情報: 確認済み ${feasibilityResult.criticalFacts.verified} / 推定 ${feasibilityResult.criticalFacts.estimated} / 未確認 ${feasibilityResult.criticalFacts.unknown}`
-                    : `Critical facts: ${feasibilityResult.criticalFacts.verified} confirmed / ${feasibilityResult.criticalFacts.estimated} estimated / ${feasibilityResult.criticalFacts.unknown} unknown`}
-                </span>
-                <span>
-                  {feasibilityResult.minimumDays === null
-                    ? locale === "ja" ? "最短日数は未確定です。" : "Minimum days are not yet determined."
-                    : locale === "ja" ? `同じ条件での最短日数: ${feasibilityResult.minimumDays}日` : `Minimum under the same conditions: ${feasibilityResult.minimumDays} day${feasibilityResult.minimumDays === 1 ? "" : "s"}`}
-                </span>
-              </div>
-            ) : null}
-          </header>
-          {feasibilityResult?.conflicts.length ? (
-            <section className="planner-print-alert is-conflict">
-              <h2>{locale === "ja" ? "変更が必要な条件" : "Conflicts that need a change"}</h2>
-              <ul>{feasibilityResult.conflicts.map((conflict, index) => <li key={`${conflict.code}-${index}`}>{conflictCopy(conflict, locale)}</li>)}</ul>
-            </section>
-          ) : feasibilityResult?.primaryAttention ? (
-            <section className="planner-print-alert">
-              <h2>{locale === "ja" ? "最大の注意点" : "Biggest attention"}</h2>
-              <p>{attentionCopy(feasibilityResult.primaryAttention, locale)}</p>
-            </section>
-          ) : null}
-          {feasibilityResult ? (
-            <section className="planner-print-assumptions">
-              <h2>{locale === "ja" ? "この判定の前提" : "Assumptions behind this verdict"}</h2>
-              {feasibilityResult.assumptions.length ? (
-                <ul>{feasibilityResult.assumptions.map((assumption) => <li key={assumption.code}>{assumptionCopy(assumption, locale)}</li>)}</ul>
-              ) : <p>{locale === "ja" ? "重要な前提はすべて確認済みです。" : "All critical assumptions are confirmed."}</p>}
-            </section>
-          ) : null}
-          <section className="planner-print-conditions">
-            <h2>{locale === "ja" ? "旅の条件" : "Trip conditions"}</h2>
-            <dl>
-              <div><dt>{locale === "ja" ? "拠点" : "Base"}</dt><dd>{plan.selectedBase ? `${plan.selectedBase.name} · ${resolvedStopAddress(plan.selectedBase)}` : locale === "ja" ? "未指定" : "Not specified"}</dd></div>
-              <div><dt>{locale === "ja" ? "到着" : "Arrival"}</dt><dd>{arrivalAirport === "none" ? (locale === "ja" ? "指定なし" : "Not specified") : `${arrivalAirport} · ${arrivalTime || "—"}`}</dd></div>
-              <div><dt>{locale === "ja" ? "出発" : "Departure"}</dt><dd>{departureAirport === "none" ? (locale === "ja" ? "指定なし" : "Not specified") : `${departureAirport} · ${departureTime || "—"}`}</dd></div>
-              <div><dt>{locale === "ja" ? "移動余白" : "Leg buffer"}</dt><dd>{transferBufferMinutes}{locale === "ja" ? "分" : " min"}</dd></div>
-              <div><dt>{locale === "ja" ? "徒歩上限" : "Walking limit"}</dt><dd>{plan.mobilityPolicy.maxWalkingMinutesPerLeg}{locale === "ja" ? "分/区間" : " min/leg"}</dd></div>
-              <div><dt>{locale === "ja" ? "乗換上限" : "Transfer limit"}</dt><dd>{plan.mobilityPolicy.maxTransfersPerLeg}{locale === "ja" ? "回/区間" : "/leg"}</dd></div>
-            </dl>
-          </section>
-          {!P0_CORE_ONLY && activeEssentials ? (
-            <p className="planner-print-essentials">
-              {text.essentialsPlug}: {activeEssentials.plug} · {text.essentialsEmergency}: {locale === "ja" ? activeEssentials.emergency.ja : activeEssentials.emergency.en}
-              {" · "}{locale === "ja" ? activeEssentials.tipping.ja : activeEssentials.tipping.en}
-            </p>
-          ) : null}
-          {beforeYouGo && (beforeYouGo.reservations.length > 0 || beforeYouGo.watchlist.length > 0) ? (
-            <p className="planner-print-essentials">
-              {beforeYouGo.reservations.map((entry) => `✓ ${entry.name}${entry.time ? ` ${entry.time}` : ""}`).join(" · ")}
-              {beforeYouGo.reservations.length > 0 && beforeYouGo.watchlist.length > 0 ? " · " : ""}
-              {beforeYouGo.watchlist.map((name) => `! ${name}`).join(" · ")}
-            </p>
-          ) : null}
-          {plan.unknownEntries.length > 0 || plan.deferredUnavailableStops.length > 0 || plan.deferredOptionalStops.length > 0 || removedStops.length > 0 ? (
-            <section className="planner-print-alert planner-print-omissions">
-              <h2>{locale === "ja" ? "旅程に入っていない場所" : "Places not in the schedule"}</h2>
-              <ul>
-                {plan.deferredUnavailableStops.map((stop) => (
-                  <li key={`unavailable-${stop.id}`}><b>{stop.name}</b><small>{locale === "ja" ? "休業または営業時間が合いません" : "Closed or outside usable opening hours"}</small></li>
-                ))}
-                {plan.deferredOptionalStops.map((stop) => (
-                  <li key={`optional-${stop.id}`}><b>{stop.name}</b><small>{locale === "ja" ? "選んだ日数・ペースでは収まりません" : "Does not fit the selected days and pace"}</small></li>
-                ))}
-                {plan.unknownEntries.map((entry, index) => (
-                  <li key={`unknown-${index}-${entry}`}><b>{entry}</b><small>{locale === "ja" ? "場所を解決できないため未判定です" : "Unresolved, so it was not evaluated"}</small></li>
-                ))}
-                {removedStops.map((entry) => (
-                  <li key={`removed-${entry.id}`}><b>{entry.name}</b><small>{locale === "ja" ? "旅行者が旅程から外しました" : "Removed from the plan by the traveller"}</small></li>
-                ))}
-              </ul>
-            </section>
-          ) : null}
-          {plan.days.map((printDay, printIndex) => (
-            <article key={printDay.label}>
-              <h2>
-                {printIndex + 1} · {tripDateTouched ? printDay.date ?? printDay.label : printDay.label} · {(() => {
-                  const printPresentation = buildDayPresentation(printDay, tripFit?.days[printIndex] ?? null, { dayIndex: printIndex });
-                  return printPresentation.consistency === "invalid"
-                    ? (locale === "ja" ? `時刻確認中（${printPresentation.diagnosticId}）` : `times withheld (${printPresentation.diagnosticId})`)
-                    : `${printPresentation.startClock}—${printPresentation.endClock}`;
-                })()}
-                {printDay.deadline ? ` · ${locale === "ja" ? "締切" : "cutoff"} ${printDay.deadline}${printDay.deadlineOverrunMinutes > 0 ? ` (+${printDay.deadlineOverrunMinutes}${locale === "ja" ? "分" : " min"})` : ""}` : ""}
-                {weatherByDay[printIndex]
-                  ? ` · ${weatherByDay[printIndex].temperatureMaxC}°/${weatherByDay[printIndex].temperatureMinC}°${weatherByDay[printIndex].precipitationPercent !== null ? ` ${text.precipitation(weatherByDay[printIndex].precipitationPercent!)}` : ""}`
-                  : ""}
-                {tripDateTouched && printDay.date && holidaysByDate[printDay.date]
-                  ? ` · ${text.holidayBadge} ${holidaysByDate[printDay.date].localName}`
-                  : ""}
-              </h2>
-              <ol>
-                {printDay.stops.map((built, stopIndex) => {
-                  const leg = printDay.legs[stopIndex];
-                  const durationStatus = durationEvidenceByStopId[built.stop.id] ?? "estimated";
-                  const durationSource = durationStatus === "user_provided"
-                    ? (locale === "ja" ? "ユーザー指定" : "user-set")
-                    : durationStatus === "verified"
-                      ? (locale === "ja" ? "確認済み" : "confirmed")
-                      : (locale === "ja" ? "推定" : "estimated");
-                  return (
-                    <li key={`${built.stop.id}-${stopIndex}`}>
-                      <b>{built.arrival}–{built.departure}</b> {built.stop.name}
-                      <small> · {resolvedStopAddress(built.stop)} · {built.stop.planningDurationMinutes}{locale === "ja" ? "分滞在" : " min stay"} ({durationSource}){built.isReservation ? ` · ${text.printBooked}${built.fixedTime ? ` ${built.fixedTime}` : ""}` : built.fixedTime ? ` · ${locale === "ja" ? "固定" : "fixed"} ${built.fixedTime}` : ""}</small>
-                      {built.reservationLateMinutes > 0 ? <strong>{locale === "ja" ? `予約に${built.reservationLateMinutes}分遅れ` : `${built.reservationLateMinutes} min late for booking`}</strong> : null}
-                      {built.openingStatus === "conflict" ? <strong>{text.openingConflict}</strong> : null}
-                      {built.openingStatus === "closed_day" ? <strong>{text.openingClosedDay}</strong> : null}
-                      {built.openingStatus === "last_entry_conflict" ? <strong>{locale === "ja" ? "最終入場に間に合いません" : "Misses last entry"}</strong> : null}
-                      {built.openingStatus === "unknown" ? <strong className="is-unknown">{locale === "ja" ? "営業時間は未確認" : "Opening hours unverified"}</strong> : null}
-                      {leg ? <em> ↓ {leg.comparison.recommended.minutes}{locale === "ja" ? "分" : " min"} ({legModeLabel(leg.comparison.recommended.mode, locale)}){leg.comparison.recommended.source === "live" ? ` · ${locale === "ja" ? "取得済み" : "retrieved"}` : ` · ${locale === "ja" ? "推定" : "estimated"}`}{printTransferCopy(leg, plan.mobilityPolicy.maxTransfersPerLeg, locale)}{leg.walkingLimitExceededMinutes > 0 ? ` · ${locale === "ja" ? `徒歩上限+${leg.walkingLimitExceededMinutes}分` : `walking limit +${leg.walkingLimitExceededMinutes} min`}` : ""}</em> : null}
-                    </li>
-                  );
-                })}
-              </ol>
-            </article>
-          ))}
-          {regionalCoverage ? (
-            <section className="planner-print-coverage">
-              <h2>{locale === "ja" ? "地域別の対応品質" : "Regional coverage"}</h2>
-              <p>{regionalCoverage.label[locale]} · Routes {regionalCoverage.grades.routes} · Places {regionalCoverage.grades.poi} · Hours {regionalCoverage.grades.hours} · Transit {regionalCoverage.grades.transit}</p>
-              <p>{coveragePublicCopy(regionalCoverage, locale)}</p>
-            </section>
-          ) : null}
-          <p className="planner-print-essentials">{text.printFooter}</p>
-        </section>
+        <TripPrintSheet
+          activeEssentials={activeEssentials}
+          arrivalAirport={arrivalAirport}
+          arrivalTime={arrivalTime}
+          beforeYouGo={beforeYouGo}
+          departureAirport={departureAirport}
+          departureTime={departureTime}
+          durationEvidenceByStopId={durationEvidenceByStopId}
+          feasibilityResult={feasibilityResult}
+          holidaysByDate={holidaysByDate}
+          locale={locale}
+          plan={plan}
+          regionalCoverage={regionalCoverage}
+          removedStops={removedStops}
+          resultStateCopy={resultStateCopy}
+          transferBufferMinutes={transferBufferMinutes}
+          tripDateTouched={tripDateTouched}
+          tripFit={tripFit}
+          tripStartDate={tripStartDate}
+          weatherByDay={weatherByDay}
+        />
       ) : null}
       <header className="planner-topbar">
         <button className="planner-brand" onClick={resetTrip} type="button" aria-label="TripCheck home">
@@ -5939,521 +5828,100 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
           </div>
         ) : plan && day ? (
           <div className="planner-result-view">
-            <div className="planner-mobile-result-toggle" role="group" aria-label={locale === "ja" ? "結果の表示" : "Result view"}>
-              <button aria-pressed={mobileResultView === "timeline"} className={mobileResultView === "timeline" ? "is-active" : ""} onClick={() => setMobileResultView("timeline")} type="button">{locale === "ja" ? "旅程" : "Timeline"}</button>
-              <button aria-pressed={mobileResultView === "map"} className={mobileResultView === "map" ? "is-active" : ""} onClick={() => setMobileResultView("map")} type="button">{locale === "ja" ? "地図" : "Map"}</button>
-              <button aria-pressed={mobileResultView === "compact"} className={mobileResultView === "compact" ? "is-active" : ""} onClick={() => setMobileResultView("compact")} type="button">{locale === "ja" ? "地図を隠す" : "Hide map"}</button>
-            </div>
-
-            <header className="planner-result-header">
-              <div>
-                <span className={`planner-verdict-label${feasibilityResult ? ` is-${feasibilityResult.state.toLowerCase()}` : ""}`}>
-                  {feasibilityResult ? <i aria-hidden="true"><Icon name={feasibilityStateIcon(feasibilityResult.state)} size={12} /></i> : null}
-                  {deferredAnchorStops.length > 0 && plan
-                    ? locale === "ja"
-                      ? `${plan.scheduledStopCount}/${plan.scheduledStopCount + deferredAnchorStops.length}か所を日程化`
-                      : `${plan.scheduledStopCount} of ${plan.scheduledStopCount + deferredAnchorStops.length} places planned`
-                    : resultStateCopy?.label ?? (locale === "ja" ? "判定結果" : "Feasibility result")}
-                </span>
-                <h1>{resultStateCopy?.headline ?? day.theme}</h1>
-                {planIssueCount > 0 ? (
-                  <button
-                    className="planner-issue-chip"
-                    onClick={() => document.getElementById("planner-issue-card")?.scrollIntoView({ behavior: "smooth", block: "center" })}
-                    type="button"
-                  >{locale === "ja" ? `確認したいこと ${planIssueCount}` : `${planIssueCount} thing${planIssueCount === 1 ? "" : "s"} to check`}</button>
-                ) : null}
-              </div>
-              <div className="planner-result-actions">
-                <button onClick={() => { setHasPlan(false); setInputStep("conditions"); setInspector(null); }} type="button">{text.edit}</button>
-                <details className="planner-result-menu">
-                  <summary aria-label={locale === "ja" ? "その他の操作" : "More actions"}>•••</summary>
-                  <div>
-                    <button
-                      className="planner-mobile-verdict-action"
-                      onClick={(event) => {
-                        const menu = event.currentTarget.closest("details") as HTMLDetailsElement | null;
-                        if (menu) menu.open = false;
-                        const details = document.querySelector(".planner-verdict-details") as HTMLDetailsElement | null;
-                        if (!details) return;
-                        details.open = true;
-                        details.scrollIntoView({ behavior: "smooth", block: "start" });
-                      }}
-                      type="button"
-                    >{locale === "ja" ? "判定の詳細" : "Verdict details"}</button>
-                    <button aria-label={locale === "ja" ? "変更を取り消す" : "Undo change"} disabled={!canUndoPlannerHistory(editHistory)} onClick={undoPlannerEdit} title={locale === "ja" ? "取り消す (⌘/Ctrl+Z)" : "Undo (⌘/Ctrl+Z)"} type="button">↶ {locale === "ja" ? "元に戻す" : "Undo"}</button>
-                    <button aria-label={locale === "ja" ? "変更をやり直す" : "Redo change"} disabled={!canRedoPlannerHistory(editHistory)} onClick={redoPlannerEdit} title={locale === "ja" ? "やり直す (⌘/Ctrl+Shift+Z)" : "Redo (⌘/Ctrl+Shift+Z)"} type="button">↷ {locale === "ja" ? "やり直す" : "Redo"}</button>
-                    <button onClick={() => setPrintMode(true)} title={text.printTitle} type="button">{text.print}</button>
-                    <button className={shareCopied ? "is-copied" : ""} onClick={() => setShareDialogOpen(true)} ref={shareTriggerRef} title={text.shareTitle} type="button">{shareCopied ? text.shareCopied : text.share}</button>
-                  </div>
-                </details>
-              </div>
-            </header>
+            <ResultHeader
+              canRedo={canRedoPlannerHistory(editHistory)}
+              canUndo={canUndoPlannerHistory(editHistory)}
+              dayTheme={day.theme}
+              deferredAnchorCount={deferredAnchorStops.length}
+              feasibilityResult={feasibilityResult}
+              locale={locale}
+              mobileResultView={mobileResultView}
+              onEdit={() => { setHasPlan(false); setInputStep("conditions"); setInspector(null); }}
+              onMobileResultView={setMobileResultView}
+              onPrint={() => setPrintMode(true)}
+              onRedo={redoPlannerEdit}
+              onShare={() => setShareDialogOpen(true)}
+              onUndo={undoPlannerEdit}
+              planIssueCount={planIssueCount}
+              resultStateCopy={resultStateCopy}
+              scheduledStopCount={plan.scheduledStopCount}
+              shareCopied={shareCopied}
+              shareTriggerRef={shareTriggerRef}
+            />
             <p aria-atomic="true" aria-live="polite" className="sr-only">{historyAnnouncement}</p>
-            {shareDialogOpen ? (() => {
-              const preview = buildScopedTripShare(currentShareableTripInput(), shareScope, locale);
-              return (
-                <div className="planner-share-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setShareDialogOpen(false); }}>
-                  <section aria-describedby="planner-share-description" aria-labelledby="planner-share-title" aria-modal="true" className="planner-share-dialog" ref={shareDialogRef} role="dialog" tabIndex={-1}>
-                    <header>
-                      <div><span>{locale === "ja" ? "共有する内容を選択" : "Choose what to share"}</span><h2 id="planner-share-title">{locale === "ja" ? "リンクに含める情報" : "Information in the link"}</h2></div>
-                      <button aria-label={text.close} onClick={() => setShareDialogOpen(false)} type="button"><Icon name="close" size={13} /></button>
-                    </header>
-                    <p className="planner-share-warning" id="planner-share-description">{locale === "ja"
-                      ? "このリンク自体が旅程データです。受信者、ブラウザ履歴、拡張機能から読めます。公開場所へ貼らないでください。"
-                      : "The link itself contains the trip data. Recipients, browser history and extensions can read it. Do not post it publicly."}</p>
-                    <fieldset>
-                      <legend>{locale === "ja" ? "含める情報" : "Include"}</legend>
-                      {([
-                        ["dates", locale === "ja" ? "旅行日" : "Trip dates"],
-                        ["hotel", locale === "ja" ? "ホテル・拠点" : "Hotel or base"],
-                        ["airports", locale === "ja" ? "空港とフライト時刻" : "Airports and flight times"],
-                        ["reservations", locale === "ja" ? "予約時刻・予約マーク" : "Booking times and reservation markers"],
-                      ] as const).map(([key, label]) => (
-                        <label key={key}><input checked={shareScope[key]} onChange={(event) => setShareScope((current) => ({ ...current, [key]: event.target.checked }))} type="checkbox" /><span>{label}</span></label>
-                      ))}
-                    </fieldset>
-                    {preview.redactedReservationCount > 0 ? <p>{locale === "ja" ? `予約${preview.redactedReservationCount}件は場所だけ共有し、時刻を除外します。` : `${preview.redactedReservationCount} booking time${preview.redactedReservationCount === 1 ? " is" : "s are"} removed while keeping the places.`}</p> : null}
-                    {preview.omittedUnparsedLines > 0 ? <p className="is-caution">{locale === "ja" ? `安全に判別できない${preview.omittedUnparsedLines}行はリンクから除外します。` : `${preview.omittedUnparsedLines} opaque line${preview.omittedUnparsedLines === 1 ? " is" : "s are"} omitted because they cannot be safely redacted.`}</p> : null}
-                    {preview.warnings.includes("RESERVATION_DETAILS_INCLUDED") ? <p className="is-caution">{locale === "ja" ? "予約情報を含める設定です。予約番号や氏名が入力文にないか確認してください。" : "Booking details are enabled. Check that the pasted text contains no booking reference or personal name."}</p> : null}
-                    {preview.blocked ? <p className="is-error">{preview.warnings.includes("LINK_TOO_LONG")
-                      ? locale === "ja" ? "リンクが長すぎます。印刷/PDFまたは端末内保存を使ってください。" : "This trip is too long for a reliable URL. Use print/PDF or device storage instead."
-                      : locale === "ja" ? "安全に共有できる地点がありません。入力を確認してください。" : "No safely shareable place remains. Review the input first."}</p> : null}
-                    <footer>
-                      <button onClick={() => setShareDialogOpen(false)} type="button">{locale === "ja" ? "キャンセル" : "Cancel"}</button>
-                      <button className="is-primary" disabled={preview.blocked} onClick={() => void copyShareLink()} type="button">{locale === "ja" ? "この内容でリンクをコピー" : "Copy scoped link"}</button>
-                    </footer>
-                  </section>
-                </div>
-              );
-            })() : null}
+            {shareDialogOpen ? (
+              <ShareDialog
+                dialogRef={shareDialogRef}
+                locale={locale}
+                onClose={() => setShareDialogOpen(false)}
+                onCopy={() => void copyShareLink()}
+                onScopeChange={(key, checked) => setShareScope((current) => ({ ...current, [key]: checked }))}
+                preview={buildScopedTripShare(currentShareableTripInput(), shareScope, locale)}
+                shareScope={shareScope}
+              />
+            ) : null}
 
             {feasibilityResult ? (
-              <>
-              <p aria-atomic="true" aria-live="polite" className="sr-only">
-                {resultStateCopy?.headline}. {feasibilityResult.criticalFacts.verified} of {feasibilityResult.criticalFacts.total} critical facts confirmed.
-                {feasibilityResult.primaryConflict ? ` ${conflictCopy(feasibilityResult.primaryConflict, locale)}` : ""}
-              </p>
-              <section className={`planner-feasibility-card is-${feasibilityResult.state.toLowerCase()}`} aria-labelledby="planner-feasibility-title">
-                <header className="planner-result-decision">
-                  <div>
-                    <span id="planner-feasibility-title">{locale === "ja" ? "旅程の結論" : "Plan result"}</span>
-                    <small>{minimumDaysCopy(feasibilityResult, locale)}</small>
-                  </div>
-                  <button
-                    onClick={() => {
-                      if (feasibilityResult.state === "INFEASIBLE_HARD_CONFLICT") {
-                        document.getElementById("planner-alternatives-title")?.scrollIntoView({ behavior: "smooth", block: "center" });
-                        return;
-                      }
-                      if (feasibilityResult.state === "UNKNOWN" || feasibilityResult.state === "FEASIBLE_IF_ASSUMPTIONS") {
-                        setHasPlan(false);
-                        setInputStep("conditions");
-                        setInspector(null);
-                        return;
-                      }
-                      document.querySelector(".planner-day-tabs")?.scrollIntoView({ behavior: "smooth", block: "start" });
-                    }}
-                    type="button"
-                  >{locale === "ja"
-                    ? feasibilityResult.state === "INFEASIBLE_HARD_CONFLICT" ? "直し方を見る" : feasibilityResult.state === "UNKNOWN" || feasibilityResult.state === "FEASIBLE_IF_ASSUMPTIONS" ? "確認する" : "このプランを見る"
-                    : feasibilityResult.state === "INFEASIBLE_HARD_CONFLICT" ? "See how to fix it" : feasibilityResult.state === "UNKNOWN" || feasibilityResult.state === "FEASIBLE_IF_ASSUMPTIONS" ? "Review details" : "View this plan"}</button>
-                </header>
-
-                {feasibilityResult.primaryConflict || deferredAnchorStops.length > 0 || feasibilityResult.primaryAttention ? (
-                  <p className="planner-one-warning">
-                    <Icon name="signal" size={14} />
-                    <span>{feasibilityResult.primaryConflict
-                      ? conflictCopy(feasibilityResult.primaryConflict, locale)
-                      : deferredAnchorStops.length > 0
-                        ? locale === "ja"
-                          ? `${deferredAnchorStops.slice(0, 2).map((stop) => stop.name).join("、")}${deferredAnchorStops.length > 2 ? `ほか${deferredAnchorStops.length - 2}件` : ""}は、現在の条件では日程に入りません。`
-                          : `${deferredAnchorStops.slice(0, 2).map((stop) => stop.name).join(", ")}${deferredAnchorStops.length > 2 ? ` and ${deferredAnchorStops.length - 2} more` : ""} do not fit the current plan.`
-                      : attentionCopy(feasibilityResult.primaryAttention!, locale)}</span>
-                  </p>
-                ) : null}
-
-                <details className="planner-verdict-details">
-                  <summary>{locale === "ja" ? "判定の詳細" : "Verdict details"}</summary>
-                  <div className="planner-verdict-details-body">
-
-                <div className="planner-trip-days" role="group" aria-label={text.fitSelectedDays}>
-                  <span>{text.fitSelectedDays}</span>
-                  <div>
-                    <button aria-label={text.fitDaysDecrease} disabled={tripDays <= Math.max(1, plan.minimumPinnedDay)} onClick={() => changeTripDays(tripDays - 1)} type="button">−</button>
-                    <output aria-live="polite">{text.fitDaysValue(tripDays)}</output>
-                    <button aria-label={text.fitDaysIncrease} disabled={tripDays >= 14} onClick={() => changeTripDays(tripDays + 1)} type="button">+</button>
-                  </div>
-                </div>
-
-                <div className="planner-critical-facts" aria-label={locale === "ja" ? "重要情報の確認状況" : "Critical fact coverage"}>
-                  <span><i className="is-verified" aria-hidden="true" /><b>{feasibilityResult.criticalFacts.verified}</b><small>{locale === "ja" ? "確認済み" : "confirmed"}</small></span>
-                  <span><i className="is-estimated" aria-hidden="true" /><b>{feasibilityResult.criticalFacts.estimated}</b><small>{locale === "ja" ? "推定" : "estimated"}</small></span>
-                  <span><i className="is-unknown" aria-hidden="true" /><b>{feasibilityResult.criticalFacts.unknown}</b><small>{locale === "ja" ? "未確認" : "unknown"}</small></span>
-                </div>
-                <p className="planner-route-coverage">
-                  {locale === "ja"
-                    ? `重要情報 ${feasibilityResult.criticalFacts.total}件中 ${feasibilityResult.criticalFacts.verified}件を確認。経路 ${confirmedRouteFactCount}/${routeFactCount}区間は取得済みです。`
-                    : `${feasibilityResult.criticalFacts.verified} of ${feasibilityResult.criticalFacts.total} critical facts confirmed. ${confirmedRouteFactCount}/${routeFactCount} route legs retrieved.`}
-                </p>
-                {openingVerificationCount > 0 ? (
-                  <p aria-live="polite" className="planner-progressive-status">
-                    <i aria-hidden="true" />
-                    {locale === "ja"
-                      ? `暫定結果を表示中。最終旅程の営業時間をあと${openingVerificationCount}件確認しています。`
-                      : `Showing a provisional result while ${openingVerificationCount} final-stop hour check${openingVerificationCount === 1 ? "" : "s"} continue in the background.`}
-                  </p>
-                ) : null}
-                {regionalCoverage ? (
-                  <details className="planner-regional-coverage">
-                    <summary>
-                      <span>{locale === "ja" ? "地域別の対応品質" : "Regional coverage"}</span>
-                      <b>{regionalCoverage.label[locale]}</b>
-                    </summary>
-                    <div aria-label={locale === "ja" ? "地域別の機能評価" : "Regional capability grades"}>
-                      {(["routes", "poi", "hours", "transit"] as const).map((dimension) => (
-                        <span key={dimension}>
-                          <small>{locale === "ja"
-                            ? { routes: "経路", poi: "地点", hours: "営業時間", transit: "公共交通" }[dimension]
-                            : { routes: "Routes", poi: "Places", hours: "Hours", transit: "Transit" }[dimension]}</small>
-                          <b>{regionalCoverage.grades[dimension]}</b>
-                        </span>
-                      ))}
-                    </div>
-                    <p>{coveragePublicCopy(regionalCoverage, locale)}</p>
-                    {regionalCoverage.lastValidatedAt ? <small>{locale === "ja" ? `地域評価: ${regionalCoverage.lastValidatedAt}` : `Regional review: ${regionalCoverage.lastValidatedAt}`}</small> : null}
-                  </details>
-                ) : null}
-
-                {plan.inputMode === "existing_itinerary" ? (() => {
-                  const shortest = feasibilityResult.alternatives.find((alternative) => alternative.kind === "OPTIMIZE_ORDER") ?? null;
-                  const repairRank = (kind: AlternativePlan["kind"]) => ({
-                    START_EARLIER: 0,
-                    END_LATER: 1,
-                    CHANGE_MODE: 2,
-                    CHANGE_DAYS: 3,
-                    CHANGE_BASE: 4,
-                    REMOVE_OPTIONAL: 5,
-                    OPTIMIZE_ORDER: 6,
-                  })[kind];
-                  const corrective = feasibilityResult.alternatives
-                    .filter((alternative) => alternative.kind !== "OPTIMIZE_ORDER")
-                    .sort((left, right) => repairRank(left.kind) - repairRank(right.kind) || left.id.localeCompare(right.id));
-                  const completeRepair = corrective.find((alternative) => (
-                    alternative.after.hardConflictCount === 0 && alternative.after.overrunMinutes === 0
-                  )) ?? null;
-                  const minimal = completeRepair ?? corrective[0] ?? null;
-                  const minimalIsRepair = Boolean(completeRepair);
-                  const populated = tripFit?.days.filter((fitDay) => fitDay.placeCount > 0) ?? [];
-                  const currentMetrics = {
-                    hardConflictCount: plan.scheduleConflictCount + plan.deferredUnavailableStops.length,
-                    minimumSlackMinutes: populated.length > 0 ? Math.min(...populated.map((fitDay) => fitDay.slackMinutes)) : null,
-                    travelMinutes: plan.days.reduce((total, planDay) => total
-                      + planDay.legs.reduce((sum, leg) => sum + leg.comparison.recommended.minutes, 0)
-                      + (planDay.hotelTravelMinutes ?? 0), 0),
-                  };
-                  const cards = [
-                    {
-                      key: "original",
-                      label: locale === "ja" ? "元の案" : "Original",
-                      detail: locale === "ja" ? "入力した日別割当と順番" : "Pasted days and order",
-                      metrics: currentMetrics,
-                      alternative: null,
-                    },
-                    {
-                      key: "minimal",
-                      label: minimalIsRepair
-                        ? (locale === "ja" ? "最小修正版" : "Minimal revision")
-                        : (locale === "ja" ? "最小の改善案" : "Smallest improvement"),
-                      detail: minimal
-                        ? alternativeCopy(minimal, locale).title
-                        : currentMetrics.hardConflictCount === 0
-                          ? (locale === "ja" ? "必要な修正はありません" : "No corrective change needed")
-                          : (locale === "ja" ? "1回の変更で成立する案はまだありません" : "No one-change repair is available yet"),
-                      metrics: minimal?.after ?? currentMetrics,
-                      alternative: minimal,
-                    },
-                    {
-                      key: "shortest",
-                      label: locale === "ja" ? "移動を減らす案" : "Lower-travel order",
-                      detail: shortest ? alternativeCopy(shortest, locale).title : (locale === "ja" ? "固定条件内で、より移動の少ない案は見つかりませんでした" : "No lower-travel alternative was found within the fixed constraints"),
-                      metrics: shortest?.after ?? currentMetrics,
-                      alternative: shortest,
-                    },
-                  ];
-                  return (
-                    <section className="planner-existing-comparison" aria-labelledby="planner-existing-comparison-title">
-                      <header><span>{locale === "ja" ? "既存旅程モード" : "Existing itinerary mode"}</span><b id="planner-existing-comparison-title">{locale === "ja" ? "3つの見方を比較" : "Compare three views"}</b></header>
-                      <div>
-                        {cards.map((card) => (
-                          <article className={card.key === "original" ? "is-current" : ""} key={card.key}>
-                            <span>{card.label}</span><b>{card.detail}</b>
-                            <dl>
-                              <div><dt>{locale === "ja" ? "衝突" : "Conflicts"}</dt><dd>{card.metrics.hardConflictCount}</dd></div>
-                              <div><dt>{locale === "ja" ? "移動" : "Travel"}</dt><dd>{card.metrics.travelMinutes}{locale === "ja" ? "分" : " min"}</dd></div>
-                              <div><dt>{locale === "ja" ? "最小余白" : "Min slack"}</dt><dd>{card.metrics.minimumSlackMinutes === null ? "—" : `${card.metrics.minimumSlackMinutes}${locale === "ja" ? "分" : " min"}`}</dd></div>
-                            </dl>
-                            {card.alternative ? <button onClick={() => setComparisonAlternative(card.alternative)} type="button">{locale === "ja" ? "差分を見る" : "Review diff"}</button> : <small>{locale === "ja" ? "現在" : "Current"}</small>}
-                          </article>
-                        ))}
-                      </div>
-                    </section>
-                  );
-                })() : null}
-
-                {feasibilityResult.alternatives.length > 0 ? (
-                  <details className="planner-alternatives" open={comparisonAlternative ? true : undefined}>
-                    <summary><span><b id="planner-alternatives-title">{locale === "ja" ? "比較できる変更案" : "Comparable changes"}</b><small>{locale === "ja" ? "差分を確認してから適用" : "Compare before applying"}</small></span><em>{feasibilityResult.alternatives.length}</em></summary>
-                    <div>
-                      {feasibilityResult.alternatives.map((alternative) => {
-                        const copy = alternativeCopy(alternative, locale);
-                        return (
-                          <button
-                            aria-pressed={comparisonAlternative?.id === alternative.id}
-                            key={alternative.id}
-                            onClick={() => setComparisonAlternative(alternative)}
-                            type="button"
-                          >
-                            <span><b>{copy.title}</b><small>{copy.detail}</small></span><Icon name="arrow" size={14} />
-                          </button>
-                        );
-                      })}
-                    </div>
-                    {comparisonAlternative ? (() => {
-                      const copy = alternativeCopy(comparisonAlternative, locale);
-                      const metric = (value: number | null, suffix = "") => value === null ? "—" : `${value}${suffix}`;
-                      return (
-                        <section aria-live="polite" className="planner-comparison" aria-labelledby="planner-comparison-title">
-                          <header><span id="planner-comparison-title">{locale === "ja" ? "変更前と変更後" : "Before and after"}</span><b>{copy.title}</b></header>
-                          <div>
-                            {[
-                              { label: locale === "ja" ? "現在の案" : "Current plan", metrics: comparisonAlternative.before },
-                              { label: locale === "ja" ? "変更案" : "Proposed plan", metrics: comparisonAlternative.after },
-                            ].map((column) => (
-                              <article key={column.label}>
-                                <h3>{column.label}</h3>
-                                <dl>
-                                  <div><dt>{locale === "ja" ? "重大な衝突" : "Hard conflicts"}</dt><dd>{column.metrics.hardConflictCount}</dd></div>
-                                  <div><dt>{locale === "ja" ? "超過" : "Overrun"}</dt><dd>{metric(column.metrics.overrunMinutes, locale === "ja" ? "分" : " min")}</dd></div>
-                                  <div><dt>{locale === "ja" ? "最小余白" : "Minimum slack"}</dt><dd>{metric(column.metrics.minimumSlackMinutes, locale === "ja" ? "分" : " min")}</dd></div>
-                                  <div><dt>{locale === "ja" ? "訪問数 / 日数" : "Visits / days"}</dt><dd>{column.metrics.scheduledStopCount} / {column.metrics.dayCount}</dd></div>
-                                  <div><dt>{locale === "ja" ? "移動" : "Travel"}</dt><dd>{metric(column.metrics.travelMinutes, locale === "ja" ? "分" : " min")}</dd></div>
-                                </dl>
-                              </article>
-                            ))}
-                          </div>
-                          <p>{copy.detail}</p>
-                          {comparisonAlternative.loss ? <p className="is-loss">{alternativeLossCopy(comparisonAlternative, locale)}</p> : null}
-                          <footer>
-                            <button onClick={() => setComparisonAlternative(null)} type="button">{locale === "ja" ? "戻る" : "Cancel"}</button>
-                            <button className="is-apply" onClick={() => applyTripAlternative(comparisonAlternative)} type="button">{locale === "ja" ? "この変更を適用" : "Apply this change"}</button>
-                          </footer>
-                        </section>
-                      );
-                    })() : null}
-                  </details>
-                ) : null}
-
-                <details className="planner-plan-assumptions">
-                  <summary>{locale === "ja" ? `この判定の前提 ${feasibilityResult.assumptions.length}件` : `${feasibilityResult.assumptions.length} assumptions behind this verdict`}</summary>
-                  <ul>
-                    {feasibilityResult.assumptions.map((assumption) => <li key={assumption.code}>{assumptionCopy(assumption, locale)}</li>)}
-                    {feasibilityResult.assumptions.length === 0 ? <li>{locale === "ja" ? "重要な前提はすべて確認済みです。" : "All critical assumptions are confirmed."}</li> : null}
-                  </ul>
-                </details>
-
-                {placeWarning || (!P0_CORE_ONLY && hotelState.status === "unavailable") || plan.overCapacityCount > 0 || plan.deferredUnavailableStops.length > 0 || plan.deferredOptionalStops.length > 0 ? (
-                  <details className="planner-plan-notices">
-                    <summary>
-                      <span aria-hidden="true">!</span>
-                      {locale === "ja" ? "その他の注意" : "Other notices"}
-                    </summary>
-                    <div>
-                      {placeWarning ? (
-                        <p>
-                          {plan.unknownEntries.length > 0
-                            ? locale === "ja"
-                              ? `${placeWarning === "quota_exhausted" ? "場所検索が本日の上限に達したため" : "位置情報サービスに接続できず"}、${plan.unknownEntries.length}件（${plan.unknownEntries.slice(0, 3).join("・")}${plan.unknownEntries.length > 3 ? " ほか" : ""}）が未解決のままです。時間をおいて作り直すか、入力にもどって確認してください。`
-                              : `${placeWarning === "quota_exhausted" ? "Place search hit its allowance" : "Place lookup failed"}, so ${plan.unknownEntries.length} entr${plan.unknownEntries.length === 1 ? "y" : "ies"} (${plan.unknownEntries.slice(0, 3).join(", ")}${plan.unknownEntries.length > 3 ? ", …" : ""}) stayed unresolved. Rebuild later or go back to the input to settle them.`
-                            : text.placeFallback}
-                        </p>
-                      ) : null}
-                      {!P0_CORE_ONLY && hotelState.status === "unavailable" ? (
-                        <p>{text.hotelUnavailable}{" "}<a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${hotelQuery.trim() || mapStops[0]?.area || destinationName(activeDestination, locale)} ${locale === "ja" ? "ホテル" : "hotels"}`)}`} rel="noreferrer" target="_blank">{text.hotelSearch} ↗</a></p>
-                      ) : null}
-                      {plan.overCapacityCount > 0 ? <p>{text.overCapacity}</p> : null}
-                      {plan.deferredUnavailableStops.length > 0 || plan.deferredOptionalStops.length > 0 ? (
-                        <div className="planner-excluded">
-                          <b>{text.excludedHeading} · {plan.deferredUnavailableStops.length + plan.deferredOptionalStops.length}</b>
-                          <ul>
-                            {plan.deferredUnavailableStops.map((stop) => <li key={stop.id}><b>{stop.name}</b><small> — {text.excludedClosed}</small></li>)}
-                            {plan.deferredOptionalStops.map((stop) => <li key={stop.id}><b>{stop.name}</b><small> — {text.excludedPace}</small></li>)}
-                          </ul>
-                        </div>
-                      ) : null}
-                    </div>
-                  </details>
-                ) : null}
-
-                  </div>
-                </details>
-
-              </section>
-              </>
+              <TripSummaryCard
+                activeDestination={activeDestination}
+                comparisonAlternative={comparisonAlternative}
+                confirmedRouteFactCount={confirmedRouteFactCount}
+                deferredAnchorStops={deferredAnchorStops}
+                feasibilityResult={feasibilityResult}
+                firstStopArea={mapStops[0]?.area}
+                hotelQuery={hotelQuery}
+                hotelStateStatus={hotelState.status}
+                locale={locale}
+                onApplyAlternative={applyTripAlternative}
+                onChangeTripDays={changeTripDays}
+                onCompare={setComparisonAlternative}
+                onReviewConditions={() => { setHasPlan(false); setInputStep("conditions"); setInspector(null); }}
+                openingVerificationCount={openingVerificationCount}
+                placeWarning={placeWarning}
+                plan={plan}
+                regionalCoverage={regionalCoverage}
+                resultStateCopy={resultStateCopy}
+                routeFactCount={routeFactCount}
+                tripDays={tripDays}
+                tripFit={tripFit}
+              />
             ) : null}
 
             {P1_TRAVEL_ENRICHMENTS && beforeYouGo && (beforeYouGo.reservations.length > 0 || beforeYouGo.watchlist.length > 0 || activeEssentials || preTripItems.length > 0) ? (
-              <details className="planner-warning planner-before-you-go">
-                <summary><span aria-hidden="true"><Icon name="check" size={13} /></span>{text.beforeHeading}</summary>
-                <label className="planner-passport-country">
-                  <span>{text.passportCountry}</span>
-                  <select onChange={(event) => setPassportCountry(event.target.value as PassportCountry)} value={passportCountry}>
-                    <option value="unset">{text.passportUnset}</option>
-                    <option value="JP">{text.passportJapan}</option>
-                    <option value="other">{text.passportOther}</option>
-                  </select>
-                  {passportCountry !== "JP" ? <small>{text.passportUnsupported}</small> : null}
-                </label>
-                <ul>
-                  {preTripItems.map((item) => (
-                    <li className={item.urgency === "overdue" ? "is-overdue" : item.urgency === "due_soon" ? "is-due-soon" : ""} key={item.id}>
-                      <b>
-                        {item.urgency === "overdue" ? `${text.beforeOverdue} · ` : item.urgency === "due_soon" ? `${text.beforeDueSoon} · ` : ""}
-                        {locale === "ja" ? item.label.ja : item.label.en}
-                      </b>
-                      <small> — {locale === "ja" ? item.detail.ja : item.detail.en}{" "}
-                        {item.url ? <a href={item.url} rel="noreferrer" target="_blank">{text.essentialsOfficial} ↗</a> : null}
-                      </small>
-                    </li>
-                  ))}
-                  {activeEssentials?.strikeInfo ? (
-                    <li key="strike">
-                      <b>{text.beforeStrike}</b>
-                      <small> — {locale === "ja" ? activeEssentials.strikeInfo.ja : activeEssentials.strikeInfo.en}{" "}
-                        <a href={activeEssentials.strikeInfo.url} rel="noreferrer" target="_blank">{text.essentialsOfficial} ↗</a>
-                      </small>
-                    </li>
-                  ) : null}
-                  {activeDestination.id !== "japan" && activeDestination.id !== "worldwide" ? (
-                    <li key="medication">
-                      <b>{text.beforeMedication}</b>
-                      <small> — {text.beforeMedicationNote}{" "}
-                        <a href="https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/kenkou_iryou/iyakuhin/yakubuturanyou/index_00005.html" rel="noreferrer" target="_blank">{text.essentialsOfficial} ↗</a>
-                      </small>
-                    </li>
-                  ) : null}
-                  {beforeYouGo.reservations.map((entry) => (
-                    <li key={`booked-${entry.name}`}>
-                      <b>{entry.name}</b>
-                      <small> — {entry.time ? text.beforeBookedAt(entry.time) : text.beforeBooked}</small>
-                    </li>
-                  ))}
-                  {beforeYouGo.watchlist.map((name) => (
-                    <li key={`watch-${name}`}>
-                      <b>{name}</b>
-                      <small> — {text.beforeWatch}</small>
-                    </li>
-                  ))}
-                  {passportCountry === "JP" && activeEssentials ? (
-                    <li key="entry">
-                      <b>{text.essentialsEntry}</b>
-                      <small> — {locale === "ja" ? activeEssentials.entry.ja : activeEssentials.entry.en}{" "}
-                        <a href={activeEssentials.entry.sourceUrl} rel="noreferrer" target="_blank">{text.essentialsOfficial} ↗</a>
-                      </small>
-                    </li>
-                  ) : null}
-                  {activeEssentials?.pass ? (
-                    <li key="pass">
-                      <b>{text.essentialsPass}</b>
-                      <small> — {locale === "ja" ? activeEssentials.pass.ja : activeEssentials.pass.en}{" "}
-                        <a href={activeEssentials.pass.url} rel="noreferrer" target="_blank">{text.essentialsOfficial} ↗</a>
-                      </small>
-                    </li>
-                  ) : null}
-                </ul>
-                {passportCountry === "JP" && destinationPassportRule(activeDestination) ? (
-                  <label className="planner-passport-check">
-                    <span>{text.beforePassportLabel}</span>
-                    <input
-                      onChange={(event) => updatePassportExpiry(event.target.value)}
-                      type="date"
-                      value={passportExpiry}
-                    />
-                    <small>{text.beforePassportHint}</small>
-                  </label>
-                ) : null}
-              </details>
+              <BeforeYouGoChecklist
+                activeDestination={activeDestination}
+                activeEssentials={activeEssentials}
+                beforeYouGo={beforeYouGo}
+                locale={locale}
+                onPassportCountryChange={setPassportCountry}
+                onPassportExpiryChange={updatePassportExpiry}
+                passportCountry={passportCountry}
+                passportExpiry={passportExpiry}
+                preTripItems={preTripItems}
+              />
             ) : null}
 
             {planIssueCount > 0 ? (
-              <section aria-labelledby="planner-issues-title" className="planner-issue-card" id="planner-issue-card">
-                <b id="planner-issues-title">{locale === "ja" ? `確認したいこと ${planIssueCount}` : `${planIssueCount} thing${planIssueCount === 1 ? "" : "s"} to check`}</b>
-                <ul>
-                  {plan.unknownEntries.slice(0, 3).map((entry) => (
-                    <li key={`unresolved-${entry}`}>
-                      <span>{locale === "ja" ? `「${entry}」が見つかりません` : `“${entry}” was not found`}</span>
-                      <button onClick={() => { setHasPlan(false); setInputStep("places"); setInspector(null); }} type="button">{locale === "ja" ? "入力を確認" : "Fix the input"}</button>
-                    </li>
-                  ))}
-                  {plan.unknownEntries.length > 3 ? (
-                    <li key="unresolved-more">
-                      <span>{locale === "ja" ? `ほか${plan.unknownEntries.length - 3}件が未解決です` : `${plan.unknownEntries.length - 3} more entries are unresolved`}</span>
-                      <button onClick={() => { setHasPlan(false); setInputStep("places"); setInspector(null); }} type="button">{locale === "ja" ? "入力を確認" : "Fix the input"}</button>
-                    </li>
-                  ) : null}
-                  {conflictingDestinations.length > 0 ? (
-                    <li className="planner-issue-country" key="country-conflict">
-                      <span>{locale === "ja"
-                        ? `場所が${conflictingDestinations.map((profile) => destinationName(profile, locale)).join("と")}にまたがっています。主な行き先を選ぶと精度が上がります`
-                        : `Your places span ${conflictingDestinations.map((profile) => destinationName(profile, locale)).join(" and ")}. Choosing the main country improves accuracy`}</span>
-                      <span className="planner-issue-country-choices">
-                        {conflictingDestinations.slice(0, 3).map((profile) => (
-                          <button
-                            key={profile.id}
-                            onClick={() => {
-                              setDestinationChoice(profile.id);
-                              setDetectedDestinationId(null);
-                              trackProductEvent("issue_resolved", { issue_type: "country_conflict" });
-                              void buildPlan({ preserveEdits: true });
-                            }}
-                            type="button"
-                          >{destinationName(profile, locale)}</button>
-                        ))}
-                      </span>
-                    </li>
-                  ) : null}
-                  {ambiguousIssuePlaces.slice(0, 3).map((entry) => (
-                    <li key={`ambiguous-${entry.input}`}>
-                      <span>{locale === "ja"
-                        ? `「${entry.input}」に候補が${Math.min(entry.candidates.length, 3)}件あります`
-                        : `“${entry.input}” matched ${Math.min(entry.candidates.length, 3)} places`}</span>
-                      <button onClick={() => { setHasPlan(false); setInputStep("conditions"); setInspector(null); }} type="button">{locale === "ja" ? "1件を選ぶ" : "Pick one"}</button>
-                    </li>
-                  ))}
-                  {deferredAnchorStops.slice(0, 3).map((stop) => (
-                    <li key={`deferred-${stop.id}`}>
-                      <span>{locale === "ja" ? `「${stop.name}」が${plan.requestedDays}日に入りません` : `“${stop.name}” does not fit in ${plan.requestedDays} day${plan.requestedDays === 1 ? "" : "s"}`}</span>
-                      <button onClick={() => document.getElementById("planner-alternatives-title")?.scrollIntoView({ behavior: "smooth", block: "center" })} type="button">{locale === "ja" ? "直し方を見る" : "See how to fix it"}</button>
-                    </li>
-                  ))}
-                  {unknownHoursStops.length > 0 ? (
-                    <li key="hours">
-                      <span>{locale === "ja"
-                        ? `営業時間を確認したい場所 ${unknownHoursStops.length}（${unknownHoursStops.slice(0, 2).map((stop) => stop.name).join("・")}${unknownHoursStops.length > 2 ? " ほか" : ""}）`
-                        : `${unknownHoursStops.length} place${unknownHoursStops.length === 1 ? "" : "s"} to check hours for (${unknownHoursStops.slice(0, 2).map((stop) => stop.name).join(", ")}${unknownHoursStops.length > 2 ? ", …" : ""})`}</span>
-                      <button onClick={() => handleSelectStop(unknownHoursStops[0].id)} type="button">{locale === "ja" ? "場所を開く" : "Open the place"}</button>
-                    </li>
-                  ) : null}
-                  {placeWarning ? (
-                    <li key="provider">
-                      <span>{placeWarning === "quota_exhausted"
-                        ? locale === "ja" ? "場所検索が本日の上限に達しました" : "Place search hit today's allowance"
-                        : locale === "ja" ? "場所の確認を完了できませんでした" : "Place lookup could not finish"}</span>
-                      <button onClick={() => void buildPlan({ preserveEdits: true })} type="button">{locale === "ja" ? "再試行" : "Retry"}</button>
-                    </li>
-                  ) : null}
-                </ul>
-              </section>
+              <IssueCard
+                ambiguousIssuePlaces={ambiguousIssuePlaces}
+                conflictingDestinations={conflictingDestinations}
+                deferredAnchorStops={deferredAnchorStops}
+                locale={locale}
+                onChooseCountry={(destinationId) => {
+                  setDestinationChoice(destinationId);
+                  setDetectedDestinationId(null);
+                  trackProductEvent("issue_resolved", { issue_type: "country_conflict" });
+                  void buildPlan({ preserveEdits: true });
+                }}
+                onFixInput={() => { setHasPlan(false); setInputStep("places"); setInspector(null); }}
+                onOpenStop={handleSelectStop}
+                onPickAmbiguous={() => { setHasPlan(false); setInputStep("conditions"); setInspector(null); }}
+                onRetryBuild={() => void buildPlan({ preserveEdits: true })}
+                placeWarning={placeWarning}
+                plan={plan}
+                planIssueCount={planIssueCount}
+                unknownHoursStops={unknownHoursStops}
+              />
             ) : null}
 
             <ItineraryTimeline

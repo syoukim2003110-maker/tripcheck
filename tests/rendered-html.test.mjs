@@ -93,9 +93,10 @@ test("keeps P0 trust, print and adoption contracts explicit in the planner UI", 
   const all = sources.map((entry) => entry.text).join("\n");
   const css = await readFile(new URL("../app/planner.css", import.meta.url), "utf8");
 
-  const printFile = sources.find((entry) => entry.text.includes("{printMode && plan ? ("));
+  assert.match(all, /\{printMode && plan \? \(/);
+  const printFile = sources.find((entry) => entry.text.includes('className="planner-print-sheet"'));
   assert.ok(printFile, "print sheet JSX exists somewhere in the planner surface");
-  const printStart = printFile.text.indexOf("{printMode && plan ? (");
+  const printStart = printFile.text.indexOf('className="planner-print-sheet"');
   const printEnd = printFile.text.indexOf('<header className="planner-topbar">', printStart);
   const printSource = printFile.text.slice(printStart, printEnd > printStart ? printEnd : undefined);
   assert.match(printSource, /plan\.unknownEntries/);
