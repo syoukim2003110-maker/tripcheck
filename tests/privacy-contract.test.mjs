@@ -40,12 +40,19 @@ test("persists only explicit occurrence-scoped place decisions", async () => {
 
 test("rehydrates saved trips without reusing or persisting mutable provider display data", async () => {
   const source = await readFile(appSourceUrl, "utf8");
+  // The planner edit actions moved into a hook (refactor spec v2.1); the
+  // authored-name contract holds across the planner surface, wherever it lives.
+  const plannerEditsSource = await readFile(
+    new URL("../app/components/planner/hooks/usePlannerEdits.tsx", import.meta.url),
+    "utf8",
+  );
   const hydrateStart = source.indexOf("const applySharedTripInput");
   const hydrateEnd = source.indexOf("const sharedHydrationRef", hydrateStart);
   const hydrate = source.slice(hydrateStart, hydrateEnd);
-  const removeStart = source.indexOf("function removeStopFromPlan");
-  const removeEnd = source.indexOf("function restoreRemovedStop", removeStart);
-  const remove = source.slice(removeStart, removeEnd);
+  const removeStart = plannerEditsSource.indexOf("function removeStopFromPlan");
+  const removeEnd = plannerEditsSource.indexOf("function restoreRemovedStop", removeStart);
+  assert.ok(removeStart >= 0 && removeEnd > removeStart);
+  const remove = plannerEditsSource.slice(removeStart, removeEnd);
 
   assert.match(hydrate, /setReviewedInputSignature\(""\)/);
   assert.match(hydrate, /setResolvedStops\(\[\]\)/);
