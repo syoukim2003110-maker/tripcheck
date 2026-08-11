@@ -1,8 +1,14 @@
+// v1.1 spec §7.1: one fixed day palette shared by the map, timeline and day
+// rail. Each colour keeps roughly ≥4.9:1 contrast on white; day identity is
+// always paired with a number and line style, never colour alone.
 export const PLANNER_MAP_DAY_COLORS = [
-  "#146c67",
-  "#b64b35",
-  "#6550a8",
-  "#936400",
+  "#2563EB",
+  "#7C3AED",
+  "#C2410C",
+  "#15803D",
+  "#BE185D",
+  "#0F766E",
+  "#A16207",
 ] as const;
 
 export type PlannerMapItemKind = "anchor" | "filler" | "meal" | "hotel" | "warning";

@@ -24,6 +24,21 @@ test("accepts only aggregate allowlisted funnel fields", () => {
   assert.equal(parseProductEvent({ event: "places_parsed", fields: { error_code: "network failed: Senso-ji" } }), null);
 });
 
+test("v1.1 funnel additions stay aggregate-only", () => {
+  assert.deepEqual(parseProductEvent({ event: "plan_edited", fields: { edit_type: "move_day" } }), {
+    event: "plan_edited",
+    fields: { edit_type: "move_day" },
+  });
+  assert.deepEqual(parseProductEvent({ event: "gap_accepted", fields: { provider_name: "google" } }), {
+    event: "gap_accepted",
+    fields: { provider_name: "google" },
+  });
+  assert.deepEqual(parseProductEvent({ event: "undo_used", fields: {} }), { event: "undo_used", fields: {} });
+  // Free text can never ride along on the new events.
+  assert.equal(parseProductEvent({ event: "plan_edited", fields: { edit_type: "renamed Senso-ji" } }), null);
+  assert.equal(parseProductEvent({ event: "hotel_accepted", fields: { hotel_name: "Alpina" } }), null);
+});
+
 test("event route rejects cross-origin and PII before logging", async () => {
   let logs = 0;
   const original = console.info;

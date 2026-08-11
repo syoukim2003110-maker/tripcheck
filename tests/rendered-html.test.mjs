@@ -30,21 +30,23 @@ test("server-renders the input-first TripCheck itinerary builder", async () => {
 
   const html = await response.text();
   assert.match(html, /<title>TripCheck — build a realistic itinerary from saved places<\/title>/i);
-  // The searchable country picker ships in the server-rendered form,
-  // defaulting to detection rather than to any one country.
-  assert.match(html, /Detect automatically/);
-  assert.match(html, /<input(?=[^>]*id="planner-destination")(?=[^>]*role="combobox")(?=[^>]*value="Detect automatically")[^>]*>/i);
-  assert.match(html, /Type a country to choose/);
+  // v1.1 TC-012: the country never greets the traveller. Detection is
+  // automatic; the picker only exists behind the advanced disclosure.
+  assert.doesNotMatch(html, /id="planner-destination"/);
   assert.match(html, /class="trip-planner-app is-places"/);
-  assert.match(html, /Add the places you want to visit\./);
-  assert.match(html, /Build my itinerary/);
-  assert.match(html, /When and for how long\?/);
-  assert.match(html, /Build it for me/);
-  assert.match(html, /Fine-tune it/);
+  // v1.1 Start: two decisions (places + days), automatic mode by default.
+  assert.match(html, /Just choose the places\./);
+  assert.match(html, /Build my trip/);
+  assert.match(html, /How many days\?/);
+  assert.match(html, /Not decided/);
+  assert.match(html, /Set hotel, airport or pace/);
+  assert.doesNotMatch(html, /Build it for me|Fine-tune it/);
+  assert.match(html, /One place per line\. Any order is fine\./);
   assert.match(html, /Places &amp; days/);
   assert.match(html, />Itinerary</);
   assert.doesNotMatch(html, />Conditions</);
-  assert.match(html, /Try a sample/);
+  assert.match(html, /See a finished example/);
+  assert.match(html, /This works comfortably in 4 days/);
   // Step 1 is intentionally map-free: hiding the canvas in CSS would still
   // load Google and spend privacy/cost budget before the traveller asks.
   assert.doesNotMatch(html, /Itinerary on Google Maps|maps\.googleapis\.com\/maps\/api\/js/);

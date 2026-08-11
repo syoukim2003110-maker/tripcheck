@@ -91,17 +91,9 @@ export default function PlannerDayTimeBar({ day, fit, locale }: PlannerDayTimeBa
         ))}
       </div>
 
-      <div
-        aria-hidden="true"
-        className="planner-day-time-bar-legend"
-        style={{ display: "flex", flexWrap: "wrap", gap: "5px 12px", marginTop: 7 }}
-      >
-        {model.segments.map((segment) => (
-          <span className={`is-${segment.kind}`} key={segment.kind} style={{ color: "var(--pl-muted, #64646c)", fontSize: 10.5 }}>
-            {labels[segment.kind]} <b style={{ color: "var(--pl-ink-2, #46464e)", fontWeight: 750 }}>{formatPlannerDayTimeDuration(segment.minutes, locale)}</b>
-          </span>
-        ))}
-      </div>
+      {/* v1.1 TC-032: the day header keeps two headline numbers (予定/余裕
+          tiles). The bar stays visual-only; its aria-label carries the full
+          breakdown for assistive technology. */}
     </section>
   );
 }

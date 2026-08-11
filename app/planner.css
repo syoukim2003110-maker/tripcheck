@@ -1,23 +1,26 @@
 :root {
-  --pl-bg: #f2f2f4;
+  /* v1.1 spec §10.2 colour tokens (Calm / Editorial / Precise / Warm). */
+  --pl-bg: #f7f7f4;
   --pl-panel: #ffffff;
-  --pl-ink: #0b0b0e;
-  --pl-ink-2: #46464e;
-  --pl-muted: #64646c;
-  --pl-line: #ebebef;
+  --pl-ink: #171717;
+  --pl-ink-2: #3f3f3c;
+  --pl-muted: #616161;
+  --pl-line: #e3e3de;
   --pl-control-border: #85858e;
-  --pl-tile: #f3f3f5;
-  --pl-tile-deep: #e8e8ec;
-  --pl-cta: #0b0b0e;
+  --pl-tile: #f0f0ec;
+  --pl-tile-deep: #e6e6e0;
+  --pl-cta: #171717;
   --pl-cta-deep: #000000;
-  --pl-accent: #e2634e;
-  --pl-accent-deep: #c94f3b;
-  --pl-accent-soft: #fdece7;
-  --pl-good: #0e8345;
-  --pl-good-soft: #e7f3ec;
-  --pl-warn-bg: #faf4e3;
-  --pl-warn-border: #eee0b7;
-  --pl-warn-ink: #7a5d1e;
+  --pl-accent: #d63f35;
+  --pl-accent-deep: #ae2e27;
+  --pl-accent-soft: #fbe9e6;
+  --pl-good: #157a46;
+  --pl-good-soft: #e8f5ec;
+  --pl-warn-bg: #fff8e8;
+  --pl-warn-border: #e9dfc2;
+  --pl-warn-ink: #765700;
+  --pl-danger: #b42318;
+  --pl-focus: #2563eb;
   --pl-rail: 424px;
   --pl-display: "Anton", "Avenir Next Condensed", "Arial Narrow", sans-serif;
   --pl-shadow: 0 1px 2px rgb(11 11 14 / 5%), 0 16px 44px rgb(11 11 14 / 14%);
@@ -223,6 +226,10 @@ body:has(.trip-planner-app) {
   padding: 0 9px;
 }
 .planner-map-day-legend button i { background: var(--planner-day-color); border-radius: 50%; height: 8px; width: 8px; }
+/* TC-003/TC-040: the line-style key sits beside the day colours. */
+.planner-map-line-legend { align-items: center; border-left: 1px solid var(--pl-line); color: var(--pl-muted); display: inline-flex; font-size: 9.5px; font-weight: 700; gap: 5px; margin-left: 4px; padding-left: 9px; }
+.planner-map-line-legend i { border-top: 3px solid var(--pl-ink-2); display: inline-block; width: 16px; }
+.planner-map-line-legend i.is-dashed { border-top-style: dashed; border-top-width: 2px; opacity: 0.75; }
 .planner-map-day-legend button.is-active { background: white; box-shadow: 0 1px 5px rgb(11 11 14 / 12%); color: var(--pl-ink); }
 
 .planner-route-status {
@@ -475,6 +482,12 @@ body:has(.trip-planner-app) {
 .planner-intro { margin-bottom: 22px; }
 .planner-intro h1 { font-size: 33px; font-weight: 900; letter-spacing: -0.035em; line-height: 1.1; margin: 0; }
 .planner-intro p { color: var(--pl-muted); font-size: 13.5px; margin: 10px 0 0; }
+/* v1.1 §10.3: the Start display size steps up; other steps keep the calm scale. */
+.trip-planner-app.is-places .planner-intro h1 { font-size: 42px; letter-spacing: -0.045em; line-height: 1.08; max-width: 640px; text-wrap: balance; }
+.trip-planner-app.is-places .planner-intro p { font-size: 15px; line-height: 1.75; max-width: 560px; }
+@media (max-width: 700px) {
+  .trip-planner-app.is-places .planner-intro h1 { font-size: 32px; }
+}
 
 .planner-composer { background: var(--pl-tile); border-radius: 16px; display: block; padding: 15px; transition: background 150ms, box-shadow 150ms; }
 .planner-composer:focus-within { background: white; box-shadow: inset 0 0 0 2px var(--pl-ink); }
@@ -757,11 +770,31 @@ body:has(.trip-planner-app) {
 .planner-day-tabs button small { align-items: center; background: var(--pl-tile); border-radius: 7px; color: var(--pl-ink-2); display: inline-flex; font-size: 10px; font-weight: 750; gap: 3px; padding: 3px 5px; }
 .planner-day-tabs button:hover { background: var(--pl-tile); }
 .planner-day-tabs button.is-weekend:not(.is-active) span { color: var(--pl-accent-deep); }
-.planner-day-tabs button.is-day-1 { --day-color: #e2634e; }
-.planner-day-tabs button.is-day-2 { --day-color: #356f9f; }
-.planner-day-tabs button.is-day-3 { --day-color: #4b8060; }
-.planner-day-tabs button.is-day-4 { --day-color: #7656a8; }
+/* v1.1 §7.1 shared day palette — must match PLANNER_MAP_DAY_COLORS. */
+.planner-day-tabs button.is-day-1 { --day-color: #2563EB; }
+.planner-day-tabs button.is-day-2 { --day-color: #7C3AED; }
+.planner-day-tabs button.is-day-3 { --day-color: #C2410C; }
+.planner-day-tabs button.is-day-4 { --day-color: #15803D; }
+.planner-day-tabs button.is-day-5 { --day-color: #BE185D; }
+.planner-day-tabs button.is-day-6 { --day-color: #0F766E; }
+.planner-day-tabs button.is-day-7 { --day-color: #A16207; }
 .planner-day-tabs button.is-active { background: color-mix(in srgb, var(--day-color) 9%, white); border-bottom-color: var(--day-color); color: var(--pl-ink); }
+
+/* v1.1 issue surface: one chip in the header, one card with per-cause rows. */
+.planner-issue-chip { background: var(--pl-warn-bg); border: 1px solid var(--pl-warn-border); border-radius: 11px; color: var(--pl-warn-ink); font-size: 11.5px; font-weight: 800; justify-self: start; margin-top: 7px; min-height: 34px; padding: 5px 11px; }
+.planner-issue-chip:hover { border-color: var(--pl-warn-ink); }
+.planner-issue-card { background: var(--pl-warn-bg); border: 1px solid var(--pl-warn-border); border-radius: 12px; color: var(--pl-warn-ink); display: grid; gap: 8px; margin: 0 0 12px; padding: 11px 12px; }
+.planner-issue-card > b { font-size: 12px; font-weight: 800; }
+.planner-issue-card ul { display: grid; gap: 6px; list-style: none; margin: 0; padding: 0; }
+.planner-issue-card li { align-items: center; display: flex; gap: 9px; justify-content: space-between; }
+.planner-issue-card li span { font-size: 11.5px; line-height: 1.45; }
+.planner-issue-card li button { background: white; border: 1px solid var(--pl-warn-border); border-radius: 9px; color: var(--pl-warn-ink); flex: 0 0 auto; font-size: 11px; font-weight: 800; min-height: 32px; padding: 4px 10px; }
+.planner-issue-card li button:hover { border-color: var(--pl-warn-ink); }
+.planner-issue-card .planner-issue-country { align-items: flex-start; flex-direction: column; }
+.planner-issue-country-choices { display: flex; flex-wrap: wrap; gap: 6px; }
+.planner-issue-country-choices button { background: white; border: 1px solid var(--pl-warn-border); border-radius: 9px; color: var(--pl-warn-ink); font-size: 11px; font-weight: 800; min-height: 32px; padding: 4px 10px; }
+.planner-day-inconsistent { background: var(--pl-warn-bg); border: 1px solid var(--pl-warn-border); border-radius: 10px; color: var(--pl-warn-ink); display: grid; font-size: 11px; font-style: normal; gap: 3px; line-height: 1.5; margin-top: 4px; padding: 9px 10px; }
+.planner-day-inconsistent b { font-size: 12px; }
 
 .planner-warning { align-items: flex-start; background: var(--pl-warn-bg); border: 1px solid var(--pl-warn-border); border-radius: 12px; color: var(--pl-warn-ink); display: flex; font-size: 12px; gap: 8px; margin: 0 0 12px; padding: 11px 12px; }
 .planner-warning > span:first-child,
@@ -784,7 +817,7 @@ details.planner-excluded { display: block; }
 .planner-plan-notices a { color: inherit; font-weight: 750; }
 .planner-plan-notices .planner-excluded ul { margin: 5px 0 0; padding-left: 17px; }
 
-.planner-day-summary { align-items: stretch; border-bottom: 1px solid var(--pl-line); display: grid; gap: 9px; grid-template-columns: minmax(0, 1fr); padding: 2px 0 12px; }
+.planner-day-summary { align-items: stretch; border-bottom: 1px solid var(--pl-line); display: grid; gap: 6px; grid-template-columns: minmax(0, 1fr); padding: 2px 0 10px; }
 .planner-day-summary > div:first-child { display: grid; flex: 1 1 auto; min-width: 0; }
 .planner-day-summary span { color: var(--pl-muted); font-size: 11px; font-weight: 650; }
 .planner-day-summary b { font-family: var(--pl-display); font-size: 24px; font-weight: 400; letter-spacing: 0.025em; line-height: 1.05; margin-top: 3px; white-space: nowrap; }
@@ -793,7 +826,9 @@ details.planner-excluded { display: block; }
 .planner-day-start { background: var(--pl-tile); border-radius: 12px; display: grid; min-width: 0; padding: 7px 9px; transition: background 150ms, box-shadow 150ms; }
 .planner-day-start:focus-within { background: white; box-shadow: inset 0 0 0 2px var(--pl-ink); }
 .planner-day-start > span { color: var(--pl-muted); font-size: 10px; font-weight: 700; }
-.planner-day-start input { background: transparent; border: 0; color: var(--pl-ink); font: inherit; font-size: 12.5px; font-variant-numeric: tabular-nums; font-weight: 700; outline: 0; padding: 0; }
+.planner-day-start input { background: transparent; border: 0; color: var(--pl-ink); font: inherit; font-size: 12.5px; font-variant-numeric: tabular-nums; font-weight: 700; min-height: 24px; outline: 0; padding: 0; }
+/* QA-045: no pointer target below 24 CSS px, including folded audit rows. */
+.planner-regional-coverage summary { min-height: 28px; }
 .planner-day-summary small { color: var(--pl-muted); font-size: 10.5px; max-width: 100%; text-align: left; }
 .planner-day-summary em { background: var(--pl-warn-bg); border: 1px solid var(--pl-warn-border); border-radius: 9px; color: var(--pl-warn-ink); font-size: 10.5px; font-style: normal; font-weight: 650; max-width: 100%; padding: 6px 9px; text-align: left; }
 .planner-day-metrics { display: grid; gap: 6px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -806,7 +841,6 @@ details.planner-excluded { display: block; }
 .planner-day-time-bar { margin-top: 9px; }
 .planner-day-time-bar-track { box-shadow: inset 0 0 0 1px rgb(11 11 14 / 7%); }
 .planner-day-time-bar.has-conflict .planner-day-time-bar-track { box-shadow: inset 0 0 0 1px #b13a2b; }
-.planner-day-time-bar-legend span { white-space: nowrap; }
 
 .planner-map-canvas.is-dense .planner-map-chip:not(.is-selected):not(:hover):not(:focus-visible) { padding-right: 4px; }
 .planner-map-canvas.is-dense .planner-map-chip:not(.is-selected):not(:hover):not(:focus-visible) span { display: none; }
@@ -877,6 +911,64 @@ details.planner-excluded { display: block; }
 .planner-build-mode > div > button.is-active { background: white; border-color: var(--pl-ink); box-shadow: 0 0 0 1px var(--pl-ink); }
 .planner-quick-advanced { border-left: 2px solid var(--pl-line); display: grid; gap: 11px; margin: 12px 0 0 6px; padding-left: 13px; }
 .planner-secondary-review { background: white; border: 1px solid var(--pl-control-border); border-radius: 10px; color: var(--pl-ink); font-size: 11.5px; font-weight: 750; min-height: 42px; padding: 8px 12px; }
+
+/* ---------- v1.1 Start: two decisions, preview instead of an empty map ---------- */
+
+.planner-intro-eyebrow { align-items: center; color: var(--pl-accent); display: inline-flex; font-size: 11.5px; font-weight: 800; gap: 8px; margin-bottom: 10px; }
+.planner-intro-eyebrow::before { background: var(--pl-accent); content: ""; display: inline-block; height: 2px; width: 18px; }
+.planner-place-step { align-items: start; display: grid; gap: 34px; grid-template-columns: minmax(0, 1fr); }
+.planner-place-main { min-width: 0; }
+.planner-input-examples { color: var(--pl-muted); font-size: 11.5px; margin-top: 6px; }
+.planner-input-examples summary { color: var(--pl-ink-2); cursor: pointer; font-weight: 750; min-height: 30px; padding: 4px 0; text-decoration: underline; text-underline-offset: 3px; }
+.planner-input-examples p { margin: 6px 0; }
+.planner-input-examples pre { background: var(--pl-tile); border-radius: 10px; font-family: inherit; font-size: 11.5px; line-height: 1.7; margin: 0; overflow-x: auto; padding: 10px 12px; white-space: pre; }
+.planner-days-chips { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; }
+.planner-days-chips > button { background: white; border: 1px solid var(--pl-control-border); border-radius: 12px; font-size: 13px; font-weight: 800; min-height: 44px; min-width: 50px; padding: 6px 13px; }
+.planner-days-chips > button.is-active { background: var(--pl-ink); border-color: var(--pl-ink); color: white; }
+.planner-days-other { align-items: center; color: var(--pl-muted); display: inline-flex; font-size: 10.5px; font-weight: 700; gap: 6px; }
+.planner-days-other select { background: white; border: 1px solid var(--pl-line); border-radius: 10px; color: var(--pl-ink); font: inherit; font-size: 11.5px; font-weight: 700; min-height: 36px; padding: 3px 7px; }
+.planner-days-note { color: var(--pl-muted); font-size: 11px; margin: 0; }
+.planner-date-disclosure { border-top: 1px dashed var(--pl-line); padding-top: 10px; }
+.planner-date-disclosure summary { color: var(--pl-ink-2); cursor: pointer; font-size: 11.5px; font-weight: 750; min-height: 32px; padding: 4px 0; text-decoration: underline; text-underline-offset: 3px; }
+.planner-date-disclosure .planner-date-field { align-items: end; display: grid; gap: 8px; grid-template-columns: minmax(0, 1fr) auto; margin-top: 8px; }
+.planner-date-disclosure .planner-date-field label { background: var(--pl-tile); border-radius: 12px; display: grid; gap: 2px; padding: 8px 10px; }
+.planner-date-disclosure .planner-date-field label span { color: var(--pl-muted); font-size: 10px; font-weight: 700; }
+.planner-date-disclosure .planner-date-field input { background: transparent; border: 0; color: var(--pl-ink); font: inherit; font-weight: 700; outline: 0; }
+.planner-date-disclosure .planner-date-field > button { background: white; border: 1px solid var(--pl-line); border-radius: 11px; color: var(--pl-ink-2); font-size: 11px; font-weight: 750; min-height: 44px; padding: 6px 12px; }
+.planner-date-disclosure .planner-date-field > button[aria-pressed="true"] { background: var(--pl-ink); border-color: var(--pl-ink); color: white; }
+.planner-advanced-disclosure { margin-top: 14px; }
+.planner-advanced-disclosure > summary { color: var(--pl-ink-2); cursor: pointer; font-size: 12px; font-weight: 750; list-style: none; min-height: 36px; padding: 6px 0; text-decoration: underline; text-underline-offset: 4px; }
+.planner-advanced-disclosure > summary::-webkit-details-marker { display: none; }
+.planner-advanced-disclosure .planner-place-country { margin-top: 0; }
+.planner-advanced-disclosure .planner-place-country small { color: var(--pl-muted); display: block; font-size: 10px; margin-top: 5px; }
+.planner-sample-link { align-items: baseline; background: transparent; border: 0; color: var(--pl-ink); display: inline-flex; flex-wrap: wrap; gap: 7px; margin-top: 16px; padding: 6px 0; }
+.planner-sample-link b { font-size: 12.5px; font-weight: 800; text-decoration: underline; text-underline-offset: 4px; }
+.planner-sample-link small { color: var(--pl-muted); font-size: 11px; }
+.planner-start-preview { background: #efece5; border-radius: 26px; box-shadow: var(--pl-shadow-soft); display: none; overflow: hidden; padding: 18px; position: relative; }
+.planner-start-preview > header { align-items: center; display: flex; justify-content: space-between; position: relative; z-index: 2; }
+.planner-start-preview > header strong { font-size: 12.5px; }
+.planner-start-preview > header span { color: var(--pl-muted); font-size: 11px; }
+.planner-start-preview-canvas { inset: 0; position: absolute; }
+.planner-start-preview-canvas > svg { height: 100%; left: 0; position: absolute; top: 0; width: 100%; }
+.planner-start-chip svg { flex: 0 0 auto; }
+.planner-start-chip { align-items: center; background: white; border-radius: 999px; box-shadow: var(--pl-shadow-soft); display: inline-flex; font-size: 11px; font-weight: 750; gap: 6px; padding: 8px 11px; position: absolute; z-index: 2; }
+.planner-start-chip.is-hotel { right: 16px; top: 84px; }
+.planner-start-chip.is-meal { right: 34px; top: 236px; }
+.planner-start-chip.is-gap { left: 18px; top: 150px; }
+.planner-start-preview-card { background: rgb(255 255 255 / 96%); border: 1px solid rgb(255 255 255 / 85%); border-radius: 16px; box-shadow: var(--pl-shadow-soft); display: grid; gap: 7px; margin-top: 300px; padding: 14px; position: relative; z-index: 2; }
+.planner-start-preview-card > b { align-items: center; display: flex; font-size: 13.5px; gap: 8px; }
+.planner-start-preview-card > b i { align-items: center; background: var(--pl-good-soft); border-radius: 50%; color: var(--pl-good); display: inline-flex; flex: 0 0 auto; height: 22px; justify-content: center; width: 22px; }
+.planner-start-preview-card > small { color: var(--pl-muted); font-size: 11px; }
+.planner-start-preview-card > div { align-items: center; border-top: 1px solid var(--pl-line); display: flex; gap: 9px; padding-top: 9px; }
+.planner-start-preview-card > div > span { align-items: center; background: #2563EB; border-radius: 8px; color: white; display: inline-flex; flex: 0 0 auto; font-size: 11px; font-weight: 850; height: 23px; justify-content: center; width: 23px; }
+.planner-start-preview-card > div p { display: grid; gap: 1px; margin: 0; }
+.planner-start-preview-card > div p b { font-size: 11.5px; }
+.planner-start-preview-card > div p small { color: var(--pl-muted); font-size: 10.5px; }
+@media (min-width: 1120px) {
+  .trip-planner-app.is-places .planner-form-view { max-width: 1180px; }
+  .trip-planner-app.is-places .planner-place-step { grid-template-columns: minmax(0, 1.05fr) minmax(360px, 0.95fr); }
+  .trip-planner-app.is-places .planner-start-preview { display: block; min-height: 520px; }
+}
 
 .planner-place-country { background: white; border: 1px solid var(--pl-line); border-radius: 13px; margin-top: 12px; padding: 11px 13px; }
 .planner-place-country > label > span { color: var(--pl-muted); display: block; font-size: 10.5px; font-weight: 700; margin-bottom: 6px; }
@@ -1025,6 +1117,18 @@ details.planner-excluded { display: block; }
 .planner-comparison footer button { justify-content: center; min-height: 44px; }
 .planner-comparison footer button.is-apply { background: var(--pl-ink); color: white; }
 .planner-share-backdrop { align-items: center; background: rgb(11 11 14 / 46%); display: flex; inset: 0; justify-content: center; padding: 18px; position: fixed; z-index: 120; }
+.planner-confirm-backdrop { z-index: 140; }
+.planner-confirm-dialog { background: white; border-radius: 18px; box-shadow: var(--pl-shadow); display: grid; gap: 12px; max-width: 430px; padding: 20px; width: 100%; }
+.planner-confirm-dialog h2 { font-size: 17px; line-height: 1.4; margin: 0; }
+.planner-confirm-dialog ul { border-left: 3px solid var(--pl-danger); color: var(--pl-ink-2); display: grid; font-size: 12.5px; gap: 5px; line-height: 1.5; list-style: none; margin: 0; padding: 2px 0 2px 12px; }
+.planner-confirm-dialog footer { display: flex; gap: 9px; justify-content: flex-end; }
+.planner-confirm-dialog footer button { background: white; border: 1px solid var(--pl-line); border-radius: 11px; font-weight: 750; min-height: 44px; padding: 8px 15px; }
+.planner-confirm-dialog footer button.is-apply { background: var(--pl-danger); border-color: var(--pl-danger); color: white; }
+.planner-confirm-dialog footer button.is-apply:hover { filter: brightness(0.94); }
+.planner-edit-toast { align-items: center; background: var(--pl-ink); border-radius: 13px; bottom: 22px; box-shadow: var(--pl-shadow); color: white; display: flex; font-size: 12.5px; gap: 12px; left: 50%; padding: 12px 16px; position: fixed; transform: translateX(-50%); z-index: 130; }
+.planner-edit-toast span { display: inline-flex; flex-wrap: wrap; gap: 8px; }
+.planner-edit-toast small { color: rgb(255 255 255 / 72%); font-size: 12px; }
+.planner-edit-toast button { background: transparent; border: 0; color: white; font-size: 12.5px; font-weight: 850; min-height: 32px; padding: 0 2px; text-decoration: underline; text-underline-offset: 3px; }
 .planner-share-dialog { background: white; border-radius: 18px; box-shadow: var(--pl-shadow); display: grid; gap: 12px; max-height: calc(100dvh - 36px); max-width: 520px; overflow-y: auto; padding: 18px; width: 100%; }
 .planner-share-dialog > header { align-items: start; display: flex; justify-content: space-between; }
 .planner-share-dialog > header div { display: grid; gap: 2px; }
@@ -1199,6 +1303,8 @@ details.planner-excluded { display: block; }
 }
 .planner-inspector-close { align-items: center; background: var(--pl-tile); border: 0; border-radius: 10px; color: var(--pl-ink-2); display: flex; height: 34px; justify-content: center; position: absolute; right: 14px; top: 14px; width: 34px; }
 .planner-inspector-close:hover { background: var(--pl-tile-deep); color: var(--pl-ink); }
+/* v1.1 §9.3: the sheet-size toggle only exists in the phone bottom-sheet mode. */
+.planner-inspector-expand { align-items: center; background: var(--pl-tile); border: 0; border-radius: 10px; color: var(--pl-ink-2); display: none; font-size: 13px; height: 34px; justify-content: center; position: absolute; right: 54px; top: 14px; width: 34px; }
 
 .planner-inspector-head { align-items: center; display: grid; gap: 12px; grid-template-columns: 40px minmax(0, 1fr); padding-right: 34px; }
 .planner-inspector-num {
@@ -1500,7 +1606,7 @@ div.planner-route-ideas-empty { display: grid; gap: 8px; }
 .trip-planner-app input:focus-visible,
 .trip-planner-app textarea:focus-visible,
 .trip-planner-app select:focus-visible,
-.trip-planner-app summary:focus-visible { outline: 3px solid #0b0b0e; outline-offset: 2px; }
+.trip-planner-app summary:focus-visible { outline: 3px solid var(--pl-focus); outline-offset: 2px; }
 
 /* ---------- responsive ---------- */
 
@@ -1632,16 +1738,22 @@ div.planner-route-ideas-empty { display: grid; gap: 8px; }
   .planner-meal-chip { flex: 0 0 auto; }
   .planner-open-maps { font-size: 0; gap: 0; padding: 0 13px; }
 
+  /* v1.1 §9.3 bottom sheet: half height by default, full via the explicit
+   * toggle — never drag-only. The handle is decorative; buttons do the work. */
   .planner-inspector {
-    border-radius: 18px 18px 0 0;
+    border-radius: 20px 20px 0 0;
     bottom: 0;
     left: 0;
-    max-height: 62dvh;
+    max-height: 55dvh;
+    padding-top: 26px;
     right: 0;
     top: auto;
     width: auto;
     z-index: 40;
   }
+  .planner-inspector::before { background: var(--pl-tile-deep); border-radius: 999px; content: ""; height: 4px; left: 50%; position: absolute; top: 9px; transform: translateX(-50%); width: 44px; }
+  .planner-inspector.is-sheet-full { max-height: 92dvh; }
+  .planner-inspector-expand { display: flex; }
   .planner-combobox-list { box-shadow: 0 8px 22px rgb(11 11 14 / 9%); margin-top: 7px; max-height: min(240px, 35dvh); position: static; }
   .planner-core-choices { grid-template-columns: 1fr; }
   .planner-review-button { bottom: 10px; }
@@ -1670,7 +1782,6 @@ div.planner-route-ideas-empty { display: grid; gap: 8px; }
   .planner-mobile-verdict-action { display: block; }
   .planner-verdict-details:not([open]) { display: none; }
   .planner-result-decision small { display: none; }
-  .planner-day-time-bar-legend { display: none !important; }
   .planner-day-summary { gap: 4px; padding-bottom: 6px; }
   .planner-day-summary b { font-size: 19px; }
   .planner-day-time-bar { margin-top: 4px; }

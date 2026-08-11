@@ -12,7 +12,10 @@ import {
 
 test("day route view uses a stable day palette instead of transport-mode colours", () => {
   assert.equal(plannerMapDayColor(0), PLANNER_MAP_DAY_COLORS[0]);
-  assert.equal(plannerMapDayColor(4), PLANNER_MAP_DAY_COLORS[0]);
+  // v1.1 fixes seven distinct day colours before the palette wraps.
+  assert.equal(PLANNER_MAP_DAY_COLORS.length, 7);
+  assert.equal(new Set(PLANNER_MAP_DAY_COLORS).size, 7);
+  assert.equal(plannerMapDayColor(PLANNER_MAP_DAY_COLORS.length), PLANNER_MAP_DAY_COLORS[0]);
   assert.equal(plannerMapDayColor(2, " #123456 "), "#123456");
 
   const active = buildPlannerMapRouteView({ dayIndex: 1 });
