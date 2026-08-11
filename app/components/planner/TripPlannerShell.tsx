@@ -77,6 +77,7 @@ import {
   safeRemovedStopLabels,
 } from "../../../lib/presentation/trip-presentation";
 import { recommendationStopId } from "../../../lib/presentation/recommendation-presentation";
+import { detourWalkingMinutes } from "../../../lib/recommendation-evaluator";
 import {
   P0_CORE_ONLY,
   P1_TRAVEL_ENRICHMENTS,
@@ -824,7 +825,9 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
     fillerStopIds,
     foodPins,
     formattedItinerary,
+    gapDetourPartition,
     gapImpactById,
+    gapOverCapIds,
     hardViolationAnnouncement,
     hasRakutenHotelEvidence,
     hotelImpactById,
@@ -837,10 +840,12 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
     mapWarningStopIds,
     maxParsedDay,
     mealCandidatesBySlot,
+    mealDetourBySlot,
     mealImpactBySlot,
     mealRoutePolyline,
     measuredRouteCount,
     openingVerificationCount,
+    orderedGapCandidates,
     parsePreviewRows,
     parsedPlaceCount,
     placesHaveBeenReviewed,
@@ -1127,13 +1132,20 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
         )];
         const selectedId = mealSelections[slot.id];
         const eligibleCandidates = mealCandidatesBySlot[slot.id] ?? [];
-        const candidate = eligibleCandidates.find((entry) => entry.id === selectedId) ?? eligibleCandidates[0];
+        // TC-044: the auto-shown lead comes from the detour-capped shortlist
+        // (nearest-over-cap fallback included); an explicit user acceptance
+        // always keeps its row regardless of the cap.
+        const autoLead = mealDetourBySlot[slot.id]?.autoDisplay[0] ?? eligibleCandidates[0];
+        const candidate = eligibleCandidates.find((entry) => entry.id === selectedId) ?? autoLead;
         if (!candidate) return [];
         if (selectedId && plannedStopIds.has(recommendationStopId(selectedId))) return [];
         const accepted = selectedId === candidate.id;
         // TC-048: the pre-accept row states what accepting would really do —
         // travel delta and buffer (余裕) delta from the simulated candidate plan.
         const impact = accepted ? null : mealImpactBySlot[slot.id]?.[candidate.id] ?? null;
+        // TC-044: the real walking detour (≈80m/min) — also shown for the
+        // nearest-over-cap fallback, honesty over emptiness.
+        const detourMinutes = detourWalkingMinutes(candidate.distanceMeters);
         return [(
           <li className={`planner-meal-row${accepted ? " is-accepted" : " is-proposed"}`} key={`meal-${slot.id}`}>
             <button
@@ -1144,22 +1156,77 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
               <time>{slot.displayTime}</time>
               <span className="planner-meal-dot" aria-hidden="true"><Icon name="fork" size={13} /></span>
               <span className="planner-stop-main">
-                <small className="planner-filler-label"><Icon name="spark" size={10} />{accepted ? (locale === "ja" ? "旅程に追加済み" : "Added to this day") : (locale === "ja" ? "おすすめ" : "Recommended")}</small>
+                <small className="planner-filler-label"><Icon name="spark" size={10} />{accepted ? (locale === "ja" ? "旅程に追加済み" : "Added to this day") : text.mealIdeas}</small>
                 <b>{candidate.name}</b>
-                <small>{slot.kind === "lunch" ? text.lunchChip : text.dinnerChip} · {slot.window}{candidate.distanceMeters !== null ? ` · ${locale === "ja" ? `動線から約${Math.max(1, Math.round(candidate.distanceMeters / 80))}分` : `~${Math.max(1, Math.round(candidate.distanceMeters / 80))} min from the route`}` : ""}{impact ? ` · ${travelDeltaLine(impact.travelDeltaMinutes, locale)} · ${bufferDeltaLine(impact.bufferDeltaMinutes, locale)}` : ""}</small>
+                <small>{slot.kind === "lunch" ? text.lunchChip : text.dinnerChip} · {slot.window}{detourMinutes !== null ? ` · ${text.detourLine(detourMinutes)}` : ""}{impact ? ` · ${travelDeltaLine(impact.travelDeltaMinutes, locale)} · ${bufferDeltaLine(impact.bufferDeltaMinutes, locale)}` : ""}</small>
               </span>
             </button>
             <span className="planner-filler-actions">
               <button onClick={() => toggleMealSelection(slot.id, candidate.id)} type="button">
-                {accepted ? (locale === "ja" ? "削除" : "Remove") : (locale === "ja" ? "ここにする" : "Add")}
+                {accepted ? (locale === "ja" ? "削除" : "Remove") : text.recoAccept}
               </button>
               <button onClick={() => setInspector({ kind: "food", slotId: slot.id, candidateId: candidate.id })} type="button">
-                {locale === "ja" ? "他を見る" : "See alternatives"}
+                {text.recoAlternatives}
               </button>
             </span>
           </li>
         )];
       });
+  }
+
+  // DoD-PLAN-6: the unaccepted gap suggestion appears IN the timeline at its
+  // slot position, styled as a Suggestion like the meal rows. One row per day
+  // (the primary gap only — the existing cap), Copy Deck strings, the two
+  // TC-048 impact metrics, and the accept goes through the history-integrated
+  // addRouteRecommendation (undoable toast).
+  function gapSuggestionRow() {
+    if (P0_CORE_ONLY || !day || !primaryRecommendationGap) return null;
+    if (activeRouteRecommendationState.status !== "ready") return null;
+    // TC-047: the lead is the detour-capped candidate (nearest fallback when
+    // everything is beyond the cap, labeled with its real detour).
+    const candidate = gapDetourPartition.autoDisplay[0];
+    if (!candidate) return null;
+    // An accepted suggestion is a real stop now; the proposal row retires.
+    if (plannedStopIds.has(recommendationStopId(candidate.id))) return null;
+    const impact = gapImpactById[candidate.id] ?? null;
+    const detourMinutes = gapOverCapIds.has(candidate.id) ? detourWalkingMinutes(candidate.routeDistanceMeters) : null;
+    return (
+      <li className="planner-meal-row is-proposed planner-gap-row" key={`gap-${primaryRecommendationGap.id}`}>
+        <button
+          className="planner-meal-stop"
+          onClick={() => { setRouteAlternativesExpanded(false); setInspector({ kind: "recommendations", dayIndex: activeDay, candidateId: candidate.id }); }}
+          type="button"
+        >
+          <time>{primaryRecommendationGap.startAt}</time>
+          <span className="planner-meal-dot" aria-hidden="true"><Icon name="spark" size={13} /></span>
+          <span className="planner-stop-main">
+            <small className="planner-filler-label"><Icon name="spark" size={10} />{text.gapRecoLabel(primaryRecommendationGap.availableMinutes)}</small>
+            <b>{candidate.name}</b>
+            <small>{candidate.type}{detourMinutes !== null ? ` · ${text.detourLine(detourMinutes)}` : ""}{impact ? ` · ${travelDeltaLine(impact.travelDeltaMinutes, locale)} · ${bufferDeltaLine(impact.bufferDeltaMinutes, locale)}` : ""}</small>
+          </span>
+        </button>
+        <span className="planner-filler-actions">
+          <button onClick={() => addRouteRecommendation(candidate)} type="button">
+            {text.recoAccept}
+          </button>
+          <button onClick={() => { setRouteAlternativesExpanded(true); setInspector({ kind: "recommendations", dayIndex: activeDay }); }} type="button">
+            {text.recoAlternatives}
+          </button>
+        </span>
+      </li>
+    );
+  }
+
+  // The row renders between the stops around the gap: after the stop the gap
+  // follows, or (for a before-first-anchor gap) ahead of the first stop.
+  function timelineRowsAfter(stopIndex: number) {
+    const rows = mealRowsAfter(stopIndex);
+    const gap = primaryRecommendationGap;
+    if (gap && gap.kind !== "BEFORE_FIRST_ANCHOR" && day?.stops[stopIndex]?.stop.id === gap.previousAnchorId) {
+      const row = gapSuggestionRow();
+      if (row) return [...rows, row];
+    }
+    return rows;
   }
 
   function currentShareableTripInput(): ShareableTripInput {
@@ -1426,7 +1493,6 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
     hasPlan,
     hotelQuery,
     hotelRefreshAbortRef,
-    hotelStyleRef,
     itinerary,
     lastEntryTimes,
     legModeOverrides,
@@ -1447,7 +1513,6 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
     resetAnalyticsMilestones,
     reviewedPlaceRows,
     routeRecommendationRequestRef,
-    selectHotelCandidate,
     selectedBuiltStop,
     setActiveDay,
     setArrivalAirport,
@@ -1713,6 +1778,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
             inspector={inspector}
             locale={locale}
             mealCandidatesBySlot={mealCandidatesBySlot}
+            mealDetourBySlot={mealDetourBySlot}
             mealImpactBySlot={mealImpactBySlot}
             mealSelections={mealSelections}
             onClose={() => setInspector(null)}
@@ -1739,6 +1805,8 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
             onRetry={() => void findRouteRecommendations()}
             onSelectCandidate={selectRouteRecommendation}
             onToggleSheet={() => setInspectorSheetExpanded((current) => !current)}
+            orderedCandidates={orderedGapCandidates}
+            overCapIds={gapOverCapIds}
             panelRef={inspectorPanelRef}
             plannedStopIds={plannedStopIds}
             selectedCandidateId={inspector.candidateId}
@@ -2040,8 +2108,9 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
                 fillerStopIds={fillerStopIds}
                 fitDay={activeFitDay}
                 holiday={tripDateTouched && day.date ? holidaysByDate[day.date] : undefined}
+                leadingRows={!P0_CORE_ONLY && primaryRecommendationGap?.kind === "BEFORE_FIRST_ANCHOR" ? gapSuggestionRow() : null}
                 locale={locale}
-                mealRowsAfter={P0_CORE_ONLY ? undefined : mealRowsAfter}
+                mealRowsAfter={P0_CORE_ONLY ? undefined : timelineRowsAfter}
                 onHoverLeg={handleTimelineHoverLeg}
                 onHoverStop={handleTimelineHoverStop}
                 onOpenHotel={() => setInspector({ kind: "hotel" })}

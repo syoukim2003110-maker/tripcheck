@@ -135,3 +135,34 @@ test("conditional and infeasible state copy follow the deck with real counts onl
   assert.equal(feasibilityStateCopy("INFEASIBLE_HARD_CONFLICT", "ja", 3, 8, 0).headline, "このままだと予約・時間に間に合いません");
   assert.equal(feasibilityStateCopy("INFEASIBLE_HARD_CONFLICT", "en", 3, 8, 0).headline, "A booking or time constraint cannot be met as planned");
 });
+
+// Copy Deck recommendation and hotel keys (TC-044/DoD-PLAN-6/Task plan.reco &
+// plan.hotel): the deck strings are verbatim; only numbers parameterize.
+test("recommendation surfaces carry the Copy Deck strings verbatim in both locales", () => {
+  // plan.reco.meal
+  assert.equal(ui.ja.mealIdeas, "この動線なら、ここが便利です");
+  assert.equal(ui.en.mealIdeas, "Best fit for this route");
+  // plan.reco.gap (minutes parameterized)
+  assert.equal(ui.ja.gapRecoLabel(45), "45分の空き時間に寄れます");
+  assert.equal(ui.en.gapRecoLabel(45), "Fits your 45-minute gap");
+  // plan.reco.accept / plan.reco.replace
+  assert.equal(ui.ja.recoAccept, "ここにする");
+  assert.equal(ui.en.recoAccept, "Add this");
+  assert.equal(ui.ja.recoAlternatives, "他を見る");
+  assert.equal(ui.en.recoAlternatives, "See alternatives");
+  // plan.hotel.title / plan.hotel.change
+  assert.equal(ui.ja.hotelCandidate, "おすすめの拠点");
+  assert.equal(ui.en.hotelCandidate, "Recommended base");
+  assert.equal(ui.ja.hotelChip, "ホテルを変える");
+  assert.equal(ui.en.hotelChip, "Change base");
+  // plan.hotel.effect (only phrased for a real saving; deck example 1h20m)
+  assert.equal(ui.ja.hotelSavesTravel(80), "移動を1時間20分短縮");
+  assert.equal(ui.en.hotelSavesTravel(80), "Saves 1h 20m of travel");
+  assert.equal(ui.ja.hotelSavesTravel(45), "移動を45分短縮");
+  assert.equal(ui.en.hotelSavesTravel(45), "Saves 45m of travel");
+  assert.equal(ui.ja.hotelSavesTravel(120), "移動を2時間短縮");
+  assert.equal(ui.en.hotelSavesTravel(120), "Saves 2h of travel");
+  // TC-044: the real detour line the meal/gap cards show.
+  assert.equal(ui.ja.detourLine(12), "動線から約12分");
+  assert.equal(ui.en.detourLine(12), "~12 min from the route");
+});

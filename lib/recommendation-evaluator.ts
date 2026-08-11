@@ -49,6 +49,61 @@ export type RecommendationPlaceIdentity = Readonly<{
   providerRef?: string | null;
 }>;
 
+/* ---- Detour cap (TC-044 / TC-047) ----------------------------------------
+ * Auto-displayed recommendations must stay within a 15-walking-minute detour
+ * of the route position they are proposed for. The cap gates only the
+ * auto-display surfaces; capped-out candidates remain reachable behind the
+ * explicit alternatives list, labeled with their real detour. */
+
+export const RECOMMENDATION_DETOUR_CAP_MINUTES = 15;
+export const WALKING_METERS_PER_MINUTE = 80;
+
+/** The same walking-minute figure the cards display (≈80 m/min, min 1). */
+export function detourWalkingMinutes(distanceMeters: number | null | undefined): number | null {
+  if (typeof distanceMeters !== "number" || !Number.isFinite(distanceMeters) || distanceMeters < 0) return null;
+  return Math.max(1, Math.round(distanceMeters / WALKING_METERS_PER_MINUTE));
+}
+
+export type DetourPartition<T> = Readonly<{
+  /** Candidates the auto surfaces may show (lead + alternatives). */
+  autoDisplay: readonly T[];
+  /** Beyond-cap candidates: alternatives-list only, never lead. */
+  overCap: readonly T[];
+  /** True when EVERY candidate exceeded the cap and the nearest one is shown anyway (honesty over emptiness). */
+  nearestFallback: boolean;
+}>;
+
+/**
+ * Splits candidates at the walking-detour cap. An unknown distance cannot
+ * prove a violation, so it stays displayable. When everything exceeds the
+ * cap, the nearest candidate is still auto-displayed — labeled with its real
+ * detour — rather than leaving the slot empty.
+ */
+export function partitionRecommendationsByDetour<T>(
+  candidates: readonly T[],
+  detourMetersOf: (candidate: T) => number | null | undefined,
+  capMinutes = RECOMMENDATION_DETOUR_CAP_MINUTES,
+): DetourPartition<T> {
+  const autoDisplay: T[] = [];
+  const overCap: T[] = [];
+  for (const candidate of candidates) {
+    const minutes = detourWalkingMinutes(detourMetersOf(candidate));
+    if (minutes === null || minutes <= capMinutes) autoDisplay.push(candidate);
+    else overCap.push(candidate);
+  }
+  if (autoDisplay.length > 0 || overCap.length === 0) {
+    return Object.freeze({ autoDisplay: Object.freeze(autoDisplay), overCap: Object.freeze(overCap), nearestFallback: false });
+  }
+  const nearest = [...overCap].sort((left, right) => (
+    (detourMetersOf(left) ?? Number.POSITIVE_INFINITY) - (detourMetersOf(right) ?? Number.POSITIVE_INFINITY)
+  ))[0];
+  return Object.freeze({
+    autoDisplay: Object.freeze([nearest]),
+    overCap: Object.freeze(overCap.filter((candidate) => candidate !== nearest)),
+    nearestFallback: true,
+  });
+}
+
 /**
  * Food and gap discovery use separate provider searches, so the same Place ID
  * can arrive through either path. Check the actual scheduled provider

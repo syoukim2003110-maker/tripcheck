@@ -191,12 +191,13 @@ export function useHotelActions({
   // v1.1 TC-041: every shortlist slot names its itinerary-derived axis —
   // the overall pick, the least-travel base and the review leader. A price
   // axis stays out deliberately: reference minimum charges are dateless
-  // display facts and must not be ranked as "best value".
+  // display facts and must not be ranked as "best value". TC-049: the overall
+  // pick is the deterministic scorer's first candidate — never an AI opinion.
   const hotelAxisLabels = useCallback((candidate: HotelCandidate) => [
-    ...(candidate.id === (hotelState.ai.recommendedId ?? hotelState.candidates[0]?.id) ? [text.axisOverall] : []),
+    ...(candidate.id === hotelState.candidates[0]?.id ? [text.axisOverall] : []),
     ...(candidate.id === hotelAxis.nearestId ? [text.axisNearest] : []),
     ...(candidate.id === hotelAxis.topRatedId ? [text.axisTopRated] : []),
-  ], [hotelAxis, hotelState.ai.recommendedId, hotelState.candidates, text]);
+  ], [hotelAxis, hotelState.candidates, text]);
 
   function selectHotelCandidate(
     candidate: HotelCandidate,
@@ -204,10 +205,10 @@ export function useHotelActions({
     options: { source?: "user" | "system" } = {},
   ) {
     // "user" is a traveller's own tap (card, map pin, style chip); "system"
-    // is the build's provisional-base attach handover and AI shortlist
-    // promotion. Only user selections become history operations with a
-    // toast+Undo; system handovers rebase the history baseline silently and
-    // never guard — they establish the plan, they do not damage promises.
+    // is reserved for build-time handovers that establish the plan. Only user
+    // selections become history operations with a toast+Undo; system
+    // handovers rebase the history baseline silently and never guard. TC-049:
+    // the AI never calls this — its authority ends at comparison labels.
     const source = options.source ?? "user";
     const changed = hotelState.selectedId !== candidate.id;
     const nextBase = hotelAsResolvedBase(candidate, hotelQuery, candidate.address.slice(0, 100) || candidate.name, new Date().toISOString());
@@ -340,7 +341,7 @@ export function useHotelActions({
         candidates: shortlist,
         selectedId: selected.id,
         fresh: { status: "loading", result: null },
-        ai: { status: "idle", notes: {}, recommendedId: null },
+        ai: { status: "idle", notes: {} },
       });
       // The re-search hands over a whole new shortlist; its auto-pick is a
       // baseline handover (the old candidates are gone, so an "Undo" could
@@ -374,10 +375,11 @@ export function useHotelActions({
           ? { ...current, fresh: { status: "unavailable", result: null } }
           : current);
       });
-      // The deterministic order above is the instant answer. The AI selector
-      // then researches the same shortlist (bounded web search) and may
-      // promote a different base — but it can only choose among these ids,
-      // and only while the user has not intervened.
+      // TC-049: the deterministic order above IS the answer — display order
+      // and selected base alike. The AI researches the same shortlist
+      // (bounded web search) with label-only authority: it writes short
+      // comparison notes for these ids and nothing else. Arriving late, the
+      // labels attach in place without reordering or swapping the base.
       if (shortlist.length >= 2) {
         setHotelState((current) => ({ ...current, ai: { ...current.ai, status: "loading" } }));
         void requestHotelRanking({
@@ -399,28 +401,15 @@ export function useHotelActions({
           })),
         }, locale, controller.signal).then((ai) => {
           if (controller.signal.aborted || hotelPlanSignatureRef.current !== signatureAtStart) return;
-          let userUntouched = false;
-          setHotelState((current) => {
-            if (current.status !== "ready") return current;
-            userUntouched = current.selectedId === selected.id;
-            const order = new Map(ai.ranked.map((item, index) => [item.id, index]));
-            const reordered = [...current.candidates].sort((left, right) => (
-              (order.get(left.id) ?? 99) - (order.get(right.id) ?? 99)
-            ));
-            return {
+          setHotelState((current) => current.status === "ready"
+            ? {
               ...current,
-              candidates: reordered,
               ai: {
                 status: "ready",
                 notes: Object.fromEntries(ai.ranked.map((item) => [item.id, { reason: item.reason, tag: item.tag }])),
-                recommendedId: ai.recommendedId,
               },
-            };
-          });
-          const pick = shortlist.find((candidate) => candidate.id === ai.recommendedId);
-          if (pick && userUntouched && pick.id !== selected.id && hotelStyleRef.current === "recommended") {
-            selectHotelCandidate(pick, "balanced", { source: "system" });
-          }
+            }
+            : current);
         }).catch(() => {
           if (controller.signal.aborted) return;
           setHotelState((current) => ({ ...current, ai: { ...current.ai, status: "unavailable" } }));

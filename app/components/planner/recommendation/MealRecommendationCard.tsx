@@ -20,11 +20,13 @@ type MealRecommendationCardProps = {
   locale: PlannerLocale;
   isSelected: boolean;
   isChosen: boolean;
-  aiOrdered: boolean | undefined;
+  /** AI-written comparison label for this candidate (TC-049: label-only authority). */
   note: { reason: string; tag: string } | undefined;
   foodFresh: FreshVoicesResult | null | undefined;
   /** Pre-accept impact from the really simulated candidate plan (TC-048). */
   impact?: PlanImpactMetrics | null;
+  /** Real walking detour from the slot's route position (TC-044). */
+  detourMinutes?: number | null;
   onChoose: () => void;
   onPhotoError: (event: SyntheticEvent<HTMLImageElement>) => void;
 };
@@ -35,10 +37,10 @@ export default function MealRecommendationCard({
   locale,
   isSelected,
   isChosen,
-  aiOrdered,
   note,
   foodFresh,
   impact = null,
+  detourMinutes = null,
   onChoose,
   onPhotoError,
 }: MealRecommendationCardProps) {
@@ -60,15 +62,20 @@ export default function MealRecommendationCard({
         <i className="planner-food-badge">{index + 1}</i>
       </a>
       <div>
+        {/* Copy Deck plan.reco.meal labels the deterministic lead (TC-049);
+            the AI's comparison tag rides along as a label, never as rank. */}
         <small>
-          {aiOrdered && index === 0
-            ? `${locale === "ja" ? "AIのおすすめ" : "AI pick"}${note?.tag ? ` · ${note.tag}` : ""}`
-            : note?.tag ?? (index === 0 ? (locale === "ja" ? "この土地なら、まずここ" : "Start here") : candidate.type)}
+          {index === 0
+            ? `${text.mealIdeas}${note?.tag ? ` · ${note.tag}` : ""}`
+            : note?.tag ?? candidate.type}
         </small>
         <h3>{candidate.name}</h3>
         <p>{note?.reason ?? foodCandidateReason(candidate, locale)}</p>
         <div className="planner-food-stats">
           {ratingLine !== null ? <span className="is-rating">{ratingLine}</span> : null}
+          {/* TC-044: the real walking detour, shown for every candidate so a
+              beyond-cap alternative is never passed off as on the way. */}
+          {detourMinutes !== null ? <span className="is-detour">{text.detourLine(detourMinutes)}</span> : null}
           {openStatus !== null ? <span>{openStatus}</span> : null}
           {paymentLabel !== null ? <span>{paymentLabel}</span> : null}
           {foodFresh?.findings.length ? <span className="is-fresh">{text.foodFresh(foodFresh.findings.length)}</span> : null}

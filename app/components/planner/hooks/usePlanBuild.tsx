@@ -30,7 +30,7 @@ import { useEffect, useRef, useState, type Dispatch, type RefObject, type SetSta
 import { foodRecommendationRequestKey } from "../../../../lib/food-recommendations-client";
 import { defaultFoodDiscoveryQuery } from "../../../../lib/google-food";
 import { requestHotelRecommendations, requestHotelRanking } from "../../../../lib/hotel-recommendations-client";
-import { placeTypesIncludeLodging, type HotelCandidate } from "../../../../lib/google-hotels";
+import { placeTypesIncludeLodging } from "../../../../lib/google-hotels";
 import { fullTripDemo } from "../../../../lib/mock-trip";
 import { requestFreshVoices, requestPlaceIntelligence, PlaceIntelligenceError } from "../../../../lib/place-intelligence-client";
 import { googleCurrentOpeningWindowsForDate, googleOpeningWindowsForDate } from "../../../../lib/google-opening-hours";
@@ -233,7 +233,6 @@ export function usePlanBuildActions({
   hasPlan,
   hotelQuery,
   hotelRefreshAbortRef,
-  hotelStyleRef,
   intelligence,
   intelligenceRef,
   isBuilding,
@@ -265,7 +264,6 @@ export function usePlanBuildActions({
   reviewedInputSignature,
   reviewedPlaceRows,
   routeRecommendationRequestRef,
-  selectHotelCandidate,
   selectedBuiltStop,
   setActiveDay,
   setAmbiguousPlaces,
@@ -388,7 +386,6 @@ export function usePlanBuildActions({
   hasPlan: boolean;
   hotelQuery: string;
   hotelRefreshAbortRef: RefObject<AbortController | null>;
-  hotelStyleRef: RefObject<HotelStyleChoice>;
   itinerary: string;
   lastEntryTimes: Record<string, string>;
   legModeOverrides: Record<string, TransportMode>;
@@ -409,7 +406,6 @@ export function usePlanBuildActions({
   resetAnalyticsMilestones: () => void;
   reviewedPlaceRows: Array<{ place: ParsedWishlistPlace; status: PlaceReviewStatus }>;
   routeRecommendationRequestRef: RefObject<number>;
-  selectHotelCandidate: (candidate: HotelCandidate, purpose?: HotelPurpose, options?: { source?: "user" | "system" }) => void;
   selectedBuiltStop: BuiltTripPlan["days"][number]["stops"][number] | null;
   setActiveDay: Dispatch<SetStateAction<number>>;
   setArrivalAirport: Dispatch<SetStateAction<AirportCode>>;
@@ -1252,14 +1248,13 @@ export function usePlanBuildActions({
         }
       })) return;
 
-      // AI takes over the "which hotel" decision once the deterministic
-      // shortlist exists: it researches the same candidates (bounded web
-      // search) and may promote a different base. It can only pick among the
-      // shortlisted ids, and a user choice made meanwhile always wins.
+      // TC-049: the deterministic shortlist above decides the order and the
+      // base. The AI researches the same candidates (bounded web search) with
+      // label-only authority — it writes short comparison notes for the
+      // shortlisted ids and can neither reorder them nor promote a different
+      // base. Late labels attach in place.
       if (aiEnabledRef.current && localHotelState.status === "ready" && localHotelState.candidates.length >= 2 && hotelAnchor) {
         const aiShortlist = localHotelState.candidates;
-        const aiInitialSelectedId = localHotelState.selectedId;
-        const aiMaySwitch = useRecommendedHotelForBuild && aiInitialSelectedId !== null;
         setHotelState((current) => current.status === "ready"
           ? { ...current, ai: { ...current.ai, status: "loading" } }
           : current);
@@ -1282,28 +1277,15 @@ export function usePlanBuildActions({
           })),
         }, locale, controller.signal).then((ai) => {
           if (cancelled()) return;
-          let userUntouched = false;
-          setHotelState((current) => {
-            if (current.status !== "ready") return current;
-            userUntouched = current.selectedId === aiInitialSelectedId;
-            const order = new Map(ai.ranked.map((item, index) => [item.id, index]));
-            const reordered = [...current.candidates].sort((left, right) => (
-              (order.get(left.id) ?? 99) - (order.get(right.id) ?? 99)
-            ));
-            return {
+          setHotelState((current) => current.status === "ready"
+            ? {
               ...current,
-              candidates: reordered,
               ai: {
                 status: "ready",
                 notes: Object.fromEntries(ai.ranked.map((item) => [item.id, { reason: item.reason, tag: item.tag }])),
-                recommendedId: ai.recommendedId,
               },
-            };
-          });
-          const pick = aiShortlist.find((candidate) => candidate.id === ai.recommendedId);
-          if (pick && userUntouched && aiMaySwitch && pick.id !== aiInitialSelectedId && hotelStyleRef.current === "recommended") {
-            selectHotelCandidate(pick, "balanced", { source: "system" });
-          }
+            }
+            : current);
         }).catch(() => {
           if (cancelled()) return;
           setHotelState((current) => ({ ...current, ai: { ...current.ai, status: "unavailable" } }));

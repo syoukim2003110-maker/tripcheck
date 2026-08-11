@@ -176,9 +176,11 @@ test("discloses bounded AI enrichment and on-demand public-web search", async ()
   assert.match(source, /encoded route geometry so the map can follow actual roads and transit paths/);
   assert.match(source, /supplied candidate names, public addresses, place types, meal period and area to Anthropic/);
   assert.match(source, /AI cannot add a restaurant or invent ratings, opening hours, prices or menu facts/);
-  assert.match(source, /chooses the recommended order/);
+  // TC-049: ranking authority is deterministic; the AI only writes labels.
+  assert.match(source, /deterministic TripCheck code chooses the recommended order and the recommended base/);
+  assert.match(source, /AI only writes short explanation labels/);
+  assert.doesNotMatch(source, /AI decides only among the shortlisted hotels/);
   assert.match(source, /up to three web searches/);
-  assert.match(source, /decides only among the shortlisted hotels and supplied candidates/);
   assert.match(source, /Structured opening periods are checked against each travel date/);
 });
 
@@ -192,7 +194,9 @@ test("discloses automatic core recommendations and their paid-provider controls"
   ]);
 
   assert.match(privacySource, /automatically looks up bounded hotel and meal shortlists/);
-  assert.match(privacySource, /completed day has a 30&ndash;120 minute gap/);
+  // Spec gap bands: 30+ minute gaps are searched; the length picks categories.
+  assert.match(privacySource, /completed day has a gap of 30 minutes or more/);
+  assert.match(privacySource, /gap&apos;s length selects only which bounded nearby-place categories/);
   assert.match(privacySource, /up to twelve sampled coordinates/);
   assert.match(privacySource, /Google receives the bounded location, category or query and language\/region fields, not that travel date or time/);
   assert.match(privacySource, /do not send Google your raw itinerary lines, raw hotel text, travel dates, reservation notes, airport details or completed schedule/);

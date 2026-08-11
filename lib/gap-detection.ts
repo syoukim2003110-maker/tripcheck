@@ -2,8 +2,9 @@ import type { BuiltPlanDay } from "./trip-builder.ts";
 import type { TripFitDay } from "./trip-scenarios.ts";
 
 export type GapKind = "BEFORE_FIRST_ANCHOR" | "BETWEEN_ANCHORS" | "BEFORE_HOTEL_RETURN";
-export type GapSizeBand = "BELOW_MINIMUM" | "SHORT_30_TO_59" | "MEDIUM_60_TO_120" | "OUTSIDE_P0_OVER_120";
-export type GapSuggestionKind = "CAFE" | "BAKERY" | "PARK" | "LOOKOUT" | "SMALL_FACILITY" | "WALK" | "CAFE_AND_WALK";
+export type GapSizeBand = "BELOW_MINIMUM" | "SHORT_30_TO_59" | "MEDIUM_60_TO_119" | "LONG_120_PLUS";
+/** ATTRACTION opens the normal tourist-spot categories; the spec grants it to the 120+ band only. */
+export type GapSuggestionKind = "CAFE" | "BAKERY" | "PARK" | "LOOKOUT" | "SMALL_FACILITY" | "WALK" | "CAFE_AND_WALK" | "ATTRACTION";
 
 export type GapCoordinate = Readonly<{ latitude: number; longitude: number }>;
 
@@ -33,7 +34,7 @@ export type ItineraryGap = Readonly<{
   id: string;
   dayIndex: number;
   kind: GapKind;
-  sizeBand: Extract<GapSizeBand, "SHORT_30_TO_59" | "MEDIUM_60_TO_120">;
+  sizeBand: Extract<GapSizeBand, "SHORT_30_TO_59" | "MEDIUM_60_TO_119" | "LONG_120_PLUS">;
   startAt: string;
   endAt: string;
   availableMinutes: number;
@@ -50,12 +51,16 @@ export type BuiltDayGapOptions = Readonly<{
 
 const shortSuggestions = Object.freeze(["CAFE", "BAKERY", "PARK", "LOOKOUT"] as const);
 const mediumSuggestions = Object.freeze(["SMALL_FACILITY", "WALK", "CAFE_AND_WALK"] as const);
+// Spec band table: at 120+ minutes the normal tourist-spot categories join
+// the medium set (通常観光スポットも候補).
+const longSuggestions = Object.freeze(["ATTRACTION", "SMALL_FACILITY", "WALK", "CAFE_AND_WALK"] as const);
 
+/** Spec §gap bands: 30–59 / 60–119 / 120+. Exactly 120 belongs to the long band. */
 export function classifyGapMinutes(minutes: number): GapSizeBand {
   if (!Number.isFinite(minutes) || minutes < 30) return "BELOW_MINIMUM";
   if (minutes < 60) return "SHORT_30_TO_59";
-  if (minutes <= 120) return "MEDIUM_60_TO_120";
-  return "OUTSIDE_P0_OVER_120";
+  if (minutes < 120) return "MEDIUM_60_TO_119";
+  return "LONG_120_PLUS";
 }
 
 function parseClock(value: string) {
@@ -103,7 +108,7 @@ function buildGap(input: {
 }): ItineraryGap | null {
   const availableMinutes = Math.max(0, Math.round(input.end - input.start));
   const sizeBand = classifyGapMinutes(availableMinutes);
-  if (sizeBand !== "SHORT_30_TO_59" && sizeBand !== "MEDIUM_60_TO_120") return null;
+  if (sizeBand === "BELOW_MINIMUM") return null;
   return Object.freeze({
     id: gapId(input.dayIndex, input.kind, input.previousAnchorId, input.nextAnchorId, input.start, input.end),
     dayIndex: input.dayIndex,
@@ -115,13 +120,16 @@ function buildGap(input: {
     previousAnchorId: input.previousAnchorId,
     nextAnchorId: input.nextAnchorId,
     routeSegment: Object.freeze({ from: input.from, to: input.to }),
-    suggestionKinds: sizeBand === "SHORT_30_TO_59" ? shortSuggestions : mediumSuggestions,
+    suggestionKinds: sizeBand === "SHORT_30_TO_59"
+      ? shortSuggestions
+      : sizeBand === "MEDIUM_60_TO_119" ? mediumSuggestions : longSuggestions,
   });
 }
 
 /**
- * Finds only the v0.3 P0 gap range (30–120 minutes).  Longer gaps remain
- * deliberate slack until the post-P0 attraction recommender exists.
+ * Finds every 30-minute-or-longer gap. The size band (30–59 / 60–119 / 120+)
+ * decides which suggestion categories the recommendation search may use; the
+ * 120+ band additionally opens the normal tourist-spot categories.
  */
 export function detectItineraryGaps(day: GapDetectionDay): ItineraryGap[] {
   const dayStart = parseClock(day.startAt);

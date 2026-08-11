@@ -140,7 +140,15 @@ export const ui = {
     noDays: "地図に置ける場所がまだありません。名前を少し変えると見つかることがあります。",
     openDay: "この日はまだ予定がありません",
     selectHint: "ピンや行き先をタップすると、詳しい情報が開きます",
-    mealIdeas: "この土地なら、まずこれ",
+    // Copy Deck plan.reco.meal (verbatim): the meal recommendation label line.
+    mealIdeas: "この動線なら、ここが便利です",
+    // Copy Deck plan.reco.gap: the inline gap suggestion label (minutes parameterized).
+    gapRecoLabel: (minutes: number) => `${minutes}分の空き時間に寄れます`,
+    // Copy Deck plan.reco.accept / plan.reco.replace.
+    recoAccept: "ここにする",
+    recoAlternatives: "他を見る",
+    // Real walking detour from the slot's route position (≈80m/min).
+    detourLine: (minutes: number) => `動線から約${minutes}分`,
     lunchChip: "昼ごはん",
     dinnerChip: "夜ごはん",
     foodLoading: "近くのお店を探しています…",
@@ -148,9 +156,19 @@ export const ui = {
     maps: "地図で見る",
     foodNote: "Googleの評価・口コミ量・距離・営業表示をロジックで比較。公開SNSは引用できた情報だけを補足しています。",
     foodFresh: (count: number) => `最近の公開情報 ${count}件`,
-    hotelChip: "ホテル",
+    // Copy Deck plan.hotel.change: the visible change-base control.
+    hotelChip: "ホテルを変える",
     hotelPending: "ホテルを探しています…",
-    hotelCandidate: "おすすめのホテル",
+    // Copy Deck plan.hotel.title.
+    hotelCandidate: "おすすめの拠点",
+    // Copy Deck plan.hotel.effect: only shown for a real travel saving vs the
+    // current base, measured on the really simulated candidate plan.
+    hotelSavesTravel: (minutes: number) => {
+      const hours = Math.floor(minutes / 60);
+      const rest = minutes % 60;
+      const duration = hours > 0 ? `${hours}時間${rest > 0 ? `${rest}分` : ""}` : `${rest}分`;
+      return `移動を${duration}短縮`;
+    },
     hotelNoAvailability: "料金・空室は宿泊サイトで最終確認してください。",
     hotelUnavailable: "ホテル候補を取得できませんでした。",
     hotelSearch: "Google Mapsでホテルを探す",
@@ -399,7 +417,15 @@ export const ui = {
     noDays: "Nothing could be placed on the map yet. A slightly different name often helps.",
     openDay: "Nothing planned for this day yet",
     selectHint: "Tap a pin or a stop to open details",
-    mealIdeas: "Start with these local picks",
+    // Copy Deck plan.reco.meal (verbatim): the meal recommendation label line.
+    mealIdeas: "Best fit for this route",
+    // Copy Deck plan.reco.gap: the inline gap suggestion label (minutes parameterized).
+    gapRecoLabel: (minutes: number) => `Fits your ${minutes}-minute gap`,
+    // Copy Deck plan.reco.accept / plan.reco.replace.
+    recoAccept: "Add this",
+    recoAlternatives: "See alternatives",
+    // Real walking detour from the slot's route position (≈80m/min).
+    detourLine: (minutes: number) => `~${minutes} min from the route`,
     lunchChip: "Lunch",
     dinnerChip: "Dinner",
     foodLoading: "Finding nearby places…",
@@ -407,9 +433,19 @@ export const ui = {
     maps: "View on map",
     foodNote: "Ranked by Google rating strength, review volume, distance and open status. Public social evidence is shown only when a cited page was found.",
     foodFresh: (count: number) => `${count} recent public signals`,
-    hotelChip: "Hotel",
+    // Copy Deck plan.hotel.change: the visible change-base control.
+    hotelChip: "Change base",
     hotelPending: "Finding a base…",
-    hotelCandidate: "Recommended hotel",
+    // Copy Deck plan.hotel.title.
+    hotelCandidate: "Recommended base",
+    // Copy Deck plan.hotel.effect: only shown for a real travel saving vs the
+    // current base, measured on the really simulated candidate plan.
+    hotelSavesTravel: (minutes: number) => {
+      const hours = Math.floor(minutes / 60);
+      const rest = minutes % 60;
+      const duration = hours > 0 ? `${hours}h${rest > 0 ? ` ${rest}m` : ""}` : `${rest}m`;
+      return `Saves ${duration} of travel`;
+    },
     hotelNoAvailability: "Confirm price and availability with a booking provider.",
     hotelUnavailable: "Hotel options didn't load.",
     hotelSearch: "Search hotels on Google Maps",

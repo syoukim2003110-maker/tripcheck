@@ -103,20 +103,19 @@ export default function HotelInspector({
 
   function renderHotelComparison() {
     if (!selectedHotel || hotelState.candidates.length <= 1) return null;
-    const comparisonCandidates = hotelState.ai.status === "ready"
-      ? hotelState.candidates
-      : hotelShortlist(hotelState.candidates, selectedHotel.id);
+    // TC-049: the deterministic shortlist order stands whether or not the AI
+    // has answered — its notes are labels on these cards, never a ranking.
+    const comparisonCandidates = hotelShortlist(hotelState.candidates, selectedHotel.id);
     return (
       <section className="planner-hotel-compare">
         <header><span>{text.hotelCompareHeading}</span><small>{comparisonCandidates.length}</small></header>
         {hotelState.ai.status === "loading" ? (
-          <p className="planner-hotel-ai-status">{locale === "ja" ? "AIが候補の評判を照合しています…" : "AI is researching these candidates…"}</p>
+          <p className="planner-hotel-ai-status">{locale === "ja" ? "AIが候補ごとの比較メモを書いています…" : "AI is writing comparison notes for these candidates…"}</p>
         ) : null}
         <div className="planner-hotel-compare-list">
           {comparisonCandidates.map((candidate) => {
             const aiNote = hotelState.ai.notes[candidate.id];
             const tags = [
-              ...(hotelState.ai.recommendedId === candidate.id ? [locale === "ja" ? "AIのおすすめ" : "AI pick"] : []),
               ...hotelAxisLabels(candidate),
               ...(candidate.styles.includes("luxury") ? [text.styleLuxury] : []),
             ];
@@ -133,8 +132,12 @@ export default function HotelInspector({
                       : `~${hotelTravelMinutesById[candidate.id]} min total travel${Number.isFinite(bestHotelTravelMinutes) && hotelTravelMinutesById[candidate.id] > bestHotelTravelMinutes ? ` (+${hotelTravelMinutesById[candidate.id] - bestHotelTravelMinutes} vs best)` : ""}`
                     : text.distanceFrom(formatDistanceMeters(candidate.routeAverageDistanceMeters)),
                   // TC-048: what switching to this base would really do —
-                  // both metrics from the simulated candidate plan.
-                  ...(impact ? [`${travelDeltaLine(impact.travelDeltaMinutes, locale)} · ${bufferDeltaLine(impact.bufferDeltaMinutes, locale)}`] : []),
+                  // both metrics from the simulated candidate plan. Copy Deck
+                  // plan.hotel.effect phrases a real travel SAVING vs the
+                  // current base; anything else keeps the plain delta line.
+                  ...(impact ? [`${impact.travelDeltaMinutes < 0
+                    ? text.hotelSavesTravel(-impact.travelDeltaMinutes)
+                    : travelDeltaLine(impact.travelDeltaMinutes, locale)} · ${bufferDeltaLine(impact.bufferDeltaMinutes, locale)}`] : []),
                 ].filter(Boolean).join(" · ")}
                 isSelected={candidate.id === selectedHotel.id}
                 key={candidate.id}

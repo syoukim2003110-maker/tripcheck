@@ -70,8 +70,14 @@ import {
   type RouteFactEvidence,
 } from "../../../../lib/feasibility-result";
 import { detectGapsFromBuiltDay } from "../../../../lib/gap-detection";
-import { reserveDistinctRecommendationCandidates } from "../../../../lib/recommendation-evaluator";
-import type { RouteRecommendationPoint } from "../../../../lib/route-recommendations";
+import {
+  RECOMMENDATION_DETOUR_CAP_MINUTES,
+  detourWalkingMinutes,
+  partitionRecommendationsByDetour,
+  reserveDistinctRecommendationCandidates,
+  type DetourPartition,
+} from "../../../../lib/recommendation-evaluator";
+import { gapGeometrySearchPoints, type RouteRecommendationPoint } from "../../../../lib/route-recommendations";
 import {
   buildTripFromWishlist,
   hotelRouteContextForDraft,
@@ -894,19 +900,62 @@ export function usePlannerViewModel({
   const activeDayGaps = useMemo(() => day && activeFitDay
     ? detectGapsFromBuiltDay(day, activeFitDay, { dayIndex: activeDay, transferBufferMinutes })
     : [], [activeDay, activeFitDay, day, transferBufferMinutes]);
+  // At most ONE gap is auto-surfaced per day: the first gap in visit order.
   const primaryRecommendationGap = activeDayGaps[0] ?? null;
+  // TC-047: the gap search follows the real route geometry of the gap's leg
+  // when Google geometry exists (transit evidence first, then the prefetch
+  // measurements), sampled within the 12-point request budget. Only when no
+  // geometry exists do the gap's two anchors remain the straight-line proxy.
   const recommendationSearchPoints = useMemo<RouteRecommendationPoint[]>(() => {
-    const segment = primaryRecommendationGap?.routeSegment;
-    if (!segment) return recommendationRoutePoints;
-    const points = [segment.from, segment.to].filter((point): point is RouteRecommendationPoint => Boolean(point));
+    const gap = primaryRecommendationGap;
+    if (!gap) return recommendationRoutePoints;
+    const anchors = [gap.routeSegment.from, gap.routeSegment.to]
+      .filter((point): point is RouteRecommendationPoint => Boolean(point));
+    const fromId = gap.previousAnchorId ?? base?.id ?? null;
+    const toId = gap.nextAnchorId ?? (dayEndBase ?? base)?.id ?? null;
+    let geometry: readonly RouteRecommendationPoint[] | undefined;
+    if (day && fromId && toId) {
+      geometry = routeEvidenceByFactId[`route:${day.label}:${fromId}:${toId}`]?.routeGeometry?.points;
+      if (!geometry || geometry.length < 2) {
+        const measured = prefetchGeometry[routeLegKey(fromId, toId)];
+        geometry = (measured?.transit ?? measured?.drive ?? measured?.walk)?.points;
+      }
+    }
+    const points = gapGeometrySearchPoints(geometry, anchors, 12);
     return points.length > 0 ? points : recommendationRoutePoints;
-  }, [primaryRecommendationGap, recommendationRoutePoints]);
+  }, [base, day, dayEndBase, prefetchGeometry, primaryRecommendationGap, recommendationRoutePoints, routeEvidenceByFactId]);
   const routeRecommendationKey = useMemo(() => day
     ? `${locale}|${requestDestination}|${activeDay}|${primaryRecommendationGap?.id ?? "no-gap"}|${recommendationSearchPoints.map((point) => `${point.latitude.toFixed(5)},${point.longitude.toFixed(5)}`).join("|")}`
     : "", [activeDay, day, locale, primaryRecommendationGap?.id, recommendationSearchPoints, requestDestination]);
   const activeRouteRecommendationState = routeRecommendationKey
     ? routeRecommendationSearches[routeRecommendationKey] ?? emptyRouteRecommendationState
     : emptyRouteRecommendationState;
+  // TC-047: auto-displayed gap candidates must sit within a 15-walking-minute
+  // detour of the sampled route. Beyond-cap candidates stay behind the
+  // explicit alternatives list with their real detour shown; when everything
+  // exceeds the cap, the nearest candidate is still shown, honestly labeled.
+  const gapDetourPartition = useMemo(
+    () => partitionRecommendationsByDetour(
+      activeRouteRecommendationState.candidates.slice(0, 3),
+      (candidate) => candidate.routeDistanceMeters,
+    ),
+    [activeRouteRecommendationState.candidates],
+  );
+  // Auto surfaces read this order: within-cap candidates first (deterministic
+  // provider order preserved), beyond-cap candidates only after them.
+  const orderedGapCandidates = useMemo(
+    () => [...gapDetourPartition.autoDisplay, ...gapDetourPartition.overCap],
+    [gapDetourPartition],
+  );
+  // Over-cap by the displayed walking-minute figure itself, so the nearest
+  // fallback lead is ALSO labeled with its real detour (honesty over
+  // emptiness), not silently passed off as within reach.
+  const gapOverCapIds = useMemo(() => new Set(
+    activeRouteRecommendationState.candidates.flatMap((candidate) => {
+      const minutes = detourWalkingMinutes(candidate.routeDistanceMeters);
+      return minutes !== null && minutes > RECOMMENDATION_DETOUR_CAP_MINUTES ? [candidate.id] : [];
+    }),
+  ), [activeRouteRecommendationState.candidates]);
   const plannedStopIds = useMemo(() => new Set(
     plan?.days.flatMap((planDay) => planDay.stops.map(({ stop }) => stop.id)) ?? [],
   ), [plan]);
@@ -936,6 +985,28 @@ export function usePlannerViewModel({
     }
     return next;
   }, [daySlots, foodSearches, locale, mealSelections, plannedStopIds, resolvedStops]);
+  // TC-044: auto-shown meal candidates (the lead and its alternatives) must
+  // each be within a 15-walking-minute detour of the slot's route position.
+  // Beyond-cap candidates stay behind the explicit alternatives list with
+  // their real detour minutes; if every candidate exceeds the cap, the
+  // nearest one still shows (honesty over an empty slot).
+  const mealDetourBySlot = useMemo<Record<string, DetourPartition<FoodCandidate>>>(() => Object.fromEntries(
+    Object.entries(mealCandidatesBySlot).map(([slotId, candidates]) => [
+      slotId,
+      partitionRecommendationsByDetour(candidates, (candidate) => candidate.distanceMeters),
+    ]),
+  ), [mealCandidatesBySlot]);
+  // Over-cap by the displayed walking-minute figure, so a nearest-fallback
+  // lead also carries its real detour label.
+  const mealOverCapIdsBySlot = useMemo<Record<string, Set<string>>>(() => Object.fromEntries(
+    Object.entries(mealCandidatesBySlot).map(([slotId, candidates]) => [
+      slotId,
+      new Set(candidates.flatMap((candidate) => {
+        const minutes = detourWalkingMinutes(candidate.distanceMeters);
+        return minutes !== null && minutes > RECOMMENDATION_DETOUR_CAP_MINUTES ? [candidate.id] : [];
+      })),
+    ]),
+  ), [mealCandidatesBySlot]);
   // v1.1 TC-048: each displayed candidate carries two pre-accept impact
   // metrics — travel delta and buffer (余裕) delta — measured on the SAME
   // simulated candidate plan the accept action would commit (shared builders
@@ -1241,7 +1312,14 @@ export function usePlannerViewModel({
     for (const slot of daySlots) {
       const state = foodSearches[slot.id];
       if (state?.status !== "ready" || state.requestKey !== foodRecommendationRequestKey(slot, locale)) continue;
-      (mealCandidatesBySlot[slot.id] ?? []).forEach((candidate, index) => {
+      // TC-044: pins are an auto surface — only detour-capped candidates
+      // (plus an explicitly accepted choice) appear without being asked for.
+      const partition = mealDetourBySlot[slot.id];
+      const selectedId = mealSelections[slot.id];
+      const displayed = partition
+        ? [...partition.autoDisplay, ...partition.overCap.filter((candidate) => candidate.id === selectedId)]
+        : mealCandidatesBySlot[slot.id] ?? [];
+      displayed.forEach((candidate, index) => {
         if (typeof candidate.latitude !== "number" || typeof candidate.longitude !== "number") return;
         const existing = byCandidate.get(candidate.id);
         if (existing) {
@@ -1261,10 +1339,13 @@ export function usePlannerViewModel({
       });
     }
     return [...byCandidate.values()];
-  }, [daySlots, foodSearches, locale, mealCandidatesBySlot]);
+  }, [daySlots, foodSearches, locale, mealCandidatesBySlot, mealDetourBySlot, mealSelections]);
+  // TC-047: unexpanded, only the detour-capped lead pin appears; the expanded
+  // alternatives view may also show beyond-cap candidates the traveller
+  // explicitly asked to see.
   const recommendationPins = useMemo<RecommendationPin[]>(() => (
     activeRouteRecommendationState.status === "ready"
-      ? activeRouteRecommendationState.candidates.slice(0, routeAlternativesExpanded ? 3 : 1).map((candidate, index) => ({
+      ? orderedGapCandidates.slice(0, routeAlternativesExpanded ? 3 : 1).map((candidate, index) => ({
         id: candidate.id,
         name: candidate.name,
         latitude: candidate.latitude,
@@ -1272,7 +1353,7 @@ export function usePlannerViewModel({
         index,
       }))
       : []
-  ), [activeRouteRecommendationState, routeAlternativesExpanded]);
+  ), [activeRouteRecommendationState.status, orderedGapCandidates, routeAlternativesExpanded]);
 
   // Alpha guarantees one bounded review for 5–12 POIs. Larger pastes must be
   // split explicitly; sending only the first twelve would make omitted places
@@ -1356,7 +1437,9 @@ export function usePlannerViewModel({
     fillerStopIds,
     foodPins,
     formattedItinerary,
+    gapDetourPartition,
     gapImpactById,
+    gapOverCapIds,
     hardViolationAnnouncement,
     hasRakutenHotelEvidence,
     hotelImpactById,
@@ -1369,10 +1452,13 @@ export function usePlannerViewModel({
     mapWarningStopIds,
     maxParsedDay,
     mealCandidatesBySlot,
+    mealDetourBySlot,
     mealImpactBySlot,
+    mealOverCapIdsBySlot,
     mealRoutePolyline,
     measuredRouteCount,
     openingVerificationCount,
+    orderedGapCandidates,
     parsePreviewRows,
     parsedPlaceCount,
     placesHaveBeenReviewed,

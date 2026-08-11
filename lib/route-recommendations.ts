@@ -1,5 +1,6 @@
 import type { DestinationChoice } from "./destinations.ts";
 import { destinationById, isDestinationChoice } from "./destinations.ts";
+import type { GapSuggestionKind } from "./gap-detection.ts";
 
 export type RouteRecommendationPoint = {
   latitude: number;
@@ -12,6 +13,13 @@ export type RouteRecommendationRequest = {
   excludedNames: string[];
   languageCode: "en" | "ja";
   destination: DestinationChoice;
+  /**
+   * The gap band's deterministic suggestion categories (lib/gap-detection).
+   * They drive both the Google text query and the accepted place types, so a
+   * 30-minute gap can never surface a theme park. Absent = every supported
+   * category (legacy requests and non-gap searches).
+   */
+  suggestionKinds?: GapSuggestionKind[];
 };
 
 export type RouteRecommendation = {
@@ -122,6 +130,67 @@ const allowedRecommendationTypes = new Set([
   "zoo",
 ]);
 
+// Deterministic mapping from the gap bands' suggestion kinds onto supported
+// Google place types. ATTRACTION (the 120+ band) opens the whole supported
+// catalogue; every other kind names a bounded slice of it.
+const cafeTypes = ["cafe", "coffee_shop", "tea_house", "dessert_shop"] as const;
+const walkTypes = ["park", "city_park", "garden", "hiking_area", "bridge", "beach", "woods", "island", "lake", "waterfall"] as const;
+const suggestionKindTypes: Record<GapSuggestionKind, readonly string[]> = {
+  CAFE: cafeTypes,
+  BAKERY: ["bakery"],
+  PARK: ["park", "city_park", "garden", "botanical_garden", "national_park", "nature_preserve", "woods", "beach", "lake"],
+  LOOKOUT: ["lookout", "observation_deck", "scenic_spot", "mountain_peak", "waterfall", "bridge"],
+  SMALL_FACILITY: [
+    "art_gallery", "art_museum", "museum", "history_museum", "science_museum", "planetarium", "aquarium",
+    "historical_landmark", "historical_place", "cultural_landmark", "monument", "castle", "fort",
+    "church", "mosque", "synagogue", "place_of_worship", "buddhist_temple", "hindu_temple", "shinto_shrine",
+    "visitor_center", "performing_arts_theater",
+  ],
+  WALK: walkTypes,
+  CAFE_AND_WALK: [...cafeTypes, ...walkTypes],
+  ATTRACTION: [...allowedRecommendationTypes],
+};
+
+export function isGapSuggestionKind(value: unknown): value is GapSuggestionKind {
+  return typeof value === "string" && Object.hasOwn(suggestionKindTypes, value);
+}
+
+/** The place types a request may accept; absent kinds keep the full catalogue. */
+export function recommendationTypesForKinds(kinds: readonly GapSuggestionKind[] | undefined): ReadonlySet<string> {
+  if (!kinds || kinds.length === 0) return allowedRecommendationTypes;
+  const allowed = new Set<string>();
+  for (const kind of kinds) for (const type of suggestionKindTypes[kind] ?? []) allowed.add(type);
+  return allowed.size > 0 ? allowed : allowedRecommendationTypes;
+}
+
+// One deterministic query phrase per kind, composed in fixed kind order so
+// the same band always sends the same query.
+const suggestionKindOrder: readonly GapSuggestionKind[] = ["ATTRACTION", "SMALL_FACILITY", "CAFE_AND_WALK", "CAFE", "BAKERY", "PARK", "LOOKOUT", "WALK"];
+const suggestionKindQueryWords: Record<GapSuggestionKind, { ja: string; en: string }> = {
+  CAFE: { ja: "カフェ", en: "cafes" },
+  BAKERY: { ja: "ベーカリー", en: "bakeries" },
+  PARK: { ja: "公園 庭園", en: "parks and gardens" },
+  LOOKOUT: { ja: "展望スポット 景勝地", en: "lookouts and scenic spots" },
+  SMALL_FACILITY: { ja: "小さな美術館 ギャラリー 歴史的名所", en: "small museums galleries and landmarks" },
+  WALK: { ja: "散歩道 公園", en: "walks and parks" },
+  CAFE_AND_WALK: { ja: "カフェ 公園", en: "cafes and parks" },
+  ATTRACTION: { ja: "観光名所 景勝地 公園 美術館 カフェ", en: "attractions scenic places parks museums and cafes" },
+};
+
+export function recommendationQueryForKinds(
+  kinds: readonly GapSuggestionKind[] | undefined,
+  languageCode: "en" | "ja",
+) {
+  const active = suggestionKindOrder.filter((kind) => kinds?.includes(kind));
+  if (active.length === 0 || active.includes("ATTRACTION")) {
+    return languageCode === "ja"
+      ? "評価の高い観光名所 景勝地 公園 美術館 カフェ"
+      : "highly rated attractions scenic places parks museums and cafes";
+  }
+  const words = active.map((kind) => suggestionKindQueryWords[kind][languageCode]);
+  return languageCode === "ja" ? `評価の高い ${words.join(" ")}` : `highly rated ${words.join(" ")}`;
+}
+
 function boundedString(value: unknown, minimum: number, maximum: number) {
   return typeof value === "string" && value.trim().length >= minimum && value.trim().length <= maximum
     ? value.trim()
@@ -175,12 +244,23 @@ export function parseRouteRecommendationRequest(input: unknown): RouteRecommenda
   const excludedNames = parseStringArray(source.excludedNames, 80, 160);
   if (!excludedPlaceIds || !excludedNames) return null;
   if (source.languageCode !== "en" && source.languageCode !== "ja") return null;
+  let suggestionKinds: GapSuggestionKind[] | undefined;
+  if (source.suggestionKinds !== undefined && source.suggestionKinds !== null) {
+    if (!Array.isArray(source.suggestionKinds) || source.suggestionKinds.length > 8) return null;
+    const kinds: GapSuggestionKind[] = [];
+    for (const kind of source.suggestionKinds) {
+      if (!isGapSuggestionKind(kind)) return null;
+      if (!kinds.includes(kind)) kinds.push(kind);
+    }
+    if (kinds.length > 0) suggestionKinds = kinds;
+  }
   return {
     routePoints,
     excludedPlaceIds,
     excludedNames,
     languageCode: source.languageCode,
     destination: isDestinationChoice(source.destination) ? source.destination : "auto",
+    ...(suggestionKinds ? { suggestionKinds } : {}),
   };
 }
 
@@ -192,6 +272,49 @@ function encodeSigned(value: number) {
     shifted >>= 5;
   }
   return encoded + String.fromCharCode(shifted + 63);
+}
+
+/**
+ * Downsamples real route geometry to the request budget: evenly spaced picks
+ * that always keep both endpoints, deduplicating consecutive repeats. Inputs
+ * already within budget pass through unchanged.
+ */
+export function sampleRoutePoints(
+  points: readonly RouteRecommendationPoint[],
+  maxPoints = 12,
+): RouteRecommendationPoint[] {
+  const budget = Math.max(2, Math.floor(maxPoints));
+  const unique: RouteRecommendationPoint[] = [];
+  for (const point of points) {
+    const previous = unique.at(-1);
+    if (!previous || previous.latitude !== point.latitude || previous.longitude !== point.longitude) {
+      unique.push({ latitude: point.latitude, longitude: point.longitude });
+    }
+  }
+  if (unique.length <= budget) return unique;
+  const sampled: RouteRecommendationPoint[] = [];
+  for (let index = 0; index < budget; index += 1) {
+    const source = unique[Math.round(index * (unique.length - 1) / (budget - 1))];
+    const previous = sampled.at(-1);
+    if (!previous || previous.latitude !== source.latitude || previous.longitude !== source.longitude) {
+      sampled.push(source);
+    }
+  }
+  return sampled;
+}
+
+/**
+ * The search points for one gap: when real provider geometry exists for the
+ * gap's leg, sample along it within the budget; otherwise fall back to the
+ * gap's two anchors (the honest straight-line proxy).
+ */
+export function gapGeometrySearchPoints(
+  geometry: readonly RouteRecommendationPoint[] | null | undefined,
+  anchors: readonly RouteRecommendationPoint[],
+  maxPoints = 12,
+): RouteRecommendationPoint[] {
+  if (geometry && geometry.length >= 2) return sampleRoutePoints(geometry, maxPoints);
+  return anchors.map((point) => ({ latitude: point.latitude, longitude: point.longitude }));
 }
 
 /** Google Encoded Polyline Algorithm at 1e-5 precision. */
@@ -270,8 +393,11 @@ function parseCandidate(raw: RawPlace, request: RouteRecommendationRequest): Rou
   const placeTypes = [...new Set([...(primaryType ? [primaryType] : []), ...returnedTypes])].slice(0, 20);
   // A primary type can be narrower than the useful secondary classification
   // (for example mountain_peak + tourist_attraction). Accept any supported
-  // returned type, while lodging and transit inventory remain excluded.
-  if (!placeTypes.some((type) => allowedRecommendationTypes.has(type))) return null;
+  // returned type, while lodging and transit inventory remain excluded. The
+  // gap band's suggestion kinds bound the acceptable set further, so a short
+  // gap only ever surfaces its own categories.
+  const acceptedTypes = recommendationTypesForKinds(request.suggestionKinds);
+  if (!placeTypes.some((type) => acceptedTypes.has(type))) return null;
   const excludedIds = new Set(request.excludedPlaceIds);
   const excludedNames = new Set(request.excludedNames.map(normalizedName));
   if (excludedIds.has(id) || excludedIds.has(providerId) || excludedNames.has(normalizedName(name))) return null;
@@ -346,9 +472,9 @@ export async function fetchGoogleRouteRecommendations(
   fetcher: typeof fetch = fetch,
 ) {
   const destination = destinationById(request.destination === "auto" ? "worldwide" : request.destination);
-  const textQuery = request.languageCode === "ja"
-    ? "評価の高い観光名所 景勝地 公園 美術館 カフェ"
-    : "highly rated attractions scenic places parks museums and cafes";
+  // The gap band's suggestion kinds decide what is asked for, not only what
+  // is kept afterwards.
+  const textQuery = recommendationQueryForKinds(request.suggestionKinds, request.languageCode);
   const routeSearch = request.routePoints.length >= 2;
   const body = {
     textQuery,

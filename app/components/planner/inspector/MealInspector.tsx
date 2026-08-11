@@ -12,6 +12,7 @@ import { foodSearchLinks } from "../../../../lib/food-recommendations-client.ts"
 import type { FoodCandidate } from "../../../../lib/google-food.ts";
 import type { FoodRecommendationSlot } from "../../../../lib/trip-builder.ts";
 import { type FoodState, type Inspector } from "../../../../lib/planner-app-state.ts";
+import { detourWalkingMinutes, type DetourPartition } from "../../../../lib/recommendation-evaluator.ts";
 import type { PlanImpactMetrics } from "../../../../lib/recommendation-impact.ts";
 import { ui, type PlannerLocale } from "../../../../lib/presentation/planner-copy.ts";
 
@@ -22,6 +23,8 @@ type MealInspectorProps = {
   inspector: Inspector;
   foodRecommendationNotice: string;
   mealCandidatesBySlot: Record<string, FoodCandidate[]>;
+  /** TC-044 detour partition: within-cap candidates lead; beyond-cap ones follow with real detours. */
+  mealDetourBySlot: Record<string, DetourPartition<FoodCandidate>>;
   mealImpactBySlot: Record<string, Record<string, PlanImpactMetrics>>;
   mealSelections: Record<string, string>;
   sheetExpanded: boolean;
@@ -39,6 +42,7 @@ export default function MealInspector({
   inspector,
   foodRecommendationNotice,
   mealCandidatesBySlot,
+  mealDetourBySlot,
   mealImpactBySlot,
   mealSelections,
   sheetExpanded,
@@ -76,22 +80,31 @@ export default function MealInspector({
       ) : null}
       {activeFoodState.status === "ready" ? (
         <div className="planner-food-results">
-          {(mealCandidatesBySlot[activeFoodSlot.id] ?? []).map((candidate, index) => (
-            <MealRecommendationCard
-              aiOrdered={activeFoodState.aiOrdered}
-              candidate={candidate}
-              foodFresh={activeFoodState.fresh[candidate.id]?.result}
-              impact={mealSelections[activeFoodSlot.id] === candidate.id ? null : mealImpactBySlot[activeFoodSlot.id]?.[candidate.id] ?? null}
-              index={index}
-              isChosen={mealSelections[activeFoodSlot.id] === candidate.id}
-              isSelected={inspector?.kind === "food" && inspector.candidateId === candidate.id}
-              key={candidate.id}
-              locale={locale}
-              note={activeFoodState.notes[candidate.id]}
-              onChoose={() => onToggleMealSelection(activeFoodSlot.id, candidate.id)}
-              onPhotoError={onPhotoError}
-            />
-          ))}
+          {(() => {
+            // TC-044: within-cap candidates render first (the auto-shown
+            // shortlist); beyond-cap candidates stay reachable here in the
+            // explicit alternatives list, each with its real walking detour.
+            const partition = mealDetourBySlot[activeFoodSlot.id];
+            const ordered = partition
+              ? [...partition.autoDisplay, ...partition.overCap]
+              : mealCandidatesBySlot[activeFoodSlot.id] ?? [];
+            return ordered.map((candidate, index) => (
+              <MealRecommendationCard
+                candidate={candidate}
+                detourMinutes={detourWalkingMinutes(candidate.distanceMeters)}
+                foodFresh={activeFoodState.fresh[candidate.id]?.result}
+                impact={mealSelections[activeFoodSlot.id] === candidate.id ? null : mealImpactBySlot[activeFoodSlot.id]?.[candidate.id] ?? null}
+                index={index}
+                isChosen={mealSelections[activeFoodSlot.id] === candidate.id}
+                isSelected={inspector?.kind === "food" && inspector.candidateId === candidate.id}
+                key={candidate.id}
+                locale={locale}
+                note={activeFoodState.notes[candidate.id]}
+                onChoose={() => onToggleMealSelection(activeFoodSlot.id, candidate.id)}
+                onPhotoError={onPhotoError}
+              />
+            ));
+          })()}
           <p className="planner-food-note">{text.foodNote}</p>
         </div>
       ) : null}

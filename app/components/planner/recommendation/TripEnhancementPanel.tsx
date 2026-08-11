@@ -20,6 +20,10 @@ type TripEnhancementPanelProps = {
   dayLabel: string | undefined;
   state: RouteRecommendationState;
   gap: ItineraryGap | null;
+  /** TC-047 detour order: within-cap candidates first, beyond-cap after them. */
+  orderedCandidates: RouteRecommendation[];
+  /** Candidates beyond the 15-minute walking cap — never lead, always labeled. */
+  overCapIds: Set<string>;
   impactById: Record<string, PlanImpactMetrics>;
   notice: string;
   sheetExpanded: boolean;
@@ -41,6 +45,8 @@ export default function TripEnhancementPanel({
   dayLabel,
   state,
   gap,
+  orderedCandidates,
+  overCapIds,
   impactById,
   notice,
   sheetExpanded,
@@ -97,9 +103,12 @@ export default function TripEnhancementPanel({
       {state.status === "ready" && state.candidates.length === 0 ? (
         <p className="planner-route-ideas-empty" role="status">{text.routeIdeasEmpty}</p>
       ) : null}
-      {state.status === "ready" && state.candidates.length > 0 ? (
+      {state.status === "ready" && orderedCandidates.length > 0 ? (
         <div className="planner-route-ideas-list">
-          {state.candidates.slice(0, alternativesExpanded ? 3 : 1).map((candidate, index) => (
+          {/* TC-047: unexpanded shows only the detour-capped lead; expanding
+              is the explicit alternatives list, where beyond-cap candidates
+              appear labeled with their real walking detour. */}
+          {orderedCandidates.slice(0, alternativesExpanded ? 3 : 1).map((candidate, index) => (
             <GapRecommendationCard
               added={plannedStopIds.has(recommendationStopId(candidate.id))}
               candidate={candidate}
@@ -110,13 +119,14 @@ export default function TripEnhancementPanel({
               onAdd={onAddCandidate}
               onPhotoError={onPhotoError}
               onSelect={onSelectCandidate}
+              overDetourCap={overCapIds.has(candidate.id)}
               selected={selectedCandidateId === candidate.id}
             />
           ))}
-          {!alternativesExpanded && state.candidates.length > 1 ? (
+          {!alternativesExpanded && orderedCandidates.length > 1 ? (
             <button className="planner-route-alternatives" onClick={onExpandAlternatives} type="button">
               {(() => {
-                const extraCount = Math.min(2, state.candidates.length - 1);
+                const extraCount = Math.min(2, orderedCandidates.length - 1);
                 return locale === "ja" ? `他の候補を${extraCount}件見る` : `See ${extraCount} ${extraCount === 1 ? "alternative" : "alternatives"}`;
               })()}
             </button>

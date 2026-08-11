@@ -2,9 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createRecommendation, type FillerKind, type Recommendation } from "../lib/itinerary-domain.ts";
 import {
+  RECOMMENDATION_DETOUR_CAP_MINUTES,
   acceptRecommendation,
+  detourWalkingMinutes,
   distinctRecommendationCandidates,
   evaluateRecommendationCandidate,
+  partitionRecommendationsByDetour,
   recommendationFillerSlot,
   recommendationPlaceAlreadyScheduled,
   reserveDistinctRecommendationCandidates,
@@ -191,4 +194,50 @@ test("a rejected recommendation cannot be accepted through the status helper", (
   const rejected = recommendation("closed", "LUNCH", 100, "REJECTED");
   const result = acceptRecommendation([rejected], rejected.id);
   assert.equal(result[0].status, "REJECTED");
+});
+
+// ---- TC-044 / TC-047: the 15-walking-minute detour cap ---------------------
+
+test("detour minutes use the displayed 80m-per-minute figure with a 1-minute floor", () => {
+  assert.equal(detourWalkingMinutes(0), 1);
+  assert.equal(detourWalkingMinutes(40), 1);
+  assert.equal(detourWalkingMinutes(800), 10);
+  assert.equal(detourWalkingMinutes(1_200), 15);
+  assert.equal(detourWalkingMinutes(1_400), 18);
+  assert.equal(detourWalkingMinutes(null), null);
+  assert.equal(detourWalkingMinutes(undefined), null);
+  assert.equal(detourWalkingMinutes(Number.NaN), null);
+  assert.equal(detourWalkingMinutes(-5), null);
+});
+
+test("the detour cap keeps within-15-minute candidates auto-displayable and parks the rest", () => {
+  assert.equal(RECOMMENDATION_DETOUR_CAP_MINUTES, 15);
+  const candidates = [
+    { id: "near", meters: 300 },
+    { id: "edge", meters: 1_200 },
+    { id: "far", meters: 1_600 },
+    { id: "unknown", meters: null },
+  ];
+  const partition = partitionRecommendationsByDetour(candidates, (candidate) => candidate.meters);
+  assert.deepEqual(partition.autoDisplay.map(({ id }) => id), ["near", "edge", "unknown"]);
+  assert.deepEqual(partition.overCap.map(({ id }) => id), ["far"]);
+  assert.equal(partition.nearestFallback, false);
+});
+
+test("when every candidate exceeds the cap, the nearest still shows as an honest fallback", () => {
+  const candidates = [
+    { id: "farther", meters: 2_400 },
+    { id: "nearest-over", meters: 1_500 },
+    { id: "farthest", meters: 3_000 },
+  ];
+  const partition = partitionRecommendationsByDetour(candidates, (candidate) => candidate.meters);
+  assert.deepEqual(partition.autoDisplay.map(({ id }) => id), ["nearest-over"]);
+  assert.deepEqual(partition.overCap.map(({ id }) => id), ["farther", "farthest"]);
+  assert.equal(partition.nearestFallback, true);
+});
+
+test("an empty candidate list partitions to an empty auto display without a fallback", () => {
+  const partition = partitionRecommendationsByDetour([], () => null);
+  assert.deepEqual([...partition.autoDisplay], []);
+  assert.equal(partition.nearestFallback, false);
 });

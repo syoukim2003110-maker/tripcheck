@@ -108,9 +108,12 @@ export type FoodState = {
   query: string;
   candidates: FoodCandidate[];
   fetchedAt?: string;
+  /**
+   * AI-written comparison labels keyed by candidate id (TC-049). Labels are
+   * the AI's whole authority: the Google-score order and the lead candidate
+   * stay deterministic whether or not (and whenever) the labels arrive.
+   */
   notes: Record<string, { reason: string; tag: string }>;
-  /** True once the AI selector's order has replaced the Google-score order. */
-  aiOrdered?: boolean;
   fresh: Record<string, FreshState>;
 };
 export type IntelligenceState = {
@@ -121,10 +124,11 @@ export type FreshState = {
   status: "idle" | "loading" | "ready" | "unavailable" | "paused";
   result: FreshVoicesResult | null;
 };
+// TC-049: the AI contributes comparison labels only. It never reorders the
+// shortlist and never picks the base, so no recommendation id lives here.
 export type HotelAiState = {
   status: "idle" | "loading" | "ready" | "unavailable";
   notes: Record<string, { reason: string; tag: string }>;
-  recommendedId: string | null;
 };
 export type HotelState = {
   status: "idle" | "loading" | "ready" | "unavailable";
@@ -169,7 +173,7 @@ export type SourcePreviewState = { status: "loading" | "ready" | "failed"; image
 export type ManualPlaceDraft = { address: string; latitude: string; longitude: string };
 
 export const emptyFreshState: FreshState = { status: "idle", result: null };
-export const emptyHotelAi: HotelAiState = { status: "idle", notes: {}, recommendedId: null };
+export const emptyHotelAi: HotelAiState = { status: "idle", notes: {} };
 export const emptyHotelState: HotelState = { status: "idle", candidates: [], selectedId: null, fresh: emptyFreshState, ai: emptyHotelAi };
 export const emptyNightlyHotelState: NightlyHotelState = { status: "idle", nights: [] };
 export const emptyRouteRecommendationState: RouteRecommendationState = { status: "idle", fetchedAt: null, candidates: [] };

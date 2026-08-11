@@ -9,6 +9,7 @@
 import type { SyntheticEvent } from "react";
 import Icon from "../../../PlannerIcons";
 import type { RouteRecommendation } from "../../../../lib/route-recommendations.ts";
+import { detourWalkingMinutes } from "../../../../lib/recommendation-evaluator.ts";
 import { gapEnhancement } from "../../../../lib/presentation/recommendation-presentation.ts";
 import type { PlanImpactMetrics } from "../../../../lib/recommendation-impact.ts";
 import { bufferDeltaLine, travelDeltaLine, ui, type PlannerLocale } from "../../../../lib/presentation/planner-copy.ts";
@@ -21,6 +22,8 @@ type GapRecommendationCardProps = {
   added: boolean;
   /** Pre-accept impact from the really simulated candidate plan (TC-048). */
   impact?: PlanImpactMetrics | null;
+  /** TC-047: beyond the 15-minute walking cap — the card states the real detour. */
+  overDetourCap?: boolean;
   onSelect: (candidateId: string) => void;
   onAdd: (candidate: RouteRecommendation) => void;
   onPhotoError: (event: SyntheticEvent<HTMLImageElement>) => void;
@@ -33,6 +36,7 @@ export default function GapRecommendationCard({
   selected,
   added,
   impact = null,
+  overDetourCap = false,
   onSelect,
   onAdd,
   onPhotoError,
@@ -62,6 +66,10 @@ export default function GapRecommendationCard({
           <b>{enhancement.title}</b>
           <span>
             {enhancement.evidence.map((line, index) => <em key={index}>{line}</em>)}
+            {/* TC-047: a beyond-cap candidate names its real walking detour. */}
+            {overDetourCap && detourWalkingMinutes(candidate.routeDistanceMeters) !== null
+              ? <em className="is-detour">{text.detourLine(detourWalkingMinutes(candidate.routeDistanceMeters)!)}</em>
+              : null}
             {impact ? <em className="is-impact">{travelDeltaLine(impact.travelDeltaMinutes, locale)}</em> : null}
             {impact ? <em className="is-impact">{bufferDeltaLine(impact.bufferDeltaMinutes, locale)}</em> : null}
           </span>

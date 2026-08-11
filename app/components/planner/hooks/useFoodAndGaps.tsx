@@ -140,23 +140,18 @@ export function useFoodAndGapDiscovery({
       if (stale()) return;
       const next: FoodState = { status: "ready", requestKey, query, candidates: response.candidates.slice(0, 3), fetchedAt: response.fetchedAt, notes: {}, fresh: {} };
       setFoodSearches((current) => ({ ...current, [slot.id]: next }));
-      // Google evidence owns the order. Claude runs behind the instant result
-      // only to add compact comparison copy for the supplied candidates.
+      // TC-049: Google evidence owns the order AND the lead. Claude runs
+      // behind the instant result with label-only authority — it writes
+      // compact comparison notes for the supplied candidate ids, and a late
+      // response attaches those labels in place without reordering.
       if (aiEnabledRef.current && next.candidates.length > 0) {
         void requestFoodRanking(slot, query, next.candidates, locale).then((ranking) => {
           if (stale()) return;
           const notes = Object.fromEntries(ranking.ranked.map((item) => [item.id, { reason: item.reason, tag: item.tag }]));
-          // The AI chooses which candidate leads: its order becomes the
-          // display order. Ids stay Google-verified — an id the AI did not
-          // return keeps its Google position after the ranked ones.
-          const order = new Map(ranking.ranked.map((item, index) => [item.id, index]));
           setFoodSearches((current) => {
             const entry = current[slot.id];
             if (!entry || entry.status !== "ready" || entry.requestKey !== requestKey) return current;
-            const candidates = [...entry.candidates].sort((left, right) => (
-              (order.get(left.id) ?? 99) - (order.get(right.id) ?? 99)
-            ));
-            return { ...current, [slot.id]: { ...entry, candidates, notes, aiOrdered: order.size > 0 } };
+            return { ...current, [slot.id]: { ...entry, notes } };
           });
         }).catch(() => { /* Deterministic Google evidence remains visible. */ });
       }
@@ -223,6 +218,10 @@ export function useFoodAndGapDiscovery({
         excludedNames: [...new Set(existingStops.map((stop) => stop.name))],
         destination: requestDestination,
         languageCode: locale,
+        // The gap band's deterministic categories drive the provider search
+        // (spec gap table): a 30-minute gap asks for cafes and parks, a
+        // 120-minute-plus gap may also ask for normal tourist spots.
+        suggestionKinds: [...primaryRecommendationGap.suggestionKinds],
       });
       if (routeRecommendationRequestRef.current !== requestId) return;
       setRouteRecommendationSearches((current) => ({

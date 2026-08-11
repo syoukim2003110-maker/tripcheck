@@ -9,13 +9,15 @@ import {
 import type { BuiltPlanDay } from "../lib/trip-builder.ts";
 import type { TripFitDay } from "../lib/trip-scenarios.ts";
 
-test("classifies the exact 29/30/60/120/121 minute P0 boundaries", () => {
+test("classifies the exact 29/30/59/60/119/120 minute band boundaries", () => {
   assert.equal(classifyGapMinutes(29), "BELOW_MINIMUM");
   assert.equal(classifyGapMinutes(30), "SHORT_30_TO_59");
   assert.equal(classifyGapMinutes(59), "SHORT_30_TO_59");
-  assert.equal(classifyGapMinutes(60), "MEDIUM_60_TO_120");
-  assert.equal(classifyGapMinutes(120), "MEDIUM_60_TO_120");
-  assert.equal(classifyGapMinutes(121), "OUTSIDE_P0_OVER_120");
+  assert.equal(classifyGapMinutes(60), "MEDIUM_60_TO_119");
+  assert.equal(classifyGapMinutes(119), "MEDIUM_60_TO_119");
+  // The spec band table splits at 120: exactly 120 minutes is the long band.
+  assert.equal(classifyGapMinutes(120), "LONG_120_PLUS");
+  assert.equal(classifyGapMinutes(121), "LONG_120_PLUS");
 });
 
 function betweenGap(minutes: number) {
@@ -36,14 +38,19 @@ function betweenGap(minutes: number) {
   }).filter((gap) => gap.kind === "BETWEEN_ANCHORS");
 }
 
-test("detects only 30–120 minute gaps and assigns deterministic suggestion bands", () => {
-  assert.equal(betweenGap(29).length, 0);
+test("detects 30-minute-plus gaps and assigns deterministic suggestion bands", () => {
+  assert.equal(betweenGap(29).length, 0, "the 0-29 no-recommendation rule holds");
   assert.equal(betweenGap(30)[0].sizeBand, "SHORT_30_TO_59");
   assert.deepEqual(betweenGap(30)[0].suggestionKinds, ["CAFE", "BAKERY", "PARK", "LOOKOUT"]);
-  assert.equal(betweenGap(60)[0].sizeBand, "MEDIUM_60_TO_120");
+  assert.equal(betweenGap(59)[0].sizeBand, "SHORT_30_TO_59");
+  assert.equal(betweenGap(60)[0].sizeBand, "MEDIUM_60_TO_119");
   assert.deepEqual(betweenGap(60)[0].suggestionKinds, ["SMALL_FACILITY", "WALK", "CAFE_AND_WALK"]);
+  assert.equal(betweenGap(119)[0].sizeBand, "MEDIUM_60_TO_119");
+  // 120+ opens the normal tourist-spot categories (通常観光スポットも候補).
+  assert.equal(betweenGap(120)[0].sizeBand, "LONG_120_PLUS");
   assert.equal(betweenGap(120)[0].availableMinutes, 120);
-  assert.equal(betweenGap(121).length, 0, "post-P0 attraction gaps stay as slack");
+  assert.deepEqual(betweenGap(120)[0].suggestionKinds, ["ATTRACTION", "SMALL_FACILITY", "WALK", "CAFE_AND_WALK"]);
+  assert.equal(betweenGap(121)[0].sizeBand, "LONG_120_PLUS", "long gaps now produce recommendations too");
 });
 
 test("labels before-first, between-anchor and before-hotel-return gaps", () => {

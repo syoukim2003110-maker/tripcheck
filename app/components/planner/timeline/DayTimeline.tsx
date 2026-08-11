@@ -55,6 +55,8 @@ type DayTimelineProps = {
   fillerKindsByStopId: ReadonlyMap<string, Exclude<TimelineFillerKind, undefined>>;
   prefetchTransitSteps: Readonly<Record<string, TransitLegBoarding>>;
   mealRowsAfter?: (stopIndex: number) => ReactNode;
+  /** Suggestion rows before the first stop (DoD-PLAN-6: a before-first-anchor gap row). */
+  leadingRows?: ReactNode;
   onOpenHotel: () => void;
   onSelectStop: (stopId: string, isSelected: boolean) => void;
   onSetLegMode: (legKey: string, mode: TransportMode) => void;
@@ -85,6 +87,7 @@ export default function DayTimeline({
   fillerKindsByStopId,
   prefetchTransitSteps,
   mealRowsAfter,
+  leadingRows,
   onOpenHotel,
   onSelectStop,
   onSetLegMode,
@@ -142,6 +145,7 @@ export default function DayTimeline({
 
       {day.stops.length === 0 ? <EmptyState locale={locale} /> : (
         <ol className="planner-timeline">
+          {leadingRows}
           {day.stops.map((builtStop, index) => {
             const leg = index > 0 ? day.legs[index - 1] : null;
             const recommended = leg?.comparison.recommended;

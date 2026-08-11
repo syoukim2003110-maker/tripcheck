@@ -1,4 +1,5 @@
 import type { DestinationChoice } from "./destinations.ts";
+import type { GapSuggestionKind } from "./gap-detection.ts";
 import type { RouteRecommendation, RouteRecommendationPoint } from "./route-recommendations.ts";
 import { tripRequestHeaders } from "./trip-request-identity.ts";
 
@@ -17,6 +18,8 @@ type Request = {
   excludedNames: string[];
   destination: DestinationChoice;
   languageCode: "en" | "ja";
+  /** The gap band's categories (lib/gap-detection) — they drive the provider search. */
+  suggestionKinds?: GapSuggestionKind[];
 };
 
 export async function requestRouteRecommendations(request: Request, signal?: AbortSignal) {
