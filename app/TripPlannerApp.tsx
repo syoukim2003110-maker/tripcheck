@@ -31,6 +31,8 @@ import TripEnhancementPanel from "./components/planner/recommendation/TripEnhanc
 import StopInspector from "./components/planner/inspector/StopInspector";
 import HotelInspector from "./components/planner/inspector/HotelInspector";
 import MealInspector from "./components/planner/inspector/MealInspector";
+import { useTripEnrichments } from "./components/planner/hooks/useTripEnrichments";
+import { useTripPersistence } from "./components/planner/hooks/useTripPersistence";
 import {
   FoodRecommendationsError,
   foodCandidateReason,
@@ -38,14 +40,12 @@ import {
   requestFoodRecommendations,
   requestFoodRanking,
 } from "../lib/food-recommendations-client";
-import { requestLinkPreview } from "../lib/link-preview-client";
 import { defaultFoodDiscoveryQuery, type FoodCandidate } from "../lib/google-food";
 import { bayesianWeightedRating, restaurantRatingPrior } from "../lib/rating-confidence";
 import { requestHotelRecommendations, requestHotelRanking } from "../lib/hotel-recommendations-client";
 import { placeTypesIncludeLodging, type HotelCandidate, type HotelPriceLevel } from "../lib/google-hotels";
 import { fullTripDemo } from "../lib/mock-trip";
 import { requestFreshVoices, requestPlaceIntelligence, PlaceIntelligenceError } from "../lib/place-intelligence-client";
-import { requestAiStatus } from "../lib/ai-status-client";
 import type { FreshVoicesResult } from "../lib/fresh-voices";
 import type { PlaceIntelligenceResult } from "../lib/place-intelligence";
 import { googleCurrentOpeningWindowsForDate, googleOpeningWindowsForDate } from "../lib/google-opening-hours";
@@ -86,12 +86,9 @@ import {
   type DestinationId,
 } from "../lib/destinations";
 import { buildPreTripTimeline } from "../lib/pre-trip-timeline";
-import { decodeTripShare, encodeTripShare, type ShareableResolutionOverride, type ShareableTripInput } from "../lib/share-link";
+import { encodeTripShare, type ShareableResolutionOverride, type ShareableTripInput } from "../lib/share-link";
 import { buildScopedTripShare, type ShareScope } from "../lib/share-scope";
-import { buildWeatherPayload, requestWeatherPayload } from "../lib/weather-client";
-import type { TripWeatherDay, WeatherKind } from "../lib/weather";
-import { buildHolidaysPayload, requestHolidays } from "../lib/holidays-client";
-import type { TripHoliday } from "../lib/holidays";
+import type { WeatherKind } from "../lib/weather";
 import { assessTripFit, generateTripCounterfactuals } from "../lib/trip-scenarios";
 import {
   createPlannerEvidenceSnapshot,
@@ -110,7 +107,6 @@ import { createRecommendation, type FillerKind } from "../lib/itinerary-domain";
 import { evaluateRecommendationCandidate, recommendationPlaceAlreadyScheduled, recommendationPlanSnapshot, reserveDistinctRecommendationCandidates } from "../lib/recommendation-evaluator";
 import { requestRouteRecommendations, RouteRecommendationsError } from "../lib/route-recommendations-client";
 import type { RouteRecommendation, RouteRecommendationPoint } from "../lib/route-recommendations";
-import { createTripStore, type StoredTripRecord, type TripStore } from "../lib/trip-store";
 import { trackProductEvent, type ProductEventFields, type ProductEventName } from "../lib/product-analytics";
 import { rotateTripRequestToken } from "../lib/trip-request-identity";
 import { balancedGeoCenter, buildTripFromWishlist, hotelRouteContextForDraft, routeLegKey, type AirportCode, type BuiltTripPlan, type FoodRecommendationSlot, type MealPlan, type TripBase, type TripPlannerContext, type VisitWindow } from "../lib/trip-builder";
@@ -187,8 +183,6 @@ import {
   withManualResolutionOverrides,
   addCalendarDays,
   clampTripDays,
-  storedTripShareCode,
-  newDeviceTripId,
   builtPlanTravelMinutes,
   clockToMinutes,
   clockRangeContainsVisit,
@@ -207,7 +201,6 @@ import {
   type PlannerBuildMode,
   type MobileResultView,
   type PlannerMapScope,
-  type PassportCountry,
   type TransitConvergenceState,
   type FoodState,
   type IntelligenceState,
@@ -223,7 +216,6 @@ import {
   type BuildStage,
   type BuildProgress,
   type Inspector,
-  type SourcePreviewState,
   type ManualPlaceDraft,
   type ParsePreviewRow,
   type PlannerEditState,
@@ -260,8 +252,6 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   const [departureAirport, setDepartureAirport] = useState<AirportCode>("none");
   const [departureTime, setDepartureTime] = useState("");
   const [flightKind, setFlightKind] = useState<"international" | "domestic">("international");
-  const [weatherByDay, setWeatherByDay] = useState<Record<number, TripWeatherDay>>({});
-  const [holidaysByDate, setHolidaysByDate] = useState<Record<string, TripHoliday>>({});
   const [printMode, setPrintMode] = useState(false);
   const [resolvedStops, setResolvedStops] = useState<ResolvedInputStop[]>([]);
   const [ambiguousPlaces, setAmbiguousPlaces] = useState<AmbiguousPlaceResolution[]>([]);
@@ -306,7 +296,6 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   const [shareCopied, setShareCopied] = useState(false);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [shareScope, setShareScope] = useState<ShareScope>({ dates: true, hotel: false, airports: false, reservations: false });
-  const [pendingSharedBuild, setPendingSharedBuild] = useState(false);
   // Once a plan is built it stays available: "back to input" must never force
   // a full (paid, slow) rebuild just to peek at the form again.
   const [planReady, setPlanReady] = useState(false);
@@ -315,8 +304,6 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   const [transferBufferMinutes, setTransferBufferMinutes] = useState<0 | 10 | 20 | 30>(10);
   const [maxWalkingMinutesPerLeg, setMaxWalkingMinutesPerLeg] = useState<number | null>(null);
   const [maxTransfersPerLeg, setMaxTransfersPerLeg] = useState<number | null>(null);
-  const [recentTrips, setRecentTrips] = useState<StoredTripRecord[]>([]);
-  const [tripStorePersistent, setTripStorePersistent] = useState<boolean | null>(null);
   const [removedStops, setRemovedStops] = useState<Array<{ id: string; name: string }>>([]);
   const [openingWindowsByDay, setOpeningWindowsByDay] = useState<Record<string, Record<number, VisitWindow[]>>>({});
   const [foodSearches, setFoodSearches] = useState<Record<string, FoodState>>({});
@@ -340,10 +327,6 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   const [userStayMinutes, setUserStayMinutes] = useState<Record<string, number>>({});
   const [lastEntryTimes, setLastEntryTimes] = useState<Record<string, string>>({});
   const [earlyVisitStopIds, setEarlyVisitStopIds] = useState<string[]>([]);
-  // Passport expiry never leaves the device: it exists only to turn "6 months
-  // remaining required" into a personal yes/no before the airport does it.
-  const [passportExpiry, setPassportExpiry] = useState("");
-  const [passportCountry, setPassportCountry] = useState<PassportCountry>("unset");
   const [dayStartTimes, setDayStartTimes] = useState<Record<number, string>>({});
   const [dayEndTimes, setDayEndTimes] = useState<Record<number, string>>({});
   const [editHistory, setEditHistory] = useState<PlannerHistory<PlannerEditState>>(() => createPlannerHistory({
@@ -393,13 +376,8 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   // default, full on request via an explicit button, never drag-only).
   const [inspectorSheetExpanded, setInspectorSheetExpanded] = useState(false);
   const [comparisonAlternative, setComparisonAlternative] = useState<AlternativePlan | null>(null);
-  const [sourcePreviews, setSourcePreviews] = useState<Record<string, SourcePreviewState>>({});
   const [previewStops, setPreviewStops] = useState<RouteStop[]>([]);
   const [buildProgress, setBuildProgress] = useState<BuildProgress>(initialBuildProgress);
-  // Whether the server accepts Claude-backed requests. While paused, the AI
-  // surfaces (concept drafts, social checks) are hidden instead of failing.
-  const [aiEnabled, setAiEnabled] = useState(false);
-  const aiEnabledRef = useRef(false);
   const buildRunRef = useRef(0);
   const transitConvergenceRunRef = useRef(0);
   const buildAbortRef = useRef<AbortController | null>(null);
@@ -416,9 +394,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   const shareTriggerRef = useRef<HTMLButtonElement | null>(null);
   const hotelPlanSignatureRef = useRef("");
   const historyActionRef = useRef<{ undo: () => void; redo: () => void }>({ undo: () => {}, redo: () => {} });
-  const tripStoreRef = useRef<TripStore | null>(null);
   const analyticsMilestonesRef = useRef<Set<ProductEventName>>(new Set());
-  const currentStoredTripIdRef = useRef<string | null>(null);
   // Mode, place-pair and departure-time keys already requested from Google,
   // plus a small post-build
   // allowance so hotel switches and nightly bases can still get measured legs.
@@ -723,41 +699,6 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     setPendingSharedBuild(true);
   }, [locale]);
 
-  // Device-local history is user-authored input only. IndexedDB stores up to
-  // ten trips; provider responses and the derived BuiltTripPlan are rebuilt.
-  // If private mode blocks IndexedDB, the store remains usable for this tab
-  // and the UI says explicitly that it is not persistent.
-  const sharedHydrationRef = useRef(false);
-  useEffect(() => {
-    if (sharedHydrationRef.current) return;
-    sharedHydrationRef.current = true;
-    try {
-      // One-time cleanup for the removed airfare experiment. Airport choices
-      // inside an actual recent trip remain; the obsolete standalone origin does not.
-      window.localStorage.removeItem("tripcheck.airfareOrigin");
-    } catch { /* private-mode storage stays optional */ }
-    void createTripStore().then(async (store) => {
-      tripStoreRef.current = store;
-      setTripStorePersistent(store.status.persistent);
-      setRecentTrips(await store.list());
-    }).catch(() => {
-      setTripStorePersistent(false);
-    });
-    const match = window.location.hash.match(/^#t=([A-Za-z0-9_-]+)$/);
-    if (!match) return;
-    const shared = decodeTripShare(match[1]);
-    if (!shared) return;
-    applySharedTripInput(shared);
-  }, [applySharedTripInput]);
-
-  useEffect(() => {
-    if (!pendingSharedBuild) return;
-    setPendingSharedBuild(false);
-    void buildPlan({ preserveEdits: true });
-    // buildPlan reads the freshly hydrated state from this render on purpose.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingSharedBuild]);
-
   useEffect(() => {
     if (inspector !== null) setHintDismissed(true);
   }, [inspector]);
@@ -804,17 +745,6 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       returnTarget?.focus();
     };
   }, [shareDialogOpen]);
-
-  useEffect(() => {
-    if (P0_CORE_ONLY) return;
-    let cancelled = false;
-    void requestAiStatus().then((enabled) => {
-      if (cancelled) return;
-      aiEnabledRef.current = enabled;
-      setAiEnabled(enabled);
-    });
-    return () => { cancelled = true; };
-  }, []);
 
   useEffect(() => {
     if (inspector?.kind !== "food" || !inspector.candidateId) return;
@@ -1041,12 +971,26 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     return { reservations, watchlist };
   }, [plan, earlyVisitStopIds]);
 
-  useEffect(() => {
-    try {
-      const stored = window.localStorage.getItem("tripcheck.passportExpiry");
-      if (stored && /^\d{4}-\d{2}-\d{2}$/.test(stored)) setPassportExpiry(stored);
-    } catch { /* storage unavailable (private mode) — the field just starts empty */ }
-  }, []);
+  const {
+    recentTrips,
+    tripStorePersistent,
+    passportExpiry,
+    setPassportExpiry,
+    passportCountry,
+    setPassportCountry,
+    setPendingSharedBuild,
+    currentStoredTripIdRef,
+    openRecentTrip,
+    deleteRecentTrip,
+  } = useTripPersistence({
+    planReady,
+    tripDays,
+    tripStartDate,
+    localTripCode,
+    localTripTitle,
+    applySharedTripInput,
+    buildPlan,
+  });
   const updatePassportExpiry = (value: string) => {
     setPassportExpiry(value);
     try {
@@ -1075,55 +1019,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     if (plan) setDetectedDestinationId(plan.destination !== "worldwide" ? plan.destination : null);
   }, [plan]);
 
-  // Per-day forecast, keyed on the coordinate-only payload itself: the fetch
-  // re-runs only when a day's date or centroid actually changes, not on every
-  // unrelated plan tweak. Weather never gates the plan — failures just leave
-  // the chips off.
-  const weatherSignature = useMemo(() => {
-    if (!plan) return "";
-    const payload = buildWeatherPayload(plan);
-    return payload ? JSON.stringify(payload) : "";
-  }, [plan]);
-  useEffect(() => {
-    if (!P1_TRAVEL_ENRICHMENTS) {
-      setWeatherByDay({});
-      return;
-    }
-    if (!weatherSignature) {
-      setWeatherByDay({});
-      return;
-    }
-    let stale = false;
-    void requestWeatherPayload(JSON.parse(weatherSignature)).then((result) => {
-      if (!stale) setWeatherByDay(result);
-    });
-    return () => { stale = true; };
-  }, [weatherSignature]);
-
-  // Holiday overlay, same contract as the forecast: country code + bare dates
-  // in, per-date warnings out, failures leave the plan untouched. This exists
-  // because Google's weekly opening patterns are silently wrong on public
-  // holidays and its dated hours only cover the next 7 days.
-  const holidaysSignature = useMemo(() => {
-    if (!plan) return "";
-    const payload = buildHolidaysPayload(plan, activeDestination.countryCodes[0] ?? null);
-    return payload ? JSON.stringify(payload) : "";
-  }, [plan, activeDestination]);
-  useEffect(() => {
-    if (!P1_TRAVEL_ENRICHMENTS) {
-      setHolidaysByDate({});
-      return;
-    }
-    if (!holidaysSignature) {
-      setHolidaysByDate({});
-      return;
-    }
-    let stale = false;
-    void requestHolidays(JSON.parse(holidaysSignature)).then((result) => {
-      if (!stale) setHolidaysByDate(result);
-    });
-    return () => { stale = true; };
-  }, [holidaysSignature]);
+  const { weatherByDay, holidaysByDate, aiEnabled, aiEnabledRef, sourcePreviews, ensureSourcePreviews } = useTripEnrichments({ plan, activeDestination });
 
   // The print sheet renders every day at once, then hands control to the
   // browser's print dialog — the closest thing to "take the plan offline"
@@ -1138,35 +1034,6 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       window.cancelAnimationFrame(frame);
     };
   }, [printMode]);
-
-  // Save meaningful user-authored changes after a short quiet period. The
-  // encoded input contains no fetched place, route, review or hours payload;
-  // reopening deliberately resolves those facts again.
-  useEffect(() => {
-    if (!planReady || !localTripCode || tripStorePersistent === null) return;
-    const timer = window.setTimeout(() => {
-      const store = tripStoreRef.current;
-      if (!store) return;
-      const id = currentStoredTripIdRef.current ?? newDeviceTripId();
-      currentStoredTripIdRef.current = id;
-      void store.save({
-        id,
-        title: localTripTitle.slice(0, 160),
-        payload: {
-          input: { shareCode: localTripCode, tripDays, tripStartDate },
-          edits: { schemaVersion: 1 },
-        },
-      }).then(async () => {
-        // This is automatic recovery storage, not evidence that the traveller
-        // accepted the plan. The adoption funnel records only an explicit share.
-        setTripStorePersistent(store.status.persistent);
-        setRecentTrips(await store.list());
-      }).catch(() => {
-        setTripStorePersistent(false);
-      });
-    }, 550);
-    return () => window.clearTimeout(timer);
-  }, [localTripCode, localTripTitle, planReady, tripDays, tripStartDate, tripStorePersistent]);
 
   const currentHotelPlanSignature = useMemo(() => hotelPlanSignature(plan), [plan]);
   const hotelRouteContext = useMemo(() => plan ? hotelRouteContextForDraft(plan) : null, [plan]);
@@ -1799,29 +1666,6 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     image.parentElement?.classList.add("is-photo-fallback");
   }, []);
 
-  // Open Graph thumbnails for public-source cards, fetched lazily when the
-  // source list is opened and cached for the session. Failures fall back to
-  // the media-kind badge that is always rendered.
-  const requestedSourcePreviewsRef = useRef<Set<string>>(new Set());
-  const ensureSourcePreviews = useCallback((urls: string[]) => {
-    const missing = urls.filter((url) => url.startsWith("https://") && !requestedSourcePreviewsRef.current.has(url)).slice(0, 3);
-    if (missing.length === 0) return;
-    for (const url of missing) requestedSourcePreviewsRef.current.add(url);
-    setSourcePreviews((state) => ({
-      ...state,
-      ...Object.fromEntries(missing.map((url) => [url, { status: "loading", imageUrl: null } satisfies SourcePreviewState])),
-    }));
-    for (const url of missing) {
-      void requestLinkPreview(url)
-        .then((preview) => {
-          setSourcePreviews((state) => ({ ...state, [url]: { status: "ready", imageUrl: preview.imageUrl } }));
-        })
-        .catch(() => {
-          setSourcePreviews((state) => ({ ...state, [url]: { status: "failed", imageUrl: null } }));
-        });
-    }
-  }, []);
-
   const handleSelectFoodPin = useCallback((slotId: string, candidateId: string) => {
     setInspector({ kind: "food", slotId, candidateId });
   }, []);
@@ -2251,29 +2095,6 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
         setHotelRefreshing(false);
       }
     }
-  }
-
-  async function openRecentTrip(entry: StoredTripRecord) {
-    const code = storedTripShareCode(entry);
-    const shared = code ? decodeTripShare(code) : null;
-    if (!shared) {
-      const store = tripStoreRef.current;
-      if (store) {
-        await store.delete(entry.id);
-        setRecentTrips(await store.list());
-      }
-      return;
-    }
-    currentStoredTripIdRef.current = entry.id;
-    applySharedTripInput(shared);
-  }
-
-  async function deleteRecentTrip(entry: StoredTripRecord) {
-    const store = tripStoreRef.current;
-    if (!store) return;
-    await store.delete(entry.id);
-    if (currentStoredTripIdRef.current === entry.id) currentStoredTripIdRef.current = null;
-    setRecentTrips(await store.list());
   }
 
   // Hard-conflict damage a candidate plan would introduce compared to the
