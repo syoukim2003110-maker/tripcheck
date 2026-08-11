@@ -57,6 +57,11 @@ test("server-renders the input-first TripCheck itinerary builder", async () => {
   assert.doesNotMatch(html, /SCROLL TO PLAY|Get the whole trip\.|One plan instead of six tabs/i);
   assert.match(html, />EN</);
   assert.match(html, /日本語/);
+  // TC-018: the bare "/" honors the device's stored language before paint —
+  // the inline gate must run ahead of hydration, whose locale effect would
+  // otherwise overwrite the stored key with "en".
+  assert.match(html, /localStorage\.getItem\("tripcheck-locale"\)==="ja"/);
+  assert.match(html, /location\.replace\("\/ja"\+location\.search\+location\.hash\)/);
   assert.match(html, /<a(?=[^>]*class="planner-privacy")(?=[^>]*href="\/privacy")[^>]*>/i);
   assert.doesNotMatch(html, /<option[^>]*value="ko"/i);
   assert.doesNotMatch(html, /<option[^>]*value="zh"/i);

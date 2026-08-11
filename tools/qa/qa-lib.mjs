@@ -109,6 +109,12 @@ export function localePath(locale) {
 }
 
 export async function gotoStart(page, locale) {
+  // TC-018: the bare "/" honors the device's stored language. Pin the stored
+  // locale to the one under test so an earlier ja scenario in the same shared
+  // profile cannot redirect the en start page away from "/".
+  await page.evaluateOnNewDocument((value) => {
+    try { window.localStorage.setItem("tripcheck-locale", value); } catch { /* optional */ }
+  }, locale === "ja" ? "ja" : "en");
   await page.goto(`${BASE_URL}${localePath(locale)}`, { waitUntil: "networkidle2", timeout: 45_000 });
   await page.waitForSelector(".planner-review-button", { timeout: 20_000 });
 }

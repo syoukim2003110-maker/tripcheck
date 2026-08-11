@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { buildPlaceResolutionPayload } from "../lib/place-resolution-client.ts";
 import { buildTripFromWishlist } from "../lib/trip-builder.ts";
-import { formatWishlistLines, parsedWishlistPlaces, parseWishlist, setWishlistPlacePriority, updateWishlistPlaceConstraints } from "../lib/wishlist-parser.ts";
+import { formatWishlistLines, parsedWishlistPlaces, parseWishlist, removeWishlistPlace, setWishlistPlacePriority, updateWishlistPlaceConstraints } from "../lib/wishlist-parser.ts";
 
 test("a day heading with content keeps the place instead of dropping the line", () => {
   const [line] = parsedWishlistPlaces("1日目: 浅草寺");
@@ -230,4 +230,54 @@ test("a system recommendation can be pinned to its evaluated meal or gap time", 
   assert.equal(place?.time, "11:30");
   assert.equal(place?.priority, "optional");
   assert.equal(place?.isReservation, false);
+});
+
+// v1.1 TC-020: removing one occurrence must not launder any OTHER line — day
+// headings, annotations, URLs, marker spellings and spacing all stay
+// byte-identical. Only the removed place's own line changes.
+
+test("removing one place keeps every other line byte-identical, including day headers and annotations", () => {
+  const raw = "1日目\n浅草寺 9:00\nチームラボプラネッツ 15:30 予約\nhttps://example.com/notes\n\n2日目\n三鷹の森ジブリ美術館 必須\n渋谷スカイ 時間があれば";
+  const next = removeWishlistPlace(raw, 0, "ja");
+  assert.equal(next, "1日目\nチームラボプラネッツ 15:30 予約\nhttps://example.com/notes\n\n2日目\n三鷹の森ジブリ美術館 必須\n渋谷スカイ 時間があれば");
+  assert.deepEqual(parsedWishlistPlaces(next).map(({ name, day, priority }) => ({ name, day, priority })), [
+    { name: "チームラボプラネッツ", day: 1, priority: "must" },
+    { name: "三鷹の森ジブリ美術館", day: 2, priority: "must" },
+    { name: "渋谷スカイ", day: 2, priority: "optional" },
+  ]);
+});
+
+test("removing the last place of a section keeps the section heading verbatim", () => {
+  const raw = "Day 1\nSenso-ji 9:00\nGhibli Museum must\nShibuya Sky optional";
+  const next = removeWishlistPlace(raw, 1, "en");
+  assert.equal(next, "Day 1\nSenso-ji 9:00\nShibuya Sky optional");
+});
+
+test("removing one occurrence from a multi-place line keeps the line's other places and markers", () => {
+  const raw = "銀閣寺・金閣寺・清水寺 必須\n伏見稲荷大社";
+  const next = removeWishlistPlace(raw, 1, "ja");
+  assert.equal(next, "銀閣寺 — 必須\n清水寺 — 必須\n伏見稲荷大社");
+  assert.deepEqual(parsedWishlistPlaces(next).map(({ name, priority }) => ({ name, priority })), [
+    { name: "銀閣寺", priority: "must" },
+    { name: "清水寺", priority: "must" },
+    { name: "伏見稲荷大社", priority: "normal" },
+  ]);
+});
+
+test("removing from a multi-place line that carries its own day re-emits that day", () => {
+  const raw = "1日目\n浅草寺\n2日目 銀閣寺・金閣寺・清水寺";
+  const next = removeWishlistPlace(raw, 2, "ja");
+  assert.equal(next, "1日目\n浅草寺\n2日目\n銀閣寺\n清水寺");
+  assert.deepEqual(parsedWishlistPlaces(next).map(({ name, day }) => ({ name, day })), [
+    { name: "浅草寺", day: 1 },
+    { name: "銀閣寺", day: 2 },
+    { name: "清水寺", day: 2 },
+  ]);
+});
+
+test("an out-of-range removal index leaves the input untouched", () => {
+  const raw = "Senso-ji\nGhibli Museum";
+  assert.equal(removeWishlistPlace(raw, 2, "en"), raw);
+  assert.equal(removeWishlistPlace(raw, -1, "en"), raw);
+  assert.equal(removeWishlistPlace(raw, 0.5, "en"), raw);
 });

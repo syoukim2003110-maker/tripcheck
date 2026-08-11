@@ -56,6 +56,7 @@ import { trackProductEvent, type ProductEventFields, type ProductEventName } fro
 import { rotateTripRequestToken } from "../../../lib/trip-request-identity";
 import { type AirportCode, type MealPlan, type VisitWindow } from "../../../lib/trip-builder";
 import {
+  removeWishlistPlace,
   updateWishlistPlaceConstraints,
   type WishlistPlaceConstraintPatch,
 } from "../../../lib/wishlist-parser";
@@ -125,6 +126,8 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
     previewStops,
     setPreviewStops,
     buildProgress,
+    manualAddressResolution,
+    setManualAddressResolution,
     buildRunRef,
     placeReviewAbortRef,
     buildPlanRef,
@@ -408,6 +411,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
     setResolvedStops([]);
     setAmbiguousPlaces([]);
     setManualPlaceDrafts({});
+    setManualAddressResolution({});
     setManualPinTarget(null);
     setResolvedBase(null);
     setPreviewStops([]);
@@ -1202,9 +1206,70 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
       setResolvedStops([]);
       setAmbiguousPlaces([]);
       setManualPlaceDrafts({});
+      setManualAddressResolution({});
       setResolutionOverrides([]);
       setPreviewStops([]);
     }
+  }
+
+  // v1.1 TC-020: per-row removal on the Resolve list. The textarea stays the
+  // single source of truth, so removal rewrites only that place's source line
+  // (other lines survive byte-identical) and shifts every occurrence-scoped
+  // record so the remaining rows keep their confirmations. Must/booked rows
+  // go through the same explicit hard-edit confirmation the resolve flow uses
+  // for continuing with an unresolved must — a protected place never vanishes
+  // silently.
+  function removeResolvePlace(placeIndex: number) {
+    const row = reviewedPlaceRows.find((candidate) => candidate.placeIndex === placeIndex);
+    if (!row) return;
+    const apply = () => {
+      const next = removeWishlistPlace(itinerary, placeIndex, locale);
+      if (next === itinerary) return;
+      setItinerary(next);
+      setPlanReady(false);
+      setComparisonAlternative(null);
+      const shiftIndex = (index: number) => (index > placeIndex ? index - 1 : index);
+      setResolvedStops((current) => current.flatMap((stop) => {
+        if (stop.inputIndex === undefined) return [stop];
+        if (stop.inputIndex === placeIndex) return [];
+        return [{ ...stop, inputIndex: shiftIndex(stop.inputIndex) }];
+      }));
+      setPreviewStops((current) => current.flatMap((stop) => {
+        const inputIndex = "inputIndex" in stop && typeof stop.inputIndex === "number" ? stop.inputIndex : undefined;
+        if (inputIndex === undefined) return [stop];
+        if (inputIndex === placeIndex) return [];
+        return [{ ...stop, inputIndex: shiftIndex(inputIndex) }];
+      }));
+      setResolutionOverrides((current) => current.flatMap((override) => (
+        override.inputIndex === placeIndex ? [] : [{ ...override, inputIndex: shiftIndex(override.inputIndex) }]
+      )));
+      setManualPlaceDrafts((current) => Object.fromEntries(Object.entries(current).flatMap(([key, draft]) => {
+        const index = Number(key);
+        return index === placeIndex ? [] : [[shiftIndex(index), draft] as const];
+      })));
+      setManualAddressResolution((current) => Object.fromEntries(Object.entries(current).flatMap(([key, status]) => {
+        const index = Number(key);
+        return index === placeIndex ? [] : [[shiftIndex(index), status] as const];
+      })));
+      setManualPinTarget((current) => current === null || current === placeIndex ? null : shiftIndex(current));
+      // The remaining rows were already reviewed against the same provider
+      // records; moving the review identity with the rewritten text keeps
+      // their confirmed/ambiguous statuses instead of relabelling everything.
+      setReviewedInputSignature(JSON.stringify([next.trim(), locale, destinationChoice]));
+    };
+    if (row.place.isReservation || row.place.priority === "must") {
+      setPendingHardEdit({
+        title: locale === "ja" ? `必須・予約の「${row.place.name}」を外しますか？` : `Remove booked or must-see “${row.place.name}”?`,
+        conflicts: [locale === "ja"
+          ? `外すと「${row.place.name}」は旅程に入りません。`
+          : `“${row.place.name}” will be left out of the plan.`],
+        cancelLabel: locale === "ja" ? "外さない" : "Keep it",
+        confirmLabel: locale === "ja" ? "外す" : "Remove",
+        apply,
+      });
+      return;
+    }
+    apply();
   }
 
   function switchDay(index: number) {
@@ -1473,7 +1538,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
           <b>TripCheck</b><small>{text.brandNote(activeDestination.id === "worldwide" ? "" : destinationName(activeDestination, locale))}</small>
         </button>
         <div className="planner-top-actions">
-          <a aria-label={locale === "ja" ? "プライバシー方針" : "Privacy policy"} className="planner-privacy" href="/privacy" title={locale === "ja" ? "プライバシー方針" : "Privacy policy"}><i aria-hidden="true"><Icon name="check" size={10} /></i><span>{text.privacy}</span></a>
+          <a aria-label={text.privacyTitle} className="planner-privacy" href="/privacy" title={text.privacyTitle}><i aria-hidden="true"><Icon name="check" size={10} /></i><span>{text.privacy}</span></a>
           <div className="planner-language" role="group" aria-label={text.language}>
             <button aria-pressed={locale === "ja"} className={locale === "ja" ? "is-active" : ""} onClick={() => changeLocale("ja")} type="button">日本語</button>
             <button aria-pressed={locale === "en"} className={locale === "en" ? "is-active" : ""} onClick={() => changeLocale("en")} type="button">EN</button>
@@ -1704,6 +1769,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
                   setResolvedStops([]);
                   setAmbiguousPlaces([]);
                   setManualPlaceDrafts({});
+                  setManualAddressResolution({});
                   setResolutionOverrides([]);
                   setPreviewStops([]);
                   setPlanReady(false);
@@ -1725,6 +1791,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
                   setResolvedStops([]);
                   setAmbiguousPlaces([]);
                   setManualPlaceDrafts({});
+                  setManualAddressResolution({});
                   setResolutionOverrides([]);
                   setPreviewStops([]);
                   setPlanReady(false);
@@ -1770,6 +1837,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
                 hotelQuery={hotelQuery}
                 isResolvingPlaces={isResolvingPlaces}
                 locale={locale}
+                manualAddressResolution={manualAddressResolution}
                 manualPinCoordinate={manualPinCoordinate}
                 manualPinTarget={manualPinTarget}
                 manualPlaceDrafts={manualPlaceDrafts}
@@ -1795,6 +1863,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
                   ...current,
                   [placeIndex]: { ...(current[placeIndex] ?? { address: "", latitude: "", longitude: "" }), [field]: value },
                 }))}
+                onRemovePlace={removeResolvePlace}
                 onSearchAgain={() => void reviewWishlistPlaces()}
                 onSelectDayEnd={setDayEndTarget}
                 onSelectDayStart={setDayStartDefault}

@@ -219,7 +219,14 @@ export const ui = {
     walkingSafety: "徒歩経路はベータ版。安全状況は現地で確認してください。",
     deadlineOver: (time: string) => `空港へ向かう目安 ${time} を超えています`,
     language: "言語",
-    privacy: "アカウント不要 · 最近の予定はこの端末に保存",
+    // Copy Deck privacy.short. The "no account" fact moved into the header
+    // link's title/aria-label; the policy page carries the full statement.
+    privacy: "旅程はこの端末に保存されます",
+    privacyTitle: "アカウント不要 · プライバシー方針",
+    resolveRemove: "外す",
+    resolveRemoveAria: (name: string) => `「${name}」をリストから外す`,
+    manualAddressResolving: "住所を確認しています…",
+    manualAddressNotFound: "住所を見つけられませんでした",
     fieldCheck: "最新の公開情報も確認",
     fieldChecking: "確認中…",
     fieldChecked: "公開情報も確認済み",
@@ -466,7 +473,16 @@ export const ui = {
     walkingSafety: "Walking routes are beta. Check real-world safety conditions.",
     deadlineOver: (time: string) => `Runs past the ${time} airport cutoff`,
     language: "Language",
-    privacy: "No account · recent plans stay on this device",
+    // Copy Deck privacy.short, shortened for the ≤200px header slot (the full
+    // deck sentence measures ~209px at 11.5px). The complete deck string and
+    // the "no account" fact live in the link's title/aria-label; the policy
+    // page carries the full statement.
+    privacy: "Recent plans stay on this device",
+    privacyTitle: "No account needed · Your recent plans stay on this device · Privacy policy",
+    resolveRemove: "Remove",
+    resolveRemoveAria: (name: string) => `Remove “${name}” from the list`,
+    manualAddressResolving: "Checking that address…",
+    manualAddressNotFound: "We couldn't find that address",
     fieldCheck: "Check recent public sources too",
     fieldChecking: "Checking…",
     fieldChecked: "Public sources checked",

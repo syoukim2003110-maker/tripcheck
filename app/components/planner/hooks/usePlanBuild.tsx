@@ -137,6 +137,11 @@ export function usePlanBuild() {
   const queuedDemoSeedRef = useRef<ResolvedInputStop[] | null>(null);
   const [previewStops, setPreviewStops] = useState<RouteStop[]>([]);
   const [buildProgress, setBuildProgress] = useState<BuildProgress>(initialBuildProgress);
+  // v1.1 TC-023: the manual-pin address path resolves the typed address
+  // through the shared place-resolution client; this per-occurrence status
+  // drives the confirm button's loading state and the inline failure note.
+  const [manualAddressResolution, setManualAddressResolution] = useState<Record<number, "loading" | "failed">>({});
+  const manualAddressAbortRef = useRef<AbortController | null>(null);
   const buildRunRef = useRef(0);
   const buildAbortRef = useRef<AbortController | null>(null);
   const placeReviewAbortRef = useRef<AbortController | null>(null);
@@ -185,6 +190,9 @@ export function usePlanBuild() {
     setPreviewStops,
     buildProgress,
     setBuildProgress,
+    manualAddressResolution,
+    setManualAddressResolution,
+    manualAddressAbortRef,
     buildRunRef,
     buildAbortRef,
     placeReviewAbortRef,
@@ -232,6 +240,7 @@ export function usePlanBuildActions({
   legModeOverrides,
   locale,
   lockedOrderByDay,
+  manualAddressAbortRef,
   manualPlaceDrafts,
   maxTransfersPerLeg,
   maxWalkingMinutesPerLeg,
@@ -305,6 +314,7 @@ export function usePlanBuildActions({
   setLiveWalking,
   setLocale,
   setLockedOrderByDay,
+  setManualAddressResolution,
   setManualPinTarget,
   setManualPlaceDrafts,
   setMapScope,
@@ -537,12 +547,52 @@ export function usePlanBuildActions({
     run();
   }
 
-  function confirmManualPlace(inputIndex: number, inputName: string) {
+  async function confirmManualPlace(inputIndex: number, inputName: string) {
     const draft = manualPlaceDrafts[inputIndex];
-    const latitude = Number(draft?.latitude);
-    const longitude = Number(draft?.longitude);
-    if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) return;
-    const address = draft?.address.trim() || (locale === "ja" ? "ユーザー指定の地点" : "Traveller-supplied coordinates");
+    const latitudeText = draft?.latitude.trim() ?? "";
+    const longitudeText = draft?.longitude.trim() ?? "";
+    let latitude = latitudeText ? Number(latitudeText) : NaN;
+    let longitude = longitudeText ? Number(longitudeText) : NaN;
+    const hasCoordinates = Number.isFinite(latitude) && latitude >= -90 && latitude <= 90
+      && Number.isFinite(longitude) && longitude >= -180 && longitude <= 180;
+    const addressText = draft?.address.trim() ?? "";
+    if (!hasCoordinates) {
+      // v1.1 TC-023: an address without coordinates is a real path, not a
+      // dead label. The typed address goes through the same place-resolution
+      // client (same origin, same privacy posture) and the top candidate's
+      // coordinates anchor the pin; the traveller's own text stays the label.
+      if (!addressText) return;
+      manualAddressAbortRef.current?.abort();
+      const controller = new AbortController();
+      manualAddressAbortRef.current = controller;
+      setManualAddressResolution((current) => ({ ...current, [inputIndex]: "loading" }));
+      let candidate: { latitude: number; longitude: number } | null = null;
+      try {
+        const response = await requestPlaceResolution(addressText, "", locale, destinationChoice, controller.signal);
+        candidate = response.places[0]
+          ?? response.ambiguous[0]?.candidates[0]
+          ?? resolveKnownStops(addressText, locale)[0]
+          ?? null;
+      } catch {
+        candidate = resolveKnownStops(addressText, locale)[0] ?? null;
+      } finally {
+        if (manualAddressAbortRef.current === controller) manualAddressAbortRef.current = null;
+      }
+      if (controller.signal.aborted) return;
+      if (!candidate) {
+        setManualAddressResolution((current) => ({ ...current, [inputIndex]: "failed" }));
+        return;
+      }
+      latitude = candidate.latitude;
+      longitude = candidate.longitude;
+    }
+    setManualAddressResolution((current) => {
+      if (!(inputIndex in current)) return current;
+      const next = { ...current };
+      delete next[inputIndex];
+      return next;
+    });
+    const address = addressText || (locale === "ja" ? "ユーザー指定の地点" : "Traveller-supplied coordinates");
     const resolved: ResolvedInputStop = {
       id: `manual-${inputIndex}-${latitude.toFixed(5)}-${longitude.toFixed(5)}`,
       input: inputName,
@@ -602,6 +652,9 @@ export function usePlanBuildActions({
       setResolvedStops([]);
       setAmbiguousPlaces([]);
       setManualPlaceDrafts({});
+      manualAddressAbortRef.current?.abort();
+      manualAddressAbortRef.current = null;
+      setManualAddressResolution({});
       setPreviewStops([]);
     } else {
       // The built plan deliberately retains the same provider identities and
@@ -668,6 +721,9 @@ export function usePlanBuildActions({
     setResolvedStops([]);
     setAmbiguousPlaces([]);
     setManualPlaceDrafts({});
+    manualAddressAbortRef.current?.abort();
+    manualAddressAbortRef.current = null;
+    setManualAddressResolution({});
     setResolutionOverrides([]);
     setManualPinTarget(null);
     setResolvedBase(null);
@@ -767,6 +823,9 @@ export function usePlanBuildActions({
     setResolvedStops([]);
     setAmbiguousPlaces([]);
     setManualPlaceDrafts({});
+    manualAddressAbortRef.current?.abort();
+    manualAddressAbortRef.current = null;
+    setManualAddressResolution({});
     setManualPinTarget(null);
     setResolvedBase(null);
     setPreviewStops([]);
@@ -975,6 +1034,7 @@ export function usePlanBuildActions({
         setResolvedStops(places);
         setAmbiguousPlaces([]);
         setManualPlaceDrafts({});
+        setManualAddressResolution({});
         setResolvedBase(null);
         setPreviewStops(places);
         setPlaceWarning(error instanceof PlaceResolutionError
@@ -1438,6 +1498,9 @@ export function usePlanBuildActions({
     setResolvedStops([]);
     setAmbiguousPlaces([]);
     setManualPlaceDrafts({});
+    manualAddressAbortRef.current?.abort();
+    manualAddressAbortRef.current = null;
+    setManualAddressResolution({});
     setResolutionOverrides([]);
     setResolvedBase(null);
     setFoodSearches({});
@@ -1512,6 +1575,9 @@ export function usePlanBuildActions({
     setResolvedStops([]);
     setAmbiguousPlaces([]);
     setManualPlaceDrafts({});
+    manualAddressAbortRef.current?.abort();
+    manualAddressAbortRef.current = null;
+    setManualAddressResolution({});
     setResolvedBase(null);
     setFoodSearches({});
     setRouteRecommendationSearches({});

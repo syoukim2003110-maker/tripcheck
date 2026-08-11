@@ -33,6 +33,7 @@ type ResolveScreenProps = {
   resolveAttentionRanks: ReadonlyMap<number, number>;
   resolvedStops: ResolvedInputStop[];
   isResolvingPlaces: boolean;
+  manualAddressResolution: Readonly<Record<number, "loading" | "failed">>;
   manualPlaceDrafts: Readonly<Record<number, ManualPlaceDraft>>;
   manualPinTarget: number | null;
   manualPinCoordinate: { latitude: number; longitude: number } | null;
@@ -66,6 +67,7 @@ type ResolveScreenProps = {
   onManualDraftChange: (placeIndex: number, field: "address" | "latitude" | "longitude", value: string) => void;
   onToggleManualPin: (placeIndex: number) => void;
   onConfirmManualPlace: (placeIndex: number, name: string) => void;
+  onRemovePlace: (placeIndex: number) => void;
   onUpdateConstraint: (placeIndex: number, patch: WishlistPlaceConstraintPatch) => void;
   onChangeTripDays: (days: number) => void;
   onTripDateChange: (value: string) => void;
@@ -94,6 +96,7 @@ export default function ResolveScreen({
   resolveAttentionRanks,
   resolvedStops,
   isResolvingPlaces,
+  manualAddressResolution,
   manualPlaceDrafts,
   manualPinTarget,
   manualPinCoordinate,
@@ -127,6 +130,7 @@ export default function ResolveScreen({
   onManualDraftChange,
   onToggleManualPin,
   onConfirmManualPlace,
+  onRemovePlace,
   onUpdateConstraint,
   onChangeTripDays,
   onTripDateChange,
@@ -234,8 +238,13 @@ export default function ResolveScreen({
                       <label><span>{locale === "ja" ? "緯度" : "Latitude"}</span><input inputMode="decimal" onChange={(event) => onManualDraftChange(row.placeIndex, "latitude", event.target.value)} placeholder="35.6812" value={manualPlaceDrafts[row.placeIndex]?.latitude ?? ""} /></label>
                       <label><span>{locale === "ja" ? "経度" : "Longitude"}</span><input inputMode="decimal" onChange={(event) => onManualDraftChange(row.placeIndex, "longitude", event.target.value)} placeholder="139.7671" value={manualPlaceDrafts[row.placeIndex]?.longitude ?? ""} /></label>
                     </div>
-                    <button onClick={() => onConfirmManualPlace(row.placeIndex, row.place.name)} type="button">{locale === "ja" ? "この地点を使う" : "Use this point"}</button>
-                    <small>{locale === "ja" ? "提供元の確認済み地点ではなく、あなたが指定した座標として表示します。" : "This stays labelled as traveller-supplied coordinates, not a provider-verified place."}</small>
+                    <button disabled={manualAddressResolution[row.placeIndex] === "loading"} onClick={() => onConfirmManualPlace(row.placeIndex, row.place.name)} type="button">
+                      {manualAddressResolution[row.placeIndex] === "loading" ? text.manualAddressResolving : (locale === "ja" ? "この地点を使う" : "Use this point")}
+                    </button>
+                    {manualAddressResolution[row.placeIndex] === "failed" ? (
+                      <p className="planner-inline-status is-warning" role="status">{text.manualAddressNotFound}</p>
+                    ) : null}
+                    <small>{locale === "ja" ? "住所だけでも大丈夫です（座標は住所から探します）。提供元の確認済み地点ではなく、あなたが指定した地点として表示します。" : "An address alone is enough — its coordinates are looked up for you. This stays labelled as a traveller-supplied point, not a provider-verified place."}</small>
                   </details>
                   </div>
                 )}
@@ -293,6 +302,17 @@ export default function ResolveScreen({
                   ))}
                 </div>
               )}
+              {/* v1.1 TC-020: every row can be taken out of the pending input
+                  here — the textarea line and the resolved row leave together.
+                  Must/booked rows confirm first via the shared hard-edit
+                  dialog; nothing protected vanishes silently. */}
+              <button
+                aria-label={text.resolveRemoveAria(row.place.name)}
+                className="planner-place-remove"
+                onClick={() => onRemovePlace(row.placeIndex)}
+                title={text.resolveRemoveAria(row.place.name)}
+                type="button"
+              >{text.resolveRemove}</button>
             </li>
             );
           })}

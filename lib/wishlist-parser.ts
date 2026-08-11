@@ -455,6 +455,65 @@ export function formatWishlistLines(raw: string, languageCode: "ja" | "en") {
   return output.join("\n");
 }
 
+function serializeWishlistPlaceLine(place: ParsedWishlistPlace, languageCode: "ja" | "en") {
+  const timeOfDayLabel = place.timeOfDay === null ? null : languageCode === "ja"
+    ? { morning: "朝", evening: "夕方", night: "夜" }[place.timeOfDay]
+    : place.timeOfDay;
+  const markers = languageCode === "ja"
+    ? [place.time ?? timeOfDayLabel, place.isReservation ? "予約" : place.priority === "must" ? "必須" : null, place.priority === "optional" ? "時間があれば" : null, place.stayMinutes ? `滞在${place.stayMinutes}分` : null]
+    : [place.time ?? timeOfDayLabel, place.isReservation ? "booked" : place.priority === "must" ? "must" : null, place.priority === "optional" ? "optional" : null, place.stayMinutes ? `stay ${place.stayMinutes} min` : null];
+  return [place.name, ...markers.filter(Boolean)].join(" — ");
+}
+
+/**
+ * Removes one occurrence from the textual source of truth (v1.1 TC-020).
+ * Every OTHER source line stays byte-identical — day headings, annotations,
+ * private notes and formatting all survive verbatim. Only the removed
+ * occurrence's own line changes: a single-place line disappears entirely,
+ * while a multi-place line is re-serialized without the removed occurrence
+ * (re-emitting its day heading when the line itself carried the day).
+ */
+export function removeWishlistPlace(
+  raw: string,
+  placeIndex: number,
+  languageCode: "ja" | "en",
+) {
+  if (!Number.isInteger(placeIndex) || placeIndex < 0) return raw;
+  // parseWishlist pushes exactly one entry per source line, so entry N maps
+  // onto raw.split("\n")[N] and untouched lines can be kept verbatim.
+  const parsed = parseWishlist(raw);
+  const sourceLines = raw.split("\n");
+  let cursor = 0;
+  let contextDay: number | null = null;
+  for (let lineIndex = 0; lineIndex < parsed.length; lineIndex += 1) {
+    const line = parsed[lineIndex];
+    if (line.kind === "heading") {
+      contextDay = line.day;
+      continue;
+    }
+    if (line.kind !== "place") continue;
+    if (placeIndex < cursor + line.places.length) {
+      const remaining = line.places.filter((_, occurrence) => occurrence !== placeIndex - cursor);
+      const replacement: string[] = [];
+      let visibleDay = contextDay;
+      for (const place of remaining) {
+        if (place.day !== null && place.day !== visibleDay) {
+          replacement.push(languageCode === "ja" ? `${place.day}日目` : `Day ${place.day}`);
+          visibleDay = place.day;
+        }
+        replacement.push(serializeWishlistPlaceLine(place, languageCode));
+      }
+      sourceLines.splice(lineIndex, 1, ...replacement);
+      return sourceLines.join("\n");
+    }
+    cursor += line.places.length;
+    // A place line can itself establish the running day for later lines.
+    const lineDay = line.places.at(-1)?.day;
+    if (lineDay !== null && lineDay !== undefined) contextDay = lineDay;
+  }
+  return raw;
+}
+
 /**
  * Applies a Must/Optional choice from the chip UI without introducing a second
  * hidden source of truth. The normalized text remains what sharing, parsing

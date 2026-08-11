@@ -999,8 +999,11 @@ details.planner-excluded { display: block; }
 .planner-resolve-intro button { background: transparent; border: 0; color: var(--pl-ink-2); font-size: 10.5px; font-weight: 750; min-height: 28px; padding: 2px 4px; text-decoration: underline; text-underline-offset: 3px; }
 .planner-resolved-places { border: 1px solid var(--pl-line); border-radius: 16px; margin-bottom: 14px; overflow: hidden; }
 .planner-resolved-places ul { display: grid; list-style: none; margin: 0; max-height: min(52dvh, 560px); overflow-y: auto; padding: 4px 12px; }
-.planner-resolved-places li { align-items: center; border-bottom: 1px solid var(--pl-line); display: grid; gap: 9px; grid-template-columns: 25px minmax(0, 1fr) auto; min-height: 54px; padding: 7px 0; }
+.planner-resolved-places li { align-items: center; border-bottom: 1px solid var(--pl-line); display: grid; gap: 9px; grid-template-columns: 25px minmax(0, 1fr) auto auto; min-height: 54px; padding: 7px 0; }
 .planner-resolved-places li:last-child { border-bottom: 0; }
+/* v1.1 TC-020: per-row removal keeps a ≥24px pointer target (QA-045). */
+.planner-place-remove { background: white; border: 1px solid var(--pl-control-border); border-radius: 8px; color: var(--pl-ink-2); font-size: 10.5px; font-weight: 700; min-height: 28px; min-width: 40px; padding: 4px 9px; }
+.planner-place-remove:hover { border-color: #9b3524; color: #9b3524; }
 .planner-place-status { align-items: center; background: var(--pl-good-soft); border-radius: 50%; color: var(--pl-good); display: flex; font-size: 11px; font-weight: 850; height: 24px; justify-content: center; width: 24px; }
 .planner-resolved-places li.is-parsed .planner-place-status { background: #f0f0f2; color: #62626b; }
 .planner-resolved-places li.is-review .planner-place-status { background: var(--pl-warn-bg); color: var(--pl-warn-ink); }
@@ -1863,7 +1866,7 @@ div.planner-route-ideas-empty { display: grid; gap: 8px; }
   .planner-input-progress button,
   .planner-input-progress > div { font-size: 10px; gap: 5px; }
   .planner-input-progress i { height: 26px; width: 26px; }
-  .planner-resolved-places li { grid-template-columns: 23px minmax(0, 1fr) auto; }
+  .planner-resolved-places li { grid-template-columns: 23px minmax(0, 1fr) auto auto; }
   .planner-place-constraints > div { grid-template-columns: 1fr; }
   .planner-place-constraints .planner-booking-toggle { grid-column: auto; }
   .planner-parse-edit > div { grid-template-columns: 1fr; }
