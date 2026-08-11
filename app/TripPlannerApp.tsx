@@ -33,6 +33,7 @@ import HotelInspector from "./components/planner/inspector/HotelInspector";
 import MealInspector from "./components/planner/inspector/MealInspector";
 import { useTripEnrichments } from "./components/planner/hooks/useTripEnrichments";
 import { useTripPersistence } from "./components/planner/hooks/useTripPersistence";
+import { usePostBuildLegPrefetching, useTransitEvidence } from "./components/planner/hooks/useTransitEvidence";
 import {
   FoodRecommendationsError,
   foodCandidateReason,
@@ -52,17 +53,11 @@ import { googleCurrentOpeningWindowsForDate, googleOpeningWindowsForDate } from 
 import { areaFromAddress } from "../lib/google-place-resolver";
 import { deriveStopPlanningEvidence } from "../lib/planning-evidence";
 import {
-  buildPlanningRouteLegs,
-  buildPlanningTransitIteration,
   buildSelectedTransitLegRequests,
-  fetchPlanningTransitEvidence,
-  planningRouteRequestKey,
-  prefetchPlanningRouteDurations,
   type PlanningTransitLegRequest,
 } from "../lib/planning-live-routes-client";
 import { PlaceResolutionError, placeReviewInputSignature, placeReviewStatus, requestPlaceResolution, type AmbiguousPlaceResolution } from "../lib/place-resolution-client";
 import { PLANNING_BUDGET, takeWithinPlanningBudget } from "../lib/planning-budget";
-import { decodeGooglePolyline } from "../lib/google-polyline";
 import type { TransitStepSummary } from "../lib/google-routes";
 
 import { poiAccessPolicyForStop } from "../lib/poi-access";
@@ -121,10 +116,6 @@ import {
 import { coverageProfileForLocation, coveragePublicCopy } from "../lib/coverage-profile";
 import { PLANNER_MAP_DAY_COLORS } from "../lib/planner-map-model";
 import { buildDayPresentation, dayPresentationFallbackCopy } from "../lib/day-presentation";
-import {
-  convergeTransitPlan,
-  type TransitConvergenceStopReason,
-} from "../lib/transit-convergence";
 import {
   canRedoPlannerHistory,
   canUndoPlannerHistory,
@@ -196,12 +187,10 @@ import {
   isAreaLikeHotelQuery,
   shouldUseRecommendedHotel,
   matchingHotelCandidate,
-  type TransitLegBoarding,
   type PlannerInputStep,
   type PlannerBuildMode,
   type MobileResultView,
   type PlannerMapScope,
-  type TransitConvergenceState,
   type FoodState,
   type IntelligenceState,
   type FreshState,
@@ -265,28 +254,6 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   const [activeDay, setActiveDay] = useState(0);
   const [inspector, setInspector] = useState<Inspector>(null);
   const [mapFocusedStopId, setMapFocusedStopId] = useState<string | null>(null);
-  const [liveTransit, setLiveTransit] = useState<Record<string, number>>({});
-  // Transit minutes measured by the post-build prefetch. Kept apart from the
-  // convergence-owned liveTransit so the convergence effect's resets cannot
-  // erase evidence the prefetch already paid Google for; the two records merge
-  // (convergence wins per key) where the planner context is assembled.
-  const [prefetchTransit, setPrefetchTransit] = useState<Record<string, number>>({});
-  // Legs where the provider answered "no transit route" — negative live
-  // evidence, split by owner exactly like the positive measurements above.
-  const [liveTransitAbsent, setLiveTransitAbsent] = useState<Record<string, boolean>>({});
-  const [prefetchTransitAbsent, setPrefetchTransitAbsent] = useState<Record<string, boolean>>({});
-  // Decoded provider route geometry from the post-build prefetch, keyed by
-  // routeLegKey then mode. Display-only: it lets the map draw real measured
-  // paths (like Google Maps) even while the trip date is provisional.
-  const [prefetchGeometry, setPrefetchGeometry] = useState<Record<string, Partial<Record<"transit" | "walk" | "drive", { points: Array<{ latitude: number; longitude: number }>; encoded: string }>>>>({});
-  // Which train/bus to board per leg (line, headsign, departure), measured by
-  // the prefetch at the provisional departure time.
-  const [prefetchTransitSteps, setPrefetchTransitSteps] = useState<Record<string, TransitLegBoarding>>({});
-  const [liveTransitTransferCounts, setLiveTransitTransferCounts] = useState<Record<string, number>>({});
-  const [liveWalking, setLiveWalking] = useState<Record<string, number>>({});
-  const [liveDriving, setLiveDriving] = useState<Record<string, number>>({});
-  const [liveRouteEvidence, setLiveRouteEvidence] = useState<Record<string, RouteFactEvidence>>({});
-  const [transitConvergence, setTransitConvergence] = useState<TransitConvergenceState>(emptyTransitConvergenceState);
   const [travelPreference, setTravelPreference] = useState<TravelPreference>("auto");
   const [legModeOverrides, setLegModeOverrides] = useState<Record<string, TransportMode>>({});
   const [dayOverrides, setDayOverrides] = useState<Record<string, number>>({});
@@ -379,7 +346,6 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   const [previewStops, setPreviewStops] = useState<RouteStop[]>([]);
   const [buildProgress, setBuildProgress] = useState<BuildProgress>(initialBuildProgress);
   const buildRunRef = useRef(0);
-  const transitConvergenceRunRef = useRef(0);
   const buildAbortRef = useRef<AbortController | null>(null);
   const placeReviewAbortRef = useRef<AbortController | null>(null);
   const hotelRefreshAbortRef = useRef<AbortController | null>(null);
@@ -395,11 +361,6 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   const hotelPlanSignatureRef = useRef("");
   const historyActionRef = useRef<{ undo: () => void; redo: () => void }>({ undo: () => {}, redo: () => {} });
   const analyticsMilestonesRef = useRef<Set<ProductEventName>>(new Set());
-  // Mode, place-pair and departure-time keys already requested from Google,
-  // plus a small post-build
-  // allowance so hotel switches and nightly bases can still get measured legs.
-  const attemptedLegKeysRef = useRef<Set<string>>(new Set());
-  const postBuildLegBudgetRef = useRef(0);
   const text = ui[locale];
   const activeDestination = useMemo(
     () => destinationById(destinationChoice === "auto" ? detectedDestinationId ?? "worldwide" : destinationChoice),
@@ -802,15 +763,53 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     excludedStopIds: removedStops.map((entry) => entry.id),
     openingWindowsByDay,
   }), [arrivalAirport, arrivalTime, dayEndTarget, dayEndTimes, dayOverrides, dayStartDefault, dayStartTimes, departureAirport, departureTime, destinationChoice, durationOverrides, earlyVisitStopIds, flightKind, hotelQuery, lastEntryTimes, legModeOverrides, lockedOrderByDay, maxTransfersPerLeg, maxWalkingMinutesPerLeg, mealPlan, nightBases, openingWindowsByDay, removedStops, resolvedBase, resolvedStops, transferBufferMinutes, travelPreference, tripStartDate, userStayMinutes]);
-  // Walking/driving prefetch results must repaint the plan (via the memo
-  // below) without restarting the transit-convergence effect, whose reset
-  // erases transit evidence that was already paid for. The effect therefore
-  // depends on the stable context and reads the freshest measurements from
-  // these refs at run time.
-  const liveWalkingRef = useRef(liveWalking);
-  const liveDrivingRef = useRef(liveDriving);
-  useEffect(() => { liveWalkingRef.current = liveWalking; }, [liveWalking]);
-  useEffect(() => { liveDrivingRef.current = liveDriving; }, [liveDriving]);
+  // The convergence input key derives from the stable context only, so it can
+  // be computed before the transit-evidence hook that consumes it; the hook's
+  // state feeds the planner-context memos below.
+  const transitConvergenceInputKey = useMemo(() => JSON.stringify([
+    itinerary,
+    tripDays,
+    pace,
+    locale,
+    plannerContextStable,
+  ]), [itinerary, locale, pace, plannerContextStable, tripDays]);
+  const {
+    liveTransit,
+    setLiveTransit,
+    prefetchTransit,
+    setPrefetchTransit,
+    liveTransitAbsent,
+    setLiveTransitAbsent,
+    prefetchTransitAbsent,
+    setPrefetchTransitAbsent,
+    prefetchGeometry,
+    setPrefetchGeometry,
+    prefetchTransitSteps,
+    setPrefetchTransitSteps,
+    liveTransitTransferCounts,
+    setLiveTransitTransferCounts,
+    liveWalking,
+    setLiveWalking,
+    liveDriving,
+    setLiveDriving,
+    liveRouteEvidence,
+    setLiveRouteEvidence,
+    transitConvergence,
+    setTransitConvergence,
+    transitConvergenceRunRef,
+    attemptedLegKeysRef,
+    postBuildLegBudgetRef,
+  } = useTransitEvidence({
+    itinerary,
+    tripDays,
+    pace,
+    locale,
+    hasPlan,
+    isBuilding,
+    tripDateTouched,
+    plannerContextStable,
+    transitConvergenceInputKey,
+  });
   const plannerContextWithoutTransit = useMemo<TripPlannerContext>(() => ({
     ...plannerContextStable,
     liveWalkingMinutes: liveWalking,
@@ -822,13 +821,6 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     liveTransitAbsentLegs: { ...prefetchTransitAbsent, ...liveTransitAbsent },
     liveTransitTransferCounts,
   }), [liveTransit, liveTransitAbsent, liveTransitTransferCounts, plannerContextWithoutTransit, prefetchTransit, prefetchTransitAbsent]);
-  const transitConvergenceInputKey = useMemo(() => JSON.stringify([
-    itinerary,
-    tripDays,
-    pace,
-    locale,
-    plannerContextStable,
-  ]), [itinerary, locale, pace, plannerContextStable, tripDays]);
 
   const plan = useMemo(() => hasPlan
     ? buildTripFromWishlist(itinerary, tripDays, pace, locale, activePlannerContext)
@@ -1670,239 +1662,25 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     setInspector({ kind: "food", slotId, candidateId });
   }, []);
 
-  // Transit is schedule-dependent: query only the physical transit legs the
-  // deterministic planner selected, rebuild with exact consumed values, and
-  // repeat until its order/times stabilize. The bounded coordinator owns both
-  // the three-pass limit and the twenty-event trip budget.
-  useEffect(() => {
-    if (!hasPlan || isBuilding) return;
-    const runId = ++transitConvergenceRunRef.current;
-    const controller = new AbortController();
-    const convergenceContext = (): TripPlannerContext => ({
-      ...plannerContextStable,
-      liveWalkingMinutes: liveWalkingRef.current,
-      liveDrivingMinutes: liveDrivingRef.current,
-    });
-    if (!tripDateTouched) {
-      setLiveTransit({});
-      setLiveTransitAbsent({});
-      setLiveTransitTransferCounts({});
-      setLiveRouteEvidence({});
-      setTransitConvergence({
-        inputKey: transitConvergenceInputKey,
-        status: "complete",
-        eventCount: 0,
-        iterations: 0,
-        nonConverged: false,
-        stopReason: null,
-      });
-      return () => controller.abort();
-    }
-    setTransitConvergence({
-      inputKey: transitConvergenceInputKey,
-      status: "loading",
-      eventCount: 0,
-      iterations: 0,
-      nonConverged: false,
-      stopReason: null,
-    });
-    setLiveTransit({});
-    setLiveTransitAbsent({});
-    setLiveTransitTransferCounts({});
-    setLiveRouteEvidence({});
-
-    let initialPlan: BuiltTripPlan;
-    try {
-      initialPlan = buildTripFromWishlist(itinerary, tripDays, pace, locale, convergenceContext());
-    } catch {
-      setTransitConvergence({
-        inputKey: transitConvergenceInputKey,
-        status: "complete",
-        eventCount: 0,
-        iterations: 0,
-        nonConverged: true,
-        stopReason: "max_iterations",
-      });
-      return () => controller.abort();
-    }
-
-    void convergeTransitPlan<BuiltTripPlan, PlanningTransitLegRequest>({
-      initial: buildPlanningTransitIteration(initialPlan),
-      fetchLegs: (requests) => fetchPlanningTransitEvidence(requests, locale, {
-        concurrency: 2,
-        signal: controller.signal,
-      }),
-      rebuild: ({ conservativeEvidenceByLeg }) => {
-        const measured = Object.fromEntries(Object.entries(conservativeEvidenceByLeg).flatMap(([legId, evidence]) => (
-          evidence.status === "verified" && evidence.durationMinutes !== null
-            ? [[legId, evidence.durationMinutes] as const]
-            : []
-        )));
-        const transferCounts = Object.fromEntries(Object.entries(conservativeEvidenceByLeg).flatMap(([legId, evidence]) => (
-          evidence.status === "verified" && evidence.transferCount !== null
-            ? [[legId, evidence.transferCount] as const]
-            : []
-        )));
-        const absent = Object.fromEntries(Object.entries(conservativeEvidenceByLeg).flatMap(([legId, evidence]) => (
-          evidence.status === "unknown" ? [[legId, true] as const] : []
-        )));
-        const rebuilt = buildTripFromWishlist(itinerary, tripDays, pace, locale, {
-          ...convergenceContext(),
-          liveTransitMinutes: measured,
-          liveTransitAbsentLegs: absent,
-          liveTransitTransferCounts: transferCounts,
-        });
-        return buildPlanningTransitIteration(rebuilt);
-      },
-    }).then((result) => {
-      if (controller.signal.aborted || transitConvergenceRunRef.current !== runId) return;
-      const measured = Object.fromEntries(Object.entries(result.conservativeEvidenceByLeg).flatMap(([legId, evidence]) => (
-        evidence.status === "verified" && evidence.durationMinutes !== null
-          ? [[legId, evidence.durationMinutes] as const]
-          : []
-      )));
-      const transferCounts = Object.fromEntries(Object.entries(result.conservativeEvidenceByLeg).flatMap(([legId, evidence]) => (
-        evidence.status === "verified" && evidence.transferCount !== null
-          ? [[legId, evidence.transferCount] as const]
-          : []
-      )));
-      const evidenceByRequest = Object.fromEntries(result.observations.map((evidence) => [
-        evidence.provenance.requestKey,
-        {
-          legId: evidence.legId,
-          mode: evidence.provenance.mode,
-          departureBucket: evidence.provenance.departureBucket,
-          requestKey: evidence.provenance.requestKey,
-          status: evidence.status,
-          fetchedAt: evidence.provenance.fetchedAt,
-          providerRef: evidence.provenance.providerRef,
-          minutes: evidence.durationMinutes,
-          transferCount: evidence.transferCount,
-          reason: evidence.reason,
-          routeGeometry: evidence.routeGeometry,
-        } satisfies RouteFactEvidence,
-      ]));
-      setLiveTransit(measured);
-      setLiveTransitAbsent(Object.fromEntries(Object.entries(result.conservativeEvidenceByLeg).flatMap(([legId, evidence]) => (
-        evidence.status === "unknown" ? [[legId, true] as const] : []
-      ))));
-      setLiveTransitTransferCounts(transferCounts);
-      const boardingByLeg: Record<string, TransitLegBoarding> = {};
-      for (const observation of result.observations) {
-        if (observation.status !== "verified" || !observation.transitSteps?.length) continue;
-        boardingByLeg[observation.legId] = {
-          steps: [...observation.transitSteps],
-          walkToStopMinutes: observation.walkToStopMinutes ?? null,
-          walkFromStopMinutes: observation.walkFromStopMinutes ?? null,
-        };
-      }
-      if (Object.keys(boardingByLeg).length > 0) {
-        setPrefetchTransitSteps((current) => ({ ...current, ...boardingByLeg }));
-      }
-      setLiveRouteEvidence(evidenceByRequest);
-      setTransitConvergence({
-        inputKey: transitConvergenceInputKey,
-        status: "complete",
-        eventCount: result.eventCount,
-        iterations: result.iterations,
-        nonConverged: result.nonConverged,
-        stopReason: result.stopReason,
-      });
-    }).catch(() => {
-      if (controller.signal.aborted || transitConvergenceRunRef.current !== runId) return;
-      setTransitConvergence({
-        inputKey: transitConvergenceInputKey,
-        status: "complete",
-        eventCount: 0,
-        iterations: 0,
-        nonConverged: true,
-        stopReason: "max_iterations",
-      });
-    });
-    return () => controller.abort();
-  }, [hasPlan, isBuilding, itinerary, locale, pace, plannerContextStable, transitConvergenceInputKey, tripDateTouched, tripDays]);
-
-  // When a plan change introduces legs Google has not measured yet (switching
-  // hotels, nightly bases), fetch just those legs within a small post-build
-  // budget. Keys are place-pair based, so ordinary edits refetch nothing.
-  useEffect(() => {
-    // P0 uses the visible map as the single live-route gateway. Keeping the
-    // legacy background prefetch on would double-request the same journey.
-    if (P0_CORE_ONLY) return;
-    if (!hasPlan || isBuilding || !plan || postBuildLegBudgetRef.current <= 0) return;
-    let missingCount = 0;
-    try {
-      missingCount = buildPlanningRouteLegs(plan)
-        .filter((leg) => !attemptedLegKeysRef.current.has(planningRouteRequestKey(leg))).length;
-    } catch {
-      return;
-    }
-    if (missingCount === 0) return;
-    const runId = buildRunRef.current;
-    const timer = window.setTimeout(() => {
-      const excludeKeys = new Set(attemptedLegKeysRef.current);
-      const budget = Math.min(postBuildLegBudgetRef.current, 12);
-      // Marked as attempted up-front so a failing leg is never retried in a loop.
-      let marked: string[] = [];
-      try {
-        marked = buildPlanningRouteLegs(plan)
-          .filter((leg) => !excludeKeys.has(planningRouteRequestKey(leg)))
-          .slice(0, budget)
-          .map(planningRouteRequestKey);
-      } catch {
-        return;
-      }
-      for (const key of marked) attemptedLegKeysRef.current.add(key);
-      postBuildLegBudgetRef.current = Math.max(0, postBuildLegBudgetRef.current - marked.length);
-      void prefetchPlanningRouteDurations(plan, locale, { concurrency: 2, maxLegs: budget, excludeKeys })
-        .then((measured) => {
-          if (buildRunRef.current !== runId) return;
-          if (Object.keys(measured.transitMinutes).length > 0) {
-            setPrefetchTransit((current) => ({ ...current, ...measured.transitMinutes }));
-          }
-          const absent = Object.fromEntries(measured.legs.flatMap((leg) => (
-            leg.mode === "transit" && leg.status === "unavailable" ? [[leg.id, true] as const] : []
-          )));
-          if (Object.keys(absent).length > 0) {
-            setPrefetchTransitAbsent((current) => ({ ...current, ...absent }));
-          }
-          const geometryUpdates = measured.legs.flatMap((leg) => {
-            if (leg.status !== "ok" || !leg.encodedPolyline) return [];
-            const points = decodeGooglePolyline(leg.encodedPolyline);
-            return points.length >= 2 ? [[leg.id, leg.mode, points, leg.encodedPolyline] as const] : [];
-          });
-          const stepUpdates = Object.fromEntries(measured.legs.flatMap((leg) => (
-            leg.mode === "transit" && leg.status === "ok" && (leg.transitSteps?.length ?? 0) > 0
-              ? [[leg.id, {
-                steps: leg.transitSteps!,
-                walkToStopMinutes: leg.walkToStopMinutes,
-                walkFromStopMinutes: leg.walkFromStopMinutes,
-              } satisfies TransitLegBoarding] as const]
-              : []
-          )));
-          if (Object.keys(stepUpdates).length > 0) {
-            setPrefetchTransitSteps((current) => ({ ...current, ...stepUpdates }));
-          }
-          if (geometryUpdates.length > 0) {
-            setPrefetchGeometry((current) => {
-              const next = { ...current };
-              for (const [legId, mode, points, encoded] of geometryUpdates) {
-                next[legId] = { ...next[legId], [mode]: { points, encoded } };
-              }
-              return next;
-            });
-          }
-          if (Object.keys(measured.walkingMinutes).length > 0) {
-            setLiveWalking((current) => ({ ...current, ...measured.walkingMinutes }));
-          }
-          if (Object.keys(measured.drivingMinutes).length > 0) {
-            setLiveDriving((current) => ({ ...current, ...measured.drivingMinutes }));
-          }
-        })
-        .catch(() => { /* Estimates stay in place and are labeled as such. */ });
-    }, 900);
-    return () => window.clearTimeout(timer);
-  }, [hasPlan, isBuilding, locale, plan]);
+  // The transit-convergence loop lives in useTransitEvidence (called above,
+  // before the planner-context memos its state feeds). The budgeted post-build
+  // leg prefetch depends on the derived `plan` memo, so its hook is called
+  // here, at the old effect's position.
+  usePostBuildLegPrefetching({
+    hasPlan,
+    isBuilding,
+    plan,
+    locale,
+    buildRunRef,
+    attemptedLegKeysRef,
+    postBuildLegBudgetRef,
+    setPrefetchTransit,
+    setPrefetchTransitAbsent,
+    setPrefetchGeometry,
+    setPrefetchTransitSteps,
+    setLiveWalking,
+    setLiveDriving,
+  });
 
   function selectHotelCandidate(candidate: HotelCandidate, purpose: HotelPurpose = "picked") {
     const changed = hotelState.selectedId !== candidate.id;
