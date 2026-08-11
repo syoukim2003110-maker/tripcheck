@@ -3,8 +3,11 @@
 // Trip persistence (refactor spec v2.1 hooks/): device-local recent-trip
 // storage (IndexedDB via lib/trip-store), the one-time share-link hydration,
 // the debounced autosave and the on-device passport-expiry memory. The
-// hydration and rebuild logic themselves (applySharedTripInput, buildPlan)
-// stay in TripPlannerApp and are passed in; this hook owns when they run.
+// hydration and rebuild logic themselves are passed in; this hook only owns
+// when they run. applySharedTripInput stays in TripPlannerApp; buildPlan
+// lives in usePlanBuild and arrives as a render-fresh forwarder that reads
+// the pipeline's buildPlanRef, so the per-render closure the
+// pendingSharedBuild effect invokes is unchanged from the inline days.
 // This file is intentionally .tsx: the planner-surface contract tests scan
 // app/**/*.tsx for the autosave and storage contracts, wherever they live.
 import { useEffect, useRef, useState } from "react";

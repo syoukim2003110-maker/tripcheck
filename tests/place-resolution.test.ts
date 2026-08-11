@@ -7,11 +7,13 @@ import { buildPlaceResolutionPayload, placeResolutionQueryCount, placeReviewInpu
 import { buildTripFromWishlist } from "../lib/trip-builder.ts";
 
 test("the automatic build preserves its place-review identity for Review details", () => {
-  const appSource = readFileSync(new URL("../app/TripPlannerApp.tsx", import.meta.url), "utf8");
-  const buildStart = appSource.indexOf("async function buildPlan(");
-  const resetStart = appSource.indexOf("function resetTrip()", buildStart);
+  // The build pipeline moved into a hook (refactor spec v2.1); the identity
+  // contract holds wherever buildPlan lives.
+  const buildHookSource = readFileSync(new URL("../app/components/planner/hooks/usePlanBuild.tsx", import.meta.url), "utf8");
+  const buildStart = buildHookSource.indexOf("async function buildPlan(");
+  const resetStart = buildHookSource.indexOf("function resetTrip()", buildStart);
   assert.ok(buildStart >= 0 && resetStart > buildStart);
-  const buildSource = appSource.slice(buildStart, resetStart);
+  const buildSource = buildHookSource.slice(buildStart, resetStart);
 
   assert.match(buildSource, /const inputSignatureAtBuildStart = currentInputSignature;/);
   assert.match(
@@ -39,12 +41,14 @@ test("a retained reviewed plan moves its identity with the selected language", (
   assert.notEqual(english, japanese);
   assert.equal(english, JSON.stringify(["Chapel Bridge", "en", "switzerland"]));
 
-  const appSource = readFileSync(new URL("../app/TripPlannerApp.tsx", import.meta.url), "utf8");
-  const localeStart = appSource.indexOf("function changeLocale(");
-  const demoStart = appSource.indexOf("function loadDemo(", localeStart);
+  // changeLocale moved into the build-pipeline hook (refactor spec v2.1);
+  // the retained-review-identity contract holds wherever it lives.
+  const buildHookSource = readFileSync(new URL("../app/components/planner/hooks/usePlanBuild.tsx", import.meta.url), "utf8");
+  const localeStart = buildHookSource.indexOf("function changeLocale(");
+  const demoStart = buildHookSource.indexOf("function loadDemo(", localeStart);
   assert.ok(localeStart >= 0 && demoStart > localeStart);
   assert.match(
-    appSource.slice(localeStart, demoStart),
+    buildHookSource.slice(localeStart, demoStart),
     /setReviewedInputSignature\(placeReviewInputSignature\(itinerary, next, destinationChoice\)\);/,
   );
 });

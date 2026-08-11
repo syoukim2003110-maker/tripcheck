@@ -3,6 +3,10 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const appSourceUrl = new URL("../app/TripPlannerApp.tsx", import.meta.url);
+// The build pipeline (place resolution, buildPlan, demo/reset lifecycle)
+// moved into a hook (refactor spec v2.1); its privacy contracts hold
+// wherever the code lives, so those checks target the hook file.
+const buildHookSourceUrl = new URL("../app/components/planner/hooks/usePlanBuild.tsx", import.meta.url);
 const privacySourceUrl = new URL("../app/privacy/page.tsx", import.meta.url);
 const tripStoreSourceUrl = new URL("../lib/trip-store.ts", import.meta.url);
 const engineSourceUrls = [
@@ -14,19 +18,25 @@ const engineSourceUrls = [
 
 test("keeps the completed itinerary out of direct client network calls", async () => {
   const source = await readFile(appSourceUrl, "utf8");
+  const buildSource = await readFile(buildHookSourceUrl, "utf8");
 
   assert.match(source, /buildTripFromWishlist\(itinerary, tripDays, pace, locale, activePlannerContext\)/);
   assert.match(source, /assessTripFit\(itinerary, tripDays, pace, locale, activePlannerContext, plan\)/);
-  assert.match(source, /requestPlaceResolution\(\s*rawAtStart,\s*"",\s*locale,\s*destinationChoice,\s*controller\.signal,\s*resolutionOverrides,\s*\)/);
-  assert.match(source, /requestPlaceResolution\(\s*canReusePlaceReview \? "" : itinerary,\s*hotelQuery,\s*locale,\s*buildDestination,\s*controller\.signal,\s*canReusePlaceReview \? \[\] : resolutionOverrides,\s*\)/);
-  assert.doesNotMatch(source, /fetch\s*\(/);
-  assert.doesNotMatch(source, /sendBeacon\s*\(/);
-  assert.doesNotMatch(source, /localStorage\.setItem\([^\n]*itinerary/i);
-  assert.doesNotMatch(source, /sessionStorage\.setItem\([^\n]*itinerary/i);
+  assert.match(buildSource, /requestPlaceResolution\(\s*rawAtStart,\s*"",\s*locale,\s*destinationChoice,\s*controller\.signal,\s*resolutionOverrides,\s*\)/);
+  assert.match(buildSource, /requestPlaceResolution\(\s*canReusePlaceReview \? "" : itinerary,\s*hotelQuery,\s*locale,\s*buildDestination,\s*controller\.signal,\s*canReusePlaceReview \? \[\] : resolutionOverrides,\s*\)/);
+  for (const text of [source, buildSource]) {
+    assert.doesNotMatch(text, /fetch\s*\(/);
+    assert.doesNotMatch(text, /sendBeacon\s*\(/);
+    assert.doesNotMatch(text, /localStorage\.setItem\([^\n]*itinerary/i);
+    assert.doesNotMatch(text, /sessionStorage\.setItem\([^\n]*itinerary/i);
+  }
 });
 
 test("persists only explicit occurrence-scoped place decisions", async () => {
   const source = await readFile(appSourceUrl, "utf8");
+  // The occurrence-scoped confirm actions (ambiguous choice, manual pin)
+  // moved into the build hook; the explicit-override contract holds there.
+  const buildSource = await readFile(buildHookSourceUrl, "utf8");
   const localStart = source.indexOf("const localTripCode = useMemo");
   const localEnd = source.indexOf("const localTripTitle", localStart);
   assert.ok(localStart >= 0 && localEnd > localStart);
@@ -35,7 +45,7 @@ test("persists only explicit occurrence-scoped place decisions", async () => {
   assert.match(source, /setResolutionOverrides\(shared\.resolutionOverrides \?\? \[\]\)/);
   assert.match(localPayload, /resolutionOverrides,/);
   assert.doesNotMatch(localPayload, /resolvedStops|ambiguousPlaces|sourceUrl|verifiedAt/);
-  assert.match(source, /setResolutionOverrides\(\(current\) => upsertResolutionOverride\(current, \{/);
+  assert.match(buildSource, /setResolutionOverrides\(\(current\) => upsertResolutionOverride\(current, \{/);
 });
 
 test("rehydrates saved trips without reusing or persisting mutable provider display data", async () => {

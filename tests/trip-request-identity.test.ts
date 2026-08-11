@@ -185,14 +185,17 @@ test("all paid planning clients send the same trip header and planning uses the 
 test("trip lifecycle rotation and provisional live-route preservation stay wired", () => {
   const appSource = readFileSync(new URL("../app/TripPlannerApp.tsx", import.meta.url), "utf8");
   const mapSource = readFileSync(new URL("../app/PlannerGoogleMap.tsx", import.meta.url), "utf8");
-  // The map canvas moved into a component (refactor spec v2.1); the pause
-  // wiring contract holds across the planner surface, wherever it lives.
+  // The map canvas moved into a component and the build pipeline (loadDemo,
+  // resetTrip, buildPlan) into a hook (refactor spec v2.1); the lifecycle
+  // rotation and pause wiring contracts hold across the planner surface,
+  // wherever the code lives.
   const tripMapSource = readFileSync(new URL("../app/components/planner/map/TripMap.tsx", import.meta.url), "utf8");
+  const buildHookSource = readFileSync(new URL("../app/components/planner/hooks/usePlanBuild.tsx", import.meta.url), "utf8");
   const plannerSurface = `${appSource}\n${tripMapSource}`;
 
   assert.match(appSource, /const applySharedTripInput = useCallback\([^]*?=> \{\s*rotateTripRequestToken\(\);/);
-  assert.match(appSource, /function loadDemo\([^]*?\) \{\s*rotateTripRequestToken\(\);/);
-  assert.match(appSource, /function resetTrip\(\) \{\s*rotateTripRequestToken\(\);/);
+  assert.match(buildHookSource, /function loadDemo\([^]*?\) \{\s*rotateTripRequestToken\(\);/);
+  assert.match(buildHookSource, /function resetTrip\(\) \{\s*rotateTripRequestToken\(\);/);
   assert.match(
     plannerSurface,
     /routeRequestsPaused=\{!tripDateTouched \|\| Boolean\(plan && !currentTransitConvergence\)\}/,
@@ -202,10 +205,10 @@ test("trip lifecycle rotation and provisional live-route preservation stay wired
     /routePauseReason=\{!tripDateTouched \? "date_required"/,
   );
 
-  const finalDraftStart = appSource.indexOf("const finalDraft = buildTripFromWishlist(");
-  const resetStart = appSource.indexOf("function resetTrip()", finalDraftStart);
+  const finalDraftStart = buildHookSource.indexOf("const finalDraft = buildTripFromWishlist(");
+  const resetStart = buildHookSource.indexOf("function resetTrip()", finalDraftStart);
   assert.ok(finalDraftStart >= 0 && resetStart > finalDraftStart);
-  const finalCommitSource = appSource.slice(finalDraftStart, resetStart);
+  const finalCommitSource = buildHookSource.slice(finalDraftStart, resetStart);
   assert.doesNotMatch(finalCommitSource, /setLive(?:Transit|Walking|Driving)\(measured/);
   assert.doesNotMatch(finalCommitSource, /attemptedLegKeysRef\.current\s*=/);
 
