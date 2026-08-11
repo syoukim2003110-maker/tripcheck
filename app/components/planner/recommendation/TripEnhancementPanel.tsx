@@ -10,6 +10,7 @@ import GapRecommendationCard from "./GapRecommendationCard";
 import type { ItineraryGap } from "../../../../lib/gap-detection.ts";
 import type { RouteRecommendation } from "../../../../lib/route-recommendations.ts";
 import type { RouteRecommendationState } from "../../../../lib/planner-app-state.ts";
+import type { PlanImpactMetrics } from "../../../../lib/recommendation-impact.ts";
 import { recommendationStopId } from "../../../../lib/presentation/recommendation-presentation.ts";
 import { formatCheckedAt } from "../../../../lib/presentation/trip-presentation.ts";
 import { ui, type PlannerLocale } from "../../../../lib/presentation/planner-copy.ts";
@@ -19,6 +20,7 @@ type TripEnhancementPanelProps = {
   dayLabel: string | undefined;
   state: RouteRecommendationState;
   gap: ItineraryGap | null;
+  impactById: Record<string, PlanImpactMetrics>;
   notice: string;
   sheetExpanded: boolean;
   alternativesExpanded: boolean;
@@ -39,6 +41,7 @@ export default function TripEnhancementPanel({
   dayLabel,
   state,
   gap,
+  impactById,
   notice,
   sheetExpanded,
   alternativesExpanded,
@@ -100,6 +103,7 @@ export default function TripEnhancementPanel({
             <GapRecommendationCard
               added={plannedStopIds.has(recommendationStopId(candidate.id))}
               candidate={candidate}
+              impact={plannedStopIds.has(recommendationStopId(candidate.id)) ? null : impactById[candidate.id] ?? null}
               index={index}
               key={candidate.id}
               locale={locale}

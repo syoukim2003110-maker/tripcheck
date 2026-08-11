@@ -10,7 +10,8 @@ import type { SyntheticEvent } from "react";
 import Icon from "../../../PlannerIcons";
 import type { RouteRecommendation } from "../../../../lib/route-recommendations.ts";
 import { gapEnhancement } from "../../../../lib/presentation/recommendation-presentation.ts";
-import { ui, type PlannerLocale } from "../../../../lib/presentation/planner-copy.ts";
+import type { PlanImpactMetrics } from "../../../../lib/recommendation-impact.ts";
+import { bufferDeltaLine, travelDeltaLine, ui, type PlannerLocale } from "../../../../lib/presentation/planner-copy.ts";
 
 type GapRecommendationCardProps = {
   candidate: RouteRecommendation;
@@ -18,6 +19,8 @@ type GapRecommendationCardProps = {
   locale: PlannerLocale;
   selected: boolean;
   added: boolean;
+  /** Pre-accept impact from the really simulated candidate plan (TC-048). */
+  impact?: PlanImpactMetrics | null;
   onSelect: (candidateId: string) => void;
   onAdd: (candidate: RouteRecommendation) => void;
   onPhotoError: (event: SyntheticEvent<HTMLImageElement>) => void;
@@ -29,6 +32,7 @@ export default function GapRecommendationCard({
   locale,
   selected,
   added,
+  impact = null,
   onSelect,
   onAdd,
   onPhotoError,
@@ -58,6 +62,8 @@ export default function GapRecommendationCard({
           <b>{enhancement.title}</b>
           <span>
             {enhancement.evidence.map((line, index) => <em key={index}>{line}</em>)}
+            {impact ? <em className="is-impact">{travelDeltaLine(impact.travelDeltaMinutes, locale)}</em> : null}
+            {impact ? <em className="is-impact">{bufferDeltaLine(impact.bufferDeltaMinutes, locale)}</em> : null}
           </span>
         </span>
       </button>

@@ -14,6 +14,7 @@ import type { TransitStepSummary } from "./google-routes.ts";
 import type { TransitConvergenceStopReason } from "./transit-convergence.ts";
 import type { TransportMode, TravelPreference } from "./time-feasibility.ts";
 import type { BuiltTripPlan, Pace, TripBase } from "./trip-builder.ts";
+import type { PlannerHistory } from "./planner-history.ts";
 import type { ParsedWishlistPlace } from "./wishlist-parser.ts";
 import { destinationById, localDateIn, type Destination } from "./destinations.ts";
 import {
@@ -361,7 +362,62 @@ export type PlannerEditState = {
   dayOverrides: Record<string, number>;
   lockedOrderByDay: Record<number, string[]>;
   removedStops: Array<{ id: string; name: string }>;
+  // v1.1 TC-048/TC-050: recommendation accepts are first-class history
+  // operations. They mutate the wishlist text, the resolved-stop set, the
+  // provider pins and the meal selections, so those live in the same tracked
+  // state — one Undo restores the exact prior plan, because the plan is a
+  // memo over this state.
+  itinerary: string;
+  mealSelections: Record<string, string>;
+  resolvedStops: ResolvedInputStop[];
+  resolutionOverrides: ShareableResolutionOverride[];
 };
+
+/** v1.1 §8.1: Undo/Redo reaches the last 10 operations (直近10操作). */
+export const PLANNER_UNDO_LIMIT = 10;
+
+export function emptyPlannerEditState(): PlannerEditState {
+  return {
+    tripDays: 3,
+    pace: "balanced",
+    hotelQuery: "",
+    resolvedBase: null,
+    travelPreference: "auto",
+    transferBufferMinutes: 10,
+    userStayMinutes: {},
+    lastEntryTimes: {},
+    dayStartTimes: {},
+    dayEndTimes: {},
+    legModeOverrides: {},
+    dayOverrides: {},
+    lockedOrderByDay: {},
+    removedStops: [],
+    itinerary: "",
+    mealSelections: {},
+    resolvedStops: [],
+    resolutionOverrides: [],
+  };
+}
+
+/**
+ * The post-build provisional-base attach (and other system-driven base
+ * handovers) establish the plan's baseline; they are not user operations.
+ * Rewriting the base across past/present/future keeps the attach out of the
+ * undo history entirely: no entry is added, Undo never "reverts" to the
+ * pre-attach routing base, and the drift check cannot mistake the attach for
+ * external damage and wipe the stack.
+ */
+export function attachPlannerBaseToHistory(
+  history: PlannerHistory<PlannerEditState>,
+  base: ResolvedInputStop | null,
+): PlannerHistory<PlannerEditState> {
+  return {
+    ...history,
+    past: history.past.map((state) => ({ ...state, resolvedBase: base })),
+    present: { ...history.present, resolvedBase: base },
+    future: history.future.map((state) => ({ ...state, resolvedBase: base })),
+  };
+}
 
 // Product / UX specification v0.3 promotes route-aware hotels, meals and one
 // useful gap-filler per day into the core completion experience.  Keep the

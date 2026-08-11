@@ -22,7 +22,8 @@ import {
 } from "../../../../lib/planner-app-state.ts";
 import { formatDistanceMeters } from "../../../../lib/presentation/trip-presentation.ts";
 import { hotelAxisWinners, hotelShortlist, rakutenReviewLine, ratingFactLine } from "../../../../lib/presentation/recommendation-presentation.ts";
-import { ui, type PlannerLocale } from "../../../../lib/presentation/planner-copy.ts";
+import type { PlanImpactMetrics } from "../../../../lib/recommendation-impact.ts";
+import { bufferDeltaLine, travelDeltaLine, ui, type PlannerLocale } from "../../../../lib/presentation/planner-copy.ts";
 
 type HotelInspectorProps = {
   locale: PlannerLocale;
@@ -40,6 +41,8 @@ type HotelInspectorProps = {
   nightlyHotels: NightlyHotelState;
   hotelAxis: ReturnType<typeof hotelAxisWinners>;
   hotelAxisLabels: (candidate: HotelCandidate) => string[];
+  /** Pre-accept impact vs the current base, from real simulations (TC-048). */
+  hotelImpactById: Record<string, PlanImpactMetrics & { totalTravelMinutes: number }>;
   hotelPriceLabel: (candidate: HotelCandidate) => string;
   hotelTravelMinutesById: Record<string, number>;
   bestHotelTravelMinutes: number;
@@ -75,6 +78,7 @@ export default function HotelInspector({
   nightlyHotels,
   hotelAxis,
   hotelAxisLabels,
+  hotelImpactById,
   hotelPriceLabel,
   hotelTravelMinutesById,
   bestHotelTravelMinutes,
@@ -116,6 +120,7 @@ export default function HotelInspector({
               ...hotelAxisLabels(candidate),
               ...(candidate.styles.includes("luxury") ? [text.styleLuxury] : []),
             ];
+            const impact = candidate.id === selectedHotel.id ? null : hotelImpactById[candidate.id] ?? null;
             return (
               <HotelRecommendationCard
                 aiNote={aiNote}
@@ -127,6 +132,9 @@ export default function HotelInspector({
                       ? `全日程の移動 約${hotelTravelMinutesById[candidate.id]}分${Number.isFinite(bestHotelTravelMinutes) && hotelTravelMinutesById[candidate.id] > bestHotelTravelMinutes ? `（最短比 +${hotelTravelMinutesById[candidate.id] - bestHotelTravelMinutes}分）` : ""}`
                       : `~${hotelTravelMinutesById[candidate.id]} min total travel${Number.isFinite(bestHotelTravelMinutes) && hotelTravelMinutesById[candidate.id] > bestHotelTravelMinutes ? ` (+${hotelTravelMinutesById[candidate.id] - bestHotelTravelMinutes} vs best)` : ""}`
                     : text.distanceFrom(formatDistanceMeters(candidate.routeAverageDistanceMeters)),
+                  // TC-048: what switching to this base would really do —
+                  // both metrics from the simulated candidate plan.
+                  ...(impact ? [`${travelDeltaLine(impact.travelDeltaMinutes, locale)} · ${bufferDeltaLine(impact.bufferDeltaMinutes, locale)}`] : []),
                 ].filter(Boolean).join(" · ")}
                 isSelected={candidate.id === selectedHotel.id}
                 key={candidate.id}

@@ -12,6 +12,7 @@ import { foodSearchLinks } from "../../../../lib/food-recommendations-client.ts"
 import type { FoodCandidate } from "../../../../lib/google-food.ts";
 import type { FoodRecommendationSlot } from "../../../../lib/trip-builder.ts";
 import { type FoodState, type Inspector } from "../../../../lib/planner-app-state.ts";
+import type { PlanImpactMetrics } from "../../../../lib/recommendation-impact.ts";
 import { ui, type PlannerLocale } from "../../../../lib/presentation/planner-copy.ts";
 
 type MealInspectorProps = {
@@ -21,6 +22,7 @@ type MealInspectorProps = {
   inspector: Inspector;
   foodRecommendationNotice: string;
   mealCandidatesBySlot: Record<string, FoodCandidate[]>;
+  mealImpactBySlot: Record<string, Record<string, PlanImpactMetrics>>;
   mealSelections: Record<string, string>;
   sheetExpanded: boolean;
   panelRef: RefObject<HTMLElement | null>;
@@ -37,6 +39,7 @@ export default function MealInspector({
   inspector,
   foodRecommendationNotice,
   mealCandidatesBySlot,
+  mealImpactBySlot,
   mealSelections,
   sheetExpanded,
   panelRef,
@@ -78,6 +81,7 @@ export default function MealInspector({
               aiOrdered={activeFoodState.aiOrdered}
               candidate={candidate}
               foodFresh={activeFoodState.fresh[candidate.id]?.result}
+              impact={mealSelections[activeFoodSlot.id] === candidate.id ? null : mealImpactBySlot[activeFoodSlot.id]?.[candidate.id] ?? null}
               index={index}
               isChosen={mealSelections[activeFoodSlot.id] === candidate.id}
               isSelected={inspector?.kind === "food" && inspector.candidateId === candidate.id}

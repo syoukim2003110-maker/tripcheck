@@ -53,6 +53,7 @@ export const ui = {
     moveDay: "日を移動",
     mealChoose: "この店にする",
     mealChosen: "行程に入れました",
+    toastAdded: "旅程に追加しました",
     share: "共有リンク",
     shareCopied: "コピーしました",
     shareTitle: "この旅程を同じ設定で開けるリンクをコピーします。内容はリンクの中だけに入り、サーバには保存されません。",
@@ -311,6 +312,7 @@ export const ui = {
     moveDay: "Move to day",
     mealChoose: "Pick this place",
     mealChosen: "Added to the day",
+    toastAdded: "Added to the itinerary",
     share: "Copy share link",
     shareCopied: "Copied",
     shareTitle: "Copies a link that reopens this trip with the same inputs. Everything lives in the link itself; nothing is stored.",
@@ -793,6 +795,27 @@ export const hardEditTitles = {
     dayEndAuto: (day: number) => `Return day ${day} to the standard end time?`,
   },
 } as const;
+
+// Copy Deck toast.changed / TC-048: recommendation cards and edit toasts
+// report at most two impact metrics — the travel-minute delta and the buffer
+// (余裕) change — both measured on a really simulated candidate plan, never
+// guessed. The toast's single metric is the buffer change.
+export function travelDeltaLine(deltaMinutes: number, locale: PlannerLocale) {
+  const sign = deltaMinutes > 0 ? "+" : deltaMinutes < 0 ? "−" : "±";
+  const minutes = Math.abs(deltaMinutes);
+  return locale === "ja" ? `移動 ${sign}${minutes}分` : `travel ${sign}${minutes} min`;
+}
+
+export function bufferDeltaLine(deltaMinutes: number, locale: PlannerLocale) {
+  const sign = deltaMinutes > 0 ? "+" : deltaMinutes < 0 ? "−" : "±";
+  const minutes = Math.abs(deltaMinutes);
+  return locale === "ja" ? `余裕 ${sign}${minutes}分` : `${sign}${minutes}m buffer`;
+}
+
+/** A zero delta shows no metric at all rather than a fabricated "±0". */
+export function bufferToastDetail(deltaMinutes: number, locale: PlannerLocale) {
+  return deltaMinutes === 0 ? null : bufferDeltaLine(deltaMinutes, locale);
+}
 
 export function minimumDaysCopy(result: FeasibilityResult, locale: PlannerLocale) {
   if (result.minimumDays === null) {

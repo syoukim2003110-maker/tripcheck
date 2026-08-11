@@ -267,6 +267,14 @@ try {
       if (!moved) throw new Error("no enabled day-move target");
       await page.waitForSelector(".planner-edit-toast", { timeout: 6_000 });
       await waitForText(page, ".planner-edit-toast", "元に戻す", { timeout: 3_000 });
+      // Copy Deck toast.changed: 「N日目に移動しました・余裕 ±X分」 — the metric
+      // is the buffer (余裕) change from the simulated plan, never travel.
+      const toast = await page.evaluate(() => ({
+        message: document.querySelector(".planner-edit-toast span")?.textContent ?? "",
+        detail: document.querySelector(".planner-edit-toast small")?.textContent ?? "",
+      }));
+      if (!/日目に移動しました/.test(toast.message)) throw new Error(`toast message: ${toast.message}`);
+      if (toast.detail && !/^余裕 [+−]\d+分$/.test(toast.detail)) throw new Error(`toast metric must be 余裕: ${toast.detail}`);
       await clickByText(page, ".planner-edit-toast button", "元に戻す");
       await settle(page, 500);
       await dayOne();

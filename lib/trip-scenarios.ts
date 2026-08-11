@@ -182,6 +182,23 @@ function dayWindow(day: BuiltPlanDay, dayIndex: number, pace: Pace, dayEnd: stri
   };
 }
 
+/**
+ * Total schedule buffer (余裕) of a built plan: the sum of each day's slack —
+ * the usable clock window minus the planned minutes. This is the truthful
+ * "how much room is left" metric the edit/accept toasts and recommendation
+ * cards report as a delta between the current plan and a genuinely simulated
+ * candidate plan. Slack is independent of pace (pace only shapes the comfort
+ * capacity), so the fixed pace argument below changes nothing it returns.
+ */
+export function totalPlanBufferMinutes(plan: BuiltTripPlan, context: TripPlannerContext): number {
+  return plan.days.reduce((sum, day, index) => sum + dayWindow(
+    day,
+    index,
+    "balanced",
+    context.dayEndTimes?.[index] ?? context.dayEndTarget ?? DEFAULT_DAY_END,
+  ).slackMinutes, 0);
+}
+
 function evaluateCapacity(plan: BuiltTripPlan, pace: Pace, context: TripPlannerContext) {
   const days = plan.days.map((day, index) => dayWindow(
     day,

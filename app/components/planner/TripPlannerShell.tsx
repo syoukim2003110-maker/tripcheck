@@ -66,6 +66,8 @@ import {
 } from "../../../lib/planner-history";
 import { createPlannerMapHoverChannel } from "../../../lib/planner-map-hover";
 import {
+  bufferDeltaLine,
+  travelDeltaLine,
   ui,
   type PlannerLocale,
 } from "../../../lib/presentation/planner-copy";
@@ -244,6 +246,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
     setPendingHardEdit,
     editToast,
     setEditToast,
+    attachPlannerBase,
     commitPlannerEdit,
     undoPlannerEdit,
     redoPlannerEdit,
@@ -254,26 +257,35 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
     dayStartTimes,
     hasPlan,
     hotelQuery,
+    itinerary,
     lastEntryTimes,
     legModeOverrides,
     locale,
     lockedOrderByDay,
+    mealSelections,
     pace,
     planReady,
     removedStops,
+    resolutionOverrides,
     resolvedBase,
+    resolvedStops,
     setActiveDay,
     setDayEndTimes,
     setDayOverrides,
     setDayStartTimes,
     setHotelQuery,
+    setHotelState,
     setInspector,
+    setItinerary,
     setLastEntryTimes,
     setLegModeOverrides,
     setLockedOrderByDay,
+    setMealSelections,
     setPace,
     setRemovedStops,
+    setResolutionOverrides,
     setResolvedBase,
+    setResolvedStops,
     setTransferBufferMinutes,
     setTravelPreference,
     setTripDays,
@@ -738,7 +750,9 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
     activeDestination,
     activePlannerContext,
     aiEnabledRef,
+    attachPlannerBase,
     buildRunRef,
+    commitPlannerEdit,
     currentHotelPlanSignature,
     hotelPurpose,
     hotelQuery,
@@ -766,7 +780,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
     setHotelStyle,
     setInspector,
     setNightlyHotels,
-    setResolvedBase,
+    setPendingHardEdit,
     showEditToast,
     text,
     tripDays,
@@ -810,8 +824,10 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
     fillerStopIds,
     foodPins,
     formattedItinerary,
+    gapImpactById,
     hardViolationAnnouncement,
     hasRakutenHotelEvidence,
+    hotelImpactById,
     hotelPins,
     hotelTravelMinutesById,
     manualPinCoordinate,
@@ -821,6 +837,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
     mapWarningStopIds,
     maxParsedDay,
     mealCandidatesBySlot,
+    mealImpactBySlot,
     mealRoutePolyline,
     measuredRouteCount,
     openingVerificationCount,
@@ -1052,6 +1069,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
     locale,
     lockedOrderByDay,
     maxParsedDay,
+    mealSelections,
     pace,
     plan,
     removedStops,
@@ -1062,7 +1080,6 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
     setFoodSearches,
     setHotelUsesRecommendations,
     setInspector,
-    setMealSelections,
     setPendingHardEdit,
     setRouteGeometryByDay,
     setRouteRecommendationNotice,
@@ -1114,6 +1131,9 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
         if (!candidate) return [];
         if (selectedId && plannedStopIds.has(recommendationStopId(selectedId))) return [];
         const accepted = selectedId === candidate.id;
+        // TC-048: the pre-accept row states what accepting would really do —
+        // travel delta and buffer (余裕) delta from the simulated candidate plan.
+        const impact = accepted ? null : mealImpactBySlot[slot.id]?.[candidate.id] ?? null;
         return [(
           <li className={`planner-meal-row${accepted ? " is-accepted" : " is-proposed"}`} key={`meal-${slot.id}`}>
             <button
@@ -1126,7 +1146,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
               <span className="planner-stop-main">
                 <small className="planner-filler-label"><Icon name="spark" size={10} />{accepted ? (locale === "ja" ? "旅程に追加済み" : "Added to this day") : (locale === "ja" ? "おすすめ" : "Recommended")}</small>
                 <b>{candidate.name}</b>
-                <small>{slot.kind === "lunch" ? text.lunchChip : text.dinnerChip} · {slot.window}{candidate.distanceMeters !== null ? ` · ${locale === "ja" ? `動線から約${Math.max(1, Math.round(candidate.distanceMeters / 80))}分` : `~${Math.max(1, Math.round(candidate.distanceMeters / 80))} min from the route`}` : ""}</small>
+                <small>{slot.kind === "lunch" ? text.lunchChip : text.dinnerChip} · {slot.window}{candidate.distanceMeters !== null ? ` · ${locale === "ja" ? `動線から約${Math.max(1, Math.round(candidate.distanceMeters / 80))}分` : `~${Math.max(1, Math.round(candidate.distanceMeters / 80))} min from the route`}` : ""}{impact ? ` · ${travelDeltaLine(impact.travelDeltaMinutes, locale)} · ${bufferDeltaLine(impact.bufferDeltaMinutes, locale)}` : ""}</small>
               </span>
             </button>
             <span className="planner-filler-actions">
@@ -1331,7 +1351,9 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
     activeDestination,
     activePlannerContext,
     activeRouteRecommendationState,
+    commitPlannerEdit,
     day,
+    dayOverrides,
     daySlots,
     fillerKindsByStopId,
     fillerStopIds,
@@ -1346,17 +1368,13 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
     primaryRecommendationGap,
     removedStops,
     removeSystemFiller,
+    resolutionOverrides,
     resolvedStops,
-    setDayOverrides,
     setFoodRecommendationNotice,
     setInspector,
-    setItinerary,
-    setMealSelections,
-    setRemovedStops,
-    setResolutionOverrides,
-    setResolvedStops,
     setRouteAlternativesExpanded,
     setRouteRecommendationNotice,
+    showEditToast,
     text,
     tripDays,
     tripFit,
@@ -1388,6 +1406,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
     aiEnabledRef,
     arrivalAirport,
     arrivalTime,
+    attachPlannerBase,
     attemptedLegKeysRef,
     canBuild,
     canReviewPlaces,
@@ -1654,6 +1673,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
             hasRakutenHotelEvidence={hasRakutenHotelEvidence}
             hotelAxis={hotelAxis}
             hotelAxisLabels={hotelAxisLabels}
+            hotelImpactById={hotelImpactById}
             hotelPlanDirty={hotelPlanDirty}
             hotelPriceLabel={hotelPriceLabel}
             hotelPurpose={hotelPurpose}
@@ -1693,6 +1713,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
             inspector={inspector}
             locale={locale}
             mealCandidatesBySlot={mealCandidatesBySlot}
+            mealImpactBySlot={mealImpactBySlot}
             mealSelections={mealSelections}
             onClose={() => setInspector(null)}
             onPhotoError={handlePhotoError}
@@ -1708,6 +1729,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
             alternativesExpanded={routeAlternativesExpanded}
             dayLabel={day?.label}
             gap={primaryRecommendationGap}
+            impactById={gapImpactById}
             locale={locale}
             notice={routeRecommendationNotice}
             onAddCandidate={addRouteRecommendation}

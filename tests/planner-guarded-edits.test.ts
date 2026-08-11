@@ -121,3 +121,29 @@ test("stay, last-entry, day-window and leg-mode edits are wired through the guar
   assert.doesNotMatch(shellSource, /commitPlannerEdit\(\{ userStayMinutes/);
   assert.doesNotMatch(shellSource, /commitPlannerEdit\(\{ lastEntryTimes/);
 });
+
+// DoD-PLAN-5 / TC-051: base changes are plan-affecting edits like any other —
+// a base swap can silently make a booking late (spec §8.2 case 4).
+test("hotel swaps and CHANGE_BASE alternatives run the hard-conflict guard; accepts commit through history", () => {
+  const hookSource = readFileSync(new URL("../app/components/planner/hooks/usePlannerEdits.tsx", import.meta.url), "utf8");
+  const hotelSource = readFileSync(new URL("../app/components/planner/hooks/useHotels.tsx", import.meta.url), "utf8");
+
+  // A user-initiated hotel selection simulates the candidate plan and asks
+  // before applying new hard damage; clean swaps commit as ONE history op.
+  assert.match(hotelSource, /evaluatePlannerHardEdit\(\{/, "selectHotelCandidate must run the shared evaluation");
+  assert.match(hotelSource, /commitPlannerEdit\(\{ resolvedBase: nextBase \}/, "a user hotel swap must be a history operation");
+  assert.match(hotelSource, /attachPlannerBase\(nextBase\)/, "system base handovers must rebase, not commit");
+  assert.match(hotelSource, /setPendingHardEdit\(\{ title: evaluation.title/, "a damaging swap must queue the confirm dialog");
+
+  // The CHANGE_BASE alternative goes through applyGuardedEdit with the base patched in.
+  const changeBaseStart = hookSource.indexOf('alternative.kind === "CHANGE_BASE"');
+  assert.ok(changeBaseStart >= 0);
+  const changeBaseBody = hookSource.slice(changeBaseStart, hookSource.indexOf("} else if", changeBaseStart));
+  assert.match(changeBaseBody, /applyGuardedEdit\(\{/, "CHANGE_BASE must run the simulate-then-confirm pipeline");
+  assert.match(changeBaseBody, /contextPatch: \{ resolvedBase: nextBase \}/);
+
+  // TC-048/TC-050: meal and gap accepts are single history operations.
+  const acceptCommits = hookSource.match(/commitPlannerEdit\(\{\s*itinerary: candidateItinerary,/g) ?? [];
+  assert.equal(acceptCommits.length, 2, "both the meal accept and the gap accept must commit through history");
+  assert.doesNotMatch(hookSource, /setResolvedStops\(\(current\)/, "accepts must not mutate tracked state outside history");
+});

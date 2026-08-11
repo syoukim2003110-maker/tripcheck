@@ -23,7 +23,6 @@
 import { useEffect, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { foodCandidateReason } from "../../../../lib/food-recommendations-client";
 import { bayesianWeightedRating, restaurantRatingPrior } from "../../../../lib/rating-confidence";
-import { areaFromAddress } from "../../../../lib/google-place-resolver";
 import { resolveKnownStops, type ResolvedInputStop, type RouteStop } from "../../../../lib/route-optimizer";
 import {
   buildTripFromWishlist,
@@ -35,7 +34,6 @@ import {
 import type { Pace } from "../../../../lib/trip-builder";
 import type { TransportMode, TravelPreference } from "../../../../lib/time-feasibility";
 import type { Destination } from "../../../../lib/destinations";
-import { estimateStayMinutes } from "../../../../lib/stay-estimates";
 import { createRecommendation } from "../../../../lib/itinerary-domain";
 import {
   evaluateRecommendationCandidate,
@@ -57,25 +55,33 @@ import {
   undoPlannerHistory,
   type PlannerHistory,
 } from "../../../../lib/planner-history";
-import { hardEditTitles, legModeLabel, ui, type PlannerLocale } from "../../../../lib/presentation/planner-copy";
+import { bufferToastDetail, hardEditTitles, legModeLabel, ui, type PlannerLocale } from "../../../../lib/presentation/planner-copy";
 import { shiftPlannerClock } from "../../../../lib/presentation/trip-presentation";
 import {
   boundedRecommendationScore,
-  fillerOccurrenceLine,
   recommendationStopId,
   routeRecommendationFillerKind,
 } from "../../../../lib/presentation/recommendation-presentation";
 import {
-  builtPlanTravelMinutes,
+  PLANNER_UNDO_LIMIT,
+  attachPlannerBaseToHistory,
   clampTripDays,
   clockRangeContainsVisit,
+  emptyPlannerEditState,
   evaluatePlannerHardEdit,
   upsertResolutionOverride,
   type FoodState,
+  type HotelState,
   type Inspector,
   type PlannerEditState,
   type RouteRecommendationState,
 } from "../../../../lib/planner-app-state";
+import {
+  gapAcceptSimulation,
+  mealAcceptSimulation,
+  planImpactMetrics,
+} from "../../../../lib/recommendation-impact";
+import { totalPlanBufferMinutes } from "../../../../lib/trip-scenarios";
 
 // The hard-edit confirmation payload. Named (it was an inline useState type in
 // TripPlannerApp) only so the guarded-actions hook below can type the setter
@@ -94,26 +100,35 @@ export function usePlannerEdits({
   dayStartTimes,
   hasPlan,
   hotelQuery,
+  itinerary,
   lastEntryTimes,
   legModeOverrides,
   locale,
   lockedOrderByDay,
+  mealSelections,
   pace,
   planReady,
   removedStops,
+  resolutionOverrides,
   resolvedBase,
+  resolvedStops,
   setActiveDay,
   setDayEndTimes,
   setDayOverrides,
   setDayStartTimes,
   setHotelQuery,
+  setHotelState,
   setInspector,
+  setItinerary,
   setLastEntryTimes,
   setLegModeOverrides,
   setLockedOrderByDay,
+  setMealSelections,
   setPace,
   setRemovedStops,
+  setResolutionOverrides,
   setResolvedBase,
+  setResolvedStops,
   setTransferBufferMinutes,
   setTravelPreference,
   setTripDays,
@@ -128,26 +143,35 @@ export function usePlannerEdits({
   dayStartTimes: Record<number, string>;
   hasPlan: boolean;
   hotelQuery: string;
+  itinerary: string;
   lastEntryTimes: Record<string, string>;
   legModeOverrides: Record<string, TransportMode>;
   locale: PlannerLocale;
   lockedOrderByDay: Record<number, string[]>;
+  mealSelections: Record<string, string>;
   pace: Pace;
   planReady: boolean;
   removedStops: Array<{ id: string; name: string }>;
+  resolutionOverrides: ShareableResolutionOverride[];
   resolvedBase: ResolvedInputStop | null;
+  resolvedStops: ResolvedInputStop[];
   setActiveDay: Dispatch<SetStateAction<number>>;
   setDayEndTimes: Dispatch<SetStateAction<Record<number, string>>>;
   setDayOverrides: Dispatch<SetStateAction<Record<string, number>>>;
   setDayStartTimes: Dispatch<SetStateAction<Record<number, string>>>;
   setHotelQuery: Dispatch<SetStateAction<string>>;
+  setHotelState: Dispatch<SetStateAction<HotelState>>;
   setInspector: Dispatch<SetStateAction<Inspector>>;
+  setItinerary: Dispatch<SetStateAction<string>>;
   setLastEntryTimes: Dispatch<SetStateAction<Record<string, string>>>;
   setLegModeOverrides: Dispatch<SetStateAction<Record<string, TransportMode>>>;
   setLockedOrderByDay: Dispatch<SetStateAction<Record<number, string[]>>>;
+  setMealSelections: Dispatch<SetStateAction<Record<string, string>>>;
   setPace: Dispatch<SetStateAction<Pace>>;
   setRemovedStops: Dispatch<SetStateAction<Array<{ id: string; name: string }>>>;
+  setResolutionOverrides: Dispatch<SetStateAction<ShareableResolutionOverride[]>>;
   setResolvedBase: Dispatch<SetStateAction<ResolvedInputStop | null>>;
+  setResolvedStops: Dispatch<SetStateAction<ResolvedInputStop[]>>;
   setTransferBufferMinutes: Dispatch<SetStateAction<0 | 10 | 20 | 30>>;
   setTravelPreference: Dispatch<SetStateAction<TravelPreference>>;
   setTripDays: Dispatch<SetStateAction<number>>;
@@ -157,22 +181,9 @@ export function usePlannerEdits({
   tripDays: number;
   userStayMinutes: Record<string, number>;
 }) {
-  const [editHistory, setEditHistory] = useState<PlannerHistory<PlannerEditState>>(() => createPlannerHistory({
-    tripDays: 3,
-    pace: "balanced",
-    hotelQuery: "",
-    resolvedBase: null,
-    travelPreference: "auto",
-    transferBufferMinutes: 10,
-    userStayMinutes: {},
-    lastEntryTimes: {},
-    dayStartTimes: {},
-    dayEndTimes: {},
-    legModeOverrides: {},
-    dayOverrides: {},
-    lockedOrderByDay: {},
-    removedStops: [],
-  }));
+  const [editHistory, setEditHistory] = useState<PlannerHistory<PlannerEditState>>(
+    () => createPlannerHistory(emptyPlannerEditState(), { limit: PLANNER_UNDO_LIMIT }),
+  );
   const [historyAnnouncement, setHistoryAnnouncement] = useState("");
   // v1.1 TC-007 / §8.2: an edit that breaks a hard promise (booking time,
   // must-visit, airport cutoff) never applies silently; it waits here for an
@@ -200,6 +211,10 @@ export function usePlannerEdits({
       dayOverrides,
       lockedOrderByDay,
       removedStops,
+      itinerary,
+      mealSelections,
+      resolvedStops,
+      resolutionOverrides,
     };
   }
 
@@ -218,6 +233,21 @@ export function usePlannerEdits({
     setDayOverrides(next.dayOverrides);
     setLockedOrderByDay(next.lockedOrderByDay);
     setRemovedStops(next.removedStops);
+    setItinerary(next.itinerary);
+    setMealSelections(next.mealSelections);
+    setResolvedStops(next.resolvedStops);
+    setResolutionOverrides(next.resolutionOverrides);
+    // The displayed hotel and the routing base must never diverge: when the
+    // applied state's base is one of the loaded hotel candidates, the shortlist
+    // selection follows it (and the per-hotel public evidence resets, because
+    // fresh findings belong to one hotel only). A non-hotel base (area or
+    // provisional) leaves the shortlist untouched.
+    setHotelState((current) => {
+      const providerRef = next.resolvedBase?.providerRef ?? null;
+      if (!providerRef || current.status !== "ready" || current.selectedId === providerRef) return current;
+      if (!current.candidates.some((candidate) => candidate.id === providerRef)) return current;
+      return { ...current, selectedId: providerRef, fresh: { status: "idle", result: null } };
+    });
     setActiveDay((current) => Math.min(current, Math.max(0, next.tripDays - 1)));
     setInspector(null);
   }
@@ -232,22 +262,37 @@ export function usePlannerEdits({
     return "other";
   }
 
-  function commitPlannerEdit(patch: Partial<PlannerEditState>) {
-    if (hasPlan) trackProductEvent("plan_edited", { edit_type: plannerEditType(patch) });
+  function commitPlannerEdit(patch: Partial<PlannerEditState>, options: { silent?: boolean } = {}) {
+    // Accepts carry their own funnel events (meal_accepted / gap_accepted /
+    // hotel_accepted), so they commit silently instead of double-counting as
+    // a generic plan edit.
+    if (hasPlan && !options.silent) trackProductEvent("plan_edited", { edit_type: plannerEditType(patch) });
     const current = currentPlannerEditState();
     const next = { ...current, ...patch };
     setEditHistory((history) => commitPlannerHistory(
-      plannerHistoryStateEqual(history.present, current) ? history : createPlannerHistory(current),
+      plannerHistoryStateEqual(history.present, current)
+        ? history
+        : createPlannerHistory(current, { limit: PLANNER_UNDO_LIMIT }),
       next,
     ));
     applyPlannerEditState(next);
+  }
+
+  // The post-build provisional-base attach and other system-driven base
+  // handovers (AI shortlist promotion, hotel re-search) establish the plan's
+  // baseline. They are NOT user operations: the base is rebased across the
+  // whole history instead of committed, so no undo entry appears, no toast
+  // shows, and the next ordinary edit sees no drift.
+  function attachPlannerBase(base: ResolvedInputStop | null) {
+    setResolvedBase(base);
+    setEditHistory((history) => attachPlannerBaseToHistory(history, base));
   }
 
   function undoPlannerEdit() {
     const current = currentPlannerEditState();
     const aligned = plannerHistoryStateEqual(editHistory.present, current)
       ? editHistory
-      : createPlannerHistory(current);
+      : createPlannerHistory(current, { limit: PLANNER_UNDO_LIMIT });
     const nextHistory = undoPlannerHistory(aligned);
     if (nextHistory === aligned) return;
     setEditHistory(nextHistory);
@@ -260,7 +305,7 @@ export function usePlannerEdits({
     const current = currentPlannerEditState();
     const aligned = plannerHistoryStateEqual(editHistory.present, current)
       ? editHistory
-      : createPlannerHistory(current);
+      : createPlannerHistory(current, { limit: PLANNER_UNDO_LIMIT });
     const nextHistory = redoPlannerHistory(aligned);
     if (nextHistory === aligned) return;
     setEditHistory(nextHistory);
@@ -303,6 +348,7 @@ export function usePlannerEdits({
     setPendingHardEdit,
     editToast,
     setEditToast,
+    attachPlannerBase,
     commitPlannerEdit,
     undoPlannerEdit,
     redoPlannerEdit,
@@ -327,6 +373,7 @@ export function useGuardedPlannerEdits({
   locale,
   lockedOrderByDay,
   maxParsedDay,
+  mealSelections,
   pace,
   plan,
   removedStops,
@@ -337,7 +384,6 @@ export function useGuardedPlannerEdits({
   setFoodSearches,
   setHotelUsesRecommendations,
   setInspector,
-  setMealSelections,
   setPendingHardEdit,
   setRouteGeometryByDay,
   setRouteRecommendationNotice,
@@ -350,7 +396,7 @@ export function useGuardedPlannerEdits({
   activeDay: number;
   activePlannerContext: TripPlannerContext;
   clearNightlyHotelResults: () => void;
-  commitPlannerEdit: (patch: Partial<PlannerEditState>) => void;
+  commitPlannerEdit: (patch: Partial<PlannerEditState>, options?: { silent?: boolean }) => void;
   dayEndTarget: string;
   dayEndTimes: Record<number, string>;
   dayOverrides: Record<string, number>;
@@ -364,6 +410,7 @@ export function useGuardedPlannerEdits({
   locale: PlannerLocale;
   lockedOrderByDay: Record<number, string[]>;
   maxParsedDay: number;
+  mealSelections: Record<string, string>;
   pace: Pace;
   plan: BuiltTripPlan | null;
   removedStops: Array<{ id: string; name: string }>;
@@ -374,7 +421,6 @@ export function useGuardedPlannerEdits({
   setFoodSearches: Dispatch<SetStateAction<Record<string, FoodState>>>;
   setHotelUsesRecommendations: Dispatch<SetStateAction<boolean>>;
   setInspector: Dispatch<SetStateAction<Inspector>>;
-  setMealSelections: Dispatch<SetStateAction<Record<string, string>>>;
   setPendingHardEdit: Dispatch<SetStateAction<PendingHardEdit | null>>;
   setRouteGeometryByDay: Dispatch<SetStateAction<Record<string, RouteRecommendationPoint[]>>>;
   setRouteRecommendationNotice: Dispatch<SetStateAction<string>>;
@@ -397,8 +443,9 @@ export function useGuardedPlannerEdits({
     extraConflicts?: string[];
     toast?: string;
   }) {
+    const candidateContext = { ...activePlannerContext, ...(input.contextPatch ?? {}) };
     const candidatePlan = plan
-      ? buildTripFromWishlist(itinerary, input.candidateDays ?? tripDays, pace, locale, { ...activePlannerContext, ...(input.contextPatch ?? {}) })
+      ? buildTripFromWishlist(itinerary, input.candidateDays ?? tripDays, pace, locale, candidateContext)
       : null;
     const evaluation = evaluatePlannerHardEdit({
       title: input.title,
@@ -413,13 +460,12 @@ export function useGuardedPlannerEdits({
       return;
     }
     input.apply();
-    if (input.toast && plan) {
-      const travelDelta = evaluation.travelDeltaMinutes;
-      showEditToast(input.toast, travelDelta !== 0
-        ? locale === "ja"
-          ? `移動 ${travelDelta > 0 ? "+" : "−"}${Math.abs(travelDelta)}分`
-          : `travel ${travelDelta > 0 ? "+" : "−"}${Math.abs(travelDelta)} min`
-        : null);
+    if (input.toast && plan && candidatePlan) {
+      // Copy Deck toast.changed: the toast metric is the buffer (余裕) change,
+      // measured on the same simulated candidate plan the guard evaluated.
+      const bufferDelta = totalPlanBufferMinutes(candidatePlan, candidateContext)
+        - totalPlanBufferMinutes(plan, activePlannerContext);
+      showEditToast(input.toast, bufferToastDetail(bufferDelta, locale));
     }
   }
 
@@ -448,9 +494,19 @@ export function useGuardedPlannerEdits({
       ?? (locale === "ja" ? "除外した場所" : "Removed place");
     const builtStop = plan?.days.flatMap((planDay) => planDay.stops).find((built) => built.stop.id === stop.id) ?? null;
     const protectedRemoval = builtStop?.priority === "must" || builtStop?.isReservation;
+    // A removed accepted meal releases its slot selection in the SAME history
+    // operation, so one Undo restores both the stop and the selection.
+    const nextMealSelections = Object.fromEntries(Object.entries(mealSelections).filter(([, candidateId]) => (
+      recommendationStopId(candidateId) !== stop.id
+    )));
     applyGuardedEdit({
       title: locale === "ja" ? `「${stop.name}」を予定から外しますか？` : `Remove “${stop.name}” from the plan?`,
-      apply: () => commitPlannerEdit({ removedStops: [...removedStops, { id: stop.id, name: authoredName }] }),
+      apply: () => commitPlannerEdit({
+        removedStops: [...removedStops, { id: stop.id, name: authoredName }],
+        ...(Object.keys(nextMealSelections).length !== Object.keys(mealSelections).length
+          ? { mealSelections: nextMealSelections }
+          : {}),
+      }),
       contextPatch: { excludedStopIds: [...removedStops.map((entry) => entry.id), stop.id] },
       allowDropStopId: stop.id,
       toast: locale === "ja" ? `「${stop.name}」を外しました` : `Removed “${stop.name}”`,
@@ -467,10 +523,10 @@ export function useGuardedPlannerEdits({
   }
 
   function removeSystemFiller(stop: RouteStop) {
+    // The meal-selection release now travels inside removeStopFromPlan's own
+    // history commit; a separate setter here would put tracked state out of
+    // sync with the committed snapshot.
     removeStopFromPlan(stop);
-    setMealSelections((current) => Object.fromEntries(Object.entries(current).filter(([, candidateId]) => (
-      recommendationStopId(candidateId) !== stop.id
-    ))));
   }
 
   function moveStopToDay(stopId: string, dayIndex: number) {
@@ -496,7 +552,8 @@ export function useGuardedPlannerEdits({
         setActiveDay(dayIndex);
       },
       contextPatch: { dayOverrides: nextOverrides },
-      toast: locale === "ja" ? `${dayIndex + 1}日目へ移動しました` : `Moved to Day ${dayIndex + 1}`,
+      // Copy Deck toast.changed: 「2日目に移動しました・余裕 +45分」.
+      toast: locale === "ja" ? `${dayIndex + 1}日目に移動しました` : `Moved to Day ${dayIndex + 1}`,
     });
   }
 
@@ -511,7 +568,9 @@ export function useGuardedPlannerEdits({
     const nextEndTimes = Object.fromEntries(Object.entries(dayEndTimes).filter(([day]) => Number(day) < nextDays));
     const applyDaysChange = () => {
       setDaysUndecided(false);
-      commitPlannerEdit({ tripDays: nextDays, dayStartTimes: nextStartTimes, dayEndTimes: nextEndTimes });
+      // The meal selections are keyed to the old day clustering, and they are
+      // history-tracked state: clearing them rides inside the same commit.
+      commitPlannerEdit({ tripDays: nextDays, dayStartTimes: nextStartTimes, dayEndTimes: nextEndTimes, mealSelections: {} });
       if (hasPlan) showEditToast(locale === "ja" ? `${nextDays}日の旅程にしました` : `Trip length set to ${nextDays} days`);
       setActiveDay((current) => Math.min(current, nextDays - 1));
       setInspector(null);
@@ -521,7 +580,6 @@ export function useGuardedPlannerEdits({
       setRouteRecommendationSearches({});
       setRouteRecommendationNotice("");
       setRouteGeometryByDay({});
-      setMealSelections({});
       clearNightlyHotelResults();
     };
     // Only shrinking the trip can silently break a booking or drop a must
@@ -633,11 +691,19 @@ export function useGuardedPlannerEdits({
     } else if (alternative.kind === "CHANGE_BASE" && alternative.change.baseId) {
       const candidate = plan.baseRecommendations.find((entry) => entry.base.id === alternative.change.baseId)?.base;
       if (candidate) {
-        commitPlannerEdit({
-          hotelQuery: candidate.query,
-          resolvedBase: { ...candidate, input: candidate.query, address: candidate.area },
+        // DoD-PLAN-5 / TC-051: a base change is a plan-affecting edit like any
+        // other — it runs the same simulate-then-confirm pipeline, because a
+        // base swap can silently make a booking late (spec §8.2 case 4).
+        const nextBase = { ...candidate, input: candidate.query, address: candidate.area };
+        applyGuardedEdit({
+          title: locale === "ja" ? `拠点を「${candidate.name}」に変更しますか？` : `Change the base to “${candidate.name}”?`,
+          apply: () => {
+            commitPlannerEdit({ hotelQuery: candidate.query, resolvedBase: nextBase });
+            setHotelUsesRecommendations(false);
+          },
+          contextPatch: { resolvedBase: nextBase },
+          toast: locale === "ja" ? `拠点を「${candidate.name}」にしました` : `Base set to ${candidate.name}`,
         });
-        setHotelUsesRecommendations(false);
       }
     } else if (alternative.kind === "CHANGE_MODE" && alternative.change.legId && alternative.change.mode) {
       const dayIndex = plan.days.findIndex((planDay) => planDay.legs.some((leg) => routeLegKey(leg.from.id, leg.to.id) === alternative.change.legId));
@@ -678,7 +744,9 @@ export function useRecommendationEdits({
   activeDestination,
   activePlannerContext,
   activeRouteRecommendationState,
+  commitPlannerEdit,
   day,
+  dayOverrides,
   daySlots,
   fillerKindsByStopId,
   fillerStopIds,
@@ -693,17 +761,13 @@ export function useRecommendationEdits({
   primaryRecommendationGap,
   removedStops,
   removeSystemFiller,
+  resolutionOverrides,
   resolvedStops,
-  setDayOverrides,
   setFoodRecommendationNotice,
   setInspector,
-  setItinerary,
-  setMealSelections,
-  setRemovedStops,
-  setResolutionOverrides,
-  setResolvedStops,
   setRouteAlternativesExpanded,
   setRouteRecommendationNotice,
+  showEditToast,
   text,
   tripDays,
   tripFit,
@@ -712,7 +776,9 @@ export function useRecommendationEdits({
   activeDestination: Destination;
   activePlannerContext: TripPlannerContext;
   activeRouteRecommendationState: RouteRecommendationState;
+  commitPlannerEdit: (patch: Partial<PlannerEditState>, options?: { silent?: boolean }) => void;
   day: BuiltTripPlan["days"][number] | null;
+  dayOverrides: Record<string, number>;
   daySlots: FoodRecommendationSlot[];
   fillerKindsByStopId: Map<string, "micro" | "lunch" | "dinner">;
   fillerStopIds: Set<string>;
@@ -727,17 +793,13 @@ export function useRecommendationEdits({
   primaryRecommendationGap: ItineraryGap | null;
   removedStops: Array<{ id: string; name: string }>;
   removeSystemFiller: (stop: RouteStop) => void;
+  resolutionOverrides: ShareableResolutionOverride[];
   resolvedStops: ResolvedInputStop[];
-  setDayOverrides: Dispatch<SetStateAction<Record<string, number>>>;
   setFoodRecommendationNotice: Dispatch<SetStateAction<string>>;
   setInspector: Dispatch<SetStateAction<Inspector>>;
-  setItinerary: Dispatch<SetStateAction<string>>;
-  setMealSelections: Dispatch<SetStateAction<Record<string, string>>>;
-  setRemovedStops: Dispatch<SetStateAction<Array<{ id: string; name: string }>>>;
-  setResolutionOverrides: Dispatch<SetStateAction<ShareableResolutionOverride[]>>;
-  setResolvedStops: Dispatch<SetStateAction<ResolvedInputStop[]>>;
   setRouteAlternativesExpanded: Dispatch<SetStateAction<boolean>>;
   setRouteRecommendationNotice: Dispatch<SetStateAction<string>>;
+  showEditToast: (message: string, detail?: string | null) => void;
   text: (typeof ui)[PlannerLocale];
   tripDays: number;
   tripFit: TripFitAssessment | null;
@@ -753,11 +815,13 @@ export function useRecommendationEdits({
     if (currentCandidateId === candidateId) {
       const currentStop = resolvedStops.find((stop) => stop.id === currentStopId);
       if (currentStop) removeSystemFiller(currentStop);
-      else setMealSelections((current) => {
-        const next = { ...current };
+      else {
+        // The selection is tracked history state now, so even the bare
+        // release (no resolved stop to remove) is one undoable operation.
+        const next = { ...mealSelections };
         delete next[slotId];
-        return next;
-      });
+        commitPlannerEdit({ mealSelections: next }, { silent: true });
+      }
       setFoodRecommendationNotice("");
       return;
     }
@@ -778,38 +842,23 @@ export function useRecommendationEdits({
         : "This recommendation slot is already in use. Remove the current suggestion before replacing it.");
       return;
     }
-    const inputIndex = parsedWishlistPlaces(itinerary).length;
-    const input = fillerOccurrenceLine(inputIndex, fillerKind, slot.displayTime);
-    const resolvedId = recommendationStopId(candidate.id);
-    const resolved: ResolvedInputStop = {
-      id: resolvedId,
-      input,
-      inputIndex,
-      name: candidate.name,
-      address: candidate.address,
-      area: areaFromAddress(candidate.address, candidate.name, activeDestination),
-      latitude: candidate.latitude,
-      longitude: candidate.longitude,
-      sourceUrl: candidate.googleMapsUrl,
-      verifiedAt: foodState.fetchedAt?.slice(0, 10) ?? "",
-      confidence: "medium",
-      planningDurationMinutes: slot.kind === "lunch" ? 60 : 75,
-      isAnchor: false,
-      isUserEntered: false,
-      placeTypes: [candidate.type],
-      providerRef: candidate.id,
-    };
-    const candidateItinerary = `${itinerary.trimEnd()}\n${input}`.trimStart();
-    const candidateRemovedStops = currentStopId
-      ? [...new Set([...removedStops.map((entry) => entry.id), currentStopId])]
-      : removedStops.map((entry) => entry.id);
-    const candidateContext: TripPlannerContext = {
-      ...activePlannerContext,
-      resolvedStops: [...resolvedStops.filter((stop) => stop.inputIndex !== inputIndex), resolved],
-      dayOverrides: { ...(activePlannerContext.dayOverrides ?? {}), [resolved.id]: slot.dayIndex + 1 },
-      excludedStopIds: candidateRemovedStops,
-    };
-    const candidatePlan = buildTripFromWishlist(candidateItinerary, tripDays, pace, locale, candidateContext);
+    // The accept and the card metrics share one simulation (lib/recommendation-impact):
+    // the same synthesized line, resolved stop and candidate plan.
+    const simulation = mealAcceptSimulation({
+      itinerary,
+      tripDays,
+      pace,
+      locale,
+      context: activePlannerContext,
+      resolvedStops,
+      slot,
+      candidate,
+      fetchedAt: foodState.fetchedAt,
+      destination: activeDestination,
+      currentStopId,
+    });
+    if (!simulation) return;
+    const { resolved, candidateItinerary, candidateContext, candidatePlan } = simulation;
     const candidateFit = assessTripFit(candidateItinerary, tripDays, pace, locale, candidateContext, candidatePlan);
     const scheduledMeal = candidatePlan.days[slot.dayIndex]?.stops.find(({ stop }) => stop.id === resolved.id);
     // The meal must BEGIN inside the meal window; finishing a little past it
@@ -824,7 +873,8 @@ export function useRecommendationEdits({
       ...resolvedStops.filter((stop) => !fillerStopIds.has(stop.id)).map((stop) => stop.id),
       ...plan.days.flatMap((planDay) => planDay.stops.flatMap(({ stop }) => fillerStopIds.has(stop.id) ? [] : [stop.id])),
     ]);
-    const addedTravelMinutes = Math.max(0, builtPlanTravelMinutes(candidatePlan) - builtPlanTravelMinutes(plan));
+    const impact = planImpactMetrics({ plan, context: activePlannerContext, candidatePlan, candidateContext });
+    const addedTravelMinutes = Math.max(0, impact.travelDeltaMinutes);
     const distanceScore = boundedRecommendationScore(100 - (candidate.distanceMeters ?? 1_500) / 18);
     const qualityScore = boundedRecommendationScore(
       (bayesianWeightedRating(candidate.rating, candidate.userRatingCount, restaurantRatingPrior) ?? restaurantRatingPrior.priorMean) / 5 * 82
@@ -863,17 +913,24 @@ export function useRecommendationEdits({
         : "We did not add this place because it would displace a chosen stop or break a hard constraint.");
       return;
     }
-    setResolvedStops((current) => [...current.filter((stop) => stop.id !== resolved.id), resolved]);
-    setResolutionOverrides((current) => upsertResolutionOverride(current, { inputIndex, providerRef: candidate.id }));
-    setItinerary(candidateItinerary);
-    setDayOverrides((current) => ({ ...current, [resolved.id]: slot.dayIndex + 1 }));
-    if (currentStopId) {
-      setRemovedStops((current) => current.some((entry) => entry.id === currentStopId)
-        ? current
-        : [...current, { id: currentStopId, name: locale === "ja" ? "以前のおすすめ" : "Previous suggestion" }]);
-    }
     trackProductEvent("meal_accepted", { provider_name: "google" });
-    setMealSelections((current) => ({ ...current, [slotId]: candidate.id }));
+    // v1.1 TC-048/TC-050: the accept is ONE history operation. Every field it
+    // touches is tracked state, so a single Undo restores the exact prior
+    // plan — schedule recalculation included, since the plan is a memo over
+    // this state.
+    commitPlannerEdit({
+      itinerary: candidateItinerary,
+      resolvedStops: [...resolvedStops.filter((stop) => stop.id !== resolved.id && stop.inputIndex !== resolved.inputIndex), resolved],
+      resolutionOverrides: upsertResolutionOverride(resolutionOverrides, { inputIndex: resolved.inputIndex!, providerRef: candidate.id }),
+      dayOverrides: { ...dayOverrides, [resolved.id]: slot.dayIndex + 1 },
+      mealSelections: { ...mealSelections, [slotId]: candidate.id },
+      ...(currentStopId && !removedStops.some((entry) => entry.id === currentStopId)
+        ? { removedStops: [...removedStops, { id: currentStopId, name: locale === "ja" ? "以前のおすすめ" : "Previous suggestion" }] }
+        : {}),
+    }, { silent: true });
+    // Copy Deck toast.changed: the accept answers with the buffer (余裕)
+    // metric from the really simulated candidate plan, plus Undo.
+    showEditToast(text.toastAdded, bufferToastDetail(impact.bufferDeltaMinutes, locale));
     setFoodRecommendationNotice(evaluation.decision === "CONDITIONAL"
       ? (locale === "ja" ? "旅程に追加しました。営業時間は未確認として表示します。" : "Added; opening hours remain unverified.")
       : "");
@@ -898,37 +955,21 @@ export function useRecommendationEdits({
         : "This day's recommendation slots are full. Remove an accepted suggestion to replace it.");
       return;
     }
-    const inputIndex = parsedWishlistPlaces(itinerary).length;
-    const input = fillerOccurrenceLine(inputIndex, "micro", primaryRecommendationGap.startAt);
-    const resolvedId = recommendationStopId(candidate.id);
-    const resolved: ResolvedInputStop = {
-      id: resolvedId,
-      input,
-      inputIndex,
-      name: candidate.name,
-      address: candidate.address,
-      area: areaFromAddress(candidate.address, candidate.name, activeDestination),
-      latitude: candidate.latitude,
-      longitude: candidate.longitude,
-      sourceUrl: candidate.googleMapsUrl,
-      verifiedAt: checkedAt,
-      confidence: "medium",
-      planningDurationMinutes: Math.min(
-        estimateStayMinutes(candidate.name, candidate.placeTypes, 90),
-        Math.max(20, primaryRecommendationGap.availableMinutes - 10),
-      ),
-      isAnchor: false,
-      isUserEntered: false,
-      placeTypes: candidate.placeTypes,
-      providerRef: candidate.providerRef,
-    };
-    const candidateItinerary = `${itinerary.trimEnd()}\n${input}`.trimStart();
-    const candidateContext: TripPlannerContext = {
-      ...activePlannerContext,
-      resolvedStops: [...resolvedStops.filter((stop) => stop.inputIndex !== inputIndex), resolved],
-      dayOverrides: { ...(activePlannerContext.dayOverrides ?? {}), [resolved.id]: activeDay + 1 },
-    };
-    const candidatePlan = buildTripFromWishlist(candidateItinerary, tripDays, pace, locale, candidateContext);
+    // The accept and the card metrics share one simulation (lib/recommendation-impact).
+    const simulation = gapAcceptSimulation({
+      itinerary,
+      tripDays,
+      pace,
+      locale,
+      context: activePlannerContext,
+      resolvedStops,
+      candidate,
+      gap: primaryRecommendationGap,
+      activeDay,
+      checkedAt,
+      destination: activeDestination,
+    });
+    const { resolved, candidateItinerary, candidateContext, candidatePlan } = simulation;
     const candidateFit = assessTripFit(candidateItinerary, tripDays, pace, locale, candidateContext, candidatePlan);
     const scheduledRecommendation = candidatePlan.days[activeDay]?.stops.find(({ stop }) => stop.id === resolved.id);
     if (!scheduledRecommendation || !clockRangeContainsVisit(
@@ -945,9 +986,8 @@ export function useRecommendationEdits({
       ...resolvedStops.filter((stop) => !fillerStopIds.has(stop.id)).map((stop) => stop.id),
       ...plan.days.flatMap((planDay) => planDay.stops.flatMap(({ stop }) => fillerStopIds.has(stop.id) ? [] : [stop.id])),
     ]);
-    const baselineTravel = builtPlanTravelMinutes(plan);
-    const candidateTravel = builtPlanTravelMinutes(candidatePlan);
-    const addedTravelMinutes = Math.max(0, candidateTravel - baselineTravel);
+    const impact = planImpactMetrics({ plan, context: activePlannerContext, candidatePlan, candidateContext });
+    const addedTravelMinutes = Math.max(0, impact.travelDeltaMinutes);
     const detourScore = boundedRecommendationScore(100 - candidate.routeDistanceMeters / 20);
     const qualityScore = boundedRecommendationScore(
       (candidate.rating === null ? 62 : candidate.rating / 5 * 82)
@@ -989,11 +1029,18 @@ export function useRecommendationEdits({
       return;
     }
     trackProductEvent("gap_accepted", { provider_name: "google" });
-    setResolvedStops((current) => current.some((stop) => stop.id === resolved.id) ? current : [...current, resolved]);
-    setResolutionOverrides((current) => upsertResolutionOverride(current, { inputIndex, providerRef: candidate.providerRef }));
-    setItinerary(candidateItinerary);
-    setDayOverrides((current) => ({ ...current, [resolved.id]: activeDay + 1 }));
-    setRemovedStops((current) => current.filter((stop) => stop.id !== resolved.id));
+    // One history operation for the whole accept (v1.1 TC-048/TC-050).
+    commitPlannerEdit({
+      itinerary: candidateItinerary,
+      resolvedStops: resolvedStops.some((stop) => stop.id === resolved.id)
+        ? resolvedStops
+        : [...resolvedStops.filter((stop) => stop.inputIndex !== resolved.inputIndex), resolved],
+      resolutionOverrides: upsertResolutionOverride(resolutionOverrides, { inputIndex: resolved.inputIndex!, providerRef: candidate.providerRef }),
+      dayOverrides: { ...dayOverrides, [resolved.id]: activeDay + 1 },
+      removedStops: removedStops.filter((stop) => stop.id !== resolved.id),
+    }, { silent: true });
+    // Copy Deck toast.changed: buffer metric from the simulated plan + Undo.
+    showEditToast(text.toastAdded, bufferToastDetail(impact.bufferDeltaMinutes, locale));
     setRouteRecommendationNotice(evaluation.decision === "CONDITIONAL"
       ? (locale === "ja" ? "営業時間は未確認です。旅程には追加し、未確認として表示します。" : "Added with opening hours still marked unverified.")
       : "");

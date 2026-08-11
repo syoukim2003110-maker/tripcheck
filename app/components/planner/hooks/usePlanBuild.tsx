@@ -72,6 +72,8 @@ import type { PlannerLocale } from "../../../../lib/presentation/planner-copy";
 import { hotelShortlist } from "../../../../lib/presentation/recommendation-presentation";
 import {
   P0_CORE_ONLY,
+  PLANNER_UNDO_LIMIT,
+  emptyPlannerEditState,
   initialBuildProgress,
   emptyTransitConvergenceState,
   emptyFreshState,
@@ -207,6 +209,7 @@ export function usePlanBuild() {
 export function usePlanBuildActions({
   activeDestination,
   aiEnabledRef,
+  attachPlannerBase,
   attemptedLegKeysRef,
   buildAbortRef,
   buildPlanRef,
@@ -365,6 +368,7 @@ export function usePlanBuildActions({
   aiEnabledRef: RefObject<boolean>;
   arrivalAirport: AirportCode;
   arrivalTime: string;
+  attachPlannerBase: (base: ResolvedInputStop | null) => void;
   attemptedLegKeysRef: RefObject<Set<string>>;
   canBuild: boolean;
   canReviewPlaces: boolean;
@@ -405,7 +409,7 @@ export function usePlanBuildActions({
   resetAnalyticsMilestones: () => void;
   reviewedPlaceRows: Array<{ place: ParsedWishlistPlace; status: PlaceReviewStatus }>;
   routeRecommendationRequestRef: RefObject<number>;
-  selectHotelCandidate: (candidate: HotelCandidate, purpose?: HotelPurpose) => void;
+  selectHotelCandidate: (candidate: HotelCandidate, purpose?: HotelPurpose, options?: { source?: "user" | "system" }) => void;
   selectedBuiltStop: BuiltTripPlan["days"][number]["stops"][number] | null;
   setActiveDay: Dispatch<SetStateAction<number>>;
   setArrivalAirport: Dispatch<SetStateAction<AirportCode>>;
@@ -770,11 +774,9 @@ export function usePlanBuildActions({
     setMealSelections({});
     setRemovedStops([]);
     setEditHistory(createPlannerHistory({
-      tripDays: 3, pace: "balanced", hotelQuery: "", resolvedBase: null,
-      travelPreference: "auto", transferBufferMinutes: 10, userStayMinutes: {},
-      lastEntryTimes: {}, dayStartTimes: {}, dayEndTimes: {}, legModeOverrides: {},
-      dayOverrides: {}, lockedOrderByDay: {}, removedStops: [],
-    }));
+      ...emptyPlannerEditState(),
+      itinerary: sample ? sample[locale] : fullTripDemo.places[locale],
+    }, { limit: PLANNER_UNDO_LIMIT }));
     setOpeningWindowsByDay({});
     setBuildProgress(initialBuildProgress);
     setIsBuilding(false);
@@ -1235,8 +1237,11 @@ export function usePlanBuildActions({
           // The provisional area base hands over to the live hotel through
           // the existing base path; the plan memo rebuilds from it. Keep the
           // final-commit rebuild below on the same base if it has not run yet.
+          // The attach is NOT a user operation: it rebases the history
+          // baseline instead of committing, so it never appears as an undo
+          // step, never shows a toast, and never trips the drift reset.
           effectiveBase = nextBase;
-          setResolvedBase(nextBase);
+          attachPlannerBase(nextBase);
           setHotelSearchSignature(hotelPlanSignature(buildTripFromWishlist(
             itinerary,
             buildDays,
@@ -1297,7 +1302,7 @@ export function usePlanBuildActions({
           });
           const pick = aiShortlist.find((candidate) => candidate.id === ai.recommendedId);
           if (pick && userUntouched && aiMaySwitch && pick.id !== aiInitialSelectedId && hotelStyleRef.current === "recommended") {
-            selectHotelCandidate(pick, "balanced");
+            selectHotelCandidate(pick, "balanced", { source: "system" });
           }
         }).catch(() => {
           if (cancelled()) return;
@@ -1340,7 +1345,11 @@ export function usePlanBuildActions({
         dayOverrides: options.preserveEdits ? dayOverrides : {},
         lockedOrderByDay: options.preserveEdits ? lockedOrderByDay : {},
         removedStops: options.preserveEdits ? removedStops : [],
-      }));
+        itinerary,
+        mealSelections: {},
+        resolvedStops: places,
+        resolutionOverrides,
+      }, { limit: PLANNER_UNDO_LIMIT }));
       setHotelSearchSignature(hotelPlanSignature(draft));
       setReviewedInputSignature(inputSignatureAtBuildStart);
       setActiveDay(0);
@@ -1554,12 +1563,7 @@ export function usePlanBuildActions({
     setLockedOrderByDay({});
     setMealSelections({});
     setRemovedStops([]);
-    setEditHistory(createPlannerHistory({
-      tripDays: 3, pace: "balanced", hotelQuery: "", resolvedBase: null,
-      travelPreference: "auto", transferBufferMinutes: 10, userStayMinutes: {},
-      lastEntryTimes: {}, dayStartTimes: {}, dayEndTimes: {}, legModeOverrides: {},
-      dayOverrides: {}, lockedOrderByDay: {}, removedStops: [],
-    }));
+    setEditHistory(createPlannerHistory(emptyPlannerEditState(), { limit: PLANNER_UNDO_LIMIT }));
     setOpeningWindowsByDay({});
     setInspector(null);
     setComparisonAlternative(null);

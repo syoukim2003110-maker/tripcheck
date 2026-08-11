@@ -102,7 +102,13 @@ import {
   airportOptionsFor,
   airportComparisonDestination,
 } from "../../../../lib/presentation/trip-presentation";
-import { TRIPCHECK_FILLER_PREFIX } from "../../../../lib/presentation/recommendation-presentation";
+import { TRIPCHECK_FILLER_PREFIX, recommendationStopId } from "../../../../lib/presentation/recommendation-presentation";
+import {
+  gapAcceptSimulation,
+  mealAcceptSimulation,
+  planImpactMetrics,
+  type PlanImpactMetrics,
+} from "../../../../lib/recommendation-impact";
 import {
   P0_CORE_ONLY,
   buildStageOrder,
@@ -930,6 +936,82 @@ export function usePlannerViewModel({
     }
     return next;
   }, [daySlots, foodSearches, locale, mealSelections, plannedStopIds, resolvedStops]);
+  // v1.1 TC-048: each displayed candidate carries two pre-accept impact
+  // metrics — travel delta and buffer (余裕) delta — measured on the SAME
+  // simulated candidate plan the accept action would commit (shared builders
+  // in lib/recommendation-impact). Candidates whose accept would not land in
+  // the schedule show no metric rather than a guessed one.
+  const mealImpactBySlot = useMemo<Record<string, Record<string, PlanImpactMetrics>>>(() => {
+    if (!plan) return {};
+    const next: Record<string, Record<string, PlanImpactMetrics>> = {};
+    for (const slot of daySlots) {
+      const state = foodSearches[slot.id];
+      if (state?.status !== "ready") continue;
+      const currentCandidateId = mealSelections[slot.id];
+      const currentStopId = currentCandidateId ? recommendationStopId(currentCandidateId) : null;
+      const bySlot: Record<string, PlanImpactMetrics> = {};
+      for (const candidate of mealCandidatesBySlot[slot.id] ?? []) {
+        if (candidate.id === currentCandidateId) continue;
+        const simulation = mealAcceptSimulation({
+          itinerary,
+          tripDays,
+          pace,
+          locale,
+          context: activePlannerContext,
+          resolvedStops,
+          slot,
+          candidate,
+          fetchedAt: state.fetchedAt,
+          destination: activeDestination,
+          currentStopId,
+        });
+        if (!simulation) continue;
+        const scheduled = simulation.candidatePlan.days[slot.dayIndex]?.stops
+          .some(({ stop }) => stop.id === simulation.resolved.id);
+        if (!scheduled) continue;
+        bySlot[candidate.id] = planImpactMetrics({
+          plan,
+          context: activePlannerContext,
+          candidatePlan: simulation.candidatePlan,
+          candidateContext: simulation.candidateContext,
+        });
+      }
+      if (Object.keys(bySlot).length > 0) next[slot.id] = bySlot;
+    }
+    return next;
+  }, [activeDestination, activePlannerContext, daySlots, foodSearches, itinerary, locale, mealCandidatesBySlot, mealSelections, pace, plan, resolvedStops, tripDays]);
+  const gapImpactById = useMemo<Record<string, PlanImpactMetrics>>(() => {
+    if (!plan || !primaryRecommendationGap || activeRouteRecommendationState.status !== "ready") return {};
+    const checkedAt = activeRouteRecommendationState.fetchedAt?.slice(0, 10);
+    if (!checkedAt) return {};
+    const next: Record<string, PlanImpactMetrics> = {};
+    for (const candidate of activeRouteRecommendationState.candidates.slice(0, 3)) {
+      if (plannedStopIds.has(recommendationStopId(candidate.id))) continue;
+      const simulation = gapAcceptSimulation({
+        itinerary,
+        tripDays,
+        pace,
+        locale,
+        context: activePlannerContext,
+        resolvedStops,
+        candidate,
+        gap: primaryRecommendationGap,
+        activeDay,
+        checkedAt,
+        destination: activeDestination,
+      });
+      const scheduled = simulation.candidatePlan.days[activeDay]?.stops
+        .some(({ stop }) => stop.id === simulation.resolved.id);
+      if (!scheduled) continue;
+      next[candidate.id] = planImpactMetrics({
+        plan,
+        context: activePlannerContext,
+        candidatePlan: simulation.candidatePlan,
+        candidateContext: simulation.candidateContext,
+      });
+    }
+    return next;
+  }, [activeDay, activeDestination, activePlannerContext, activeRouteRecommendationState, itinerary, locale, pace, plan, plannedStopIds, primaryRecommendationGap, resolvedStops, tripDays]);
   const selectedBuiltStop = inspector?.kind === "stop" && day
     ? day.stops.find(({ stop }) => stop.id === inspector.stopId) ?? null
     : null;
@@ -951,21 +1033,28 @@ export function usePlannerViewModel({
   const selectedHotel = hotelState.selectedId
     ? hotelState.candidates.find((candidate) => candidate.id === hotelState.selectedId) ?? null
     : null;
-  const hotelTravelMinutesById = useMemo(() => !hasPlan
-    ? {} as Record<string, number>
-    : Object.fromEntries(hotelState.candidates.map((candidate) => [
-      candidate.id,
-      builtPlanTravelMinutes(buildTripFromWishlist(
-        itinerary,
-        tripDays,
-        pace,
-        locale,
-        {
-          ...activePlannerContext,
-          resolvedBase: hotelAsResolvedBase(candidate, hotelQuery, candidate.address.slice(0, 100) || candidate.name, ""),
-        },
-      )),
-    ])), [activePlannerContext, hasPlan, hotelQuery, hotelState.candidates, itinerary, locale, pace, tripDays]);
+  // One simulation per hotel candidate feeds BOTH the total-travel fact and
+  // the two pre-accept impact metrics (travel delta / buffer delta vs the
+  // current base) — the same candidate plan a selection would commit.
+  const hotelImpactById = useMemo(() => {
+    if (!hasPlan) return {} as Record<string, PlanImpactMetrics & { totalTravelMinutes: number }>;
+    return Object.fromEntries(hotelState.candidates.map((candidate) => {
+      const candidateContext = {
+        ...activePlannerContext,
+        resolvedBase: hotelAsResolvedBase(candidate, hotelQuery, candidate.address.slice(0, 100) || candidate.name, ""),
+      };
+      const candidatePlan = buildTripFromWishlist(itinerary, tripDays, pace, locale, candidateContext);
+      return [candidate.id, {
+        totalTravelMinutes: builtPlanTravelMinutes(candidatePlan),
+        ...(plan
+          ? planImpactMetrics({ plan, context: activePlannerContext, candidatePlan, candidateContext })
+          : { travelDeltaMinutes: 0, bufferDeltaMinutes: 0 }),
+      }];
+    }));
+  }, [activePlannerContext, hasPlan, hotelQuery, hotelState.candidates, itinerary, locale, pace, plan, tripDays]);
+  const hotelTravelMinutesById = useMemo(() => Object.fromEntries(
+    Object.entries(hotelImpactById).map(([id, impact]) => [id, impact.totalTravelMinutes]),
+  ), [hotelImpactById]);
   const bestHotelTravelMinutes = Math.min(...Object.values(hotelTravelMinutesById));
   const hasRakutenHotelEvidence = hotelState.candidates.some((candidate) => candidate.rakuten !== null);
   const hotelPins = useMemo<HotelPin[]>(() => (
@@ -1267,8 +1356,10 @@ export function usePlannerViewModel({
     fillerStopIds,
     foodPins,
     formattedItinerary,
+    gapImpactById,
     hardViolationAnnouncement,
     hasRakutenHotelEvidence,
+    hotelImpactById,
     hotelPins,
     hotelTravelMinutesById,
     manualPinCoordinate,
@@ -1278,6 +1369,7 @@ export function usePlannerViewModel({
     mapWarningStopIds,
     maxParsedDay,
     mealCandidatesBySlot,
+    mealImpactBySlot,
     mealRoutePolyline,
     measuredRouteCount,
     openingVerificationCount,

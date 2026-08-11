@@ -10,8 +10,9 @@ import Icon from "../../../PlannerIcons";
 import { foodCandidateReason } from "../../../../lib/food-recommendations-client.ts";
 import type { FoodCandidate } from "../../../../lib/google-food.ts";
 import type { FreshVoicesResult } from "../../../../lib/fresh-voices.ts";
-import { ui, type PlannerLocale } from "../../../../lib/presentation/planner-copy.ts";
+import { bufferDeltaLine, travelDeltaLine, ui, type PlannerLocale } from "../../../../lib/presentation/planner-copy.ts";
 import { openStatusLabel, paymentEvidenceLabel, ratingFactLine } from "../../../../lib/presentation/recommendation-presentation.ts";
+import type { PlanImpactMetrics } from "../../../../lib/recommendation-impact.ts";
 
 type MealRecommendationCardProps = {
   candidate: FoodCandidate;
@@ -22,6 +23,8 @@ type MealRecommendationCardProps = {
   aiOrdered: boolean | undefined;
   note: { reason: string; tag: string } | undefined;
   foodFresh: FreshVoicesResult | null | undefined;
+  /** Pre-accept impact from the really simulated candidate plan (TC-048). */
+  impact?: PlanImpactMetrics | null;
   onChoose: () => void;
   onPhotoError: (event: SyntheticEvent<HTMLImageElement>) => void;
 };
@@ -35,6 +38,7 @@ export default function MealRecommendationCard({
   aiOrdered,
   note,
   foodFresh,
+  impact = null,
   onChoose,
   onPhotoError,
 }: MealRecommendationCardProps) {
@@ -68,6 +72,8 @@ export default function MealRecommendationCard({
           {openStatus !== null ? <span>{openStatus}</span> : null}
           {paymentLabel !== null ? <span>{paymentLabel}</span> : null}
           {foodFresh?.findings.length ? <span className="is-fresh">{text.foodFresh(foodFresh.findings.length)}</span> : null}
+          {impact ? <span className="is-impact">{travelDeltaLine(impact.travelDeltaMinutes, locale)}</span> : null}
+          {impact ? <span className="is-impact">{bufferDeltaLine(impact.bufferDeltaMinutes, locale)}</span> : null}
         </div>
         <button
           className={`planner-meal-choose${isChosen ? " is-active" : ""}`}

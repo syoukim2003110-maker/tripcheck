@@ -27,7 +27,9 @@ import {
 import type { Pace } from "../../../../lib/trip-builder";
 import type { ResolvedInputStop, RouteStop } from "../../../../lib/route-optimizer";
 import { destinationName, type Destination, type DestinationChoice } from "../../../../lib/destinations";
-import { ui, type PlannerLocale } from "../../../../lib/presentation/planner-copy";
+import { bufferToastDetail, ui, type PlannerLocale } from "../../../../lib/presentation/planner-copy";
+import { totalPlanBufferMinutes } from "../../../../lib/trip-scenarios";
+import type { PendingHardEdit } from "./usePlannerEdits";
 import {
   styledBestCandidate,
   hotelAxisWinners,
@@ -39,6 +41,7 @@ import {
   builtPlanTravelMinutes,
   emptyHotelState,
   emptyNightlyHotelState,
+  evaluatePlannerHardEdit,
   hotelPlanSignature,
   hotelAsResolvedBase,
   mapWithConcurrency,
@@ -50,6 +53,7 @@ import {
   type Inspector,
   type NightlyHotelNight,
   type NightlyHotelState,
+  type PlannerEditState,
 } from "../../../../lib/planner-app-state";
 
 export function useHotels() {
@@ -97,7 +101,9 @@ export function useHotelActions({
   activeDestination,
   activePlannerContext,
   aiEnabledRef,
+  attachPlannerBase,
   buildRunRef,
+  commitPlannerEdit,
   currentHotelPlanSignature,
   hotelPurpose,
   hotelQuery,
@@ -125,7 +131,7 @@ export function useHotelActions({
   setHotelStyle,
   setInspector,
   setNightlyHotels,
-  setResolvedBase,
+  setPendingHardEdit,
   showEditToast,
   text,
   tripDays,
@@ -133,7 +139,9 @@ export function useHotelActions({
   activeDestination: Destination;
   activePlannerContext: TripPlannerContext;
   aiEnabledRef: RefObject<boolean>;
+  attachPlannerBase: (base: ResolvedInputStop | null) => void;
   buildRunRef: RefObject<number>;
+  commitPlannerEdit: (patch: Partial<PlannerEditState>, options?: { silent?: boolean }) => void;
   currentHotelPlanSignature: string;
   hotelPurpose: HotelPurpose;
   hotelQuery: string;
@@ -161,7 +169,7 @@ export function useHotelActions({
   setHotelStyle: Dispatch<SetStateAction<HotelStyleChoice>>;
   setInspector: Dispatch<SetStateAction<Inspector>>;
   setNightlyHotels: Dispatch<SetStateAction<NightlyHotelState>>;
-  setResolvedBase: Dispatch<SetStateAction<ResolvedInputStop | null>>;
+  setPendingHardEdit: Dispatch<SetStateAction<PendingHardEdit | null>>;
   showEditToast: (message: string, detail?: string | null) => void;
   text: (typeof ui)[PlannerLocale];
   tripDays: number;
@@ -190,45 +198,87 @@ export function useHotelActions({
     ...(candidate.id === hotelAxis.topRatedId ? [text.axisTopRated] : []),
   ], [hotelAxis, hotelState.ai.recommendedId, hotelState.candidates, text]);
 
-  function selectHotelCandidate(candidate: HotelCandidate, purpose: HotelPurpose = "picked") {
+  function selectHotelCandidate(
+    candidate: HotelCandidate,
+    purpose: HotelPurpose = "picked",
+    options: { source?: "user" | "system" } = {},
+  ) {
+    // "user" is a traveller's own tap (card, map pin, style chip); "system"
+    // is the build's provisional-base attach handover and AI shortlist
+    // promotion. Only user selections become history operations with a
+    // toast+Undo; system handovers rebase the history baseline silently and
+    // never guard — they establish the plan, they do not damage promises.
+    const source = options.source ?? "user";
     const changed = hotelState.selectedId !== candidate.id;
-    if (changed) trackProductEvent("hotel_accepted", { provider_name: "google" });
-    if (changed) hotelRefreshAbortRef.current?.abort();
-    setHotelState((current) => ({
-      ...current,
-      selectedId: candidate.id,
-      ...(changed ? { fresh: { status: "loading", result: null } satisfies FreshState } : {}),
-    }));
-    setHotelPurpose(purpose);
-    // The displayed hotel and the routing base must never diverge.
-    setResolvedBase(hotelAsResolvedBase(candidate, hotelQuery, candidate.address.slice(0, 100) || candidate.name, new Date().toISOString()));
-    // v1.1 §12.3: accepting a recommendation announces once, politely. Auto
-    // selection during a build (planReady is still false there) stays silent.
-    if (changed && planReady) {
-      showEditToast(locale === "ja" ? `ホテルを「${candidate.name}」にしました` : `Hotel set to ${candidate.name}`);
-    }
-    if (!changed) return;
-    if (!aiEnabledRef.current) {
-      setHotelState((current) => current.selectedId === candidate.id
-        ? { ...current, fresh: { status: "paused", result: null } }
-        : current);
+    const nextBase = hotelAsResolvedBase(candidate, hotelQuery, candidate.address.slice(0, 100) || candidate.name, new Date().toISOString());
+    const applySelection = () => {
+      if (changed) trackProductEvent("hotel_accepted", { provider_name: "google" });
+      if (changed) hotelRefreshAbortRef.current?.abort();
+      setHotelState((current) => ({
+        ...current,
+        selectedId: candidate.id,
+        ...(changed ? { fresh: { status: "loading", result: null } satisfies FreshState } : {}),
+      }));
+      setHotelPurpose(purpose);
+      // The displayed hotel and the routing base must never diverge. A user
+      // swap is one undoable history operation (TC-050: the toast's Undo must
+      // actually revert the base); everything else rebases the baseline.
+      if (source === "user" && changed && planReady) {
+        commitPlannerEdit({ resolvedBase: nextBase }, { silent: true });
+      } else {
+        attachPlannerBase(nextBase);
+      }
+      if (!changed) return;
+      if (!aiEnabledRef.current) {
+        setHotelState((current) => current.selectedId === candidate.id
+          ? { ...current, fresh: { status: "paused", result: null } }
+          : current);
+        return;
+      }
+      // Public evidence belongs to one hotel only. Switching a photo card or map
+      // pin must never leave the previous hotel's findings attached to this one.
+      void requestFreshVoices(
+        { name: candidate.name, area: candidate.address.slice(0, 100) || candidate.name },
+        locale,
+        { intent: "hotel", depth: "quick", destination: requestDestination },
+      ).then((result) => {
+        setHotelState((current) => current.selectedId === candidate.id
+          ? { ...current, fresh: { status: "ready", result } }
+          : current);
+      }).catch(() => {
+        setHotelState((current) => current.selectedId === candidate.id
+          ? { ...current, fresh: { status: "unavailable", result: null } }
+          : current);
+      });
+    };
+    // DoD-PLAN-5 / spec §8.2 case 4: a user-initiated hotel swap runs the same
+    // simulate-then-confirm pipeline as every other plan edit — a base change
+    // can silently make a booking late. Clean swaps apply instantly with the
+    // Copy Deck toast (buffer metric from the really simulated plan) + Undo.
+    if (source === "user" && changed && planReady && plan) {
+      const candidateContext = { ...activePlannerContext, resolvedBase: nextBase };
+      const candidatePlan = buildTripFromWishlist(itinerary, tripDays, pace, locale, candidateContext);
+      const evaluation = evaluatePlannerHardEdit({
+        title: locale === "ja" ? `ホテルを「${candidate.name}」に変更しますか？` : `Switch the hotel to “${candidate.name}”?`,
+        locale,
+        plan,
+        candidatePlan,
+      });
+      if (evaluation.decision === "confirm") {
+        setPendingHardEdit({ title: evaluation.title, conflicts: evaluation.conflicts, apply: applySelection });
+        return;
+      }
+      applySelection();
+      // v1.1 §12.3: accepting a recommendation announces once, politely.
+      const bufferDelta = totalPlanBufferMinutes(candidatePlan, candidateContext)
+        - totalPlanBufferMinutes(plan, activePlannerContext);
+      showEditToast(
+        locale === "ja" ? `ホテルを「${candidate.name}」にしました` : `Hotel set to ${candidate.name}`,
+        bufferToastDetail(bufferDelta, locale),
+      );
       return;
     }
-    // Public evidence belongs to one hotel only. Switching a photo card or map
-    // pin must never leave the previous hotel's findings attached to this one.
-    void requestFreshVoices(
-      { name: candidate.name, area: candidate.address.slice(0, 100) || candidate.name },
-      locale,
-      { intent: "hotel", depth: "quick", destination: requestDestination },
-    ).then((result) => {
-      setHotelState((current) => current.selectedId === candidate.id
-        ? { ...current, fresh: { status: "ready", result } }
-        : current);
-    }).catch(() => {
-      setHotelState((current) => current.selectedId === candidate.id
-        ? { ...current, fresh: { status: "unavailable", result: null } }
-        : current);
-    });
+    applySelection();
   }
 
   async function refreshHotelRecommendations() {
@@ -292,7 +342,10 @@ export function useHotelActions({
         fresh: { status: "loading", result: null },
         ai: { status: "idle", notes: {}, recommendedId: null },
       });
-      setResolvedBase(hotelAsResolvedBase(selected, hotelQuery, selected.address.slice(0, 100) || searchAnchor.area, response.fetchedAt));
+      // The re-search hands over a whole new shortlist; its auto-pick is a
+      // baseline handover (the old candidates are gone, so an "Undo" could
+      // not honestly restore the prior comparison) — rebase, don't commit.
+      attachPlannerBase(hotelAsResolvedBase(selected, hotelQuery, selected.address.slice(0, 100) || searchAnchor.area, response.fetchedAt));
       setHotelSearchSignature(signatureAtStart);
       clearNightlyHotelResults();
       postBuildLegBudgetRef.current = Math.max(postBuildLegBudgetRef.current, 16);
@@ -366,7 +419,7 @@ export function useHotelActions({
           });
           const pick = shortlist.find((candidate) => candidate.id === ai.recommendedId);
           if (pick && userUntouched && pick.id !== selected.id && hotelStyleRef.current === "recommended") {
-            selectHotelCandidate(pick, "balanced");
+            selectHotelCandidate(pick, "balanced", { source: "system" });
           }
         }).catch(() => {
           if (controller.signal.aborted) return;
