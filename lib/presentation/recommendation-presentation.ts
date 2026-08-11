@@ -1,10 +1,10 @@
 // Recommendation presentation: the unified TripEnhancement model (refactor
 // spec v2.1 section 5) plus the hotel shortlist/axis pickers and filler
 // classification that feed it. Pure functions - no React.
-import type { RouteRecommendation } from "../route-recommendations";
-import type { FillerKind } from "../itinerary-domain";
-import type { HotelCandidate } from "../google-hotels";
-import type { HotelStyleChoice } from "../planner-app-state";
+import type { RouteRecommendation } from "../route-recommendations.ts";
+import type { FillerKind } from "../itinerary-domain.ts";
+import type { HotelCandidate } from "../google-hotels.ts";
+import type { HotelStyleChoice } from "../planner-app-state.ts";
 
 /** One unified "make the trip better" proposal (spec v2.1 section 5). */
 export type EnhancementType = "HOTEL" | "MEAL" | "CAFE" | "MICRO_STOP";

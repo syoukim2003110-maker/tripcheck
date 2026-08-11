@@ -1,9 +1,9 @@
 // User-facing copy for the planner: the full ja/en UI table plus the
 // localized sentence builders for feasibility verdicts, conflicts,
 // assumptions and alternatives. Pure data and string functions - no React.
-import type { AlternativePlan, Assumption, Attention, Conflict, FeasibilityResult, FeasibilityState } from "../feasibility-result";
-import type { BuiltTripPlan } from "../trip-builder";
-import type { TransportMode } from "../time-feasibility";
+import type { AlternativePlan, Assumption, Attention, Conflict, FeasibilityResult, FeasibilityState } from "../feasibility-result.ts";
+import type { BuiltTripPlan } from "../trip-builder.ts";
+import type { TransportMode } from "../time-feasibility.ts";
 
 export type PlannerLocale = "en" | "ja";
 

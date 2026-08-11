@@ -11,6 +11,11 @@ import PlannerDayTimeBar from "./PlannerDayTimeBar";
 import Icon, { type IconName } from "./PlannerIcons";
 import AirportOptionComparison from "./AirportOptionComparison";
 import SearchableCombobox, { type SearchableOption } from "./SearchableCombobox";
+import { feasibilityStateIcon, modeIcon, weatherIconByKind } from "./components/planner/icon-maps";
+import ErrorState from "./components/planner/states/ErrorState";
+import LoadingState from "./components/planner/states/LoadingState";
+import DayTimeline from "./components/planner/timeline/DayTimeline";
+import ItineraryTimeline from "./components/planner/timeline/ItineraryTimeline";
 import {
   FoodRecommendationsError,
   foodCandidateReason,
@@ -221,28 +226,6 @@ import {
 // One day palette for the timeline, day rail and map (v1.1 spec §7.1). The
 // map model owns the tokens so a map polyline can never disagree with a tab.
 const plannerDayColors = PLANNER_MAP_DAY_COLORS;
-
-const weatherIconByKind: Record<WeatherKind, IconName> = {
-  clear: "sun",
-  partly: "sun",
-  cloudy: "cloud",
-  fog: "fog",
-  rain: "rain",
-  snow: "snow",
-  storm: "storm",
-};
-
-function feasibilityStateIcon(state: FeasibilityState): IconName {
-  if (state === "VERIFIED_FEASIBLE") return "check";
-  if (state === "PROVISIONAL_FEASIBLE") return "signal";
-  if (state === "FEASIBLE_IF_ASSUMPTIONS") return "spark";
-  if (state === "INFEASIBLE_HARD_CONFLICT") return "close";
-  return "search";
-}
-
-function modeIcon(mode: "walk" | "transit" | "taxi", carMode: boolean) {
-  return <Icon name={mode === "transit" ? "train" : mode === "taxi" && carMode ? "car" : mode} size={14} />;
-}
 
 export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }: { initialLocale?: PlannerLocale; mapsApiKey?: string }) {
   const [locale, setLocale] = useState<PlannerLocale>(initialLocale);
@@ -5373,28 +5356,14 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
 
       <section className="planner-sheet">
         {isBuilding ? (
-          <div className="planner-building-view" aria-live="polite">
-            <header className="planner-building-head">
-              <span className="planner-building-orbit" aria-hidden="true" />
-              <div><h1>{text.buildingTitle}</h1><p>{aiEnabled ? text.buildingBody : text.buildingBodyNoSocial}</p></div>
-            </header>
-            <ol className="planner-building-steps">
-              {visibleBuildStages.map((stage, index) => {
-                const state = index < activeBuildIndex ? "is-complete" : index === activeBuildIndex ? "is-active" : "";
-                return (
-                  <li className={state} key={stage}>
-                    <span className="planner-building-step-dot" aria-hidden="true">{index < activeBuildIndex ? <Icon name="check" size={11} /> : index + 1}</span>
-                    <span className="planner-building-step-copy">
-                      <b>{text.buildSteps[stage]}</b>
-                      {index === activeBuildIndex ? <small>{activeBuildDetail}</small> : null}
-                    </span>
-                  </li>
-                );
-              })}
-            </ol>
-            <p className="planner-building-live"><i aria-hidden="true" />{activeBuildDetail}</p>
-            <button className="planner-building-cancel" onClick={cancelBuild} type="button">{text.buildingCancel}</button>
-          </div>
+          <LoadingState
+            activeIndex={activeBuildIndex}
+            aiEnabled={aiEnabled}
+            detail={activeBuildDetail}
+            locale={locale}
+            onCancel={cancelBuild}
+            stages={visibleBuildStages}
+          />
         ) : !hasPlan ? (
           <div className="planner-form-view">
             <nav className={`planner-input-progress${inputStep === "places" && buildMode === "automatic" ? " is-compact" : ""}`} aria-label={locale === "ja" ? "入力の進み具合" : "Planning progress"}>
@@ -6487,239 +6456,43 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
               </section>
             ) : null}
 
-            <div className="planner-day-tabs" role="group" aria-label={locale === "ja" ? "日程を選ぶ" : "Choose a day"}>
-              {plan.days.map((candidate, index) => {
-                const weekday = tripDateTouched ? weekdayInfo(candidate.date, locale) : null;
-                return (
-                  <button
-                    aria-current={activeDay === index ? "true" : undefined}
-                    aria-pressed={activeDay === index}
-                    className={`is-day-${index % plannerDayColors.length + 1}${activeDay === index ? " is-active" : ""}${weekday?.isWeekend ? " is-weekend" : ""}`}
-                    key={candidate.label}
-                    onClick={() => switchDay(index)}
-                    type="button"
-                  >
-                    <b>{index + 1}</b>
-                    <span>
-                      {locale === "ja" ? `${index + 1}日目` : `Day ${index + 1}`}
-                      {` · ${candidate.stops.length === 0
-                        ? locale === "ja" ? "予定なし" : "empty"
-                        : candidate.stops.length <= 2
-                          ? locale === "ja" ? "ゆったり" : "easy"
-                          : locale === "ja" ? `${candidate.stops.length}か所` : `${candidate.stops.length} stops`}`}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-
-            <section className="planner-day-summary">
-              <div>
-                <span>
-                  {tripDateTouched && day.date
-                    ? locale === "ja"
-                      ? `${day.date}（${weekdayInfo(day.date, locale)?.label ?? ""}）`
-                      : `${day.date} (${weekdayInfo(day.date, locale)?.label ?? ""})`
-                    : day.label}
-                </span>
-                {activeDayPresentation?.consistency === "invalid" ? (
-                  <em className="planner-day-inconsistent" role="alert">
-                    <b>{dayPresentationFallbackCopy(activeDayPresentation, locale).title}</b>
-                    {dayPresentationFallbackCopy(activeDayPresentation, locale).body}
-                  </em>
-                ) : (
-                  <>
-                    <b>{activeDayPresentation?.startClock ?? day.startTime}—{activeDayPresentation?.endClock ?? day.finishTime}</b>
-                    <PlannerDayTimeBar day={day} fit={activeFitDay} locale={locale} />
-                    {activeFitDay && activeDayPresentation ? (
-                      <div className="planner-day-metrics" role="group" aria-label={locale === "ja" ? "この日の時間内訳" : "Day time breakdown"}>
-                        <span><small>{locale === "ja" ? "予定" : "Planned"}</small><b>{formatDuration(activeDayPresentation.usedMinutes, locale)}</b></span>
-                        <span><small>{locale === "ja" ? "余裕" : "Spare"}</small><b>{formatDuration(Math.max(0, activeDayPresentation.slackMinutes), locale)}</b></span>
-                      </div>
-                    ) : dayTravelTotal > 0 ? <small className="planner-day-total">{text.travelTotal(dayTravelTotal)}</small> : null}
-                  </>
-                )}
-                {weatherByDay[activeDay] ? (
-                  <small className="planner-day-forecast">
-                    <Icon name={weatherIconByKind[weatherByDay[activeDay].kind as WeatherKind] ?? "cloud"} size={12} />
-                    {weatherByDay[activeDay].temperatureMaxC}° / {weatherByDay[activeDay].temperatureMinC}°
-                    {weatherByDay[activeDay].precipitationPercent !== null
-                      ? ` · ${text.precipitation(weatherByDay[activeDay].precipitationPercent!)}`
-                      : ""}
-                    <em>{text.forecastNote}</em>
-                  </small>
-                ) : null}
-                {tripDateTouched && day.date && holidaysByDate[day.date] ? (
-                  <small className="planner-day-caution">
-                    {text.holidayNote(holidaysByDate[day.date].localName)}
-                    {holidaysByDate[day.date].nationwide ? "" : text.holidayRegional}
-                  </small>
-                ) : null}
-                {tripDateTouched && day.date && activeDestination.sundayClosing && weekdayInfo(day.date, locale)?.isSunday && !holidaysByDate[day.date] ? (
-                  <small className="planner-day-caution">{text.sundayClosingNote}</small>
-                ) : null}
-              </div>
-            </section>
-
-            {hotelStayMode === "nightly" && day.endBase ? (
-              <button className="planner-tonight" onClick={() => setInspector({ kind: "hotel" })} type="button">
-                <span aria-hidden="true"><Icon name="bed" size={13} /></span>{text.tonightHotel(day.endBase.name)}
-              </button>
-            ) : null}
-
-            {day.stops.length === 0 ? <p className="planner-open-day">{text.openDay}</p> : (
-              <ol className="planner-timeline">
-                {day.stops.map((builtStop, index) => {
-                  const leg = index > 0 ? day.legs[index - 1] : null;
-                  const recommended = leg?.comparison.recommended;
-                  const isSelected = inspector?.kind === "stop" && inspector.stopId === builtStop.stop.id;
-                  const durationStatus = durationEvidenceByStopId[builtStop.stop.id] ?? "estimated";
-                  const accessPolicy = poiAccessPolicyForStop(builtStop.stop);
-                  const isFiller = fillerStopIds.has(builtStop.stop.id);
-                  const fillerKind = fillerKindsByStopId.get(builtStop.stop.id);
-                  const isMealFiller = fillerKind === "lunch" || fillerKind === "dinner";
-                  const durationSource = durationStatus === "user_provided"
-                    ? (locale === "ja" ? "指定" : "set")
-                    : durationStatus === "verified"
-                      ? (locale === "ja" ? "確認" : "confirmed")
-                      : (locale === "ja" ? "推定" : "estimated");
-                  return (
-                    <Fragment key={`${builtStop.stop.id}-${index}`}>
-                    {index === 0 && base && day.hotelOutboundMinutes !== null ? (
-                      <li className="planner-hotel-leg">
-                        <span aria-hidden="true"><Icon name="bed" size={12} /></span>
-                        <span>{text.hotelDepartRow(modeLabel(day.hotelOutboundMode), day.hotelOutboundMinutes)}</span>
-                      </li>
-                    ) : null}
-                    <li className={isFiller ? `is-system-filler${isMealFiller ? " is-meal-filler" : ""}` : undefined}>
-                      {leg && recommended ? (() => {
-                        const legKey = routeLegKey(leg.from.id, leg.to.id);
-                        const modeLabel = (mode: TransportMode) => mode === "taxi" && travelPreference === "car" ? text.moveCar : text.move[mode];
-                        return (
-                          <details className="planner-leg">
-                            <summary>
-                              <span>{modeIcon(recommended.mode, travelPreference === "car")}<b>{modeLabel(recommended.mode)} · {text.minutes(recommended.minutes)}</b></span>
-                              <small>{locale === "ja" ? "移動手段を変える" : "Change transport"}</small>
-                            </summary>
-                            <div className="planner-leg-modes" role="group" aria-label={`${leg.from.name} → ${leg.to.name} · ${text.legModes}`}>
-                              {leg.comparison.options
-                                .filter((option) => option.mode !== "walk" || option.minutes <= 90)
-                                .map((option) => (
-                                  <button
-                                    aria-pressed={option.mode === recommended.mode}
-                                    className={option.mode === recommended.mode ? "is-active" : ""}
-                                    key={option.mode}
-                                    onClick={() => setLegMode(legKey, option.mode)}
-                                    title={`${modeLabel(option.mode)} · ${text.legModes}`}
-                                    type="button"
-                                  >
-                                    {modeIcon(option.mode, travelPreference === "car")}
-                                    <b>{text.minutes(option.minutes)}</b>
-                                  </button>
-                                ))}
-                            </div>
-                            <span className="planner-leg-evidence">
-                              {recommended.source === "live" ? <em>{text.legLive}</em> : null}
-                              {recommended.mode === "transit" && leg.transferCount !== null ? (
-                                <em>{locale === "ja" ? `乗換${leg.transferCount}回` : `${leg.transferCount} transfer${leg.transferCount === 1 ? "" : "s"}`}</em>
-                              ) : null}
-                            </span>
-                          </details>
-                        );
-                      })() : null}
-                      {leg && recommended?.mode === "transit" ? (() => {
-                        const boarding = prefetchTransitSteps[routeLegKey(leg.from.id, leg.to.id)];
-                        const steps = boarding?.steps;
-                        if (!steps?.length) return null;
-                        const first = steps[0];
-                        const last = steps[steps.length - 1];
-                        const lineLabel = [first.shortName ?? first.lineName, first.headsign
-                          ? locale === "ja" ? `${first.headsign}行き` : `toward ${first.headsign}`
-                          : null].filter(Boolean).join(locale === "ja" ? "・" : " ");
-                        const extra = steps.length - 1;
-                        const walkTo = boarding.walkToStopMinutes;
-                        const walkFrom = boarding.walkFromStopMinutes;
-                        const parts: string[] = [];
-                        if (locale === "ja") {
-                          if (walkTo !== null && walkTo > 0 && first.departureStop) parts.push(`徒歩約${walkTo}分 →`);
-                          if (first.departureStop) parts.push(`${first.departureStop} ${first.departureTime ? `${first.departureTime}発` : ""}`.trim());
-                          parts.push(first.departureStop ? `${lineLabel}` : `${lineLabel}${first.departureTime ? ` · ${first.departureTime}発` : ""}`);
-                          if (extra > 0) parts.push(`乗継ぎ${extra}本`);
-                          if (last.arrivalStop) parts.push(`→ ${last.arrivalStop}${extra === 0 && first.stopCount ? `(${first.stopCount}駅)` : ""}`);
-                          if (walkFrom !== null && walkFrom > 0 && last.arrivalStop) parts.push(`→ 徒歩約${walkFrom}分`);
-                        } else {
-                          if (walkTo !== null && walkTo > 0 && first.departureStop) parts.push(`~${walkTo} min walk →`);
-                          if (first.departureStop) parts.push(`${first.departureStop}${first.departureTime ? ` dep ${first.departureTime}` : ""}`);
-                          parts.push(first.departureStop ? lineLabel : `${lineLabel}${first.departureTime ? ` · dep ${first.departureTime}` : ""}`);
-                          if (extra > 0) parts.push(`+${extra} connection${extra === 1 ? "" : "s"}`);
-                          if (last.arrivalStop) parts.push(`→ ${last.arrivalStop}${extra === 0 && first.stopCount ? ` (${first.stopCount} stops)` : ""}`);
-                          if (walkFrom !== null && walkFrom > 0 && last.arrivalStop) parts.push(`→ ~${walkFrom} min walk`);
-                        }
-                        return (
-                          <div className="planner-transit-line">
-                            <Icon name="signal" size={10} />
-                            <span>{parts.join(locale === "ja" ? " " : " ")}</span>
-                          </div>
-                        );
-                      })() : null}
-                      <button
-                        className={`planner-stop-row${isSelected ? " is-selected" : ""}${isFiller ? " is-filler" : ""}`}
-                        data-planner-stop-id={builtStop.stop.id}
-                        onClick={() => {
-                          setMapFocusedStopId(builtStop.stop.id);
-                          setInspector(isSelected ? null : { kind: "stop", stopId: builtStop.stop.id });
-                        }}
-                        type="button"
-                      >
-                        <time>{builtStop.arrival}</time>
-                        <span className="planner-stop-dot">{isMealFiller ? <Icon name="fork" size={11} /> : isFiller ? <Icon name="spark" size={11} /> : index + 1}</span>
-                        <span className="planner-stop-main">
-                          {isFiller ? <small className="planner-filler-label"><Icon name={isMealFiller ? "fork" : "spark"} size={10} />{isMealFiller
-                            ? fillerKind === "lunch" ? (locale === "ja" ? "昼食のおすすめ" : "Lunch recommendation") : (locale === "ja" ? "夕食のおすすめ" : "Dinner recommendation")
-                            : locale === "ja" ? "おすすめ" : "Recommended"}</small> : null}
-                          <b>{builtStop.stop.name}</b>
-                          <small>{builtStop.stop.area} · {text.previewStay(builtStop.stop.planningDurationMinutes)} <i className={`planner-duration-source is-${durationStatus}`}>{durationSource}</i></small>
-                          {accessPolicy ? <small className="planner-access-note"><Icon name="train" size={10} />{accessPolicy.note[locale]}</small> : null}
-                        </span>
-                        <span className="planner-stop-flags">
-                          {builtStop.reservationLateMinutes > 0
-                            ? <i className="is-booked">{text.lateShort(builtStop.reservationLateMinutes)}</i>
-                            : builtStop.fixedTime
-                              ? <i className="is-booked">{builtStop.fixedTime}</i>
-                              : builtStop.priority === "must"
-                                ? <i className="is-must">{text.must}</i>
-                                : null}
-                          {builtStop.openingStatus === "conflict"
-                            ? <i className="is-booked">{text.openingConflict}</i>
-                            : builtStop.openingStatus === "closed_day"
-                              ? <i className="is-booked">{text.openingClosedDay}</i>
-                              : builtStop.openingStatus === "last_entry_conflict"
-                                ? <i className="is-booked">{locale === "ja" ? "最終入場後" : "after last entry"}</i>
-                                : null}
-                        </span>
-                      </button>
-                      {isFiller ? (
-                        <button
-                          className="planner-filler-remove"
-                          onClick={() => removeSystemFiller(builtStop.stop)}
-                          type="button"
-                        >
-                          <Icon name="close" size={10} />{locale === "ja" ? "おすすめを外す" : "Remove suggestion"}
-                        </button>
-                      ) : null}
-                    </li>
-                    {!P0_CORE_ONLY ? mealRowsAfter(index) : null}
-                    {index === day.stops.length - 1 && dayEndBase && day.hotelInboundMinutes !== null ? (
-                      <li className="planner-hotel-leg is-return">
-                        <span aria-hidden="true"><Icon name="bed" size={12} /></span>
-                        <span>{text.hotelReturnRow(modeLabel(day.hotelInboundMode), day.hotelInboundMinutes)}</span>
-                      </li>
-                    ) : null}
-                    </Fragment>
-                  );
-                })}
-              </ol>
-            )}
+            <ItineraryTimeline
+              activeDay={activeDay}
+              locale={locale}
+              onSwitchDay={switchDay}
+              plan={plan}
+              tripDateTouched={tripDateTouched}
+            >
+              <DayTimeline
+                day={day}
+                dayTravelTotal={dayTravelTotal}
+                durationEvidenceByStopId={durationEvidenceByStopId}
+                fillerKindsByStopId={fillerKindsByStopId}
+                fillerStopIds={fillerStopIds}
+                fitDay={activeFitDay}
+                holiday={tripDateTouched && day.date ? holidaysByDate[day.date] : undefined}
+                locale={locale}
+                mealRowsAfter={P0_CORE_ONLY ? undefined : mealRowsAfter}
+                onOpenHotel={() => setInspector({ kind: "hotel" })}
+                onRemoveFiller={removeSystemFiller}
+                onSelectStop={(stopId, isSelected) => {
+                  setMapFocusedStopId(stopId);
+                  setInspector(isSelected ? null : { kind: "stop", stopId });
+                }}
+                onSetLegMode={setLegMode}
+                prefetchTransitSteps={prefetchTransitSteps}
+                presentation={activeDayPresentation}
+                selectedStopId={inspector?.kind === "stop" ? inspector.stopId : null}
+                showHotelDepartLeg={Boolean(base)}
+                showHotelReturnLeg={Boolean(dayEndBase)}
+                showSundayClosingNote={Boolean(tripDateTouched && day.date && activeDestination.sundayClosing && weekdayInfo(day.date, locale)?.isSunday && !holidaysByDate[day.date])}
+                showTonightHotel={hotelStayMode === "nightly"}
+                travelPreference={travelPreference}
+                tripDateTouched={tripDateTouched}
+                weather={weatherByDay[activeDay]}
+                weekdayLabel={day.date ? weekdayInfo(day.date, locale)?.label ?? null : null}
+              />
+            </ItineraryTimeline>
 
             <details className="planner-day-settings planner-day-settings-after">
               <summary>{locale === "ja" ? "日程設定と移動データ" : "Day settings and route data"}</summary>
@@ -6792,16 +6565,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
             ) : null}
           </div>
         ) : (
-          <div className="planner-result-view">
-            <p className="planner-warning" role="status"><span aria-hidden="true">!</span>{text.noDays}</p>
-            {plan && plan.unknownEntries.length > 0 ? (
-              <details className="planner-unknown" open>
-                <summary>{text.unknown} · {plan.unknownEntries.length}</summary>
-                <ul>{plan.unknownEntries.map((entry) => <li key={entry}>{entry}</li>)}</ul>
-              </details>
-            ) : null}
-            <button className="planner-build-button" onClick={() => setHasPlan(false)} type="button"><span>{text.edit}</span><b aria-hidden="true"><Icon name="arrow" size={19} /></b></button>
-          </div>
+          <ErrorState locale={locale} onEdit={() => setHasPlan(false)} unknownEntries={plan?.unknownEntries ?? []} />
         )}
       </section>
       {editToast ? (

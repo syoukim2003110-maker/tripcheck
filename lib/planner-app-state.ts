@@ -1,21 +1,21 @@
 // Planner application-state building blocks: the state slice types, their
 // idle values, and framework-free helpers shared by the planner hooks and
 // components. No React imports belong here.
-import { estimateStayMinutes } from "./stay-estimates";
-import { decodeTripShare, type ShareableResolutionOverride } from "./share-link";
-import type { StoredTripRecord } from "./trip-store";
-import type { ResolvedInputStop } from "./route-optimizer";
-import type { FoodCandidate } from "./google-food";
-import type { FreshVoicesResult } from "./fresh-voices";
-import type { PlaceIntelligenceResult } from "./place-intelligence";
-import type { HotelCandidate, HotelStyle } from "./google-hotels";
-import type { RouteRecommendation } from "./route-recommendations";
-import type { TransitStepSummary } from "./google-routes";
-import type { TransitConvergenceStopReason } from "./transit-convergence";
-import type { TransportMode, TravelPreference } from "./time-feasibility";
-import type { BuiltTripPlan, Pace, TripBase } from "./trip-builder";
-import type { ParsedWishlistPlace } from "./wishlist-parser";
-import { destinationById, localDateIn, type Destination } from "./destinations";
+import { estimateStayMinutes } from "./stay-estimates.ts";
+import { decodeTripShare, type ShareableResolutionOverride } from "./share-link.ts";
+import type { StoredTripRecord } from "./trip-store.ts";
+import type { ResolvedInputStop } from "./route-optimizer.ts";
+import type { FoodCandidate } from "./google-food.ts";
+import type { FreshVoicesResult } from "./fresh-voices.ts";
+import type { PlaceIntelligenceResult } from "./place-intelligence.ts";
+import type { HotelCandidate, HotelStyle } from "./google-hotels.ts";
+import type { RouteRecommendation } from "./route-recommendations.ts";
+import type { TransitStepSummary } from "./google-routes.ts";
+import type { TransitConvergenceStopReason } from "./transit-convergence.ts";
+import type { TransportMode, TravelPreference } from "./time-feasibility.ts";
+import type { BuiltTripPlan, Pace, TripBase } from "./trip-builder.ts";
+import type { ParsedWishlistPlace } from "./wishlist-parser.ts";
+import { destinationById, localDateIn, type Destination } from "./destinations.ts";
 
 export type TransitLegBoarding = {
   steps: TransitStepSummary[];

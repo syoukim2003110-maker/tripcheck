@@ -1,13 +1,13 @@
 // Domain-to-display transforms shared by the planner surfaces: dates,
 // durations, distances, clocks, addresses, payment labels, airport option
 // groups and hotel price bands. Pure functions - no React.
-import { destinationName, destinations, priceBandSymbols, type Destination } from "../destinations";
-import { straightLineDistanceKm, type ResolvedInputStop, type RouteStop } from "../route-optimizer";
-import type { PlaceIntelligenceResult } from "../place-intelligence";
-import type { HotelPriceLevel } from "../google-hotels";
-import type { AirportCode } from "../trip-builder";
-import { parsedWishlistPlaces } from "../wishlist-parser";
-import type { PlannerLocale } from "./planner-copy";
+import { destinationName, destinations, priceBandSymbols, type Destination } from "../destinations.ts";
+import { straightLineDistanceKm, type ResolvedInputStop, type RouteStop } from "../route-optimizer.ts";
+import type { PlaceIntelligenceResult } from "../place-intelligence.ts";
+import type { HotelPriceLevel } from "../google-hotels.ts";
+import type { AirportCode } from "../trip-builder.ts";
+import { parsedWishlistPlaces } from "../wishlist-parser.ts";
+import type { PlannerLocale } from "./planner-copy.ts";
 
 export const weekdayNames = {
   ja: ["日", "月", "火", "水", "木", "金", "土"],
