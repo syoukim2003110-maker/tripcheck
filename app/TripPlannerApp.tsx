@@ -9,11 +9,15 @@ import {
 } from "./PlannerGoogleMap";
 import PlannerDayTimeBar from "./PlannerDayTimeBar";
 import Icon, { type IconName } from "./PlannerIcons";
-import AirportOptionComparison from "./AirportOptionComparison";
-import SearchableCombobox, { type SearchableOption } from "./SearchableCombobox";
+import { type SearchableOption } from "./SearchableCombobox";
 import { feasibilityStateIcon, modeIcon, weatherIconByKind } from "./components/planner/icon-maps";
 import ErrorState from "./components/planner/states/ErrorState";
 import LoadingState from "./components/planner/states/LoadingState";
+import StartStepper from "./components/planner/start/StartStepper";
+import StartIntro from "./components/planner/start/StartIntro";
+import PlacesStep from "./components/planner/start/PlacesStep";
+import ResolveScreen from "./components/planner/start/ResolveScreen";
+import RecentTrips from "./components/planner/start/RecentTrips";
 import TripPrintSheet from "./components/planner/summary/TripPrintSheet";
 import ResultHeader from "./components/planner/summary/ResultHeader";
 import TripSummaryCard from "./components/planner/summary/TripSummaryCard";
@@ -156,8 +160,6 @@ import {
   shiftPlannerClock,
   formatCheckedAt,
   paymentLabel,
-  placeCandidateLabel,
-  resolvedStopAddress,
   safeRemovedStopLabels,
   priceBand,
   googleMapsSearchUrl,
@@ -191,7 +193,6 @@ import {
   addCalendarDays,
   clampTripDays,
   storedTripShareCode,
-  storedTripInput,
   newDeviceTripId,
   builtPlanTravelMinutes,
   clockToMinutes,
@@ -5050,576 +5051,166 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
           />
         ) : !hasPlan ? (
           <div className="planner-form-view">
-            <nav className={`planner-input-progress${inputStep === "places" && buildMode === "automatic" ? " is-compact" : ""}`} aria-label={locale === "ja" ? "入力の進み具合" : "Planning progress"}>
-              <button aria-current={inputStep === "places" ? "step" : undefined} className={inputStep === "places" ? "is-active" : "is-complete"} onClick={() => setInputStep("places")} type="button">
-                <i aria-hidden="true">{inputStep === "conditions" ? <Icon name="check" size={11} /> : 1}</i><span>{locale === "ja" ? "場所と日数" : "Places & days"}</span>
-              </button>
-              <span aria-hidden="true" />
-              {inputStep === "conditions" || buildMode === "custom" ? <>
-                <div aria-current={inputStep === "conditions" ? "step" : undefined} className={inputStep === "conditions" ? "is-active" : ""}>
-                  <i aria-hidden="true">2</i><span>{locale === "ja" ? "場所の確認" : "Check places"}</span>
-                </div>
-                <span aria-hidden="true" />
-                <div><i aria-hidden="true">3</i><span>{locale === "ja" ? "旅程" : "Itinerary"}</span></div>
-              </> : <div><i aria-hidden="true">2</i><span>{locale === "ja" ? "旅程" : "Itinerary"}</span></div>}
-            </nav>
+            <StartStepper buildMode={buildMode} inputStep={inputStep} locale={locale} onStepSelect={setInputStep} />
 
-            <div className="planner-intro">
-              {inputStep === "places" ? (
-                <span className="planner-intro-eyebrow">{locale === "ja" ? "旅行の下ごしらえ、ここまで。" : "Turn saved places into a trip."}</span>
-              ) : null}
-              <h1 id={inputStep === "conditions" ? "planner-reviewed-title" : undefined}>{inputStep === "places"
-                ? locale === "ja" ? "行きたい場所だけ、決めてください。" : "Just choose the places."
-                : unresolvedReviewedCount + ambiguousReviewedCount > 0
-                  ? locale === "ja" ? "場所を確認してください" : "Check the places"
-                  : locale === "ja" ? `${confirmedReviewedCount}か所を確認しました` : `${confirmedReviewedCount} place${confirmedReviewedCount === 1 ? "" : "s"} found`}</h1>
-              <p>{inputStep === "places"
-                ? locale === "ja" ? "日ごとの組み合わせ、回る順番、ホテル、食事、寄り道までまとめます。" : "We’ll group the days, order the stops, choose a practical base, and fill meals and gaps."
-                : unresolvedReviewedCount + ambiguousReviewedCount > 0
-                  ? locale === "ja"
-                    ? `${reviewedPlaceRows.length}か所を見つけました。確認が必要なのは${unresolvedReviewedCount + ambiguousReviewedCount}件だけです。未解決の場所は推測せず残します。`
-                    : `Found ${reviewedPlaceRows.length} place${reviewedPlaceRows.length === 1 ? "" : "s"}. Only ${unresolvedReviewedCount + ambiguousReviewedCount} need${unresolvedReviewedCount + ambiguousReviewedCount === 1 ? "s" : ""} a quick look — unresolved places stay explicit, never guessed.`
-                  : locale === "ja" ? "すべて確認できました。そのまま旅程づくりへ進めます。" : "Everything is settled — continue to the itinerary."}</p>
-            </div>
+            <StartIntro
+              ambiguousReviewedCount={ambiguousReviewedCount}
+              confirmedReviewedCount={confirmedReviewedCount}
+              inputStep={inputStep}
+              locale={locale}
+              reviewedPlaceCount={reviewedPlaceRows.length}
+              unresolvedReviewedCount={unresolvedReviewedCount}
+            />
 
             {inputStep === "places" ? (
-              <div className="planner-place-step">
-                <div className="planner-place-main">
-                <label className="planner-composer">
-                  <span>{text.inputLabel}</span>
-                  <textarea
-                    aria-describedby={startInputError ? "planner-start-error" : undefined}
-                    aria-invalid={startInputError ? true : undefined}
-                    autoFocus
-                    id="trip-input"
-                    onChange={(event) => {
-                      if (!itinerary.trim() && event.target.value.trim()) trackMilestone("trip_input_started");
-                      setItinerary(event.target.value);
-                      setStartInputError("");
-                      setReviewedInputSignature("");
-                      setResolvedStops([]);
-                      setAmbiguousPlaces([]);
-                      setManualPlaceDrafts({});
-                      setResolutionOverrides([]);
-                      setPreviewStops([]);
-                      setPlanReady(false);
-                      clearNightlyHotelResults();
-                    }}
-                    onKeyDown={(event) => {
-                      if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
-                        event.preventDefault();
-                        requestBuildFromStart();
-                      }
-                    }}
-                    placeholder={locale === "ja" ? "例：\nラウターブルンネン\nユングフラウヨッホ 必須\nツェルマット" : "e.g.\nLauterbrunnen\nJungfraujoch must\nZermatt"}
-                    ref={placesInputRef}
-                    value={itinerary}
-                  />
-                </label>
-                <p className="planner-parse-hint">{locale === "ja" ? "1行に1か所。順番は適当で大丈夫です。" : "One place per line. Any order is fine."}</p>
-                <details className="planner-input-examples">
-                  <summary>{locale === "ja" ? "入力例を見る" : "See input examples"}</summary>
-                  <p>{locale === "ja"
-                    ? "予約時刻や「必須」「時間があれば」も読み取れます。「1日目」の行で日を固定できます。"
-                    : "Booking times, “must” and “optional” are understood. A “Day 1” line pins places to a day."}</p>
-                  <pre aria-hidden="true">{locale === "ja"
-                    ? "1日目\n浅草寺\nチームラボプラネッツ 15:30 予約\n三鷹の森ジブリ美術館 必須\n渋谷スカイ 時間があれば"
-                    : "Day 1\nSenso-ji\nteamLab Planets 15:30 booked\nGhibli Museum must\nShibuya Sky optional"}</pre>
-                </details>
-                {startInputError ? (
-                  <p className="planner-inline-status is-warning" id="planner-start-error" role="alert">
-                    {startInputError === "empty"
-                      ? locale === "ja" ? "行きたい場所を入力してください。1行に1か所です。" : "Add the places you want to visit — one per line."
-                      : locale === "ja" ? `${parsedPlaceCount}件あります。現在は1回最大12件です。12件以下に分けてください。` : `${parsedPlaceCount} places were found. Up to 12 are checked at a time — split the list first.`}
-                  </p>
-                ) : null}
-
-                {parsePreviewRows.length > 0 ? (
-                  <div className="planner-parse-preview" aria-live="polite">
-                    <div className="planner-parse-head">
-                      <span className="planner-parse-title">{text.previewHeading(parsedPlaceCount)}</span>
-                      {canNormalizeItinerary ? <button onClick={() => {
-                        setItinerary(formattedItinerary);
-                        setResolutionOverrides([]);
-                        setReviewedInputSignature("");
-                        setResolvedStops([]);
-                        setAmbiguousPlaces([]);
-                        setPreviewStops([]);
-                      }} type="button">{text.previewFormat}</button> : null}
-                    </div>
-                    <ul>
-                      {parsePreviewRows.slice(0, 30).map((row, index) => row.type === "day" ? (
-                        <li className="is-day" key={`row-${index}`}><b>{text.previewDay(row.day)}</b></li>
-                      ) : row.type === "warn" ? (
-                        <li className="is-warn" key={`row-${index}`}><span>{row.raw}</span><small>{text.previewUnparsed}</small></li>
-                      ) : (
-                        <li key={`row-${index}`}>
-                          <span>{row.place.name}</span>
-                          <span className="planner-parse-chips">
-                            {row.showDay && row.place.day !== null ? <i>{text.previewDay(row.place.day)}</i> : null}
-                            {row.place.time ? <i className="is-time">{row.place.time}{row.place.isReservation ? ` ${text.reservation}` : ""}</i> : row.place.isReservation ? <i className="is-time">{text.reservation}</i> : null}
-                            {row.place.stayMinutes !== null ? <i>{text.previewStay(row.place.stayMinutes)}</i> : null}
-                            <span aria-label={locale === "ja" ? `${row.place.name}の優先度` : `${row.place.name} priority`} className="planner-parse-priority" role="group">
-                              {(["normal", "must", "optional"] as const).map((priority) => (
-                                <button
-                                  aria-pressed={row.place.priority === priority}
-                                  className={row.place.priority === priority ? `is-${priority}` : ""}
-                                  key={priority}
-                                  onClick={() => updateWishlistConstraint(row.placeIndex, { priority })}
-                                  type="button"
-                                >{locale === "ja"
-                                  ? { normal: "通常", must: "必須", optional: "任意" }[priority]
-                                  : { normal: "Normal", must: "Must", optional: "Optional" }[priority]}</button>
-                              ))}
-                            </span>
-                          </span>
-                          <details className="planner-parse-edit">
-                            <summary>{locale === "ja" ? "時刻・予約・滞在を編集" : "Edit time, booking and stay"}</summary>
-                            <div>
-                              <label>
-                                <span>{locale === "ja" ? "固定時刻" : "Fixed time"}</span>
-                                <input
-                                  aria-label={locale === "ja" ? `${row.place.name}の固定時刻` : `${row.place.name} fixed time`}
-                                  onChange={(event) => updateWishlistConstraint(row.placeIndex, { time: event.target.value || null })}
-                                  type="time"
-                                  value={row.place.time ?? ""}
-                                />
-                              </label>
-                              <label className="planner-parse-booking">
-                                <input
-                                  checked={row.place.isReservation}
-                                  onChange={(event) => updateWishlistConstraint(row.placeIndex, { isReservation: event.target.checked })}
-                                  type="checkbox"
-                                />
-                                <span>{locale === "ja" ? "予約済み" : "Booked"}</span>
-                              </label>
-                              <label>
-                                <span>{locale === "ja" ? "滞在（分）" : "Stay (minutes)"}</span>
-                                <input
-                                  inputMode="numeric"
-                                  max="480"
-                                  min="15"
-                                  onChange={(event) => updateWishlistConstraint(row.placeIndex, { stayMinutes: event.target.value ? Number(event.target.value) : null })}
-                                  placeholder={locale === "ja" ? "未入力は推定" : "Estimated if blank"}
-                                  type="number"
-                                  value={row.place.stayMinutes ?? ""}
-                                />
-                              </label>
-                            </div>
-                          </details>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
-                {parsedPlaceCount > 12 ? (
-                  <p className="planner-inline-status is-warning" role="alert">
-                    {locale === "ja"
-                      ? `${parsedPlaceCount}件あります。現在は1回最大12件です。場所を黙って切り捨てないため、12件以下のまとまりに分けてください。`
-                      : `${parsedPlaceCount} places were found. This alpha checks up to 12 at a time. Split the list into groups of 12 or fewer so no place is silently omitted.`}
-                  </p>
-                ) : null}
-
-                <section className="planner-quick-conditions" aria-labelledby="planner-quick-conditions-title">
-                  <header>
-                    <b id="planner-quick-conditions-title">{locale === "ja" ? "何日くらい？" : "How many days?"}</b>
-                  </header>
-                  <div className="planner-days-chips" role="group" aria-label={locale === "ja" ? "旅行日数" : "Trip length"}>
-                    {[3, 4, 5].map((value) => (
-                      <button
-                        aria-pressed={!daysUndecided && tripDays === value}
-                        className={!daysUndecided && tripDays === value ? "is-active" : ""}
-                        key={value}
-                        onClick={() => { setDaysUndecided(false); changeTripDays(value); }}
-                        type="button"
-                      >{value}</button>
-                    ))}
-                    <button
-                      aria-pressed={daysUndecided}
-                      className={daysUndecided ? "is-active" : ""}
-                      onClick={() => setDaysUndecided(true)}
-                      type="button"
-                    >{locale === "ja" ? "まだ決めていない" : "Not decided"}</button>
-                    <label className="planner-days-other">
-                      <span>{locale === "ja" ? "他の日数" : "Other"}</span>
-                      <select
-                        aria-label={locale === "ja" ? "他の日数を選ぶ" : "Choose another day count"}
-                        onChange={(event) => { setDaysUndecided(false); changeTripDays(Number(event.target.value)); }}
-                        value={daysUndecided ? "" : tripDays}
-                      >
-                        <option disabled value="">{locale === "ja" ? "日数" : "days"}</option>
-                        {Array.from({ length: 14 }, (_, index) => index + 1).map((value) => (
-                          <option key={value} value={value}>{locale === "ja" ? `${value}日` : `${value} day${value === 1 ? "" : "s"}`}</option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-                  {daysUndecided ? (
-                    <p className="planner-days-note">{locale === "ja" ? "場所に合わせて、必要な日数をTripCheckが提案します。" : "TripCheck will propose the day count that fits your places."}</p>
-                  ) : null}
-                  <details className="planner-date-disclosure" open={tripDateTouched || undefined}>
-                    <summary>{locale === "ja" ? "日付を入れる（営業時間・祝日・天気が正確になります）" : "Add dates (sharpens hours, holidays and weather)"}</summary>
-                    <div className="planner-date-field">
-                      <label htmlFor="planner-quick-trip-date">
-                        <span>{text.date}</span>
-                        <input id="planner-quick-trip-date" onChange={(event) => { setTripStartDate(event.target.value); setTripDateTouched(true); }} type="date" value={tripStartDate} />
-                      </label>
-                      <button aria-pressed={!tripDateTouched} onClick={() => setTripDateTouched(false)} type="button">
-                        {locale === "ja" ? "日付はまだ未定" : "Date not decided yet"}
-                      </button>
-                    </div>
-                  </details>
-                </section>
-
-                {placeWarning ? <p className="planner-inline-status is-warning" role="status">{placeWarning === "quota_exhausted"
-                  ? locale === "ja" ? "本日の場所検索の上限に達しました。分かっている場所だけで続け、残りは未解決として表示します（上限は毎日リセットされます）。" : "Today's place-search allowance is used up. Known places continue; the rest stay unresolved (the allowance resets daily)."
-                  : locale === "ja" ? "位置情報サービスに接続できませんでした。分かる場所だけで続け、残りは未解決として表示します。" : "Place lookup is unavailable. Known places will continue and the rest will stay unresolved."}</p> : null}
-                <button aria-busy={isResolvingPlaces || isBuilding} className="planner-build-button planner-review-button" disabled={isBuilding || isResolvingPlaces} onClick={requestBuildFromStart} type="button">
-                  <span>{isBuilding
-                    ? (locale === "ja" ? "旅程を作成中…" : "Building your itinerary…")
-                    : isResolvingPlaces
-                      ? (locale === "ja" ? "場所を確認しています…" : "Checking your places…")
-                      : (locale === "ja" ? "旅程をつくる" : "Build my trip")}</span><b aria-hidden="true"><Icon name="arrow" size={19} /></b>
-                </button>
-
-                <details className="planner-advanced-disclosure" open={buildMode === "custom" || undefined}>
-                  <summary onClick={(event) => { event.preventDefault(); setBuildMode(buildMode === "custom" ? "automatic" : "custom"); }}>
-                    {locale === "ja" ? "ホテル・空港・ペースを指定する" : "Set hotel, airport or pace"}
-                  </summary>
-                  {buildMode === "custom" ? (
-                  <div className="planner-quick-advanced">
-                    <label className="planner-hotel-field"><span>{text.hotel}</span><input onChange={(event) => { setHotelQuery(event.target.value); setPlanReady(false); }} placeholder={text.hotelPlaceholder} value={hotelQuery} /></label>
-                    <div className="planner-core-choices">
-                      <div className="planner-choice"><span>{text.pace}</span><div className="planner-choice-chips" role="group" aria-label={text.pace}>{(["relaxed", "balanced", "fast"] as const).map((value) => <button aria-pressed={pace === value} className={pace === value ? "is-active" : ""} key={value} onClick={() => setPace(value)} type="button">{text[value]}</button>)}</div></div>
-                      <div className="planner-choice"><span>{text.travelHeading}</span><div className="planner-choice-chips" role="group" aria-label={text.travelHeading}>{([["auto", text.travelAuto], ["car", text.travelCar]] as const).map(([value, label]) => <button aria-pressed={travelPreference === value} className={travelPreference === value ? "is-active" : ""} key={value} onClick={() => setTravelPreference(value)} type="button">{label}</button>)}</div></div>
-                      <div className="planner-choice"><span>{text.timebandHeading}</span><div className="planner-choice-chips" role="group" aria-label={text.timebandHeading}>{([["08:00", text.timebandEarly], ["09:00", text.timebandNormal], ["10:30", text.timebandLate]] as const).map(([value, label]) => <button aria-pressed={dayStartDefault === value} className={dayStartDefault === value ? "is-active" : ""} key={value} onClick={() => setDayStartDefault(value)} type="button">{label}</button>)}</div></div>
-                    </div>
-                    <div className="planner-destination-field planner-field planner-place-country">
-                      <label htmlFor="planner-destination"><span>{text.destination}</span></label>
-                      <SearchableCombobox
-                        ariaLabel={text.destination}
-                        id="planner-destination"
-                        noResultsLabel={text.noMatchingOption}
-                        onChange={(value) => {
-                          const next = value as DestinationChoice;
-                          setDestinationChoice(next);
-                          if (next !== "auto") setDetectedDestinationId(null);
-                          setReviewedInputSignature("");
-                          setResolvedStops([]);
-                          setAmbiguousPlaces([]);
-                          setManualPlaceDrafts({});
-                          setResolutionOverrides([]);
-                          setPreviewStops([]);
-                          setPlanReady(false);
-                        }}
-                        options={destinationComboOptions}
-                        placeholder={text.destinationSearch}
-                        resultCountLabel={text.optionCount}
-                        value={destinationChoice}
-                      />
-                      <small>{locale === "ja" ? "通常は場所から自動判定します。" : "Usually detected automatically from your places."}</small>
-                    </div>
-                    <button className="planner-secondary-review" disabled={!canReviewPlaces} onClick={() => void reviewWishlistPlaces()} type="button">
-                      {locale === "ja" ? "空港・予約・地点ごとの条件も設定" : "Set airports, bookings and per-place details"}
-                    </button>
-                  </div>
-                  ) : null}
-                </details>
-
-                <button className="planner-sample-link" onClick={() => loadDemo(destinationById("switzerland"))} type="button">
-                  <span aria-hidden="true"><Icon name="spark" size={13} /></span>
-                  <b>{locale === "ja" ? "30秒で完成例を見る" : "See a finished example"}</b>
-                  <small>{locale === "ja" ? "スイス4日間 · ルート・ホテル・食事つき" : "Switzerland, 4 days · routes, base and meals"}</small>
-                </button>
-                </div>
-
-                <aside className="planner-start-preview" aria-label={locale === "ja" ? "できあがる旅程のイメージ" : "Preview of a finished trip"}>
-                  <header>
-                    <strong>{locale === "ja" ? "できあがる旅" : "The trip you get"}</strong>
-                    <span>{locale === "ja" ? "4日 · 8か所" : "4 days · 8 places"}</span>
-                  </header>
-                  <div className="planner-start-preview-canvas">
-                    <svg aria-hidden="true" preserveAspectRatio="xMidYMid slice" viewBox="0 0 420 430">
-                      <path d="M-20 84 C90 30 150 128 230 88 S360 40 440 82" fill="none" stroke="#DDE2DC" strokeWidth="8" />
-                      <path d="M-10 330 C90 268 170 352 260 292 S370 236 440 268" fill="none" stroke="#E0E4DE" strokeWidth="11" />
-                      <path d="M64 372 C112 292 96 232 172 196 S286 168 336 104" fill="none" stroke="#2563EB" strokeLinecap="round" strokeWidth="7" />
-                      <circle cx="64" cy="372" fill="#2563EB" r="10" stroke="#fff" strokeWidth="4" />
-                      <circle cx="172" cy="196" fill="#2563EB" r="10" stroke="#fff" strokeWidth="4" />
-                      <circle cx="336" cy="104" fill="#2563EB" r="10" stroke="#fff" strokeWidth="4" />
-                    </svg>
-                    <span className="planner-start-chip is-hotel"><Icon name="bed" size={12} />{locale === "ja" ? "移動が少ないホテル" : "A base that cuts travel"}</span>
-                    <span className="planner-start-chip is-meal"><Icon name="fork" size={12} />{locale === "ja" ? "動線上のランチ" : "Lunch on the route"}</span>
-                    <span className="planner-start-chip is-gap"><Icon name="spark" size={12} />{locale === "ja" ? "45分で寄れるカフェ" : "A café for a 45-min gap"}</span>
-                  </div>
-                  <div className="planner-start-preview-card">
-                    <b><i aria-hidden="true"><Icon name="check" size={11} /></i>{locale === "ja" ? "4日なら、無理なく回れます" : "This works comfortably in 4 days"}</b>
-                    <small>{locale === "ja" ? "8か所 · 移動8時間40分 · 余裕4時間10分" : "8 places · 8h 40m travel · 4h 10m buffer"}</small>
-                    <div>
-                      <span aria-hidden="true">1</span>
-                      <p><b>{locale === "ja" ? "ラウターブルンネン → ユングフラウヨッホ" : "Lauterbrunnen → Jungfraujoch"}</b><small>{locale === "ja" ? "4か所 · 余裕1時間30分" : "4 stops · 1h 30m buffer"}</small></p>
-                    </div>
-                  </div>
-                </aside>
-              </div>
-            ) : (
-              <div className="planner-conditions-step">
-                {/* v1.1 §5.2 Resolve: the step heading above carries the ask;
-                    this bar keeps the escape back to the raw input. */}
-                <div className="planner-resolve-intro">
-                  <button onClick={() => { setManualPinTarget(null); setInputStep("places"); }} type="button">{locale === "ja" ? "入力を直す" : "Edit input"}</button>
-                </div>
-                <section className="planner-resolved-places" aria-labelledby="planner-reviewed-title">
-                  <ul>
-                    {reviewedPlaceRows.map((row) => {
-                      const attentionRank = resolveAttentionRanks.get(row.placeIndex) ?? -1;
-                      const attentionDeferred = attentionRank >= 3;
-                      return (
-                      <li className={`is-${row.status}`} key={`${row.placeIndex}-${row.place.name}`}>
-                        <span className="planner-place-status" role="img" aria-label={row.status === "confirmed" ? (locale === "ja" ? "確認済み" : "Confirmed") : row.status === "review" ? (locale === "ja" ? "候補を選択" : "Choose a match") : row.status === "parsed" ? (locale === "ja" ? "確認待ち" : "Pending review") : (locale === "ja" ? "未解決" : "Unresolved")}>
-                          {row.status === "confirmed" ? <Icon name="check" size={11} /> : row.status === "review" ? "!" : row.status === "parsed" ? "…" : "×"}
-                        </span>
-                        <span>
-                          <b>{row.resolved?.name ?? row.place.name}</b>
-                          {attentionDeferred ? (
-                            <small className="planner-resolve-deferred">{locale === "ja" ? "先に上の項目を確認すると、ここが選べるようになります。" : "Settle the items above first — this one unlocks next."}</small>
-                          ) : row.status === "review" && row.ambiguity ? (
-                            <div className="planner-candidate-question">
-                              <p>{locale === "ja" ? `どちらの「${row.place.name}」ですか？` : `Which “${row.place.name}” did you mean?`}</p>
-                              <div aria-label={locale === "ja" ? `${row.place.name}の候補` : `Candidates for ${row.place.name}`} className="planner-candidate-options" role="group">
-                                {row.ambiguity.candidates.slice(0, 3).map((candidate) => (
-                                  <button key={candidate.id} onClick={() => chooseAmbiguousCandidate(row.placeIndex, candidate)} type="button">
-                                    {placeCandidateLabel(candidate, resolvedStops, locale)}
-                                  </button>
-                                ))}
-                              </div>
-                              {row.ambiguity.candidates.length > 3 ? (
-                                <select
-                                  aria-label={locale === "ja" ? `${row.place.name}のその他の候補` : `More candidates for ${row.place.name}`}
-                                  className="planner-place-candidates"
-                                  defaultValue=""
-                                  onChange={(event) => {
-                                    const selected = row.ambiguity?.candidates.find((candidate) => candidate.id === event.target.value);
-                                    if (selected) chooseAmbiguousCandidate(row.placeIndex, selected);
-                                  }}
-                                >
-                                  <option disabled value="">{locale === "ja" ? "その他の候補から選ぶ…" : "Choose from more candidates…"}</option>
-                                  {row.ambiguity.candidates.slice(3).map((candidate) => <option key={candidate.id} value={candidate.id}>{placeCandidateLabel(candidate, resolvedStops, locale)}</option>)}
-                                </select>
-                              ) : null}
-                            </div>
-                          ) : row.status === "confirmed" ? <small>{resolvedStopAddress(row.resolved)}</small> : row.status === "parsed" ? (
-                            <small className="planner-resolve-deferred">{locale === "ja" ? "内容が変わったため、もう一度確認します。" : "The input changed — this will be re-checked."}</small>
-                          ) : (
-                            <div className="planner-notfound-block">
-                              <p className="planner-notfound-note">{locale === "ja" ? "この場所だけ見つかりませんでした" : "We couldn’t find this place"}</p>
-                              <div className="planner-notfound-actions">
-                                <button disabled={isResolvingPlaces} onClick={() => void reviewWishlistPlaces()} type="button">{locale === "ja" ? "もう一度探す" : "Search again"}</button>
-                                <button onClick={() => { setManualPinTarget(null); setInputStep("places"); requestAnimationFrame(() => placesInputRef.current?.focus()); }} type="button">{locale === "ja" ? "入力を直す" : "Edit the name"}</button>
-                              </div>
-                            <details className="planner-manual-place">
-                              <summary>{locale === "ja" ? "地図で場所を指定する" : "Pin it on the map"}</summary>
-                              <label>
-                                <span>{locale === "ja" ? "住所・目印（任意）" : "Address or landmark (optional)"}</span>
-                                <input
-                                  onChange={(event) => setManualPlaceDrafts((current) => ({
-                                    ...current,
-                                    [row.placeIndex]: { ...(current[row.placeIndex] ?? { address: "", latitude: "", longitude: "" }), address: event.target.value },
-                                  }))}
-                                  value={manualPlaceDrafts[row.placeIndex]?.address ?? ""}
-                                />
-                              </label>
-                              <button
-                                aria-pressed={manualPinTarget === row.placeIndex}
-                                className="planner-map-pick-button"
-                                onClick={() => setManualPinTarget((current) => current === row.placeIndex ? null : row.placeIndex)}
-                                type="button"
-                              >
-                                {manualPinTarget === row.placeIndex
-                                  ? (locale === "ja" ? "地図選択を終了" : "Stop picking on map")
-                                  : (locale === "ja" ? "地図をクリックして選ぶ" : "Pick by clicking the map")}
-                              </button>
-                              {manualPinTarget === row.placeIndex ? (
-                                <p aria-live="polite" className="planner-map-pick-status">
-                                  {manualPinCoordinate
-                                    ? (locale === "ja" ? "地図から座標を取得しました。内容を確認して「この地点を使う」を押してください。" : "Coordinates captured from the map. Review them, then choose Use this point.")
-                                    : (locale === "ja" ? "右側の地図で地点をクリックしてください。地図が使えない場合は座標を直接入力できます。" : "Click a point on the map. You can still enter coordinates when the interactive map is unavailable.")}
-                                </p>
-                              ) : null}
-                              <div>
-                                <label><span>{locale === "ja" ? "緯度" : "Latitude"}</span><input inputMode="decimal" onChange={(event) => setManualPlaceDrafts((current) => ({ ...current, [row.placeIndex]: { ...(current[row.placeIndex] ?? { address: "", latitude: "", longitude: "" }), latitude: event.target.value } }))} placeholder="35.6812" value={manualPlaceDrafts[row.placeIndex]?.latitude ?? ""} /></label>
-                                <label><span>{locale === "ja" ? "経度" : "Longitude"}</span><input inputMode="decimal" onChange={(event) => setManualPlaceDrafts((current) => ({ ...current, [row.placeIndex]: { ...(current[row.placeIndex] ?? { address: "", latitude: "", longitude: "" }), longitude: event.target.value } }))} placeholder="139.7671" value={manualPlaceDrafts[row.placeIndex]?.longitude ?? ""} /></label>
-                              </div>
-                              <button onClick={() => confirmManualPlace(row.placeIndex, row.place.name)} type="button">{locale === "ja" ? "この地点を使う" : "Use this point"}</button>
-                              <small>{locale === "ja" ? "提供元の確認済み地点ではなく、あなたが指定した座標として表示します。" : "This stays labelled as traveller-supplied coordinates, not a provider-verified place."}</small>
-                            </details>
-                            </div>
-                          )}
-                          <details className="planner-place-constraints">
-                            <summary>{locale === "ja" ? "予約・時刻・滞在を編集" : "Edit booking, time and stay"}</summary>
-                            <div>
-                              <label>
-                                <span>{locale === "ja" ? "固定時刻" : "Fixed time"}</span>
-                                <input
-                                  aria-label={locale === "ja" ? `${row.place.name}の固定時刻` : `${row.place.name} fixed time`}
-                                  onChange={(event) => updateWishlistConstraint(row.placeIndex, { time: event.target.value || null }, { keepReviewedPlaces: true })}
-                                  type="time"
-                                  value={row.place.time ?? ""}
-                                />
-                              </label>
-                              <label className="planner-booking-toggle">
-                                <input
-                                  checked={row.place.isReservation}
-                                  onChange={(event) => updateWishlistConstraint(row.placeIndex, { isReservation: event.target.checked }, { keepReviewedPlaces: true })}
-                                  type="checkbox"
-                                />
-                                <span>{locale === "ja" ? "予約済み（Mustとして固定）" : "Booked (protect as Must)"}</span>
-                              </label>
-                              <label>
-                                <span>{locale === "ja" ? "滞在時間（分）" : "Stay (minutes)"}</span>
-                                <input
-                                  inputMode="numeric"
-                                  max="480"
-                                  min="15"
-                                  onChange={(event) => updateWishlistConstraint(row.placeIndex, { stayMinutes: event.target.value ? Number(event.target.value) : null }, { keepReviewedPlaces: true })}
-                                  placeholder={locale === "ja" ? "未入力は推定" : "Estimated if blank"}
-                                  type="number"
-                                  value={row.place.stayMinutes ?? ""}
-                                />
-                              </label>
-                            </div>
-                          </details>
-                        </span>
-                        {row.place.isReservation ? (
-                          <span className="planner-booked-badge">{locale === "ja" ? "予約・必須" : "Booked · Must"}</span>
-                        ) : (
-                          <div aria-label={locale === "ja" ? `${row.place.name}の優先度` : `${row.place.name} priority`} className="planner-priority-picker" role="group">
-                            {(["normal", "must", "optional"] as const).map((priority) => (
-                              <button
-                                aria-pressed={row.place.priority === priority}
-                                className={row.place.priority === priority ? `is-${priority}` : ""}
-                                key={priority}
-                                onClick={() => {
-                                  updateWishlistConstraint(row.placeIndex, { priority }, { keepReviewedPlaces: true });
-                                }}
-                                type="button"
-                              >{locale === "ja"
-                                ? { normal: "通常", must: "必須", optional: "任意" }[priority]
-                                : { normal: "Normal", must: "Must", optional: "Optional" }[priority]}</button>
-                            ))}
-                          </div>
-                        )}
-                      </li>
-                      );
-                    })}
-                  </ul>
-                  {unresolvedReviewedCount > 0 ? <p className="planner-inline-status is-warning" role="status">{locale === "ja" ? `${unresolvedReviewedCount}件は未解決です。判定は保留または条件付きになります。` : `${unresolvedReviewedCount} place${unresolvedReviewedCount === 1 ? " is" : "s are"} unresolved. The verdict will remain conditional or unknown.`}</p> : null}
-                  {ambiguousReviewedCount > 0 ? <p className="planner-inline-status is-warning" role="status">{locale === "ja" ? `${ambiguousReviewedCount}件は同名候補があります。住所を見て選んでください。` : `${ambiguousReviewedCount} place${ambiguousReviewedCount === 1 ? " has" : "s have"} same-name matches. Choose by address.`}</p> : null}
-                </section>
-
-                {/* v1.1 §5.2: the Resolve step is about places. Trip conditions
-                    stay reachable but folded away, mirroring the Start screen. */}
-                <details className="planner-details planner-resolve-conditions">
-                  <summary>{locale === "ja" ? "日数・ホテル・ペースなどの条件を調整（任意）" : "Adjust days, hotel, pace and more (optional)"}<span aria-hidden="true"><Icon name="plus" size={15} /></span></summary>
-
-                <div className="planner-primary-fields">
-                  <label><span>{text.days}</span><select onChange={(event) => changeTripDays(Number(event.target.value))} value={tripDays}>{Array.from({ length: 14 }, (_, index) => index + 1).map((value) => <option key={value} value={value}>{locale === "ja" ? `${value}日` : `${value} day${value === 1 ? "" : "s"}`}</option>)}</select></label>
-                  <div className="planner-date-field">
-                    <label htmlFor="planner-trip-date"><span>{text.date}</span><input id="planner-trip-date" onChange={(event) => { setTripStartDate(event.target.value); setTripDateTouched(true); }} type="date" value={tripStartDate} /></label>
-                    <button aria-pressed={!tripDateTouched} onClick={() => setTripDateTouched(false)} type="button">{locale === "ja" ? "日付はまだ未定" : "Date not decided yet"}</button>
-                    {!tripDateTouched ? <small>{locale === "ja" ? "表示日は計算用の仮日付です。曜日・営業時間は確定条件に使いません。" : "The visible date is a planning placeholder. Weekday and opening hours will not be treated as confirmed constraints."}</small> : null}
-                  </div>
-                </div>
-
-                <label className="planner-hotel-field"><span>{text.hotel}</span><input onChange={(event) => {
-                  setHotelQuery(event.target.value);
+              <PlacesStep
+                buildMode={buildMode}
+                canNormalizeItinerary={canNormalizeItinerary}
+                canReviewPlaces={canReviewPlaces}
+                dayStartDefault={dayStartDefault}
+                daysUndecided={daysUndecided}
+                destinationChoice={destinationChoice}
+                destinationComboOptions={destinationComboOptions}
+                hotelQuery={hotelQuery}
+                isBuilding={isBuilding}
+                isResolvingPlaces={isResolvingPlaces}
+                itinerary={itinerary}
+                locale={locale}
+                onDaysUndecided={() => setDaysUndecided(true)}
+                onDestinationChange={(value) => {
+                  const next = value as DestinationChoice;
+                  setDestinationChoice(next);
+                  if (next !== "auto") setDetectedDestinationId(null);
+                  setReviewedInputSignature("");
+                  setResolvedStops([]);
+                  setAmbiguousPlaces([]);
+                  setManualPlaceDrafts({});
+                  setResolutionOverrides([]);
+                  setPreviewStops([]);
                   setPlanReady(false);
-                }} placeholder={text.hotelPlaceholder} value={hotelQuery} /></label>
-
-                <div className="planner-core-choices">
-                  <div className="planner-choice"><span>{text.pace}</span><div className="planner-choice-chips" role="group" aria-label={text.pace}>{(["relaxed", "balanced", "fast"] as const).map((value) => <button aria-pressed={pace === value} className={pace === value ? "is-active" : ""} key={value} onClick={() => setPace(value)} type="button">{text[value]}</button>)}</div></div>
-                  <div className="planner-choice"><span>{text.travelHeading}</span><div className="planner-choice-chips" role="group" aria-label={text.travelHeading}>{([["auto", text.travelAuto], ["car", text.travelCar]] as const).map(([value, label]) => <button aria-pressed={travelPreference === value} className={travelPreference === value ? "is-active" : ""} key={value} onClick={() => setTravelPreference(value)} type="button">{label}</button>)}</div></div>
-                  <div className="planner-choice"><span>{text.timebandHeading}</span><div className="planner-choice-chips" role="group" aria-label={text.timebandHeading}>{([["08:00", text.timebandEarly], ["09:00", text.timebandNormal], ["10:30", text.timebandLate]] as const).map(([value, label]) => <button aria-pressed={dayStartDefault === value} className={dayStartDefault === value ? "is-active" : ""} key={value} onClick={() => setDayStartDefault(value)} type="button">{label}</button>)}</div></div>
-                  <div className="planner-choice"><span>{text.dayEndHeading}</span><div className="planner-choice-chips" role="group" aria-label={text.dayEndHeading}>{([["", text.dayEndNone], ["19:30", "19:30"], ["21:30", "21:30"]] as const).map(([value, label]) => <button aria-pressed={dayEndTarget === value} className={dayEndTarget === value ? "is-active" : ""} key={value || "none"} onClick={() => setDayEndTarget(value)} type="button">{label}</button>)}</div></div>
-                  <div className="planner-choice"><span>{locale === "ja" ? "移動ごとの余白" : "Buffer after each leg"}</span><div className="planner-choice-chips" role="group" aria-label={locale === "ja" ? "移動ごとの余白" : "Buffer after each leg"}>{([0, 10, 20, 30] as const).map((value) => <button aria-pressed={transferBufferMinutes === value} className={transferBufferMinutes === value ? "is-active" : ""} key={value} onClick={() => setTransferBufferMinutes(value)} type="button">{value}{locale === "ja" ? "分" : " min"}</button>)}</div></div>
-                  <label className="planner-choice planner-number-choice">
-                    <span>{locale === "ja" ? "1区間の徒歩上限（任意）" : "Max walking per leg (optional)"}</span>
-                    <input max="180" min="5" onChange={(event) => setMaxWalkingMinutesPerLeg(event.target.value ? Number(event.target.value) : null)} placeholder={locale === "ja" ? "標準 30分" : "Default 30 min"} type="number" value={maxWalkingMinutesPerLeg ?? ""} />
-                    <small>{locale === "ja" ? "超える徒歩は他の移動手段を優先します。" : "Longer walks are deprioritised when another mode is available."}</small>
-                  </label>
-                  <label className="planner-choice planner-number-choice">
-                    <span>{locale === "ja" ? "1区間の乗換上限（任意）" : "Max transfers per leg (optional)"}</span>
-                    <input max="8" min="0" onChange={(event) => setMaxTransfersPerLeg(event.target.value ? Number(event.target.value) : null)} placeholder={locale === "ja" ? "標準 2回" : "Default 2"} type="number" value={maxTransfersPerLeg ?? ""} />
-                    <small>{locale === "ja" ? "乗換回数を取得できない区間は未確認と表示します。" : "A leg remains unverified when transfer-step data is unavailable."}</small>
-                  </label>
-                </div>
-
-                <details className="planner-details">
-                  <summary>{locale === "ja" ? "フライト・空港の条件" : "Flight and airport constraints"}<span aria-hidden="true"><Icon name="plus" size={15} /></span></summary>
-                  <div className="planner-detail-grid">
-                    <div className="planner-field"><label htmlFor="planner-arrival-airport"><span>{text.arrival}</span></label><SearchableCombobox ariaLabel={text.arrival} id="planner-arrival-airport" noResultsLabel={text.noMatchingOption} onChange={(value) => setArrivalAirport(value as AirportCode)} options={airportComboOptions} placeholder={text.airportSearch} resultCountLabel={text.optionCount} value={arrivalAirport} /></div>
-                    <label><span>{text.arrivalTime}</span><input disabled={arrivalAirport === "none"} onChange={(event) => setArrivalTime(event.target.value)} type="time" value={arrivalTime} /></label>
-                    <div className="planner-field"><label htmlFor="planner-departure-airport"><span>{text.departure}</span></label><SearchableCombobox ariaLabel={text.departure} id="planner-departure-airport" noResultsLabel={text.noMatchingOption} onChange={(value) => setDepartureAirport(value as AirportCode)} options={airportComboOptions} placeholder={text.airportSearch} resultCountLabel={text.optionCount} value={departureAirport} /></div>
-                    <label><span>{text.departureTime}</span><input disabled={departureAirport === "none"} onChange={(event) => setDepartureTime(event.target.value)} type="time" value={departureTime} /></label>
-                    {arrivalAirport !== "none" || departureAirport !== "none" ? <div className="planner-choice"><span>{text.flightKindHeading}</span><div className="planner-choice-chips" role="group" aria-label={text.flightKindHeading}>{([["international", text.flightInternational], ["domestic", text.flightDomestic]] as const).map(([value, label]) => <button aria-pressed={flightKind === value} className={flightKind === value ? "is-active" : ""} key={value} onClick={() => setFlightKind(value)} type="button">{label}</button>)}</div></div> : null}
-                    {arrivalAirport !== "none" ? <AirportOptionComparison destination={arrivalAirportDestination} direction="arrival" flightKind={flightKind} key={`${arrivalAirportDestination.id}-arrival`} locale={locale} onUse={(airportCode, time) => { setArrivalAirport(airportCode); setArrivalTime(time); }} selectedAirport={arrivalAirport} selectedTime={arrivalTime} /> : null}
-                    {departureAirport !== "none" ? <AirportOptionComparison destination={departureAirportDestination} direction="departure" flightKind={flightKind} key={`${departureAirportDestination.id}-departure`} locale={locale} onUse={(airportCode, time) => { setDepartureAirport(airportCode); setDepartureTime(time); }} selectedAirport={departureAirport} selectedTime={departureTime} /> : null}
-                  </div>
-                </details>
-
-                </details>
-
-                <button className="planner-build-button" disabled={!canBuild} onClick={continueFromResolve} type="button">
-                  <span>{locale === "ja"
-                    ? `${confirmedReviewedCount}か所で続ける`
-                    : `Continue with ${confirmedReviewedCount} place${confirmedReviewedCount === 1 ? "" : "s"}`}</span><b aria-hidden="true"><Icon name="arrow" size={19} /></b>
-                </button>
-              </div>
+                }}
+                onFormatItinerary={() => {
+                  setItinerary(formattedItinerary);
+                  setResolutionOverrides([]);
+                  setReviewedInputSignature("");
+                  setResolvedStops([]);
+                  setAmbiguousPlaces([]);
+                  setPreviewStops([]);
+                }}
+                onHotelQueryChange={(value) => { setHotelQuery(value); setPlanReady(false); }}
+                onItineraryChange={(value) => {
+                  if (!itinerary.trim() && value.trim()) trackMilestone("trip_input_started");
+                  setItinerary(value);
+                  setStartInputError("");
+                  setReviewedInputSignature("");
+                  setResolvedStops([]);
+                  setAmbiguousPlaces([]);
+                  setManualPlaceDrafts({});
+                  setResolutionOverrides([]);
+                  setPreviewStops([]);
+                  setPlanReady(false);
+                  clearNightlyHotelResults();
+                }}
+                onLoadSample={() => loadDemo(destinationById("switzerland"))}
+                onRequestBuild={requestBuildFromStart}
+                onReviewPlaces={() => void reviewWishlistPlaces()}
+                onSelectDayStart={setDayStartDefault}
+                onSelectDays={(value) => { setDaysUndecided(false); changeTripDays(value); }}
+                onSelectPace={setPace}
+                onSelectTravelPreference={setTravelPreference}
+                onToggleBuildMode={() => setBuildMode(buildMode === "custom" ? "automatic" : "custom")}
+                onTripDateChange={(value) => { setTripStartDate(value); setTripDateTouched(true); }}
+                onTripDateUndecided={() => setTripDateTouched(false)}
+                onUpdateConstraint={updateWishlistConstraint}
+                pace={pace}
+                parsePreviewRows={parsePreviewRows}
+                parsedPlaceCount={parsedPlaceCount}
+                placeWarning={placeWarning}
+                placesInputRef={placesInputRef}
+                startInputError={startInputError}
+                travelPreference={travelPreference}
+                tripDateTouched={tripDateTouched}
+                tripDays={tripDays}
+                tripStartDate={tripStartDate}
+              />
+            ) : (
+              <ResolveScreen
+                airportComboOptions={airportComboOptions}
+                ambiguousReviewedCount={ambiguousReviewedCount}
+                arrivalAirport={arrivalAirport}
+                arrivalAirportDestination={arrivalAirportDestination}
+                arrivalTime={arrivalTime}
+                canBuild={canBuild}
+                confirmedReviewedCount={confirmedReviewedCount}
+                dayEndTarget={dayEndTarget}
+                dayStartDefault={dayStartDefault}
+                departureAirport={departureAirport}
+                departureAirportDestination={departureAirportDestination}
+                departureTime={departureTime}
+                flightKind={flightKind}
+                hotelQuery={hotelQuery}
+                isResolvingPlaces={isResolvingPlaces}
+                locale={locale}
+                manualPinCoordinate={manualPinCoordinate}
+                manualPinTarget={manualPinTarget}
+                manualPlaceDrafts={manualPlaceDrafts}
+                maxTransfersPerLeg={maxTransfersPerLeg}
+                maxWalkingMinutesPerLeg={maxWalkingMinutesPerLeg}
+                onArrivalAirportChange={setArrivalAirport}
+                onArrivalTimeChange={setArrivalTime}
+                onChangeMaxTransfers={setMaxTransfersPerLeg}
+                onChangeMaxWalking={setMaxWalkingMinutesPerLeg}
+                onChangeTripDays={changeTripDays}
+                onChooseCandidate={chooseAmbiguousCandidate}
+                onConfirmManualPlace={confirmManualPlace}
+                onContinue={continueFromResolve}
+                onDepartureAirportChange={setDepartureAirport}
+                onDepartureTimeChange={setDepartureTime}
+                onEditInput={() => { setManualPinTarget(null); setInputStep("places"); }}
+                onEditPlaceName={() => { setManualPinTarget(null); setInputStep("places"); requestAnimationFrame(() => placesInputRef.current?.focus()); }}
+                onHotelQueryChange={(value) => {
+                  setHotelQuery(value);
+                  setPlanReady(false);
+                }}
+                onManualDraftChange={(placeIndex, field, value) => setManualPlaceDrafts((current) => ({
+                  ...current,
+                  [placeIndex]: { ...(current[placeIndex] ?? { address: "", latitude: "", longitude: "" }), [field]: value },
+                }))}
+                onSearchAgain={() => void reviewWishlistPlaces()}
+                onSelectDayEnd={setDayEndTarget}
+                onSelectDayStart={setDayStartDefault}
+                onSelectFlightKind={setFlightKind}
+                onSelectPace={setPace}
+                onSelectTransferBuffer={setTransferBufferMinutes}
+                onSelectTravelPreference={setTravelPreference}
+                onToggleManualPin={(placeIndex) => setManualPinTarget((current) => current === placeIndex ? null : placeIndex)}
+                onTripDateChange={(value) => { setTripStartDate(value); setTripDateTouched(true); }}
+                onTripDateUndecided={() => setTripDateTouched(false)}
+                onUpdateConstraint={(placeIndex, patch) => updateWishlistConstraint(placeIndex, patch, { keepReviewedPlaces: true })}
+                onUseArrivalOption={(airportCode, time) => { setArrivalAirport(airportCode); setArrivalTime(time); }}
+                onUseDepartureOption={(airportCode, time) => { setDepartureAirport(airportCode); setDepartureTime(time); }}
+                pace={pace}
+                resolveAttentionRanks={resolveAttentionRanks}
+                resolvedStops={resolvedStops}
+                reviewedPlaceRows={reviewedPlaceRows}
+                transferBufferMinutes={transferBufferMinutes}
+                travelPreference={travelPreference}
+                tripDateTouched={tripDateTouched}
+                tripDays={tripDays}
+                tripStartDate={tripStartDate}
+                unresolvedReviewedCount={unresolvedReviewedCount}
+              />
             )}
-            {planReady && !isBuilding ? (
-              <button className="planner-return-plan" onClick={() => setHasPlan(true)} type="button">
-                {text.backToPlan}<Icon name="arrow" size={15} />
-              </button>
-            ) : null}
-
-            {tripStorePersistent === false ? (
-              <p className="planner-local-storage-warning" role="status">
-                {locale === "ja" ? "このブラウザでは端末保存を利用できないため、最近の旅程はこのタブを閉じると消えます。" : "Device storage is unavailable in this browser. Recent trips will disappear when this tab closes."}
-              </p>
-            ) : null}
-            {recentTrips.length > 0 ? (
-              <div className="planner-recent">
-                <span>{text.recentHeading}<small> · {text.recentNote}</small></span>
-                <ul>
-                  {recentTrips.map((entry) => {
-                    const storedInput = storedTripInput(entry);
-                    return (
-                      <li key={entry.id}>
-                        <button className="planner-recent-open" onClick={() => void openRecentTrip(entry)} type="button">
-                          <b>{entry.title}</b>
-                          <small>
-                            {storedInput
-                              ? storedInput.dateWasProvided
-                                ? storedInput.tripStartDate
-                                : locale === "ja" ? "日付未定" : "Date not decided"
-                              : entry.updatedAt.slice(0, 10)}
-                            {" · "}
-                            {storedInput ? text.recentDays(storedInput.tripDays) : (locale === "ja" ? "入力を再確認" : "Review input")}
-                          </small>
-                        </button>
-                        <button
-                          aria-label={text.recentDelete}
-                          className="planner-recent-remove"
-                          onClick={() => void deleteRecentTrip(entry)}
-                          type="button"
-                        >
-                          <Icon name="close" size={11} />
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            ) : null}
+            <RecentTrips
+              isBuilding={isBuilding}
+              locale={locale}
+              onDeleteTrip={(entry) => void deleteRecentTrip(entry)}
+              onOpenTrip={(entry) => void openRecentTrip(entry)}
+              onReturnToPlan={() => setHasPlan(true)}
+              planReady={planReady}
+              recentTrips={recentTrips}
+              tripStorePersistent={tripStorePersistent}
+            />
           </div>
         ) : plan && day ? (
           <div className="planner-result-view">
