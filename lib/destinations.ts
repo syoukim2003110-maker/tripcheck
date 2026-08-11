@@ -112,6 +112,19 @@ export type Destination = {
   notes: { en: string[]; ja: string[] };
   /** Starter wishlist offered by the example button. */
   sample: { en: string; ja: string } | null;
+  /**
+   * Deterministic coordinates for the starter wishlist, in the same order as
+   * its lines. The "see a finished example" promise must hold with zero
+   * provider keys, so the demo build seeds these instead of calling a
+   * resolver. Names must equal the parsed line names (markers stripped).
+   */
+  sampleStops?: Array<{
+    names: { en: string; ja: string };
+    area: { en: string; ja: string };
+    latitude: number;
+    longitude: number;
+    stayMinutes: number;
+  }>;
 };
 
 const hour = (h: number, m = 0) => h * 60 + m;
@@ -265,6 +278,17 @@ Bern Old Town`,
 ゴルナーグラート
 ベルン旧市街`,
     },
+    // Widely published landmark coordinates; the sample must build offline.
+    sampleStops: [
+      { names: { en: "Lucerne Chapel Bridge", ja: "ルツェルン カペル橋" }, area: { en: "Lucerne", ja: "ルツェルン" }, latitude: 47.0517, longitude: 8.3073, stayMinutes: 45 },
+      { names: { en: "Mount Rigi", ja: "リギ山" }, area: { en: "Arth", ja: "アルト" }, latitude: 47.0567, longitude: 8.4854, stayMinutes: 150 },
+      { names: { en: "Interlaken", ja: "インターラーケン" }, area: { en: "Interlaken", ja: "インターラーケン" }, latitude: 46.6863, longitude: 7.8632, stayMinutes: 90 },
+      { names: { en: "Jungfraujoch", ja: "ユングフラウヨッホ" }, area: { en: "Lauterbrunnen", ja: "ラウターブルンネン" }, latitude: 46.5474, longitude: 7.9793, stayMinutes: 150 },
+      { names: { en: "Lauterbrunnen", ja: "ラウターブルンネン" }, area: { en: "Lauterbrunnen", ja: "ラウターブルンネン" }, latitude: 46.5936, longitude: 7.9081, stayMinutes: 60 },
+      { names: { en: "Zermatt", ja: "ツェルマット" }, area: { en: "Zermatt", ja: "ツェルマット" }, latitude: 46.0207, longitude: 7.7491, stayMinutes: 120 },
+      { names: { en: "Gornergrat", ja: "ゴルナーグラート" }, area: { en: "Zermatt", ja: "ツェルマット" }, latitude: 45.9833, longitude: 7.7842, stayMinutes: 120 },
+      { names: { en: "Bern Old Town", ja: "ベルン旧市街" }, area: { en: "Bern", ja: "ベルン" }, latitude: 46.948, longitude: 7.4474, stayMinutes: 90 },
+    ],
   },
   {
     id: "korea",

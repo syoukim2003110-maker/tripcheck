@@ -1568,8 +1568,20 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     title: string;
     conflicts: string[];
     apply: () => void;
+    cancelLabel?: string;
+    confirmLabel?: string;
   } | null>(null);
   const [startInputError, setStartInputError] = useState<"" | "empty" | "limit">("");
+  // v1.1 §12.3 / QA-043: recalculation completes politely, hard violations
+  // (booking time, airport cutoff) interrupt. Both regions stay mounted so a
+  // text change is what triggers the announcement, exactly once per event.
+  const [buildAnnouncement, setBuildAnnouncement] = useState("");
+  // "See a finished example" must finish: the demo build starts on the next
+  // render, after loadDemo's state (itinerary, destination, days) commits.
+  // The seed ref carries the destination's bundled coordinates so the sample
+  // builds deterministically with zero provider keys.
+  const [queuedDemoBuild, setQueuedDemoBuild] = useState(false);
+  const queuedDemoSeedRef = useRef<ResolvedInputStop[] | null>(null);
   const placesInputRef = useRef<HTMLTextAreaElement | null>(null);
   // v1.1 §8.1: ordinary edits apply instantly and answer with one 6-second
   // toast (≤2 metrics) plus Undo, instead of a confirmation dialog.
@@ -2701,6 +2713,16 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   }), [ambiguousPlaces, locale, parsePreviewRows, placesHaveBeenReviewed, resolvedStops]);
   const unresolvedReviewedCount = reviewedPlaceRows.filter((row) => row.status === "unresolved").length;
   const ambiguousReviewedCount = reviewedPlaceRows.filter((row) => row.status === "review").length;
+  const confirmedReviewedCount = reviewedPlaceRows.filter((row) => row.status === "confirmed").length;
+  // v1.1 §5.2: confirmation asks surface at most three at a time, in input
+  // order. Resolving one automatically brings the next into the window.
+  const resolveAttentionRanks = useMemo(() => {
+    const ranks = new Map<number, number>();
+    for (const row of reviewedPlaceRows) {
+      if (row.status === "review" || row.status === "unresolved") ranks.set(row.placeIndex, ranks.size);
+    }
+    return ranks;
+  }, [reviewedPlaceRows]);
   // "Day 5" in the pasted text quietly outgrowing a 3-day selector produced a
   // plan that contradicted the paste; the selector now follows the headings.
   const maxParsedDay = useMemo(() => parsePreviewRows.reduce((max, row) => {
@@ -2748,6 +2770,15 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
   const deferredAnchorStops = useMemo(() => plan
     ? [...plan.deferredUnavailableStops, ...plan.deferredOptionalStops]
     : [], [plan]);
+  // v1.1 §12.3: a booking-time or airport-cutoff violation is the one class of
+  // problem that interrupts assistive technology instead of waiting politely.
+  const hardViolationAnnouncement = useMemo(() => {
+    if (!planReady || !feasibilityResult) return "";
+    return feasibilityResult.conflicts
+      .filter((conflict) => conflict.code === "AIRPORT_CUTOFF" || conflict.code === "FIXED_BOOKING_LATE" || conflict.code === "LAST_ENTRY_CONFLICT")
+      .map((conflict) => conflictCopy(conflict, locale))
+      .join(" ");
+  }, [feasibilityResult, locale, planReady]);
   // v1.1 TC-004/TC-022/TC-030: one human issue list. Each entry names a single
   // cause, the affected places and exactly one next action.
   const unknownHoursStops = useMemo(() => {
@@ -2858,7 +2889,51 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       return;
     }
     setStartInputError("");
-    void buildPlan();
+    // v1.1 §5.2: the CTA resolves places first. High-confidence input builds
+    // straight away; anything ambiguous or missing stops at the Resolve step
+    // instead of silently guessing.
+    void reviewWishlistPlaces({ continueCleanBuild: true });
+  }
+
+  function chooseAmbiguousCandidate(placeIndex: number, candidate: ResolvedInputStop) {
+    const occurrenceResolved = { ...candidate, inputIndex: placeIndex };
+    setResolvedStops((current) => [
+      ...current.filter((entry) => entry.inputIndex !== placeIndex),
+      occurrenceResolved,
+    ]);
+    if (candidate.providerRef) {
+      setResolutionOverrides((current) => upsertResolutionOverride(current, {
+        inputIndex: placeIndex,
+        providerRef: candidate.providerRef!,
+      }));
+    }
+    setManualPinTarget((current) => current === placeIndex ? null : current);
+    setPreviewStops((current) => [
+      ...current.filter((stop) => !("inputIndex" in stop) || stop.inputIndex !== placeIndex),
+      occurrenceResolved,
+    ]);
+    trackProductEvent("issue_resolved", { issue_type: "ambiguous_place" });
+  }
+
+  // v1.1 §5.2: leaving the Resolve step with an unconfirmed Must or booked
+  // place is a hard decision, not a silent default.
+  function continueFromResolve() {
+    const blockedMusts = reviewedPlaceRows.filter((row) => (row.status === "review" || row.status === "unresolved")
+      && (row.place.isReservation || row.place.priority === "must"));
+    const run = () => void buildPlan(planReady ? { preserveEdits: true } : {});
+    if (blockedMusts.length > 0) {
+      setPendingHardEdit({
+        title: locale === "ja" ? "必須・予約の場所が未確認のままです" : "Must-see or booked places are still unconfirmed",
+        conflicts: blockedMusts.map((row) => locale === "ja"
+          ? `「${row.place.name}」の場所を確定できていません。このまま続けると旅程に入りません。`
+          : `“${row.place.name}” has no confirmed location yet and would be left out of the plan.`),
+        cancelLabel: locale === "ja" ? "もどって確認する" : "Go back and confirm",
+        confirmLabel: locale === "ja" ? "このまま続ける" : "Continue anyway",
+        apply: run,
+      });
+      return;
+    }
+    run();
   }
 
   const handleRouteGeometry = useCallback((points: RouteRecommendationPoint[]) => {
@@ -3195,6 +3270,11 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     setHotelPurpose(purpose);
     // The displayed hotel and the routing base must never diverge.
     setResolvedBase(hotelAsResolvedBase(candidate, hotelQuery, candidate.address.slice(0, 100) || candidate.name, new Date().toISOString()));
+    // v1.1 §12.3: accepting a recommendation announces once, politely. Auto
+    // selection during a build (planReady is still false there) stays silent.
+    if (changed && planReady) {
+      showEditToast(locale === "ja" ? `ホテルを「${candidate.name}」にしました` : `Hotel set to ${candidate.name}`);
+    }
     if (!changed) return;
     if (!aiEnabledRef.current) {
       setHotelState((current) => current.selectedId === candidate.id
@@ -3926,6 +4006,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       resolved,
     ]);
     setManualPinTarget((current) => current === inputIndex ? null : current);
+    trackProductEvent("issue_resolved", { issue_type: "not_found_place" });
   }
 
   function updateWishlistConstraint(
@@ -4285,9 +4366,36 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     setIsBuilding(false);
     setHasPlan(false);
     setPlanReady(false);
+    queuedDemoSeedRef.current = demoDestination.sampleStops?.map((stop, index) => ({
+      id: `sample-${demoDestination.id}-${index}`,
+      input: stop.names[locale],
+      inputIndex: index,
+      name: stop.names[locale],
+      area: stop.area[locale],
+      address: stop.area[locale],
+      latitude: stop.latitude,
+      longitude: stop.longitude,
+      sourceUrl: "",
+      verifiedAt: "",
+      confidence: "medium",
+      planningDurationMinutes: stop.stayMinutes,
+      isAnchor: false,
+    })) ?? null;
+    setQueuedDemoBuild(true);
   }
 
-  async function reviewWishlistPlaces() {
+  useEffect(() => {
+    if (!queuedDemoBuild) return;
+    setQueuedDemoBuild(false);
+    const seed = queuedDemoSeedRef.current;
+    queuedDemoSeedRef.current = null;
+    void buildPlan(seed ? { prefetchedReview: { places: seed } } : {});
+    // buildPlan is redeclared per render by design; this effect only needs the
+    // one render where the queued flag flips true.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queuedDemoBuild]);
+
+  async function reviewWishlistPlaces(options: { continueCleanBuild?: boolean } = {}) {
     if (!canReviewPlaces) return;
     trackMilestone("places_parsed", { place_count: parsedPlaceCount });
     placeReviewAbortRef.current?.abort();
@@ -4345,7 +4453,19 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
         setDetectedDestinationId(draft.destination === "worldwide" ? null : draft.destination);
       }
       setReviewedInputSignature(signatureAtStart);
-      setInputStep("conditions");
+      // v1.1 §5.2: only places that resolved neither remotely nor from bundled
+      // knowledge need a human decision. A clean result skips the Resolve step.
+      const needsAttention = parsedWishlistPlaces(rawAtStart).some((place, index) => {
+        const normalized = place.name.normalize("NFKC").toLocaleLowerCase();
+        const remote = places.find((candidate) => candidate.inputIndex === index)
+          ?? places.find((candidate) => candidate.inputIndex === undefined && candidate.input.normalize("NFKC").toLocaleLowerCase() === normalized);
+        return !remote && resolveKnownStops(place.name, locale).length === 0;
+      });
+      if (options.continueCleanBuild && !needsAttention) {
+        void buildPlan({ prefetchedReview: { places } });
+      } else {
+        setInputStep("conditions");
+      }
     } finally {
       if (placeReviewAbortRef.current === controller) {
         placeReviewAbortRef.current = null;
@@ -4354,7 +4474,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     }
   }
 
-  async function buildPlan(options: { preserveEdits?: boolean } = {}) {
+  async function buildPlan(options: { preserveEdits?: boolean; prefetchedReview?: { places: ResolvedInputStop[] } } = {}) {
     if (!canBuild && !options.preserveEdits) return;
     const buildStartedAt = typeof performance !== "undefined" ? performance.now() : Date.now();
     // Bind the place-resolution result to the exact paste/country/language that
@@ -4395,6 +4515,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       setIsBuilding(true);
       setHasPlan(false);
       setPlanReady(false);
+      setBuildAnnouncement("");
       setPlaceWarning(false);
       setFoodSearches({});
       setRouteRecommendationSearches({});
@@ -4448,10 +4569,16 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       setBuildProgress(initialBuildProgress);
     })) return;
 
-    const canReusePlaceReview = placesHaveBeenReviewed && reviewedInputSignature === currentInputSignature;
-    let places: ResolvedInputStop[] = canReusePlaceReview
-      ? resolvedStops
-      : withManualResolutionOverrides([], resolutionOverrides);
+    // A review that just finished in this same tick hands its places over
+    // directly; React state (resolvedStops et al.) has not re-rendered yet.
+    const prefetchedReview = options.prefetchedReview ?? null;
+    const canReusePlaceReview = prefetchedReview !== null
+      || (placesHaveBeenReviewed && reviewedInputSignature === currentInputSignature);
+    let places: ResolvedInputStop[] = prefetchedReview
+      ? prefetchedReview.places
+      : canReusePlaceReview
+        ? resolvedStops
+        : withManualResolutionOverrides([], resolutionOverrides);
     let resolvedHotel: ResolvedInputStop | null = null;
     // Starts as the traveller's pick and is replaced by the detected country
     // once the first draft exists, so hotels, food and evidence for the rest
@@ -4765,6 +4892,9 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
       setActiveDay(0);
       setHasPlan(true);
       setPlanReady(true);
+      setBuildAnnouncement(options.preserveEdits
+        ? (locale === "ja" ? "旅程を計算し直しました。" : "Your itinerary has been recalculated.")
+        : (locale === "ja" ? "旅程ができました。" : "Your itinerary is ready."));
       trackProductEvent("plan_ready", { trip_day_count: buildDays, place_count: places.length });
       setHintDismissed(false);
       setPreviewStops([]);
@@ -5604,7 +5734,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
         </button>
         <div className="planner-top-actions">
           <a aria-label={locale === "ja" ? "プライバシー方針" : "Privacy policy"} className="planner-privacy" href="/privacy" title={locale === "ja" ? "プライバシー方針" : "Privacy policy"}><i aria-hidden="true"><Icon name="check" size={10} /></i><span>{text.privacy}</span></a>
-          <div className="planner-language" aria-label={text.language}>
+          <div className="planner-language" role="group" aria-label={text.language}>
             <button aria-pressed={locale === "ja"} className={locale === "ja" ? "is-active" : ""} onClick={() => changeLocale("ja")} type="button">日本語</button>
             <button aria-pressed={locale === "en"} className={locale === "en" ? "is-active" : ""} onClick={() => changeLocale("en")} type="button">EN</button>
           </div>
@@ -5612,7 +5742,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
         </div>
       </header>
 
-      <div className={`planner-map-canvas${displayedMapStops.length > 8 ? " is-dense" : ""}`} aria-label={text.mapReady}>
+      <div className={`planner-map-canvas${displayedMapStops.length > 8 ? " is-dense" : ""}`} role="region" aria-label={text.mapReady}>
         {hasPlan ? (
           <div className="planner-map-scope" role="group" aria-label={locale === "ja" ? "地図に表示する日程" : "Days shown on map"}>
             <button aria-pressed={mapScope === "all"} className={mapScope === "all" ? "is-active" : ""} onClick={() => setMapScope("all")} type="button">{locale === "ja" ? "全日程" : "All days"}</button>
@@ -5620,7 +5750,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
           </div>
         ) : null}
         {hasPlan && plan && plan.days.length > 1 ? (
-          <div className="planner-map-day-legend" aria-label={locale === "ja" ? "日別ルートの色" : "Route colours by day"}>
+          <div className="planner-map-day-legend" role="group" aria-label={locale === "ja" ? "日別ルートの色" : "Route colours by day"}>
             {plan.days.map((planDay, index) => (
               <button
                 aria-label={locale === "ja" ? `${index + 1}日目を選択` : `Select Day ${index + 1}`}
@@ -6461,7 +6591,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
               <span aria-hidden="true" />
               {inputStep === "conditions" || buildMode === "custom" ? <>
                 <div aria-current={inputStep === "conditions" ? "step" : undefined} className={inputStep === "conditions" ? "is-active" : ""}>
-                  <i aria-hidden="true">2</i><span>{locale === "ja" ? "詳細" : "Details"}</span>
+                  <i aria-hidden="true">2</i><span>{locale === "ja" ? "場所の確認" : "Check places"}</span>
                 </div>
                 <span aria-hidden="true" />
                 <div><i aria-hidden="true">3</i><span>{locale === "ja" ? "旅程" : "Itinerary"}</span></div>
@@ -6472,12 +6602,18 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
               {inputStep === "places" ? (
                 <span className="planner-intro-eyebrow">{locale === "ja" ? "旅行の下ごしらえ、ここまで。" : "Turn saved places into a trip."}</span>
               ) : null}
-              <h1>{inputStep === "places"
+              <h1 id={inputStep === "conditions" ? "planner-reviewed-title" : undefined}>{inputStep === "places"
                 ? locale === "ja" ? "行きたい場所だけ、決めてください。" : "Just choose the places."
-                : locale === "ja" ? "場所を確認して、旅の条件を決める。" : "Confirm the places. Set the limits."}</h1>
+                : unresolvedReviewedCount + ambiguousReviewedCount > 0
+                  ? locale === "ja" ? "場所を確認してください" : "Check the places"
+                  : locale === "ja" ? `${confirmedReviewedCount}か所を確認しました` : `${confirmedReviewedCount} place${confirmedReviewedCount === 1 ? "" : "s"} found`}</h1>
               <p>{inputStep === "places"
                 ? locale === "ja" ? "日ごとの組み合わせ、回る順番、ホテル、食事、寄り道までまとめます。" : "We’ll group the days, order the stops, choose a practical base, and fill meals and gaps."
-                : locale === "ja" ? "未解決の場所は推測せず残します。日数・拠点・空港・使える時間を設定してください。" : "Unresolved places stay explicit. Add the days, base, airports, and time you can actually use."}</p>
+                : unresolvedReviewedCount + ambiguousReviewedCount > 0
+                  ? locale === "ja"
+                    ? `${reviewedPlaceRows.length}か所を見つけました。確認が必要なのは${unresolvedReviewedCount + ambiguousReviewedCount}件だけです。未解決の場所は推測せず残します。`
+                    : `Found ${reviewedPlaceRows.length} place${reviewedPlaceRows.length === 1 ? "" : "s"}. Only ${unresolvedReviewedCount + ambiguousReviewedCount} need${unresolvedReviewedCount + ambiguousReviewedCount === 1 ? "s" : ""} a quick look — unresolved places stay explicit, never guessed.`
+                  : locale === "ja" ? "すべて確認できました。そのまま旅程づくりへ進めます。" : "Everything is settled — continue to the itinerary."}</p>
             </div>
 
             {inputStep === "places" ? (
@@ -6672,8 +6808,12 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                 {placeWarning ? <p className="planner-inline-status is-warning" role="status">{placeWarning === "quota_exhausted"
                   ? locale === "ja" ? "本日の場所検索の上限に達しました。分かっている場所だけで続け、残りは未解決として表示します（上限は毎日リセットされます）。" : "Today's place-search allowance is used up. Known places continue; the rest stay unresolved (the allowance resets daily)."
                   : locale === "ja" ? "位置情報サービスに接続できませんでした。分かる場所だけで続け、残りは未解決として表示します。" : "Place lookup is unavailable. Known places will continue and the rest will stay unresolved."}</p> : null}
-                <button className="planner-build-button planner-review-button" disabled={isBuilding || isResolvingPlaces} onClick={requestBuildFromStart} type="button">
-                  <span>{isBuilding ? (locale === "ja" ? "旅程を作成中…" : "Building your itinerary…") : (locale === "ja" ? "旅程をつくる" : "Build my trip")}</span><b aria-hidden="true"><Icon name="arrow" size={19} /></b>
+                <button aria-busy={isResolvingPlaces || isBuilding} className="planner-build-button planner-review-button" disabled={isBuilding || isResolvingPlaces} onClick={requestBuildFromStart} type="button">
+                  <span>{isBuilding
+                    ? (locale === "ja" ? "旅程を作成中…" : "Building your itinerary…")
+                    : isResolvingPlaces
+                      ? (locale === "ja" ? "場所を確認しています…" : "Checking your places…")
+                      : (locale === "ja" ? "旅程をつくる" : "Build my trip")}</span><b aria-hidden="true"><Icon name="arrow" size={19} /></b>
                 </button>
 
                 <details className="planner-advanced-disclosure" open={buildMode === "custom" || undefined}>
@@ -6757,51 +6897,61 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
               </div>
             ) : (
               <div className="planner-conditions-step">
+                {/* v1.1 §5.2 Resolve: the step heading above carries the ask;
+                    this bar keeps the escape back to the raw input. */}
+                <div className="planner-resolve-intro">
+                  <button onClick={() => { setManualPinTarget(null); setInputStep("places"); }} type="button">{locale === "ja" ? "入力を直す" : "Edit input"}</button>
+                </div>
                 <section className="planner-resolved-places" aria-labelledby="planner-reviewed-title">
-                  <header>
-                    <div><span>{locale === "ja" ? "確認した場所" : "Reviewed places"}</span><b id="planner-reviewed-title">{locale === "ja" ? `${reviewedPlaceRows.length}か所` : `${reviewedPlaceRows.length} places`}</b></div>
-                    <button onClick={() => { setManualPinTarget(null); setInputStep("places"); }} type="button">{locale === "ja" ? "入力を直す" : "Edit input"}</button>
-                  </header>
                   <ul>
-                    {reviewedPlaceRows.map((row) => (
+                    {reviewedPlaceRows.map((row) => {
+                      const attentionRank = resolveAttentionRanks.get(row.placeIndex) ?? -1;
+                      const attentionDeferred = attentionRank >= 3;
+                      return (
                       <li className={`is-${row.status}`} key={`${row.placeIndex}-${row.place.name}`}>
-                        <span className="planner-place-status" aria-label={row.status === "confirmed" ? (locale === "ja" ? "確認済み" : "Confirmed") : row.status === "review" ? (locale === "ja" ? "候補を選択" : "Choose a match") : row.status === "parsed" ? (locale === "ja" ? "確認待ち" : "Pending review") : (locale === "ja" ? "未解決" : "Unresolved")}>
+                        <span className="planner-place-status" role="img" aria-label={row.status === "confirmed" ? (locale === "ja" ? "確認済み" : "Confirmed") : row.status === "review" ? (locale === "ja" ? "候補を選択" : "Choose a match") : row.status === "parsed" ? (locale === "ja" ? "確認待ち" : "Pending review") : (locale === "ja" ? "未解決" : "Unresolved")}>
                           {row.status === "confirmed" ? <Icon name="check" size={11} /> : row.status === "review" ? "!" : row.status === "parsed" ? "…" : "×"}
                         </span>
                         <span>
                           <b>{row.resolved?.name ?? row.place.name}</b>
-                          {row.status === "review" && row.ambiguity ? (
-                            <select
-                              aria-label={locale === "ja" ? `${row.place.name}の候補` : `Choose the correct ${row.place.name}`}
-                              className="planner-place-candidates"
-                              defaultValue=""
-                              onChange={(event) => {
-                                const selected = row.ambiguity?.candidates.find((candidate) => candidate.id === event.target.value);
-                                if (!selected) return;
-                                const occurrenceResolved = { ...selected, inputIndex: row.placeIndex };
-                                setResolvedStops((current) => [
-                                  ...current.filter((candidate) => candidate.inputIndex !== row.placeIndex),
-                                  occurrenceResolved,
-                                ]);
-                                if (selected.providerRef) {
-                                  setResolutionOverrides((current) => upsertResolutionOverride(current, {
-                                    inputIndex: row.placeIndex,
-                                    providerRef: selected.providerRef!,
-                                  }));
-                                }
-                                setManualPinTarget((current) => current === row.placeIndex ? null : current);
-                                setPreviewStops((current) => [
-                                  ...current.filter((stop) => !("inputIndex" in stop) || stop.inputIndex !== row.placeIndex),
-                                  occurrenceResolved,
-                                ]);
-                              }}
-                            >
-                              <option disabled value="">{locale === "ja" ? "住所・国・種別・距離で選ぶ…" : "Choose by address, country, type and distance…"}</option>
-                              {row.ambiguity.candidates.map((candidate) => <option key={candidate.id} value={candidate.id}>{placeCandidateLabel(candidate, resolvedStops, locale)}</option>)}
-                            </select>
-                          ) : row.status === "confirmed" ? <small>{resolvedStopAddress(row.resolved)}</small> : (
+                          {attentionDeferred ? (
+                            <small className="planner-resolve-deferred">{locale === "ja" ? "先に上の項目を確認すると、ここが選べるようになります。" : "Settle the items above first — this one unlocks next."}</small>
+                          ) : row.status === "review" && row.ambiguity ? (
+                            <div className="planner-candidate-question">
+                              <p>{locale === "ja" ? `どちらの「${row.place.name}」ですか？` : `Which “${row.place.name}” did you mean?`}</p>
+                              <div aria-label={locale === "ja" ? `${row.place.name}の候補` : `Candidates for ${row.place.name}`} className="planner-candidate-options" role="group">
+                                {row.ambiguity.candidates.slice(0, 3).map((candidate) => (
+                                  <button key={candidate.id} onClick={() => chooseAmbiguousCandidate(row.placeIndex, candidate)} type="button">
+                                    {placeCandidateLabel(candidate, resolvedStops, locale)}
+                                  </button>
+                                ))}
+                              </div>
+                              {row.ambiguity.candidates.length > 3 ? (
+                                <select
+                                  aria-label={locale === "ja" ? `${row.place.name}のその他の候補` : `More candidates for ${row.place.name}`}
+                                  className="planner-place-candidates"
+                                  defaultValue=""
+                                  onChange={(event) => {
+                                    const selected = row.ambiguity?.candidates.find((candidate) => candidate.id === event.target.value);
+                                    if (selected) chooseAmbiguousCandidate(row.placeIndex, selected);
+                                  }}
+                                >
+                                  <option disabled value="">{locale === "ja" ? "その他の候補から選ぶ…" : "Choose from more candidates…"}</option>
+                                  {row.ambiguity.candidates.slice(3).map((candidate) => <option key={candidate.id} value={candidate.id}>{placeCandidateLabel(candidate, resolvedStops, locale)}</option>)}
+                                </select>
+                              ) : null}
+                            </div>
+                          ) : row.status === "confirmed" ? <small>{resolvedStopAddress(row.resolved)}</small> : row.status === "parsed" ? (
+                            <small className="planner-resolve-deferred">{locale === "ja" ? "内容が変わったため、もう一度確認します。" : "The input changed — this will be re-checked."}</small>
+                          ) : (
+                            <div className="planner-notfound-block">
+                              <p className="planner-notfound-note">{locale === "ja" ? "この場所だけ見つかりませんでした" : "We couldn’t find this place"}</p>
+                              <div className="planner-notfound-actions">
+                                <button disabled={isResolvingPlaces} onClick={() => void reviewWishlistPlaces()} type="button">{locale === "ja" ? "もう一度探す" : "Search again"}</button>
+                                <button onClick={() => { setManualPinTarget(null); setInputStep("places"); requestAnimationFrame(() => placesInputRef.current?.focus()); }} type="button">{locale === "ja" ? "入力を直す" : "Edit the name"}</button>
+                              </div>
                             <details className="planner-manual-place">
-                              <summary>{locale === "ja" ? "この1件だけ座標で修正" : "Fix only this place with coordinates"}</summary>
+                              <summary>{locale === "ja" ? "地図で場所を指定する" : "Pin it on the map"}</summary>
                               <label>
                                 <span>{locale === "ja" ? "住所・目印（任意）" : "Address or landmark (optional)"}</span>
                                 <input
@@ -6836,6 +6986,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                               <button onClick={() => confirmManualPlace(row.placeIndex, row.place.name)} type="button">{locale === "ja" ? "この地点を使う" : "Use this point"}</button>
                               <small>{locale === "ja" ? "提供元の確認済み地点ではなく、あなたが指定した座標として表示します。" : "This stays labelled as traveller-supplied coordinates, not a provider-verified place."}</small>
                             </details>
+                            </div>
                           )}
                           <details className="planner-place-constraints">
                             <summary>{locale === "ja" ? "予約・時刻・滞在を編集" : "Edit booking, time and stay"}</summary>
@@ -6892,11 +7043,17 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                           </div>
                         )}
                       </li>
-                    ))}
+                      );
+                    })}
                   </ul>
                   {unresolvedReviewedCount > 0 ? <p className="planner-inline-status is-warning" role="status">{locale === "ja" ? `${unresolvedReviewedCount}件は未解決です。判定は保留または条件付きになります。` : `${unresolvedReviewedCount} place${unresolvedReviewedCount === 1 ? " is" : "s are"} unresolved. The verdict will remain conditional or unknown.`}</p> : null}
                   {ambiguousReviewedCount > 0 ? <p className="planner-inline-status is-warning" role="status">{locale === "ja" ? `${ambiguousReviewedCount}件は同名候補があります。住所を見て選んでください。` : `${ambiguousReviewedCount} place${ambiguousReviewedCount === 1 ? " has" : "s have"} same-name matches. Choose by address.`}</p> : null}
                 </section>
+
+                {/* v1.1 §5.2: the Resolve step is about places. Trip conditions
+                    stay reachable but folded away, mirroring the Start screen. */}
+                <details className="planner-details planner-resolve-conditions">
+                  <summary>{locale === "ja" ? "日数・ホテル・ペースなどの条件を調整（任意）" : "Adjust days, hotel, pace and more (optional)"}<span aria-hidden="true"><Icon name="plus" size={15} /></span></summary>
 
                 <div className="planner-primary-fields">
                   <label><span>{text.days}</span><select onChange={(event) => changeTripDays(Number(event.target.value))} value={tripDays}>{Array.from({ length: 14 }, (_, index) => index + 1).map((value) => <option key={value} value={value}>{locale === "ja" ? `${value}日` : `${value} day${value === 1 ? "" : "s"}`}</option>)}</select></label>
@@ -6943,8 +7100,12 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                   </div>
                 </details>
 
-                <button className="planner-build-button" disabled={!canBuild} onClick={() => void buildPlan()} type="button">
-                  <span>{locale === "ja" ? "旅程を作る" : "Build my itinerary"}</span><b aria-hidden="true"><Icon name="arrow" size={19} /></b>
+                </details>
+
+                <button className="planner-build-button" disabled={!canBuild} onClick={continueFromResolve} type="button">
+                  <span>{locale === "ja"
+                    ? `${confirmedReviewedCount}か所で続ける`
+                    : `Continue with ${confirmedReviewedCount} place${confirmedReviewedCount === 1 ? "" : "s"}`}</span><b aria-hidden="true"><Icon name="arrow" size={19} /></b>
                 </button>
               </div>
             )}
@@ -7470,6 +7631,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                             onClick={() => {
                               setDestinationChoice(profile.id);
                               setDetectedDestinationId(null);
+                              trackProductEvent("issue_resolved", { issue_type: "country_conflict" });
                               void buildPlan({ preserveEdits: true });
                             }}
                             type="button"
@@ -7512,7 +7674,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
               </section>
             ) : null}
 
-            <div className="planner-day-tabs" aria-label={locale === "ja" ? "日程を選ぶ" : "Choose a day"}>
+            <div className="planner-day-tabs" role="group" aria-label={locale === "ja" ? "日程を選ぶ" : "Choose a day"}>
               {plan.days.map((candidate, index) => {
                 const weekday = tripDateTouched ? weekdayInfo(candidate.date, locale) : null;
                 return (
@@ -7557,7 +7719,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                     <b>{activeDayPresentation?.startClock ?? day.startTime}—{activeDayPresentation?.endClock ?? day.finishTime}</b>
                     <PlannerDayTimeBar day={day} fit={activeFitDay} locale={locale} />
                     {activeFitDay && activeDayPresentation ? (
-                      <div className="planner-day-metrics" aria-label={locale === "ja" ? "この日の時間内訳" : "Day time breakdown"}>
+                      <div className="planner-day-metrics" role="group" aria-label={locale === "ja" ? "この日の時間内訳" : "Day time breakdown"}>
                         <span><small>{locale === "ja" ? "予定" : "Planned"}</small><b>{formatDuration(activeDayPresentation.usedMinutes, locale)}</b></span>
                         <span><small>{locale === "ja" ? "余裕" : "Spare"}</small><b>{formatDuration(Math.max(0, activeDayPresentation.slackMinutes), locale)}</b></span>
                       </div>
@@ -7835,6 +7997,10 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
           <button onClick={() => { setEditToast(null); undoPlannerEdit(); }} type="button">{locale === "ja" ? "元に戻す" : "Undo"}</button>
         </div>
       ) : null}
+      <div className="sr-only">
+        <p aria-atomic="true" aria-live="polite">{buildAnnouncement}</p>
+        <p aria-atomic="true" aria-live="assertive">{hardViolationAnnouncement}</p>
+      </div>
       {pendingHardEdit ? (
         <div className="planner-share-backdrop planner-confirm-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setPendingHardEdit(null); }}>
           <section aria-describedby="planner-confirm-conflicts" aria-labelledby="planner-confirm-title" aria-modal="true" className="planner-confirm-dialog" role="alertdialog">
@@ -7843,7 +8009,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
               {pendingHardEdit.conflicts.map((conflict) => <li key={conflict}>{conflict}</li>)}
             </ul>
             <footer>
-              <button autoFocus onClick={() => setPendingHardEdit(null)} type="button">{locale === "ja" ? "変更しない" : "Keep current plan"}</button>
+              <button autoFocus onClick={() => setPendingHardEdit(null)} type="button">{pendingHardEdit.cancelLabel ?? (locale === "ja" ? "変更しない" : "Keep current plan")}</button>
               <button
                 className="is-apply"
                 onClick={() => {
@@ -7852,7 +8018,7 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
                   apply();
                 }}
                 type="button"
-              >{locale === "ja" ? "それでも変更" : "Change anyway"}</button>
+              >{pendingHardEdit.confirmLabel ?? (locale === "ja" ? "それでも変更" : "Change anyway")}</button>
             </footer>
           </section>
         </div>

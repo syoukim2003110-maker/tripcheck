@@ -26,6 +26,7 @@ export const PRODUCT_EVENT_NAMES = Object.freeze([
   "gap_accepted",
   "plan_edited",
   "undo_used",
+  "issue_resolved",
 ] as const);
 
 export type ProductEventName = typeof PRODUCT_EVENT_NAMES[number];
@@ -42,6 +43,7 @@ export type ProductEventFields = Partial<{
   result_state: "VERIFIED_FEASIBLE" | "PROVISIONAL_FEASIBLE" | "FEASIBLE_IF_ASSUMPTIONS" | "INFEASIBLE_HARD_CONFLICT" | "UNKNOWN";
   alternative_type: "CHANGE_DAYS" | "START_EARLIER" | "END_LATER" | "REMOVE_OPTIONAL" | "CHANGE_BASE" | "CHANGE_MODE" | "OPTIMIZE_ORDER";
   edit_type: "move_day" | "remove_stop" | "trip_days" | "stay_time" | "leg_mode" | "reorder" | "other";
+  issue_type: "ambiguous_place" | "not_found_place" | "country_conflict" | "unknown_hours" | "provider_failure";
 }>;
 
 export type ProductEvent = Readonly<{
@@ -62,7 +64,8 @@ const providers = new Set(["google", "anthropic", "open_meteo", "derived", "none
 const resultStates = new Set(["VERIFIED_FEASIBLE", "PROVISIONAL_FEASIBLE", "FEASIBLE_IF_ASSUMPTIONS", "INFEASIBLE_HARD_CONFLICT", "UNKNOWN"]);
 const alternatives = new Set(["CHANGE_DAYS", "START_EARLIER", "END_LATER", "REMOVE_OPTIONAL", "CHANGE_BASE", "CHANGE_MODE", "OPTIMIZE_ORDER"]);
 const editTypes = new Set(["move_day", "remove_stop", "trip_days", "stay_time", "leg_mode", "reorder", "other"]);
-const allowedFieldNames = new Set([...Object.keys(numericBounds), "provider_name", "error_code", "result_state", "alternative_type", "edit_type"]);
+const issueTypes = new Set(["ambiguous_place", "not_found_place", "country_conflict", "unknown_hours", "provider_failure"]);
+const allowedFieldNames = new Set([...Object.keys(numericBounds), "provider_name", "error_code", "result_state", "alternative_type", "edit_type", "issue_type"]);
 
 export function parseProductEvent(input: unknown): ProductEvent | null {
   if (!input || typeof input !== "object" || Array.isArray(input)) return null;
@@ -84,6 +87,7 @@ export function parseProductEvent(input: unknown): ProductEvent | null {
     else if (key === "result_state" && typeof value === "string" && resultStates.has(value)) fields[key] = value;
     else if (key === "alternative_type" && typeof value === "string" && alternatives.has(value)) fields[key] = value;
     else if (key === "edit_type" && typeof value === "string" && editTypes.has(value)) fields[key] = value;
+    else if (key === "issue_type" && typeof value === "string" && issueTypes.has(value)) fields[key] = value;
     else if (key === "error_code" && typeof value === "string" && /^[a-z0-9_]{1,40}$/.test(value)) fields[key] = value;
     else return null;
   }

@@ -977,13 +977,12 @@ details.planner-excluded { display: block; }
 .planner-inline-status.is-warning { background: var(--pl-warn-bg); border: 1px solid var(--pl-warn-border); color: var(--pl-warn-ink); }
 .planner-review-button { position: sticky; bottom: 14px; z-index: 8; }
 
+/* v1.1 §5.2 Resolve step: the step heading carries the ask; this row keeps
+   the escape back to the raw input aligned with the list edge. */
+.planner-resolve-intro { display: flex; justify-content: flex-end; margin-bottom: 6px; }
+.planner-resolve-intro button { background: transparent; border: 0; color: var(--pl-ink-2); font-size: 10.5px; font-weight: 750; min-height: 28px; padding: 2px 4px; text-decoration: underline; text-underline-offset: 3px; }
 .planner-resolved-places { border: 1px solid var(--pl-line); border-radius: 16px; margin-bottom: 14px; overflow: hidden; }
-.planner-resolved-places > header { align-items: center; background: #fafafa; border-bottom: 1px solid var(--pl-line); display: flex; justify-content: space-between; padding: 11px 13px; }
-.planner-resolved-places > header > div { display: grid; }
-.planner-resolved-places > header span { color: var(--pl-muted); font-size: 9.5px; font-weight: 750; letter-spacing: .04em; }
-.planner-resolved-places > header b { font-size: 13px; }
-.planner-resolved-places > header button { background: transparent; border: 0; color: var(--pl-ink-2); font-size: 10.5px; font-weight: 750; min-height: 28px; padding: 2px 4px; text-decoration: underline; text-underline-offset: 3px; }
-.planner-resolved-places ul { display: grid; list-style: none; margin: 0; max-height: 220px; overflow-y: auto; padding: 4px 12px; }
+.planner-resolved-places ul { display: grid; list-style: none; margin: 0; max-height: min(52dvh, 560px); overflow-y: auto; padding: 4px 12px; }
 .planner-resolved-places li { align-items: center; border-bottom: 1px solid var(--pl-line); display: grid; gap: 9px; grid-template-columns: 25px minmax(0, 1fr) auto; min-height: 54px; padding: 7px 0; }
 .planner-resolved-places li:last-child { border-bottom: 0; }
 .planner-place-status { align-items: center; background: var(--pl-good-soft); border-radius: 50%; color: var(--pl-good); display: flex; font-size: 11px; font-weight: 850; height: 24px; justify-content: center; width: 24px; }
@@ -994,6 +993,21 @@ details.planner-excluded { display: block; }
 .planner-resolved-places li > span:nth-child(2) b { font-size: 12.5px; overflow-wrap: anywhere; }
 .planner-resolved-places li > span:nth-child(2) small { color: var(--pl-muted); font-size: 10.5px; line-height: 1.4; overflow-wrap: anywhere; }
 .planner-place-candidates { background: white; border: 1px solid var(--pl-control-border); border-radius: 7px; color: var(--pl-ink-2); font: inherit; font-size: 10.5px; margin-top: 3px; max-width: 100%; min-height: 32px; padding: 3px 24px 3px 7px; }
+/* v1.1 §5.2: an ambiguous place asks one question with at most three inline
+   candidates; a not-found place offers retry, edit and a manual pin. */
+.planner-candidate-question { display: grid; gap: 5px; margin-top: 4px; }
+.planner-candidate-question > p { color: var(--pl-ink); font-size: 11.5px; font-weight: 750; margin: 0; }
+.planner-candidate-options { display: grid; gap: 5px; }
+.planner-candidate-options button { background: white; border: 1px solid var(--pl-control-border); border-radius: 9px; color: var(--pl-ink-2); font-size: 10.5px; line-height: 1.35; min-height: 34px; overflow-wrap: anywhere; padding: 6px 9px; text-align: left; }
+.planner-candidate-options button:hover { border-color: var(--pl-ink); color: var(--pl-ink); }
+.planner-resolve-deferred { color: var(--pl-muted); display: block; font-size: 10.5px; line-height: 1.4; margin-top: 2px; }
+.planner-notfound-block { display: grid; gap: 5px; margin-top: 4px; }
+.planner-notfound-note { color: #9b3524; font-size: 11.5px; font-weight: 750; margin: 0; }
+.planner-notfound-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.planner-notfound-actions button { background: white; border: 1px solid var(--pl-control-border); border-radius: 9px; color: var(--pl-ink-2); font-size: 10.5px; font-weight: 750; min-height: 32px; padding: 4px 10px; }
+.planner-notfound-actions button:disabled { color: var(--pl-muted); }
+.planner-resolve-conditions { margin-bottom: 14px; }
+.planner-resolve-conditions > summary { min-height: 36px; }
 .planner-priority-picker { background: var(--pl-tile); border: 1px solid var(--pl-control-border); border-radius: 9px; display: flex; overflow: hidden; }
 .planner-priority-picker button { background: transparent; border: 0; color: var(--pl-ink-2); font-size: 9px; font-weight: 750; min-height: 32px; padding: 0 7px; }
 .planner-priority-picker button[aria-pressed="true"] { background: var(--pl-ink); color: white; }
@@ -1021,7 +1035,7 @@ details.planner-excluded { display: block; }
 .planner-place-constraints input[type="time"],
 .planner-place-constraints input[type="number"] { border: 1px solid var(--pl-control-border); border-radius: 7px; color: var(--pl-ink); font: inherit; font-size: 11px; min-height: 34px; min-width: 0; padding: 4px 7px; width: 100%; }
 .planner-place-constraints .planner-booking-toggle { align-items: center; display: flex; gap: 7px; grid-column: 1 / -1; min-height: 34px; }
-.planner-place-constraints .planner-booking-toggle input { accent-color: var(--pl-ink); height: 20px; width: 20px; }
+.planner-place-constraints .planner-booking-toggle input { accent-color: var(--pl-ink); height: 24px; width: 24px; }
 .planner-place-constraints .planner-booking-toggle span { color: var(--pl-ink-2); font-size: 10.5px; }
 .planner-core-choices { display: grid; gap: 13px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 15px; }
 .planner-core-choices .planner-choice { grid-column: auto; }
@@ -1746,6 +1760,9 @@ div.planner-route-ideas-empty { display: grid; gap: 8px; }
     left: 0;
     max-height: 55dvh;
     padding-top: 26px;
+    /* The aside lives inside the map canvas, which is only a 20dvh strip in
+       the timeline view; fixed positioning anchors the sheet to the screen. */
+    position: fixed;
     right: 0;
     top: auto;
     width: auto;

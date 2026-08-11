@@ -34,9 +34,14 @@ test("v1.1 funnel additions stay aggregate-only", () => {
     fields: { provider_name: "google" },
   });
   assert.deepEqual(parseProductEvent({ event: "undo_used", fields: {} }), { event: "undo_used", fields: {} });
+  assert.deepEqual(parseProductEvent({ event: "issue_resolved", fields: { issue_type: "ambiguous_place" } }), {
+    event: "issue_resolved",
+    fields: { issue_type: "ambiguous_place" },
+  });
   // Free text can never ride along on the new events.
   assert.equal(parseProductEvent({ event: "plan_edited", fields: { edit_type: "renamed Senso-ji" } }), null);
   assert.equal(parseProductEvent({ event: "hotel_accepted", fields: { hotel_name: "Alpina" } }), null);
+  assert.equal(parseProductEvent({ event: "issue_resolved", fields: { issue_type: "picked Mount Rigi" } }), null);
 });
 
 test("event route rejects cross-origin and PII before logging", async () => {

@@ -44,3 +44,6 @@ next-env.d.ts
 /outputs/
 /work/
 .dev.vars
+
+# QA harness output (baselines are tracked in tests/vr/baselines)
+/tools/qa/vr-out/
