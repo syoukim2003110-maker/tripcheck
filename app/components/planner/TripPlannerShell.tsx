@@ -1611,6 +1611,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
         routeModes={routeModes}
         routeTransitGeometry={routeTransitGeometry}
         selectedHotel={selectedHotel}
+        hotelPending={hotelState.status === "loading"}
         selectedRouteRecommendationId={selectedRouteRecommendation?.id ?? null}
         tripDateTouched={tripDateTouched}
       >

@@ -1062,15 +1062,6 @@ export function usePlannerViewModel({
   const routeFactCount = feasibilityEvidence?.facts.filter((fact) => fact.id.startsWith("route:")).length ?? 0;
   const confirmedRouteFactCount = feasibilityEvidence?.facts.filter((fact) => fact.id.startsWith("route:") && fact.evidence.status === "verified").length ?? 0;
   const openingVerificationCount = Object.values(intelligence).filter((entry) => entry.status === "loading").length;
-  const resultStateCopy = feasibilityResult
-    ? feasibilityStateCopy(
-      feasibilityResult.state,
-      locale,
-      plan?.requestedDays ?? tripDays,
-      plan?.scheduledStopCount ?? 0,
-      plan ? plan.deferredUnavailableStops.length + plan.deferredOptionalStops.length : 0,
-    )
-    : null;
   const deferredAnchorStops = useMemo(() => plan
     ? [...plan.deferredUnavailableStops, ...plan.deferredOptionalStops]
     : [], [plan]);
@@ -1122,6 +1113,18 @@ export function usePlannerViewModel({
     // its own action — reduce the candidate list to 15 places or fewer.
     + (feasibilityResult?.unknownCause === "COMPUTATION_LIMIT" ? 1 : 0)
     + (placeWarning ? 1 : 0);
+  // Copy Deck plan.state.conditional: the headline's check count is the same
+  // real number the issue chip shows — never a separate, invented tally.
+  const resultStateCopy = feasibilityResult
+    ? feasibilityStateCopy(
+      feasibilityResult.state,
+      locale,
+      plan?.requestedDays ?? tripDays,
+      plan?.scheduledStopCount ?? 0,
+      plan ? plan.deferredUnavailableStops.length + plan.deferredOptionalStops.length : 0,
+      planIssueCount,
+    )
+    : null;
   const displayedMapStops = hasPlan ? mapStops : previewStops;
   const displayedMapBase = hasPlan ? base : null;
   const manualPinDraft = manualPinTarget === null ? null : manualPlaceDrafts[manualPinTarget] ?? null;
@@ -1219,13 +1222,9 @@ export function usePlannerViewModel({
   const selectedCheckRetry = selectedIntel?.status === "unavailable" || selectedFresh?.status === "unavailable";
   const visibleBuildStages = buildStageOrder;
   const activeBuildIndex = visibleBuildStages.indexOf(buildProgress.stage);
-  const activeBuildDetail = buildProgress.stage === "resolving"
-    ? text.progressPlaces(buildProgress.current, buildProgress.total)
-    : buildProgress.stage === "reviews"
-      ? text.progressReviews(buildProgress.reviewCount)
-      : buildProgress.stage === "scheduling"
-        ? text.progressScheduling
-        : selectedHotel?.name ?? (locale === "ja" ? "旅程に合うホテルを検索中" : "Searching hotels that fit the route");
+  // Copy Deck build.stage1-3: the live announcement repeats the active stage
+  // outcome — no counts, no provider or hotel names on the build screen.
+  const activeBuildDetail = text.buildSteps[buildProgress.stage];
 
   return {
     activeBuildDetail,

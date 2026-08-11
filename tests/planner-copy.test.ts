@@ -6,7 +6,7 @@ import {
 } from "../lib/feasibility-result.ts";
 import { buildTripFromWishlist } from "../lib/trip-builder.ts";
 import { assessTripFit } from "../lib/trip-scenarios.ts";
-import { minimumDaysCopy } from "../lib/presentation/planner-copy.ts";
+import { feasibilityStateCopy, minimumDaysCopy, ui } from "../lib/presentation/planner-copy.ts";
 
 // v1.1 TC-004: the computation cap (LIMIT) is a distinct user-facing cause.
 // Each rendered minimum-days message names exactly ONE cause and ONE next
@@ -97,4 +97,41 @@ test("the exhausted-search fallback names only the fixed-constraint cause with o
   assert.match(en, /fixed constraint/);
   assert.match(en, /Revisit one/);
   assert.doesNotMatch(en, /computation|limit|unresolved/i);
+});
+
+// Copy Deck build.stage1-3: the build screen narrates exactly three outcome
+// stages, verbatim, with no counts and no provider names.
+test("build stages carry the three Copy Deck outcome strings", () => {
+  assert.deepEqual(ui.ja.buildSteps, {
+    grouping: "近い場所を同じ日にまとめています",
+    ordering: "回る順番を整えています",
+    enriching: "ホテルと食事の候補を探しています",
+  });
+  assert.deepEqual(ui.en.buildSteps, {
+    grouping: "Grouping nearby places into days",
+    ordering: "Finding a practical order",
+    enriching: "Finding a practical base and meal stops",
+  });
+  for (const line of [...Object.values(ui.ja.buildSteps), ...Object.values(ui.en.buildSteps)]) {
+    assert.doesNotMatch(line, /\d/, "stage copy must carry no counts");
+    assert.doesNotMatch(line, /Google|Rakuten|楽天/i, "stage copy must carry no provider names");
+  }
+});
+
+// Copy Deck plan.state.conditional / plan.state.infeasible: real day and check
+// counts parameterize the headline; a conditional state without a countable
+// check keeps the assumptions phrasing instead of fabricating a number, and a
+// booking conflict with nothing unplaced keeps its specific honest copy.
+test("conditional and infeasible state copy follow the deck with real counts only", () => {
+  assert.equal(feasibilityStateCopy("FEASIBLE_IF_ASSUMPTIONS", "ja", 4, 8, 0, 2).headline, "4日で回れます。2か所だけ確認が必要です");
+  assert.equal(feasibilityStateCopy("FEASIBLE_IF_ASSUMPTIONS", "en", 4, 8, 0, 2).headline, "This works in 4 days, with 2 details to check");
+  assert.equal(feasibilityStateCopy("FEASIBLE_IF_ASSUMPTIONS", "en", 4, 8, 0, 1).headline, "This works in 4 days, with 1 detail to check");
+  assert.equal(feasibilityStateCopy("FEASIBLE_IF_ASSUMPTIONS", "ja", 4, 8, 0, 0).headline, "この条件なら4日で回れます");
+  assert.equal(feasibilityStateCopy("FEASIBLE_IF_ASSUMPTIONS", "en", 4, 8, 0, 0).headline, "This works in 4 days with these assumptions");
+
+  assert.equal(feasibilityStateCopy("INFEASIBLE_HARD_CONFLICT", "ja", 3, 8, 1).headline, "3日だと1か所外す必要があります");
+  assert.equal(feasibilityStateCopy("INFEASIBLE_HARD_CONFLICT", "en", 3, 8, 1).headline, "In 3 days, one stop needs to move or be removed");
+  assert.equal(feasibilityStateCopy("INFEASIBLE_HARD_CONFLICT", "en", 3, 8, 2).headline, "In 3 days, 2 stops need to move or be removed");
+  assert.equal(feasibilityStateCopy("INFEASIBLE_HARD_CONFLICT", "ja", 3, 8, 0).headline, "このままだと予約・時間に間に合いません");
+  assert.equal(feasibilityStateCopy("INFEASIBLE_HARD_CONFLICT", "en", 3, 8, 0).headline, "A booking or time constraint cannot be met as planned");
 });

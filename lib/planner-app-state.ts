@@ -150,14 +150,13 @@ export type RouteRecommendationState = {
   fetchedAt: string | null;
   candidates: RouteRecommendation[];
 };
-export type BuildStage = "resolving" | "hotel" | "reviews" | "scheduling";
+// Copy Deck build.stage1-3: the build screen narrates three traveller-facing
+// outcomes, not internal pipeline phases. Place resolution and clustering are
+// "grouping", the constraint solve is "ordering", and hotel/meal/evidence
+// enrichment is "enriching". No counts, no provider names.
+export type BuildStage = "grouping" | "ordering" | "enriching";
 export type BuildProgress = {
   stage: BuildStage;
-  current: number;
-  total: number;
-  reviewCount: number;
-  publicCount: number;
-  socialCount: number;
 };
 export type Inspector =
   | { kind: "stop"; stopId: string }
@@ -371,12 +370,7 @@ export type PlannerEditState = {
 export const P0_CORE_ONLY = false;
 export const P1_TRAVEL_ENRICHMENTS = false;
 export const initialBuildProgress: BuildProgress = {
-  stage: "resolving",
-  current: 0,
-  total: 0,
-  reviewCount: 0,
-  publicCount: 0,
-  socialCount: 0,
+  stage: "grouping",
 };
 
 /* "Tomorrow" means tomorrow where the trip happens. Until a destination is
@@ -474,7 +468,9 @@ export function matchingHotelCandidate(resolved: ResolvedInputStop, candidates: 
 
 // Food, public-source checks and measured routes are progressive, result-side
 // actions. They must never masquerade as prerequisites for the first plan.
+// Under the P0 incident switch no hotel or meal search runs at all, so the
+// "enriching" stage would over-promise and stays off the screen.
 export const buildStageOrder: BuildStage[] = P0_CORE_ONLY
-  ? ["resolving", "reviews", "scheduling"]
-  : ["resolving", "hotel", "reviews", "scheduling"];
+  ? ["grouping", "ordering"]
+  : ["grouping", "ordering", "enriching"];
 

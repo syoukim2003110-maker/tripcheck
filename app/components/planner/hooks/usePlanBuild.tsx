@@ -1026,7 +1026,6 @@ export function usePlanBuildActions({
         if (!canReusePlaceReview) setAmbiguousPlaces(response.ambiguous);
         setResolvedBase(resolvedHotel);
         setPreviewStops(places);
-        setBuildProgress((current) => ({ ...current, current: places.length, total: Math.max(places.length, itinerary.split("\n").filter((line) => line.trim()).length) }));
       })) return;
     } catch (error) {
       if (cancelled()) return;
@@ -1098,6 +1097,9 @@ export function usePlanBuildActions({
       if (!commit(() => setDetectedDestinationId(draft.destination))) return;
     }
     if (!commit(() => setPreviewStops(draft.days.flatMap((candidate) => candidate.stops.map(({ stop }) => stop))))) return;
+    // The first draft grouped the wishlist into days; what remains before the
+    // reveal is the deterministic ordering/constraint pass (Copy Deck stage2).
+    if (!commit(() => setBuildProgress({ stage: "ordering" }))) return;
 
     // Place facts and hotel candidates are independent once the wishlist has
     // resolved. Start them together so a slow hotel provider never adds a
@@ -1116,11 +1118,9 @@ export function usePlanBuildActions({
     // APPLYING the windows to the schedule (below), so a placeholder weekday
     // still never turns into a hard closure.
     const preHotelEvidenceStops = takeWithinPlanningBudget(preHotelStops, PLANNING_BUDGET.openingHours);
-    let placeReviewCount = 0;
     const loadPlaceIntelligence = async (stop: RouteStop): Promise<readonly [string, IntelligenceState]> => {
       try {
         const result = await requestPlaceIntelligence(stop, locale, buildDestination, controller.signal);
-        placeReviewCount += result.reviews.length;
         return [stop.id, { status: "ready", result } satisfies IntelligenceState] as const;
       } catch {
         return [stop.id, { status: "unavailable", result: null } satisfies IntelligenceState] as const;
@@ -1134,7 +1134,6 @@ export function usePlanBuildActions({
       cancelled,
     );
 
-    if (!commit(() => setBuildProgress((current) => ({ ...current, stage: "hotel", current: 0, total: 1 })))) return;
     // Every day gets one route point. A distant excursion no longer drags the
     // hotel halfway toward itself, and every returned candidate is measured
     // against the whole trip.
@@ -1144,19 +1143,39 @@ export function usePlanBuildActions({
       ?? draft.baseRecommendations[0]?.base
       ?? draft.days.flatMap((candidate) => candidate.stops.map(({ stop }) => stop))[0]
       ?? null;
-    // P0 does not fetch hotels on the critical path, but omitting a base would
-    // also omit two daily transfer legs and understate the required days. Use
-    // the deterministic best area as an explicitly provisional routing base.
-    // A provider outage must never make the planner silently omit both daily
-    // hotel legs. The deterministic area recommendation remains a clearly
-    // provisional routing base until a live hotel is selected.
+    // The build does not fetch hotels on the critical path (TC-025 / §5.3),
+    // but omitting a base would also omit two daily transfer legs and
+    // understate the required days. Use the deterministic best area as an
+    // explicitly provisional routing base: the reveal never waits on the
+    // hotel provider and a provider outage can never make the planner
+    // silently omit both daily hotel legs. The area recommendation remains a
+    // clearly provisional routing base until a live hotel is selected.
     let effectiveBase = resolvedHotel
       ?? (draft.baseRecommendations[0]?.base
         ? provisionalBaseAsResolved(draft.baseRecommendations[0].base)
         : null);
-    let localHotelState: HotelState = { status: "unavailable", candidates: [], selectedId: null, fresh: emptyFreshState, ai: emptyHotelAi };
-    const buildHotelTravelMinutes = new Map<string, number>();
-    if (!P0_CORE_ONLY && hotelAnchor) {
+    // The late hotel attach recomputes the stored plan signature with the
+    // schedule inputs applied by then; the post-reveal tail keeps this mirror
+    // current so the "re-search hotels" prompt never fires on the attach.
+    const appliedScheduleParams = {
+      overrides: {} as Record<string, number>,
+      earlyStops: [] as string[],
+      openings: {} as Record<string, Record<number, VisitWindow[]>>,
+    };
+    // TC-025: the hotel shortlist is progressive enrichment. It starts now,
+    // never blocks the reveal, and lands through the same provisional-base
+    // path a user's own hotel acceptance takes (setHotelState + setResolvedBase
+    // rebuild the plan memo). The build-run staleness guards make sure a late
+    // result can never paint over a newer plan, and cancel/reset/new-build
+    // abort it through the existing controller and run counter.
+    const attachHotelDiscovery = async () => {
+      if (P0_CORE_ONLY || !hotelAnchor) {
+        commit(() => setHotelState({ status: "unavailable", candidates: [], selectedId: null, fresh: emptyFreshState, ai: emptyHotelAi }));
+        return;
+      }
+      let localHotelState: HotelState;
+      let nextBase: ResolvedInputStop | null = null;
+      const buildHotelTravelMinutes = new Map<string, number>();
       try {
         const hotelResponse = await requestHotelRecommendations({
           latitude: hotelAnchor.latitude,
@@ -1198,81 +1217,98 @@ export function usePlanBuildActions({
           : null;
         const selected = useRecommendedHotelForBuild ? recommended : matchedExact ?? matchedByQuery;
         if (selected && (useRecommendedHotelForBuild || !resolvedHotel)) {
-          effectiveBase = hotelAsResolvedBase(selected, hotelQuery, hotelAnchor.area, hotelResponse.fetchedAt);
+          nextBase = hotelAsResolvedBase(selected, hotelQuery, hotelAnchor.area, hotelResponse.fetchedAt);
         }
         const candidates = selected
           ? [selected, ...rankedHotelCandidates.filter((candidate) => candidate.id !== selected.id)]
           : rankedHotelCandidates;
         localHotelState = { status: "ready", candidates: hotelShortlist(candidates, selected?.id), selectedId: selected?.id ?? null, fresh: emptyFreshState, ai: emptyHotelAi };
       } catch {
-        localHotelState = { status: "unavailable", candidates: [], selectedId: null, fresh: emptyFreshState, ai: emptyHotelAi };
+        if (cancelled()) return;
+        commit(() => setHotelState({ status: "unavailable", candidates: [], selectedId: null, fresh: emptyFreshState, ai: emptyHotelAi }));
+        return;
       }
-    }
-    if (cancelled()) return;
-    if (!commit(() => {
-      setHotelState(localHotelState);
-      setHotelPurpose(useRecommendedHotelForBuild ? "balanced" : "picked");
-      setResolvedBase(effectiveBase);
-      setBuildProgress((current) => ({ ...current, current: 1, total: 1 }));
-    })) return;
-
-    // AI takes over the "which hotel" decision once the deterministic
-    // shortlist exists: it researches the same candidates (bounded web
-    // search) and may promote a different base. It can only pick among the
-    // shortlisted ids, and a user choice made meanwhile always wins.
-    if (aiEnabledRef.current && localHotelState.status === "ready" && localHotelState.candidates.length >= 2 && hotelAnchor) {
-      const aiShortlist = localHotelState.candidates;
-      const aiInitialSelectedId = localHotelState.selectedId;
-      const aiMaySwitch = useRecommendedHotelForBuild && aiInitialSelectedId !== null;
-      setHotelState((current) => current.status === "ready"
-        ? { ...current, ai: { ...current.ai, status: "loading" } }
-        : current);
-      void requestHotelRanking({
-        destination: locale === "ja" ? destinationById(draft.destination).names.ja : destinationById(draft.destination).names.en,
-        area: hotelAnchor.area,
-        tripDays: buildDays,
-        purpose: useRecommendedHotelForBuild ? "balanced" : "picked",
-        candidates: aiShortlist.slice(0, 6).map((candidate) => ({
-          id: candidate.id,
-          name: candidate.name,
-          area: candidate.address.slice(0, 100) || hotelAnchor.area,
-          rating: candidate.rating,
-          reviewCount: candidate.userRatingCount,
-          totalTravelMinutes: buildHotelTravelMinutes.get(candidate.id) ?? null,
-          styles: candidate.styles,
-          priceHint: candidate.rakuten?.minCharge
-            ? `~¥${candidate.rakuten.minCharge.toLocaleString("ja-JP")}/night`
-            : null,
-        })),
-      }, locale, controller.signal).then((ai) => {
-        if (cancelled()) return;
-        let userUntouched = false;
-        setHotelState((current) => {
-          if (current.status !== "ready") return current;
-          userUntouched = current.selectedId === aiInitialSelectedId;
-          const order = new Map(ai.ranked.map((item, index) => [item.id, index]));
-          const reordered = [...current.candidates].sort((left, right) => (
-            (order.get(left.id) ?? 99) - (order.get(right.id) ?? 99)
-          ));
-          return {
-            ...current,
-            candidates: reordered,
-            ai: {
-              status: "ready",
-              notes: Object.fromEntries(ai.ranked.map((item) => [item.id, { reason: item.reason, tag: item.tag }])),
-              recommendedId: ai.recommendedId,
-            },
-          };
-        });
-        const pick = aiShortlist.find((candidate) => candidate.id === ai.recommendedId);
-        if (pick && userUntouched && aiMaySwitch && pick.id !== aiInitialSelectedId && hotelStyleRef.current === "recommended") {
-          selectHotelCandidate(pick, "balanced");
+      if (!commit(() => {
+        setHotelState(localHotelState);
+        setHotelPurpose(useRecommendedHotelForBuild ? "balanced" : "picked");
+        if (nextBase) {
+          // The provisional area base hands over to the live hotel through
+          // the existing base path; the plan memo rebuilds from it. Keep the
+          // final-commit rebuild below on the same base if it has not run yet.
+          effectiveBase = nextBase;
+          setResolvedBase(nextBase);
+          setHotelSearchSignature(hotelPlanSignature(buildTripFromWishlist(
+            itinerary,
+            buildDays,
+            pace,
+            locale,
+            plannerContext(nextBase, appliedScheduleParams.overrides, appliedScheduleParams.earlyStops, appliedScheduleParams.openings),
+          )));
         }
-      }).catch(() => {
-        if (cancelled()) return;
-        setHotelState((current) => ({ ...current, ai: { ...current.ai, status: "unavailable" } }));
-      });
-    }
+      })) return;
+
+      // AI takes over the "which hotel" decision once the deterministic
+      // shortlist exists: it researches the same candidates (bounded web
+      // search) and may promote a different base. It can only pick among the
+      // shortlisted ids, and a user choice made meanwhile always wins.
+      if (aiEnabledRef.current && localHotelState.status === "ready" && localHotelState.candidates.length >= 2 && hotelAnchor) {
+        const aiShortlist = localHotelState.candidates;
+        const aiInitialSelectedId = localHotelState.selectedId;
+        const aiMaySwitch = useRecommendedHotelForBuild && aiInitialSelectedId !== null;
+        setHotelState((current) => current.status === "ready"
+          ? { ...current, ai: { ...current.ai, status: "loading" } }
+          : current);
+        void requestHotelRanking({
+          destination: locale === "ja" ? destinationById(draft.destination).names.ja : destinationById(draft.destination).names.en,
+          area: hotelAnchor.area,
+          tripDays: buildDays,
+          purpose: useRecommendedHotelForBuild ? "balanced" : "picked",
+          candidates: aiShortlist.slice(0, 6).map((candidate) => ({
+            id: candidate.id,
+            name: candidate.name,
+            area: candidate.address.slice(0, 100) || hotelAnchor.area,
+            rating: candidate.rating,
+            reviewCount: candidate.userRatingCount,
+            totalTravelMinutes: buildHotelTravelMinutes.get(candidate.id) ?? null,
+            styles: candidate.styles,
+            priceHint: candidate.rakuten?.minCharge
+              ? `~¥${candidate.rakuten.minCharge.toLocaleString("ja-JP")}/night`
+              : null,
+          })),
+        }, locale, controller.signal).then((ai) => {
+          if (cancelled()) return;
+          let userUntouched = false;
+          setHotelState((current) => {
+            if (current.status !== "ready") return current;
+            userUntouched = current.selectedId === aiInitialSelectedId;
+            const order = new Map(ai.ranked.map((item, index) => [item.id, index]));
+            const reordered = [...current.candidates].sort((left, right) => (
+              (order.get(left.id) ?? 99) - (order.get(right.id) ?? 99)
+            ));
+            return {
+              ...current,
+              candidates: reordered,
+              ai: {
+                status: "ready",
+                notes: Object.fromEntries(ai.ranked.map((item) => [item.id, { reason: item.reason, tag: item.tag }])),
+                recommendedId: ai.recommendedId,
+              },
+            };
+          });
+          const pick = aiShortlist.find((candidate) => candidate.id === ai.recommendedId);
+          if (pick && userUntouched && aiMaySwitch && pick.id !== aiInitialSelectedId && hotelStyleRef.current === "recommended") {
+            selectHotelCandidate(pick, "balanced");
+          }
+        }).catch(() => {
+          if (cancelled()) return;
+          setHotelState((current) => ({ ...current, ai: { ...current.ai, status: "unavailable" } }));
+        });
+      }
+    };
+    // Kicked off before the reveal so the request is already in flight while
+    // the deterministic plan commits; its state writes can only land after
+    // this synchronous block, i.e. after the reveal below.
+    void attachHotelDiscovery();
 
     draft = buildTripFromWishlist(itinerary, buildDays, pace, locale, plannerContext(effectiveBase));
     const uniqueStops = [...new Map(
@@ -1316,8 +1352,11 @@ export function usePlanBuildActions({
       trackProductEvent("plan_ready", { trip_day_count: buildDays, place_count: places.length });
       setHintDismissed(false);
       setPreviewStops([]);
-      // The deterministic provisional plan is ready. Hours and time-dependent
-      // routes continue in the background and refine this same result.
+      // The deterministic provisional plan is ready. Hotels, meals, hours and
+      // time-dependent routes continue in the background and refine this same
+      // result (Copy Deck stage3 — not shown under the P0 incident switch,
+      // where no hotel or meal search runs).
+      if (!P0_CORE_ONLY) setBuildProgress({ stage: "enriching" });
       setIsBuilding(false);
     })) return;
     trackMilestone("provisional_result_shown", {
@@ -1326,36 +1365,15 @@ export function usePlanBuildActions({
       solver_time_ms: (typeof performance !== "undefined" ? performance.now() : Date.now()) - buildStartedAt,
     });
 
-    const selectedHotelForBuild = localHotelState.selectedId
-      ? localHotelState.candidates.find((candidate) => candidate.id === localHotelState.selectedId) ?? null
-      : null;
-    let reviewCount = selectedHotelForBuild?.reviews?.length ?? 0;
-    if (!commit(() => setBuildProgress((current) => ({ ...current, stage: "reviews", current: 0, total: uniqueStops.length, reviewCount })))) return;
     const prefetchedEntries = await preHotelIntelligencePromise;
     if (cancelled()) return;
-    reviewCount += placeReviewCount;
     const prefetchedById = new Map<string, IntelligenceState>(prefetchedEntries);
     const unrequestedStops = uniqueStops.filter((stop) => !prefetchedById.has(stop.id));
     const missingStops = !tripDateTouched
       ? []
       : takeWithinPlanningBudget(unrequestedStops, PLANNING_BUDGET.openingHours, prefetchedEntries.length);
-    if (!commit(() => setBuildProgress((progress) => ({
-      ...progress,
-      current: uniqueStops.length - missingStops.length,
-      total: uniqueStops.length,
-      reviewCount,
-    })))) return;
-    const missingEntries = await mapWithConcurrency(missingStops, 4, loadPlaceIntelligence, (current) => {
-      reviewCount = (selectedHotelForBuild?.reviews?.length ?? 0) + placeReviewCount;
-      commit(() => setBuildProgress((progress) => ({
-        ...progress,
-        current: uniqueStops.length - missingStops.length + current,
-        total: uniqueStops.length,
-        reviewCount,
-      })));
-    }, cancelled);
+    const missingEntries = await mapWithConcurrency(missingStops, 4, loadPlaceIntelligence, () => undefined, cancelled);
     if (cancelled()) return;
-    reviewCount = (selectedHotelForBuild?.reviews?.length ?? 0) + placeReviewCount;
     const intelligenceById = new Map<string, IntelligenceState>([...prefetchedEntries, ...missingEntries]);
     const intelligenceEntries = uniqueStops.map((stop) => [
       stop.id,
@@ -1395,8 +1413,6 @@ export function usePlanBuildActions({
 
     // Public-web and meal checks are deliberately user initiated. They are
     // useful enrichment, not prerequisites for a feasible first itinerary.
-    const publicCount = 0;
-    const socialCount = 0;
     const localFreshVoices: Record<string, FreshState> = {};
     if (!commit(() => setFreshVoices(localFreshVoices))) return;
 
@@ -1415,15 +1431,12 @@ export function usePlanBuildActions({
     const measuredWalking: Record<string, number> = {};
     const measuredDriving: Record<string, number> = {};
 
-    if (!commit(() => setBuildProgress((current) => ({
-      ...current,
-      stage: "scheduling",
-      current: 0,
-      total: 0,
-      reviewCount,
-      publicCount,
-      socialCount,
-    })))) return;
+    // From here on the late hotel attach must rebuild with the same schedule
+    // inputs as the final commit, or its stored signature would disagree with
+    // the live plan and raise a phantom "re-search hotels" prompt.
+    appliedScheduleParams.overrides = overrides;
+    appliedScheduleParams.earlyStops = earlyStops;
+    appliedScheduleParams.openings = appliedOpeningWindows;
 
     const finalDraft = buildTripFromWishlist(
       itinerary,
@@ -1440,7 +1453,6 @@ export function usePlanBuildActions({
 
     if (!commit(() => {
       postBuildLegBudgetRef.current = P0_CORE_ONLY ? 0 : 16;
-      setBuildProgress((current) => ({ ...current, stage: "scheduling", current: 0, total: 0, reviewCount, publicCount, socialCount }));
       setDurationOverrides(overrides);
       setEarlyVisitStopIds(earlyStops);
       setOpeningWindowsByDay(appliedOpeningWindows);

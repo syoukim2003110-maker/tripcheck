@@ -1,7 +1,8 @@
 "use client";
 
-// Build-in-progress screen (spec v2.1 states/): numbered stages with a live
-// detail line and a cancel action. Pure renderer - the build pipeline owns
+// Build-in-progress screen (spec v2.1 states/): the three Copy Deck outcome
+// stages (build.stage1-3) with a live announcement line and a cancel action.
+// No counts and no provider names. Pure renderer - the build pipeline owns
 // the stage data.
 import Icon from "../../../PlannerIcons";
 import { ui, type PlannerLocale } from "../../../../lib/presentation/planner-copy";
@@ -32,7 +33,6 @@ export default function LoadingState({ stages, activeIndex, detail, aiEnabled, l
               <span className="planner-building-step-dot" aria-hidden="true">{index < activeIndex ? <Icon name="check" size={11} /> : index + 1}</span>
               <span className="planner-building-step-copy">
                 <b>{text.buildSteps[stage]}</b>
-                {index === activeIndex ? <small>{detail}</small> : null}
               </span>
             </li>
           );

@@ -63,15 +63,12 @@ export const ui = {
     buildingBody: "場所・営業時間・拠点を確認し、固定条件を破らない予定を計算します。",
     buildingBodyNoSocial: "場所・営業時間・拠点を確認し、固定条件を破らない予定を計算します。経路データは表示後に反映します。",
     buildingCancel: "入力にもどる",
+    // Copy Deck build.stage1-3 (verbatim): three outcome stages, no counts.
     buildSteps: {
-      resolving: "場所を地図で確認",
-      hotel: "実在するホテルを比較",
-      reviews: "最終地点の営業時間を確認",
-      scheduling: "固定条件と時刻を計算",
+      grouping: "近い場所を同じ日にまとめています",
+      ordering: "回る順番を整えています",
+      enriching: "ホテルと食事の候補を探しています",
     },
-    progressPlaces: (current: number, total: number) => `${current}/${total}か所を確認`,
-    progressReviews: (count: number) => { void count; return "取得できた営業時間だけを反映します"; },
-    progressScheduling: "予約・空港・営業時間・終了時刻を照合します",
     mapReady: "Googleマップ",
     mapEmpty: "行き先を入れると、ここに旅が描かれます",
     legendLabel: "凡例",
@@ -151,6 +148,7 @@ export const ui = {
     foodNote: "Googleの評価・口コミ量・距離・営業表示をロジックで比較。公開SNSは引用できた情報だけを補足しています。",
     foodFresh: (count: number) => `最近の公開情報 ${count}件`,
     hotelChip: "ホテル",
+    hotelPending: "ホテルを探しています…",
     hotelCandidate: "おすすめのホテル",
     hotelNoAvailability: "料金・空室は宿泊サイトで最終確認してください。",
     hotelUnavailable: "ホテル候補を取得できませんでした。",
@@ -317,15 +315,12 @@ export const ui = {
     buildingBody: "We confirm places, hours and the base, then calculate a plan that keeps every hard constraint.",
     buildingBodyNoSocial: "We confirm places, hours and the base, then calculate every hard constraint. Route data blends in after the result appears.",
     buildingCancel: "Back to input",
+    // Copy Deck build.stage1-3 (verbatim): three outcome stages, no counts.
     buildSteps: {
-      resolving: "Confirm every place on the map",
-      hotel: "Compare real hotels",
-      reviews: "Check final-stop opening hours",
-      scheduling: "Calculate constraints and clocks",
+      grouping: "Grouping nearby places into days",
+      ordering: "Finding a practical order",
+      enriching: "Finding a practical base and meal stops",
     },
-    progressPlaces: (current: number, total: number) => `${current}/${total} places confirmed`,
-    progressReviews: (count: number) => { void count; return "Only retrieved opening hours are applied"; },
-    progressScheduling: "Cross-checking bookings, airports, hours and day endings",
     mapReady: "Google Maps",
     mapEmpty: "Your trip will appear here",
     legendLabel: "Legend",
@@ -405,6 +400,7 @@ export const ui = {
     foodNote: "Ranked by Google rating strength, review volume, distance and open status. Public social evidence is shown only when a cited page was found.",
     foodFresh: (count: number) => `${count} recent public signals`,
     hotelChip: "Hotel",
+    hotelPending: "Finding a base…",
     hotelCandidate: "Recommended hotel",
     hotelNoAvailability: "Confirm price and availability with a booking provider.",
     hotelUnavailable: "Hotel options didn't load.",
@@ -541,24 +537,36 @@ export function printTransferCopy(
 
 // v1.1 spec §5.4 state copy: a conclusion in the traveller's language, never
 // an internal state name. Reasons and the one next action live beside it.
-export function feasibilityStateCopy(state: FeasibilityState, locale: PlannerLocale, days: number, stops: number, unplacedCount = 0) {
+// Copy Deck plan.state.conditional/infeasible: the conditional headline names
+// the real check count when one exists (matching the issue chip) and the
+// infeasible headline says what has to move. With assumptions but nothing
+// countable to check, the assumptions phrasing stays — no fabricated counts.
+export function feasibilityStateCopy(state: FeasibilityState, locale: PlannerLocale, days: number, stops: number, unplacedCount = 0, checkCount = 0) {
   if (locale === "ja") {
     if (state === "VERIFIED_FEASIBLE") return { label: `全${stops}か所`, headline: `${days}日なら、無理なく回れます` };
     if (state === "PROVISIONAL_FEASIBLE") return { label: `全${stops}か所`, headline: `${days}日で回れそうです` };
-    if (state === "FEASIBLE_IF_ASSUMPTIONS") return { label: "条件付き", headline: `この条件なら${days}日で回れます` };
+    if (state === "FEASIBLE_IF_ASSUMPTIONS") {
+      return checkCount > 0
+        ? { label: "条件付き", headline: `${days}日で回れます。${checkCount}か所だけ確認が必要です` }
+        : { label: "条件付き", headline: `この条件なら${days}日で回れます` };
+    }
     if (state === "INFEASIBLE_HARD_CONFLICT") {
       return unplacedCount > 0
-        ? { label: "要修正", headline: `${days}日だと${unplacedCount}か所入りません` }
+        ? { label: "要修正", headline: `${days}日だと${unplacedCount}か所外す必要があります` }
         : { label: "要修正", headline: "このままだと予約・時間に間に合いません" };
     }
     return { label: "確認待ち", headline: "場所を確認すると完成します" };
   }
   if (state === "VERIFIED_FEASIBLE") return { label: `${stops} places`, headline: `This works comfortably in ${days} day${days === 1 ? "" : "s"}` };
   if (state === "PROVISIONAL_FEASIBLE") return { label: `${stops} places`, headline: `This should work in ${days} day${days === 1 ? "" : "s"}` };
-  if (state === "FEASIBLE_IF_ASSUMPTIONS") return { label: "Conditional", headline: `This works in ${days} day${days === 1 ? "" : "s"} with these assumptions` };
+  if (state === "FEASIBLE_IF_ASSUMPTIONS") {
+    return checkCount > 0
+      ? { label: "Conditional", headline: `This works in ${days} day${days === 1 ? "" : "s"}, with ${checkCount} detail${checkCount === 1 ? "" : "s"} to check` }
+      : { label: "Conditional", headline: `This works in ${days} day${days === 1 ? "" : "s"} with these assumptions` };
+  }
   if (state === "INFEASIBLE_HARD_CONFLICT") {
     return unplacedCount > 0
-      ? { label: "Needs a change", headline: `In ${days} day${days === 1 ? "" : "s"}, ${unplacedCount} stop${unplacedCount === 1 ? "" : "s"} cannot fit` }
+      ? { label: "Needs a change", headline: `In ${days} day${days === 1 ? "" : "s"}, ${unplacedCount === 1 ? "one stop needs" : `${unplacedCount} stops need`} to move or be removed` }
       : { label: "Needs a change", headline: "A booking or time constraint cannot be met as planned" };
   }
   return { label: "Almost there", headline: "Confirm the places to finish the plan" };

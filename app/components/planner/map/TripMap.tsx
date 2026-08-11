@@ -62,6 +62,8 @@ type TripMapProps = {
   /** Timeline hover/focus → map highlight channel (spec §7.4); ref-like, never re-renders. */
   mapHoverChannel?: PlannerMapHoverChannel;
   selectedHotel: HotelCandidate | null;
+  /** TC-025: the hotel shortlist attaches after the reveal; the slot shows a pending chip until it lands. */
+  hotelPending: boolean;
   selectedRouteRecommendationId: string | null;
   daySlots: FoodRecommendationSlot[];
   foodSearches: Record<string, FoodState>;
@@ -115,6 +117,7 @@ export default function TripMap({
   mapFocusedStopId,
   mapHoverChannel,
   selectedHotel,
+  hotelPending,
   selectedRouteRecommendationId,
   daySlots,
   foodSearches,
@@ -237,6 +240,10 @@ export default function TripMap({
             >
               <span aria-hidden="true"><Icon name="bed" size={15} /></span>{text.hotelChip}
             </button>
+          ) : !P0_CORE_ONLY && hotelPending ? (
+            <span className="planner-hotel-chip is-pending" role="status">
+              <span aria-hidden="true"><Icon name="bed" size={15} /></span>{text.hotelPending}
+            </span>
           ) : null}
           {!P0_CORE_ONLY ? daySlots.map((slot) => {
             const slotState = foodSearches[slot.id];
