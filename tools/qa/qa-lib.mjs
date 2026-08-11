@@ -68,9 +68,12 @@ export async function launchBrowser() {
 /**
  * New page with external traffic blocked. `fixtures.placeResolution` answers
  * POST /api/place-resolution so the Resolve step is testable without any
- * provider key or quota. `isolated: true` gives the page its own browser
- * context — no shared localStorage, so "recent trips" from another scenario
- * can never leak into a screenshot.
+ * provider key or quota. `fixtures.foodRecommendations` answers POST
+ * /api/food-recommendations the same way (a function fixture receives the
+ * parsed request payload, so candidates can sit at the slot's coordinates).
+ * `isolated: true` gives the page its own browser context — no shared
+ * localStorage, so "recent trips" from another scenario can never leak into
+ * a screenshot.
  */
 export async function newPage(browser, { width = 1440, height = 900, fixtures = {}, isolated = false } = {}) {
   const context = isolated ? await browser.createBrowserContext() : browser;
@@ -92,6 +95,19 @@ export async function newPage(browser, { width = 1440, height = 900, fixtures = 
         status: 200,
         contentType: "application/json",
         body: JSON.stringify(fixtures.placeResolution),
+      }).catch(() => {});
+      return;
+    }
+    if (fixtures.foodRecommendations && url === `${BASE_URL}/api/food-recommendations` && request.method() === "POST") {
+      let payload = {};
+      try { payload = JSON.parse(request.postData() ?? "{}"); } catch { /* keep {} */ }
+      const body = typeof fixtures.foodRecommendations === "function"
+        ? fixtures.foodRecommendations(payload)
+        : fixtures.foodRecommendations;
+      request.respond({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(body),
       }).catch(() => {});
       return;
     }
@@ -272,4 +288,84 @@ export function unresolvedMustInput(locale) {
   return locale === "ja"
     ? "カペル橋\nリギ山 必須"
     : "Chapel Bridge\nMount Rigi must";
+}
+
+/**
+ * /api/food-recommendations fixture: two well-reviewed, planned-open
+ * candidates a ~100m walk from whatever slot coordinates the app asked
+ * about, so the sample plan grows real meal-recommendation rows (with the
+ * ここにする accept button) without any provider key. Pass the returned
+ * function as `fixtures.foodRecommendations`.
+ */
+export function foodRecommendationsFixture(locale) {
+  const ja = locale === "ja";
+  return (payload) => {
+    const latitude = typeof payload.latitude === "number" ? payload.latitude : 47.0517;
+    const longitude = typeof payload.longitude === "number" ? payload.longitude : 8.3059;
+    const kind = payload.mealKind === "dinner" ? "dinner" : "lunch";
+    const candidate = (index, name) => ({
+      id: `qa-food-${kind}-${latitude.toFixed(3)}-${index}`,
+      name,
+      address: ja ? "スイス ルツェルン 6003" : "6003 Luzern, Switzerland",
+      type: ja ? "レストラン" : "Restaurant",
+      googleMapsUrl: `${BASE_URL}/#qa-food-${index}`,
+      latitude: latitude + 0.0009,
+      longitude: longitude + 0.0004 * (index + 1),
+      distanceMeters: 110 + index * 40,
+      rating: 4.4 - index * 0.2,
+      userRatingCount: 320 - index * 60,
+      openNow: true,
+      plannedOpen: true,
+      hours: [],
+      businessStatus: "OPERATIONAL",
+      paymentEvidence: [],
+      reviewSnippets: [],
+      websiteUrl: null,
+    });
+    return {
+      provider: "google_maps",
+      ranking: "evidence_weighted",
+      fetchedAt: "2026-08-11T00:00:00.000Z",
+      candidates: kind === "lunch"
+        ? [candidate(0, ja ? "湖畔食堂アルペン" : "Alpen Lakeside Kitchen"), candidate(1, ja ? "旧市街ビストロ" : "Old Town Bistro")]
+        : [candidate(0, ja ? "夕暮れ食堂リギ" : "Rigi Sunset Table"), candidate(1, ja ? "橋前レストラン" : "Bridge House Restaurant")],
+    };
+  };
+}
+
+/**
+ * Presses Tab (or Shift+Tab) until the in-page predicate — evaluated against
+ * document.activeElement after every keystroke — returns true. Keyboard-only
+ * by construction: no mouse, tap or programmatic .focus() involved. Returns
+ * the number of presses used; throws after `max` presses.
+ */
+export async function pressTabUntil(page, predicate, { max = 60, shift = false, label = "target" } = {}) {
+  for (let press = 1; press <= max; press += 1) {
+    if (shift) await page.keyboard.down("Shift");
+    await page.keyboard.press("Tab");
+    if (shift) await page.keyboard.up("Shift");
+    if (await page.evaluate(predicate)) return press;
+  }
+  throw new Error(`${label} not reached after ${max} ${shift ? "Shift+Tab" : "Tab"} presses`);
+}
+
+/**
+ * DoD-A11Y-2: the focused control must carry a visible focus indicator.
+ * Keyboard focus makes :focus-visible match, so the app-wide rule
+ * (planner.css: 3px solid outline) — or any box-shadow indicator — must be
+ * computable on document.activeElement. Throws when the indicator is absent.
+ */
+export async function assertVisibleFocus(page, label) {
+  const state = await page.evaluate(() => {
+    const active = document.activeElement;
+    if (!active || active === document.body) return { tag: active?.tagName ?? "none", visible: false };
+    const style = getComputedStyle(active);
+    const outlineVisible = style.outlineStyle !== "none" && parseFloat(style.outlineWidth) > 0;
+    const shadowVisible = style.boxShadow !== "none" && style.boxShadow !== "";
+    return {
+      tag: `${active.tagName.toLowerCase()}.${[...active.classList].join(".")}`,
+      visible: outlineVisible || shadowVisible,
+    };
+  });
+  if (!state.visible) throw new Error(`${label}: focused ${state.tag} has no visible focus indicator`);
 }
