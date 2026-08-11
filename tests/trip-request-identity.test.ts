@@ -183,17 +183,18 @@ test("all paid planning clients send the same trip header and planning uses the 
 });
 
 test("trip lifecycle rotation and provisional live-route preservation stay wired", () => {
-  const appSource = readFileSync(new URL("../app/TripPlannerApp.tsx", import.meta.url), "utf8");
+  // The planner surface moved from TripPlannerApp into TripPlannerShell and
+  // the map canvas into a component; the build pipeline (loadDemo, resetTrip,
+  // buildPlan) lives in a hook (refactor spec v2.1). The lifecycle rotation
+  // and pause wiring contracts hold across the planner surface, wherever the
+  // code lives.
+  const shellSource = readFileSync(new URL("../app/components/planner/TripPlannerShell.tsx", import.meta.url), "utf8");
   const mapSource = readFileSync(new URL("../app/PlannerGoogleMap.tsx", import.meta.url), "utf8");
-  // The map canvas moved into a component and the build pipeline (loadDemo,
-  // resetTrip, buildPlan) into a hook (refactor spec v2.1); the lifecycle
-  // rotation and pause wiring contracts hold across the planner surface,
-  // wherever the code lives.
   const tripMapSource = readFileSync(new URL("../app/components/planner/map/TripMap.tsx", import.meta.url), "utf8");
   const buildHookSource = readFileSync(new URL("../app/components/planner/hooks/usePlanBuild.tsx", import.meta.url), "utf8");
-  const plannerSurface = `${appSource}\n${tripMapSource}`;
+  const plannerSurface = `${shellSource}\n${tripMapSource}`;
 
-  assert.match(appSource, /const applySharedTripInput = useCallback\([^]*?=> \{\s*rotateTripRequestToken\(\);/);
+  assert.match(shellSource, /const applySharedTripInput = useCallback\([^]*?=> \{\s*rotateTripRequestToken\(\);/);
   assert.match(buildHookSource, /function loadDemo\([^]*?\) \{\s*rotateTripRequestToken\(\);/);
   assert.match(buildHookSource, /function resetTrip\(\) \{\s*rotateTripRequestToken\(\);/);
   assert.match(

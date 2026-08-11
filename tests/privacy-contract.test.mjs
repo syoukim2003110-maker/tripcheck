@@ -3,10 +3,20 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const appSourceUrl = new URL("../app/TripPlannerApp.tsx", import.meta.url);
+// TripPlannerApp is now a thin entry point (refactor spec v2.1
+// "TripPlannerApp → TripPlannerShell + hooks"); the planner surface lives in
+// the shell. Both files stay scanned: the surface contracts hold wherever the
+// code lives, and the thin entry must stay free of network and storage too.
+const shellSourceUrl = new URL("../app/components/planner/TripPlannerShell.tsx", import.meta.url);
 // The build pipeline (place resolution, buildPlan, demo/reset lifecycle)
 // moved into a hook (refactor spec v2.1); its privacy contracts hold
 // wherever the code lives, so those checks target the hook file.
 const buildHookSourceUrl = new URL("../app/components/planner/hooks/usePlanBuild.tsx", import.meta.url);
+// The domain derivations (the plan/fit memos, the local share code and the
+// recent-trip payload) moved into the domain-model hook (refactor spec v2.1);
+// their privacy contracts hold wherever the code lives, so those checks
+// target the hook file.
+const domainHookSourceUrl = new URL("../app/components/planner/hooks/useTripDomainModel.tsx", import.meta.url);
 const privacySourceUrl = new URL("../app/privacy/page.tsx", import.meta.url);
 const tripStoreSourceUrl = new URL("../lib/trip-store.ts", import.meta.url);
 const engineSourceUrls = [
@@ -18,13 +28,15 @@ const engineSourceUrls = [
 
 test("keeps the completed itinerary out of direct client network calls", async () => {
   const source = await readFile(appSourceUrl, "utf8");
+  const shellSource = await readFile(shellSourceUrl, "utf8");
   const buildSource = await readFile(buildHookSourceUrl, "utf8");
+  const domainSource = await readFile(domainHookSourceUrl, "utf8");
 
-  assert.match(source, /buildTripFromWishlist\(itinerary, tripDays, pace, locale, activePlannerContext\)/);
-  assert.match(source, /assessTripFit\(itinerary, tripDays, pace, locale, activePlannerContext, plan\)/);
+  assert.match(domainSource, /buildTripFromWishlist\(itinerary, tripDays, pace, locale, activePlannerContext\)/);
+  assert.match(domainSource, /assessTripFit\(itinerary, tripDays, pace, locale, activePlannerContext, plan\)/);
   assert.match(buildSource, /requestPlaceResolution\(\s*rawAtStart,\s*"",\s*locale,\s*destinationChoice,\s*controller\.signal,\s*resolutionOverrides,\s*\)/);
   assert.match(buildSource, /requestPlaceResolution\(\s*canReusePlaceReview \? "" : itinerary,\s*hotelQuery,\s*locale,\s*buildDestination,\s*controller\.signal,\s*canReusePlaceReview \? \[\] : resolutionOverrides,\s*\)/);
-  for (const text of [source, buildSource]) {
+  for (const text of [source, shellSource, buildSource, domainSource]) {
     assert.doesNotMatch(text, /fetch\s*\(/);
     assert.doesNotMatch(text, /sendBeacon\s*\(/);
     assert.doesNotMatch(text, /localStorage\.setItem\([^\n]*itinerary/i);
@@ -33,14 +45,15 @@ test("keeps the completed itinerary out of direct client network calls", async (
 });
 
 test("persists only explicit occurrence-scoped place decisions", async () => {
-  const source = await readFile(appSourceUrl, "utf8");
+  const source = await readFile(shellSourceUrl, "utf8");
   // The occurrence-scoped confirm actions (ambiguous choice, manual pin)
   // moved into the build hook; the explicit-override contract holds there.
   const buildSource = await readFile(buildHookSourceUrl, "utf8");
-  const localStart = source.indexOf("const localTripCode = useMemo");
-  const localEnd = source.indexOf("const localTripTitle", localStart);
+  const domainSource = await readFile(domainHookSourceUrl, "utf8");
+  const localStart = domainSource.indexOf("const localTripCode = useMemo");
+  const localEnd = domainSource.indexOf("const localTripTitle", localStart);
   assert.ok(localStart >= 0 && localEnd > localStart);
-  const localPayload = source.slice(localStart, localEnd);
+  const localPayload = domainSource.slice(localStart, localEnd);
 
   assert.match(source, /setResolutionOverrides\(shared\.resolutionOverrides \?\? \[\]\)/);
   assert.match(localPayload, /resolutionOverrides,/);
@@ -49,7 +62,7 @@ test("persists only explicit occurrence-scoped place decisions", async () => {
 });
 
 test("rehydrates saved trips without reusing or persisting mutable provider display data", async () => {
-  const source = await readFile(appSourceUrl, "utf8");
+  const source = await readFile(shellSourceUrl, "utf8");
   // The planner edit actions moved into a hook (refactor spec v2.1); the
   // authored-name contract holds across the planner surface, wherever it lives.
   const plannerEditsSource = await readFile(
@@ -68,8 +81,9 @@ test("rehydrates saved trips without reusing or persisting mutable provider disp
   assert.match(hydrate, /setResolvedStops\(\[\]\)/);
   assert.match(hydrate, /setAmbiguousPlaces\(\[\]\)/);
   assert.match(hydrate, /safeRemovedStopLabels\(shared\.removedStops, shared\.itinerary, locale\)/);
-  assert.match(source, /const localTripTitle = useMemo\(\(\) => parsedWishlistPlaces\(itinerary\)\[0\]\?\.name \?\? "Trip"/);
-  assert.doesNotMatch(source, /const localTripTitle = useMemo\(\(\) => plan\?/);
+  const domainSource = await readFile(domainHookSourceUrl, "utf8");
+  assert.match(domainSource, /const localTripTitle = useMemo\(\(\) => parsedWishlistPlaces\(itinerary\)\[0\]\?\.name \?\? "Trip"/);
+  assert.doesNotMatch(domainSource, /const localTripTitle = useMemo\(\(\) => plan\?/);
   assert.doesNotMatch(remove, /name: stop\.name/);
   assert.match(remove, /const authoredName = occurrenceName/);
 });
@@ -84,12 +98,13 @@ test("keeps deterministic route and time engines free of network calls", async (
 });
 
 test("keeps recent-plan device storage bounded and disclosed", async () => {
-  const [appSource, tripStoreSource, privacySource] = await Promise.all([
+  const [appSource, shellSource, tripStoreSource, privacySource] = await Promise.all([
     readFile(appSourceUrl, "utf8"),
+    readFile(shellSourceUrl, "utf8"),
     readFile(tripStoreSourceUrl, "utf8"),
     readFile(privacySourceUrl, "utf8"),
   ]);
-  const storedKeys = [...appSource.matchAll(/localStorage\.setItem\("([^"]+)"/g)]
+  const storedKeys = [...`${appSource}\n${shellSource}`.matchAll(/localStorage\.setItem\("([^"]+)"/g)]
     .map((match) => match[1]);
 
   assert.deepEqual([...new Set(storedKeys)], ["tripcheck-locale", "tripcheck.passportExpiry"]);
