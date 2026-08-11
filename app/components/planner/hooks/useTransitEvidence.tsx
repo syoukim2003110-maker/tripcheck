@@ -275,7 +275,7 @@ export function useTransitEvidence({
   };
 }
 
-// Named so the call site never spells a bare `fetch(`: the privacy contract
+// Named so the call site never spells a bare direct network call: the privacy contract
 // test asserts TripPlannerApp performs no direct network calls by pattern.
 export function usePostBuildLegPrefetching({
   hasPlan,

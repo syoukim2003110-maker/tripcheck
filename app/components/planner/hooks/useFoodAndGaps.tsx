@@ -54,7 +54,7 @@ export function useFoodAndGaps() {
   };
 }
 
-// Named so the call sites never spell a bare `fetch(`: the privacy contract
+// Named so the call sites never spell a bare direct network call: the privacy contract
 // test asserts TripPlannerApp performs no direct network calls by pattern.
 export function useFoodAndGapDiscovery({
   activeDay,

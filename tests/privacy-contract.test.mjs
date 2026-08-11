@@ -26,9 +26,31 @@ const engineSourceUrls = [
   new URL("../lib/trip-scenarios.ts", import.meta.url),
 ];
 
+/* The planner surface is split across TripPlannerApp, TripPlannerShell, the
+ * hooks and the extracted components (refactor spec v2.1). The no-network /
+ * no-itinerary-storage contract must bind ALL of it - a scan pinned to a few
+ * files would silently exempt code that used to live inside the one scanned
+ * monolith. Everything except the lib/*-client service layer is enumerated. */
+async function plannerSurfaceFiles() {
+  const { readdir } = await import("node:fs/promises");
+  const files = [{ path: "app/TripPlannerApp.tsx", url: appSourceUrl }];
+  const roots = [
+    { url: new URL("../app/components/planner/", import.meta.url), filter: /\.tsx?$/ },
+    { url: new URL("../lib/presentation/", import.meta.url), filter: /\.ts$/ },
+  ];
+  for (const root of roots) {
+    const entries = await readdir(root.url, { recursive: true, withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isFile() || !root.filter.test(entry.name)) continue;
+      const fileUrl = new URL(`${entry.parentPath.replace(/\/?$/, "/")}${entry.name}`, "file://");
+      files.push({ path: fileUrl.pathname, url: fileUrl });
+    }
+  }
+  files.push({ path: "lib/planner-app-state.ts", url: new URL("../lib/planner-app-state.ts", import.meta.url) });
+  return Promise.all(files.map(async (file) => ({ path: file.path, text: await readFile(file.url, "utf8") })));
+}
+
 test("keeps the completed itinerary out of direct client network calls", async () => {
-  const source = await readFile(appSourceUrl, "utf8");
-  const shellSource = await readFile(shellSourceUrl, "utf8");
   const buildSource = await readFile(buildHookSourceUrl, "utf8");
   const domainSource = await readFile(domainHookSourceUrl, "utf8");
 
@@ -36,11 +58,13 @@ test("keeps the completed itinerary out of direct client network calls", async (
   assert.match(domainSource, /assessTripFit\(itinerary, tripDays, pace, locale, activePlannerContext, plan\)/);
   assert.match(buildSource, /requestPlaceResolution\(\s*rawAtStart,\s*"",\s*locale,\s*destinationChoice,\s*controller\.signal,\s*resolutionOverrides,\s*\)/);
   assert.match(buildSource, /requestPlaceResolution\(\s*canReusePlaceReview \? "" : itinerary,\s*hotelQuery,\s*locale,\s*buildDestination,\s*controller\.signal,\s*canReusePlaceReview \? \[\] : resolutionOverrides,\s*\)/);
-  for (const text of [source, shellSource, buildSource, domainSource]) {
-    assert.doesNotMatch(text, /fetch\s*\(/);
-    assert.doesNotMatch(text, /sendBeacon\s*\(/);
-    assert.doesNotMatch(text, /localStorage\.setItem\([^\n]*itinerary/i);
-    assert.doesNotMatch(text, /sessionStorage\.setItem\([^\n]*itinerary/i);
+  const surface = await plannerSurfaceFiles();
+  assert.ok(surface.length > 30, `planner surface enumeration looks too small: ${surface.length} files`);
+  for (const { path, text } of surface) {
+    assert.doesNotMatch(text, /fetch\s*\(/, `bare fetch( in ${path}`);
+    assert.doesNotMatch(text, /sendBeacon\s*\(/, `sendBeacon( in ${path}`);
+    assert.doesNotMatch(text, /localStorage\.setItem\([^\n]*itinerary/i, `itinerary in localStorage in ${path}`);
+    assert.doesNotMatch(text, /sessionStorage\.setItem\([^\n]*itinerary/i, `itinerary in sessionStorage in ${path}`);
   }
 });
 
@@ -69,8 +93,14 @@ test("rehydrates saved trips without reusing or persisting mutable provider disp
     new URL("../app/components/planner/hooks/usePlannerEdits.tsx", import.meta.url),
     "utf8",
   );
+  // The hydration applier is the last piece before the shell's effects; the
+  // ref that used to bound this slice moved into useTripPersistence, so the
+  // slice now ends at the first effect after the callback. Bounds are
+  // asserted so a future move breaks the test loudly instead of widening
+  // the slice to the whole file.
   const hydrateStart = source.indexOf("const applySharedTripInput");
-  const hydrateEnd = source.indexOf("const sharedHydrationRef", hydrateStart);
+  const hydrateEnd = source.indexOf("useEffect", hydrateStart);
+  assert.ok(hydrateStart >= 0 && hydrateEnd > hydrateStart, "hydrate slice anchors missing in TripPlannerShell");
   const hydrate = source.slice(hydrateStart, hydrateEnd);
   const removeStart = plannerEditsSource.indexOf("function removeStopFromPlan");
   const removeEnd = plannerEditsSource.indexOf("function restoreRemovedStop", removeStart);
@@ -98,13 +128,15 @@ test("keeps deterministic route and time engines free of network calls", async (
 });
 
 test("keeps recent-plan device storage bounded and disclosed", async () => {
-  const [appSource, shellSource, tripStoreSource, privacySource] = await Promise.all([
-    readFile(appSourceUrl, "utf8"),
-    readFile(shellSourceUrl, "utf8"),
+  const [tripStoreSource, privacySource] = await Promise.all([
     readFile(tripStoreSourceUrl, "utf8"),
     readFile(privacySourceUrl, "utf8"),
   ]);
-  const storedKeys = [...`${appSource}\n${shellSource}`.matchAll(/localStorage\.setItem\("([^"]+)"/g)]
+  // The allowlist binds the WHOLE planner surface - hooks and components
+  // included - so device-storage code cannot grow new keys unnoticed.
+  const surface = await plannerSurfaceFiles();
+  const storedKeys = surface
+    .flatMap(({ text }) => [...text.matchAll(/localStorage\.setItem\("([^"]+)"/g)])
     .map((match) => match[1]);
 
   assert.deepEqual([...new Set(storedKeys)], ["tripcheck-locale", "tripcheck.passportExpiry"]);

@@ -75,7 +75,6 @@ import { recommendationStopId } from "../../../lib/presentation/recommendation-p
 import {
   P0_CORE_ONLY,
   P1_TRAVEL_ENRICHMENTS,
-  clockToMinutes,
   defaultTripDate,
   shouldUseRecommendedHotel,
   type PlannerInputStep,
@@ -85,6 +84,7 @@ import {
   type Inspector,
   type ManualPlaceDraft,
 } from "../../../lib/planner-app-state";
+import { mealSlotsAfterStop } from "../../../lib/presentation/timeline-presentation";
 
 export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = "" }: { initialLocale?: PlannerLocale; mapsApiKey?: string }) {
   const [locale, setLocale] = useState<PlannerLocale>(initialLocale);
@@ -1052,22 +1052,9 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
   // query behind the recommendation.
   function mealRowsAfter(stopIndex: number) {
     if (!day) return [];
-    const rowStops = day.stops;
-    return daySlots
-      .filter((slot) => {
-        const slotMinutes = clockToMinutes(slot.displayTime);
-        if (slotMinutes === null) return stopIndex === rowStops.length - 1;
-        let insertAfter = 0;
-        rowStops.forEach((candidate, index) => {
-          const arrival = clockToMinutes(candidate.arrival);
-          if (arrival !== null && arrival <= slotMinutes) insertAfter = index;
-        });
-        return insertAfter === stopIndex;
-      })
-      .sort((left, right) => (
-        (clockToMinutes(left.displayTime) ?? 0) - (clockToMinutes(right.displayTime) ?? 0)
-        || (left.kind === right.kind ? 0 : left.kind === "lunch" ? -1 : 1)
-      ))
+    // Slot placement is the unit-tested presentation rule - one source of
+    // truth, so a placement fix cannot drift from what the timeline renders.
+    return mealSlotsAfterStop(daySlots, day.stops, stopIndex)
       .flatMap((slot) => {
         const state = foodSearches[slot.id];
         if (state?.status !== "ready") return [(

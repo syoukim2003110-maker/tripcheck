@@ -205,6 +205,16 @@ test("trip lifecycle rotation and provisional live-route preservation stay wired
     plannerSurface,
     /routePauseReason=\{!tripDateTouched \? "date_required"/,
   );
+  // The pause expression above lives inside TripMap over its props; that
+  // alone would stay green if the shell wired the props to something else.
+  // Assert the shell's <TripMap> call site passes the real state through.
+  const tripMapStart = shellSource.indexOf("<TripMap");
+  const tripMapEnd = shellSource.indexOf("\n      >", tripMapStart);
+  assert.ok(tripMapStart >= 0 && tripMapEnd > tripMapStart, "TripMap call site anchors missing in TripPlannerShell");
+  const tripMapCall = shellSource.slice(tripMapStart, tripMapEnd);
+  assert.match(tripMapCall, /\stripDateTouched=\{tripDateTouched\}/);
+  assert.match(tripMapCall, /\splan=\{plan\}/);
+  assert.match(tripMapCall, /\scurrentTransitConvergence=\{currentTransitConvergence\}/);
 
   const finalDraftStart = buildHookSource.indexOf("const finalDraft = buildTripFromWishlist(");
   const resetStart = buildHookSource.indexOf("function resetTrip()", finalDraftStart);
