@@ -4,6 +4,7 @@ import {
   PLANNER_MAP_DAY_COLORS,
   buildPlannerMapConnectorLine,
   buildPlannerMapDayLayerViews,
+  buildPlannerMapLegLineStyles,
   buildPlannerMapPinView,
   buildPlannerMapRouteView,
   plannerMapDayColor,
@@ -50,6 +51,37 @@ test("unmeasured-leg connectors are dashed, thinner and fainter than the measure
     assert.equal(line.icons[0].icon.strokeWeight, route.connectorWeight);
     assert.equal(line.icons[0].repeat, "12px");
   }
+});
+
+test("timeline-hover highlight gives a leg the selected treatment without unmarking connectors", () => {
+  const route = buildPlannerMapRouteView({ dayIndex: 2 });
+  const styles = buildPlannerMapLegLineStyles(route);
+
+  // Resting state matches the route view exactly (one source, no drift).
+  assert.equal(styles.base.stroke.strokeColor, route.color);
+  assert.equal(styles.base.stroke.strokeWeight, route.strokeWeight);
+  assert.equal(styles.base.stroke.strokeOpacity, route.strokeOpacity);
+  assert.equal(styles.base.outline.strokeWeight, route.outlineWeight);
+  assert.deepEqual(styles.base.connector.icons, buildPlannerMapConnectorLine(route).icons);
+
+  // v1.1 §7.4: hover follows the selected treatment — 6px stroke inside a
+  // wider outer halo, layered above every resting leg.
+  assert.equal(styles.highlight.stroke.strokeWeight, 6);
+  assert.equal(styles.highlight.stroke.strokeColor, route.color);
+  assert.ok(styles.highlight.outline.strokeWeight > styles.highlight.stroke.strokeWeight);
+  assert.ok(styles.highlight.stroke.zIndex > styles.base.stroke.zIndex);
+  assert.ok(styles.highlight.outline.zIndex > styles.base.outline.zIndex);
+  assert.ok(styles.highlight.stroke.zIndex > styles.highlight.outline.zIndex);
+
+  // A connector stays dash-only in both states (§14.4): the polyline itself
+  // is invisible and only the dash symbols get heavier and brighter.
+  assert.equal(styles.base.connector.strokeOpacity, 0);
+  assert.equal(styles.highlight.connector.strokeOpacity, 0);
+  assert.equal(styles.highlight.connector.icons[0].icon.path, "M 0,-1 0,1");
+  assert.equal(styles.highlight.connector.icons[0].icon.strokeColor, route.color);
+  assert.ok(styles.highlight.connector.icons[0].icon.strokeWeight > styles.base.connector.icons[0].icon.strokeWeight);
+  assert.ok(styles.highlight.connector.icons[0].icon.strokeOpacity > route.connectorOpacity);
+  assert.ok(styles.highlight.connector.icons[0].icon.strokeOpacity <= 1);
 });
 
 test("pin view models distinguish anchor, filler, meal, hotel and warnings without colour alone", () => {

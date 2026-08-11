@@ -63,6 +63,7 @@ import {
   canRedoPlannerHistory,
   canUndoPlannerHistory,
 } from "../../../lib/planner-history";
+import { createPlannerMapHoverChannel } from "../../../lib/planner-map-hover";
 import {
   ui,
   type PlannerLocale,
@@ -154,6 +155,11 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
   const [activeDay, setActiveDay] = useState(0);
   const [inspector, setInspector] = useState<Inspector>(null);
   const [mapFocusedStopId, setMapFocusedStopId] = useState<string | null>(null);
+  // Timeline hover/focus → map highlight (spec §7.4). A ref-like channel, not
+  // React state: pointer movement across the timeline must not re-render the
+  // shell tree, and the map applies the highlight imperatively. Selection
+  // stays in React state above and is untouched by this channel.
+  const [mapHoverChannel] = useState(() => createPlannerMapHoverChannel());
   const [travelPreference, setTravelPreference] = useState<TravelPreference>("auto");
   const [legModeOverrides, setLegModeOverrides] = useState<Record<string, TransportMode>>({});
   const [dayOverrides, setDayOverrides] = useState<Record<string, number>>({});
@@ -942,6 +948,14 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
     }
   }, []);
 
+  const handleTimelineHoverStop = useCallback((stopId: string | null) => {
+    mapHoverChannel.set(stopId ? { kind: "stop", stopId } : null);
+  }, [mapHoverChannel]);
+
+  const handleTimelineHoverLeg = useCallback((legKey: string | null) => {
+    mapHoverChannel.set(legKey ? { kind: "leg", legKey } : null);
+  }, [mapHoverChannel]);
+
   // While the traveller reads the timeline, keep the map centred on the item
   // closest to the rail's visual centre. This changes map focus only; it does
   // not open the inspector or mutate the plan.
@@ -1197,6 +1211,9 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
     setActiveDay(index);
     setInspector(null);
     setMapFocusedStopId(null);
+    // A card focused via keyboard unmounts without blur on day switch; the
+    // stale highlight must not survive onto the next day's map.
+    mapHoverChannel.set(null);
   }
 
   // The meal-slot and route-gap search state lives in useFoodAndGaps (called
@@ -1487,6 +1504,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
         manualPinTarget={manualPinTarget}
         mapDayLayers={mapDayLayers}
         mapFocusedStopId={mapFocusedStopId}
+        mapHoverChannel={mapHoverChannel}
         mapItemKinds={mapItemKinds}
         mapScope={mapScope}
         mapWarningStopIds={mapWarningStopIds}
@@ -1929,6 +1947,8 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
                 holiday={tripDateTouched && day.date ? holidaysByDate[day.date] : undefined}
                 locale={locale}
                 mealRowsAfter={P0_CORE_ONLY ? undefined : mealRowsAfter}
+                onHoverLeg={handleTimelineHoverLeg}
+                onHoverStop={handleTimelineHoverStop}
                 onOpenHotel={() => setInspector({ kind: "hotel" })}
                 onRemoveFiller={removeSystemFiller}
                 onSelectStop={(stopId, isSelected) => {

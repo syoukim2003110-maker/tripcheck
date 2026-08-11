@@ -156,6 +156,70 @@ export function buildPlannerMapConnectorLine(route: PlannerMapRouteView) {
   };
 }
 
+/**
+ * One source for the polyline option sets of a leg's three drawable roles —
+ * the white outline, the coloured stroke and the dashed unmeasured-leg
+ * connector — in their resting and timeline-hover states. Hovering/focusing
+ * a leg row in the timeline gives its map line the selected treatment
+ * (v1.1 §7.4): a 6px stroke inside a wider outer halo, layered above every
+ * resting leg. A connector keeps its dash-only rendering in both states
+ * (spec §14.4 — an unmeasured leg must never read as a measured route); the
+ * highlight only makes the dashes heavier and brighter.
+ */
+export function buildPlannerMapLegLineStyles(route: PlannerMapRouteView) {
+  const connector = buildPlannerMapConnectorLine(route);
+  return {
+    base: {
+      outline: {
+        strokeColor: "#ffffff",
+        strokeOpacity: route.outlineOpacity,
+        strokeWeight: route.outlineWeight,
+        zIndex: Math.max(1, route.zIndex - 1),
+      },
+      stroke: {
+        strokeColor: route.color,
+        strokeOpacity: route.strokeOpacity,
+        strokeWeight: route.strokeWeight,
+        zIndex: route.zIndex,
+      },
+      connector: {
+        strokeOpacity: 0 as const,
+        zIndex: connector.zIndex,
+        icons: connector.icons,
+      },
+    },
+    highlight: {
+      outline: {
+        strokeColor: "#ffffff",
+        strokeOpacity: 1,
+        strokeWeight: 12,
+        zIndex: route.zIndex + 2,
+      },
+      stroke: {
+        strokeColor: route.color,
+        strokeOpacity: 1,
+        strokeWeight: 6,
+        zIndex: route.zIndex + 3,
+      },
+      connector: {
+        strokeOpacity: 0 as const,
+        zIndex: route.zIndex + 2,
+        icons: [{
+          icon: {
+            path: "M 0,-1 0,1",
+            strokeOpacity: Math.min(1, route.connectorOpacity + 0.35),
+            strokeWeight: route.connectorWeight + 1.5,
+            scale: 2,
+            strokeColor: route.color,
+          },
+          offset: "0",
+          repeat: "12px",
+        }],
+      },
+    },
+  };
+}
+
 function safeSequence(value: number | undefined) {
   return Number.isInteger(value) && Number(value) > 0 ? String(value) : "1";
 }

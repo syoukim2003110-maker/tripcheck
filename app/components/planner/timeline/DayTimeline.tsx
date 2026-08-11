@@ -57,6 +57,9 @@ type DayTimelineProps = {
   onSelectStop: (stopId: string, isSelected: boolean) => void;
   onSetLegMode: (legKey: string, mode: TransportMode) => void;
   onRemoveFiller: (stop: RouteStop) => void;
+  /** Hover/focus sync to the map (spec §7.4): null clears the highlight. */
+  onHoverStop?: (stopId: string | null) => void;
+  onHoverLeg?: (legKey: string | null) => void;
 };
 
 export default function DayTimeline({
@@ -84,6 +87,8 @@ export default function DayTimeline({
   onSelectStop,
   onSetLegMode,
   onRemoveFiller,
+  onHoverStop,
+  onHoverLeg,
 }: DayTimelineProps) {
   const text = ui[locale];
   return (
@@ -160,6 +165,7 @@ export default function DayTimeline({
                     boarding={prefetchTransitSteps[routeLegKey(leg.from.id, leg.to.id)]}
                     leg={leg}
                     locale={locale}
+                    onHoverChange={onHoverLeg ? (legKey, hovered) => onHoverLeg(hovered ? legKey : null) : undefined}
                     onSetLegMode={onSetLegMode}
                     travelPreference={travelPreference}
                   />
@@ -173,6 +179,7 @@ export default function DayTimeline({
                   isFiller={isFiller}
                   isSelected={isSelected}
                   locale={locale}
+                  onHoverChange={onHoverStop ? (stopId, hovered) => onHoverStop(hovered ? stopId : null) : undefined}
                   onRemoveFiller={onRemoveFiller}
                   onSelect={onSelectStop}
                 />

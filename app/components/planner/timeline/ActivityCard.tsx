@@ -28,6 +28,8 @@ type ActivityCardProps = {
   locale: PlannerLocale;
   onSelect: (stopId: string, isSelected: boolean) => void;
   onRemoveFiller: (stop: RouteStop) => void;
+  /** Hover/keyboard focus on the card highlights the map marker (spec §7.4). */
+  onHoverChange?: (stopId: string, hovered: boolean) => void;
 };
 
 export default function ActivityCard({
@@ -41,6 +43,7 @@ export default function ActivityCard({
   locale,
   onSelect,
   onRemoveFiller,
+  onHoverChange,
 }: ActivityCardProps) {
   const text = ui[locale];
   const isMealFiller = fillerKind === "lunch" || fillerKind === "dinner";
@@ -50,7 +53,11 @@ export default function ActivityCard({
       <button
         className={`planner-stop-row${isSelected ? " is-selected" : ""}${isFiller ? " is-filler" : ""}`}
         data-planner-stop-id={builtStop.stop.id}
+        onBlur={() => onHoverChange?.(builtStop.stop.id, false)}
         onClick={() => onSelect(builtStop.stop.id, isSelected)}
+        onFocus={() => onHoverChange?.(builtStop.stop.id, true)}
+        onMouseEnter={() => onHoverChange?.(builtStop.stop.id, true)}
+        onMouseLeave={() => onHoverChange?.(builtStop.stop.id, false)}
         type="button"
       >
         <time>{builtStop.arrival}</time>

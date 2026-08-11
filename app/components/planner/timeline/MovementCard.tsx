@@ -19,9 +19,11 @@ type MovementCardProps = {
   locale: PlannerLocale;
   boarding: TransitLegBoarding | undefined;
   onSetLegMode: (legKey: string, mode: TransportMode) => void;
+  /** Hover/keyboard focus on the row highlights the map route segment (spec §7.4). */
+  onHoverChange?: (legKey: string, hovered: boolean) => void;
 };
 
-export default function MovementCard({ leg, travelPreference, locale, boarding, onSetLegMode }: MovementCardProps) {
+export default function MovementCard({ leg, travelPreference, locale, boarding, onSetLegMode, onHoverChange }: MovementCardProps) {
   const text = ui[locale];
   const recommended = leg.comparison.recommended;
   const legKey = routeLegKey(leg.from.id, leg.to.id);
@@ -29,7 +31,18 @@ export default function MovementCard({ leg, travelPreference, locale, boarding, 
   const boardingLine = recommended.mode === "transit" ? transitBoardingText(boarding, locale) : null;
   return (
     <>
-      <details className="planner-leg">
+      <details
+        className="planner-leg"
+        onBlur={(event) => {
+          // Focus moving between the summary and the mode buttons stays
+          // inside the row; only leaving the whole row clears the highlight.
+          if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return;
+          onHoverChange?.(legKey, false);
+        }}
+        onFocus={() => onHoverChange?.(legKey, true)}
+        onMouseEnter={() => onHoverChange?.(legKey, true)}
+        onMouseLeave={() => onHoverChange?.(legKey, false)}
+      >
         <summary>
           <span>{modeIcon(recommended.mode, travelPreference === "car")}<b>{modeLabel(recommended.mode)} · {text.minutes(recommended.minutes)}</b></span>
           <small>{locale === "ja" ? "移動手段を変える" : "Change transport"}</small>

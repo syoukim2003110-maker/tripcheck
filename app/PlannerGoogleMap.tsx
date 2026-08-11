@@ -3,7 +3,7 @@
 /* Google Maps loads at runtime, so this file keeps the API surface deliberately narrow. */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { destinationName, type Destination } from "../lib/destinations";
 import { decodeGooglePolyline } from "../lib/google-polyline";
 import type { RouteStop } from "../lib/route-optimizer";
@@ -12,6 +12,7 @@ import { PLANNING_BUDGET } from "../lib/planning-budget";
 import {
   buildPlannerMapConnectorLine,
   buildPlannerMapDayLayerViews,
+  buildPlannerMapLegLineStyles,
   buildPlannerMapPinView,
   buildPlannerMapRouteView,
   plannerRouteGeometryIsDrawable,
@@ -19,6 +20,8 @@ import {
   type PlannerMapItemKind,
   type PlannerMapPinView,
 } from "../lib/planner-map-model";
+import type { PlannerMapHoverChannel, PlannerMapHoverTarget } from "../lib/planner-map-hover";
+import { routeLegKey } from "../lib/trip-builder";
 import { tripRequestHeaders } from "../lib/trip-request-identity";
 
 type MapLocale = "en" | "ja";
@@ -92,6 +95,12 @@ export type PlannerGoogleMapProps = {
   itemKinds?: Readonly<Record<string, PlannerMapItemKind>>;
   /** Consequential stop warnings are marked with an explicit `!`, not colour alone. */
   warningStopIds?: readonly string[];
+  /**
+   * Timeline hover/focus → map highlight channel (spec §7.4). Ref-like on
+   * purpose: writes never re-render this component; the subscription applies
+   * the highlight through the imperative marker/polyline seams.
+   */
+  hoverChannel?: PlannerMapHoverChannel | null;
   destination: Destination;
   locale: MapLocale;
   onRouteGeometry: (points: Array<{ latitude: number; longitude: number }>) => void;
@@ -171,6 +180,10 @@ function usableDepartureTime(value: string) {
 
 type MapPadding = { top: number; right: number; bottom: number; left: number };
 
+// TC-039: every fitted point must stay ≥40px clear of the canvas edges.
+// Top and bottom already exceed that (topbar / bottom chip clearance); the
+// sides are held at 40px on desktop and mobile alike. The open inspector
+// still widens the desktop right padding beyond the minimum.
 function visibleMapPadding(map: any, inspectorOpen: boolean): MapPadding {
   const container = map.getDiv() as HTMLElement;
   const width = Math.max(320, container.clientWidth);
@@ -179,10 +192,10 @@ function visibleMapPadding(map: any, inspectorOpen: boolean): MapPadding {
   if (mobile) {
     const top = 74;
     const preferredBottom = Math.round(height * (inspectorOpen ? 0.64 : 0.54));
-    return { top, right: 18, bottom: Math.min(preferredBottom, Math.max(100, height - top - 140)), left: 18 };
+    return { top, right: 40, bottom: Math.min(preferredBottom, Math.max(100, height - top - 140)), left: 40 };
   }
-  const left = 24;
-  const right = inspectorOpen ? Math.min(408, Math.max(24, width - left - 160)) : 24;
+  const left = 40;
+  const right = inspectorOpen ? Math.min(408, Math.max(40, width - left - 160)) : 40;
   return { top: 92, right, bottom: 72, left };
 }
 
@@ -251,6 +264,8 @@ type Chip = {
   overlay: any;
   stopId: string;
   setSelected: (selected: boolean) => void;
+  /** Timeline-driven hover/focus highlight (spec §7.4); class-only, no rebuild. */
+  setTimelineHover: (hovered: boolean) => void;
 };
 
 /* Same glyphs as the in-app icon set, inlined because chips are plain DOM. */
@@ -286,20 +301,23 @@ function createChip(
   let selected = false;
   let hovered = false;
   let focused = false;
+  let timelineHovered = false;
   const syncInteractionState = () => {
     if (!element || !label) return;
-    const visible = selected || hovered || focused;
+    const visible = selected || hovered || focused || timelineHovered;
     label.hidden = !visible;
     element.classList.toggle("is-label-visible", visible);
     if (options.dayAppearance) {
-      element.style.opacity = String(selected ? 1 : options.dayAppearance.pinOpacity);
-      element.style.zIndex = String(selected ? 6 : options.dayAppearance.pinZIndex);
+      element.style.opacity = String(selected || timelineHovered ? 1 : options.dayAppearance.pinOpacity);
+      element.style.zIndex = String(selected ? 6 : timelineHovered ? 5 : options.dayAppearance.pinZIndex);
     }
   };
   overlay.onAdd = function onAdd() {
     element = document.createElement("button");
     element.type = "button";
     element.className = options.view.className;
+    // A hover set before the overlay's async onAdd must not be lost.
+    if (timelineHovered) element.classList.add("is-timeline-hover");
     element.dataset.itemId = options.stopId;
     element.dataset.itemKind = options.view.kind;
     element.dataset.markerShape = options.view.shape;
@@ -398,6 +416,12 @@ function createChip(
       element?.classList.toggle("is-selected", selected);
       syncInteractionState();
     },
+    setTimelineHover: (nextHovered: boolean) => {
+      if (timelineHovered === nextHovered) return;
+      timelineHovered = nextHovered;
+      element?.classList.toggle("is-timeline-hover", timelineHovered);
+      syncInteractionState();
+    },
   };
 }
 
@@ -425,6 +449,7 @@ export default function PlannerGoogleMap({
   dayLayers = EMPTY_DAY_LAYERS,
   itemKinds = {},
   warningStopIds = [],
+  hoverChannel = null,
   locale,
   onRouteGeometry,
   onPickCoordinate,
@@ -448,6 +473,11 @@ export default function PlannerGoogleMap({
   const engineRef = useRef<{ google: any; map: any; maps: any } | null>(null);
   const chipsRef = useRef<Chip[]>([]);
   const routeLinesRef = useRef<any[]>([]);
+  // Registered leg lines keyed by the shared timeline leg key so a hovered
+  // MovementCard can restyle exactly its own segment (measured stroke +
+  // outline, or the dashed connector when nothing was measured).
+  const legLinesRef = useRef<Array<{ legKey: string; line: any; base: object; highlight: object; highlighted: boolean }>>([]);
+  const hoverTargetRef = useRef<PlannerMapHoverTarget | null>(null);
   const dayLayerChipsRef = useRef<Chip[]>([]);
   const dayLayerLinesRef = useRef<any[]>([]);
   const foodChipsRef = useRef<Chip[]>([]);
@@ -496,6 +526,39 @@ export default function PlannerGoogleMap({
     onPickCoordinateRef.current = onPickCoordinate;
     coordinatePickActiveRef.current = coordinatePickActive;
   });
+
+  // Applies the timeline-driven hover/focus highlight (spec §7.4) through the
+  // existing imperative seams: a CSS class on the marker chip and setOptions
+  // on already-built polylines. No overlay is ever rebuilt for hover. The
+  // mirrored data attributes make the state observable to the QA harness even
+  // when the JS map cannot load (embed fallback has no chips or lines).
+  const applyTimelineHover = useCallback(() => {
+    const target = hoverTargetRef.current;
+    const hoveredStopId = target?.kind === "stop" ? target.stopId : null;
+    const hoveredLegKey = target?.kind === "leg" ? target.legKey : null;
+    chipsRef.current.forEach((chip) => chip.setTimelineHover(chip.stopId === hoveredStopId));
+    dayLayerChipsRef.current.forEach((chip) => chip.setTimelineHover(chip.stopId === hoveredStopId));
+    for (const entry of legLinesRef.current) {
+      const highlighted = entry.legKey === hoveredLegKey;
+      if (entry.highlighted === highlighted) continue;
+      entry.highlighted = highlighted;
+      entry.line.setOptions(highlighted ? entry.highlight : entry.base);
+    }
+    const container = containerRef.current;
+    if (!container) return;
+    if (hoveredStopId) container.dataset.timelineHoverStop = hoveredStopId;
+    else delete container.dataset.timelineHoverStop;
+    if (hoveredLegKey) container.dataset.timelineHoverLeg = hoveredLegKey;
+    else delete container.dataset.timelineHoverLeg;
+  }, []);
+
+  useEffect(() => {
+    if (!hoverChannel) return;
+    return hoverChannel.subscribe((target) => {
+      hoverTargetRef.current = target;
+      applyTimelineHover();
+    });
+  }, [applyTimelineHover, hoverChannel]);
 
   const finishBase = base && endBase && endBase.id !== base.id ? endBase : null;
   const displayStops = base ? [base, ...stops, ...(finishBase ? [finishBase] : [])] : stops;
@@ -604,6 +667,18 @@ export default function PlannerGoogleMap({
     chipsRef.current = [];
     routeLinesRef.current.forEach((line) => line.setMap(null));
     routeLinesRef.current = [];
+    legLinesRef.current = [];
+
+    const legLineStyles = buildPlannerMapLegLineStyles(routeView);
+    const registerLegLine = (legKey: string, role: "outline" | "stroke" | "connector", line: any) => {
+      legLinesRef.current.push({
+        legKey,
+        line,
+        base: legLineStyles.base[role],
+        highlight: legLineStyles.highlight[role],
+        highlighted: false,
+      });
+    };
 
     chipsRef.current = displayStops.map((stop, index) => {
       const isHotel = Boolean(base) && (index === 0 || (Boolean(finishBase) && index === displayStops.length - 1));
@@ -628,6 +703,8 @@ export default function PlannerGoogleMap({
       chip.setSelected(chip.stopId === selectedStopIdRef.current);
       return chip;
     });
+    // Fresh chips must pick up an in-flight timeline hover immediately.
+    applyTimelineHover();
 
     if (displayStops.length === 0) {
       map.setCenter({ lat: destination.center.latitude, lng: destination.center.longitude });
@@ -653,46 +730,47 @@ export default function PlannerGoogleMap({
         const from = pathStops[pauseIndex];
         const to = pathStops[pauseIndex + 1];
         if (from.latitude === to.latitude && from.longitude === to.longitude) continue;
+        const legKey = routeLegKey(from.id, to.id);
         const measured = (transitGeometry[pauseIndex] ?? []).map((point) => ({ lat: point.latitude, lng: point.longitude }));
         if (plannerRouteGeometryIsDrawable(measured)) {
-          routeLinesRef.current.push(
-            new google.maps.Polyline({
-              map,
-              path: measured,
-              clickable: false,
-              strokeColor: "#ffffff",
-              strokeOpacity: routeView.outlineOpacity,
-              strokeWeight: routeView.outlineWeight,
-              zIndex: Math.max(1, routeView.zIndex - 1),
-            }),
-            new google.maps.Polyline({
-              map,
-              path: measured,
-              clickable: false,
-              strokeColor: routeView.color,
-              strokeOpacity: routeView.strokeOpacity,
-              strokeWeight: routeView.strokeWeight,
-              zIndex: routeView.zIndex,
-            }),
-          );
+          const outlineLine = new google.maps.Polyline({
+            map,
+            path: measured,
+            clickable: false,
+            ...legLineStyles.base.outline,
+          });
+          const strokeLine = new google.maps.Polyline({
+            map,
+            path: measured,
+            clickable: false,
+            ...legLineStyles.base.stroke,
+          });
+          routeLinesRef.current.push(outlineLine, strokeLine);
+          registerLegLine(legKey, "outline", outlineLine);
+          registerLegLine(legKey, "stroke", strokeLine);
           for (const bridge of accessBridgeSegments(measured, from, to)) {
-            routeLinesRef.current.push(new google.maps.Polyline({
+            const bridgeLine = new google.maps.Polyline({
               map,
               path: bridge,
               ...buildPlannerMapConnectorLine(routeView),
-            }));
+            });
+            routeLinesRef.current.push(bridgeLine);
+            registerLegLine(legKey, "connector", bridgeLine);
           }
           continue;
         }
-        routeLinesRef.current.push(new google.maps.Polyline({
+        const connectorLine = new google.maps.Polyline({
           map,
           path: [
             { lat: from.latitude, lng: from.longitude },
             { lat: to.latitude, lng: to.longitude },
           ],
           ...buildPlannerMapConnectorLine(routeView),
-        }));
+        });
+        routeLinesRef.current.push(connectorLine);
+        registerLegLine(legKey, "connector", connectorLine);
       }
+      applyTimelineHover();
       onRouteGeometryRef.current([]);
       return;
     }
@@ -795,22 +873,23 @@ export default function PlannerGoogleMap({
       const routeBounds = new LatLngBounds();
       const geometry: Array<{ latitude: number; longitude: number }> = [];
       for (const result of results) {
+        const legKey = routeLegKey(result.from.id, result.to.id);
         if (!plannerRouteGeometryIsDrawable(result.path)) {
           // v0.3 §14.4: a straight line must never present as the real route.
           // Unmeasured legs get an explicitly-dashed, thinner, fainter
           // connector so the day still reads as one sequence. Connectors are
           // display-only: they count neither toward liveLegCount nor toward
           // the measured geometry handed to onRouteGeometryRef.
-          routeLinesRef.current.push(
-            new google.maps.Polyline({
-              map,
-              path: [
-                { lat: result.from.latitude, lng: result.from.longitude },
-                { lat: result.to.latitude, lng: result.to.longitude },
-              ],
-              ...buildPlannerMapConnectorLine(routeView),
-            }),
-          );
+          const connectorLine = new google.maps.Polyline({
+            map,
+            path: [
+              { lat: result.from.latitude, lng: result.from.longitude },
+              { lat: result.to.latitude, lng: result.to.longitude },
+            ],
+            ...buildPlannerMapConnectorLine(routeView),
+          });
+          routeLinesRef.current.push(connectorLine);
+          registerLegLine(legKey, "connector", connectorLine);
           continue;
         }
         liveLegCount += 1;
@@ -821,35 +900,35 @@ export default function PlannerGoogleMap({
             geometry.push({ latitude: point.lat, longitude: point.lng });
           }
         }
-        routeLinesRef.current.push(
-          new google.maps.Polyline({
-            map,
-            path: result.path,
-            clickable: false,
-            strokeColor: "#ffffff",
-            strokeOpacity: routeView.outlineOpacity,
-            strokeWeight: routeView.outlineWeight,
-            zIndex: Math.max(1, routeView.zIndex - 1),
-          }),
-          new google.maps.Polyline({
-            map,
-            path: result.path,
-            clickable: false,
-            strokeColor: routeView.color,
-            strokeOpacity: routeView.strokeOpacity,
-            strokeWeight: routeView.strokeWeight,
-            zIndex: routeView.zIndex,
-          }),
-        );
+        const outlineLine = new google.maps.Polyline({
+          map,
+          path: result.path,
+          clickable: false,
+          ...legLineStyles.base.outline,
+        });
+        const strokeLine = new google.maps.Polyline({
+          map,
+          path: result.path,
+          clickable: false,
+          ...legLineStyles.base.stroke,
+        });
+        routeLinesRef.current.push(outlineLine, strokeLine);
+        registerLegLine(legKey, "outline", outlineLine);
+        registerLegLine(legKey, "stroke", strokeLine);
         for (const bridge of accessBridgeSegments(result.path, result.from, result.to)) {
           bridge.forEach((point) => routeBounds.extend(point));
-          routeLinesRef.current.push(new google.maps.Polyline({
+          const bridgeLine = new google.maps.Polyline({
             map,
             path: bridge,
             ...buildPlannerMapConnectorLine(routeView),
-          }));
+          });
+          routeLinesRef.current.push(bridgeLine);
+          registerLegLine(legKey, "connector", bridgeLine);
         }
       }
+      // Route lines were rebuilt; a leg the traveller is hovering right now
+      // must regain its highlight on the fresh polylines.
+      applyTimelineHover();
       if (liveLegCount === legs.length && dayLayerViews.length === 0) {
         displayStops.forEach((stop) => routeBounds.extend({ lat: stop.latitude, lng: stop.longitude }));
         fitVisibleBounds(map, routeBounds, inspectorOpenRef.current);
@@ -948,6 +1027,7 @@ export default function PlannerGoogleMap({
         dayLayerChipsRef.current.push(chip);
       }
     }
+    applyTimelineHover();
 
     return () => {
       dayLayerChipsRef.current.forEach((chip) => chip.overlay.setMap(null));

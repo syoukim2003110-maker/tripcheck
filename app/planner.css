@@ -195,22 +195,22 @@ body:has(.trip-planner-app) {
 }
 .planner-map-scope button.is-active { background: var(--pl-ink); color: white; }
 .planner-map-day-legend {
-  align-items: center;
   backdrop-filter: blur(12px);
   background: rgb(255 255 255 / 90%);
   border: 1px solid rgb(11 11 14 / 9%);
   border-radius: 999px;
   box-shadow: var(--pl-shadow-soft);
-  display: flex;
-  gap: 2px;
   left: 16px;
-  max-width: min(360px, calc(100% - 32px));
-  overflow-x: auto;
+  max-width: min(430px, calc(100% - 32px));
   padding: 4px;
   position: absolute;
   top: 122px;
   z-index: 16;
 }
+/* TC-040: the toggle is a mobile-only compact affordance; on desktop the
+   legend body is always visible and the toggle stays out of the flow. */
+.planner-map-day-legend .planner-map-legend-toggle { display: none; }
+.planner-map-legend-body { align-items: center; display: flex; gap: 2px; overflow-x: auto; }
 .planner-map-day-legend button {
   align-items: center;
   background: transparent;
@@ -230,6 +230,11 @@ body:has(.trip-planner-app) {
 .planner-map-line-legend { align-items: center; border-left: 1px solid var(--pl-line); color: var(--pl-muted); display: inline-flex; font-size: 9.5px; font-weight: 700; gap: 5px; margin-left: 4px; padding-left: 9px; }
 .planner-map-line-legend i { border-top: 3px solid var(--pl-ink-2); display: inline-block; width: 16px; }
 .planner-map-line-legend i.is-dashed { border-top-style: dashed; border-top-width: 2px; opacity: 0.75; }
+/* TC-040: anchor vs suggestion, mirroring the map marker treatments in
+   miniature — filled numbered pin vs dash-outlined star pin. */
+.planner-map-pin-legend { align-items: center; border-left: 1px solid var(--pl-line); color: var(--pl-muted); display: inline-flex; flex: 0 0 auto; font-size: 9.5px; font-weight: 700; gap: 5px; margin-left: 4px; padding-left: 9px; white-space: nowrap; }
+.planner-map-pin-legend i { align-items: center; background: var(--pl-ink); border-radius: 5px; color: white; display: inline-flex; flex: 0 0 auto; font-family: var(--pl-display); font-size: 9px; font-style: normal; font-weight: 400; height: 15px; justify-content: center; width: 15px; }
+.planner-map-pin-legend i.is-suggestion { background: white; border: 1.5px dashed #6550a8; color: #6550a8; }
 .planner-map-day-legend button.is-active { background: white; box-shadow: 0 1px 5px rgb(11 11 14 / 12%); color: var(--pl-ink); }
 
 .planner-route-status {
@@ -327,6 +332,17 @@ body:has(.trip-planner-app) {
 .planner-map-chip.is-selected { border-color: var(--pl-accent); z-index: 3; }
 .planner-map-chip.is-selected::after { border-color: var(--pl-accent); }
 .planner-map-chip.is-selected i { background: var(--pl-accent); }
+/* TC-038: hovering/focusing the timeline card highlights the marker (§7.4):
+   ~1.15 scale plus a soft day-coloured halo, ≤150ms, snap under
+   prefers-reduced-motion (see the reduce block below). */
+.planner-map-chip { transition: box-shadow 140ms ease, transform 140ms ease; }
+.planner-map-chip.is-timeline-hover {
+  border-color: var(--pl-ink);
+  box-shadow: 0 2px 4px rgb(11 11 14 / 8%), 0 8px 20px rgb(11 11 14 / 16%), 0 0 0 4px color-mix(in srgb, var(--planner-map-day-color, var(--pl-ink)) 30%, transparent);
+  transform: translate(-50%, calc(-100% - 10px)) scale(1.15);
+  z-index: 5;
+}
+.planner-map-chip.is-timeline-hover::after { border-color: var(--pl-ink); }
 .planner-map-chip.is-filler { border-style: dashed; border-color: #6550a8; }
 .planner-map-chip.is-filler i { background: white; border: 2px solid #6550a8; color: #6550a8; }
 .planner-map-chip.is-warning { border-color: #a83f30; }
@@ -1744,8 +1760,34 @@ div.planner-route-ideas-empty { display: grid; gap: 8px; }
   .planner-map-scope button { min-height: 44px; }
   .planner-map-day-legend { left: 10px; max-width: calc(100vw - 20px); top: 110px; }
   .planner-map-day-legend button { min-height: 40px; }
-  .trip-planner-app.is-result .planner-map-scope,
-  .trip-planner-app.is-result .planner-map-day-legend { display: none; }
+  .trip-planner-app.is-result .planner-map-scope { display: none; }
+  /* TC-040: the legend stays reachable on phones. It collapses to a compact
+     toggle in the scope control's slot (top-left, clear of the route status
+     on the right and the bottom chip row) and expands on demand. */
+  .trip-planner-app.is-result .planner-map-day-legend {
+    border-radius: 18px;
+    max-height: calc(100% - 66px);
+    /* Sharing the top row with the route-status pill on the right: reserve
+       the pill's widest ja state so the expanded body wraps beside it. */
+    max-width: min(430px, calc(100vw - 200px));
+    overflow-y: auto;
+    top: 58px;
+  }
+  .planner-map-day-legend .planner-map-legend-toggle {
+    align-items: center;
+    background: transparent;
+    border: 0;
+    border-radius: 999px;
+    color: var(--pl-ink-2);
+    display: flex;
+    font-size: 11px;
+    font-weight: 750;
+    gap: 6px;
+    min-height: 44px;
+    padding: 0 12px;
+  }
+  .planner-map-legend-body { display: none; }
+  .planner-map-day-legend.is-expanded .planner-map-legend-body { display: flex; flex-wrap: wrap; padding: 0 4px 6px; }
   .planner-map-empty { bottom: auto; left: 50%; top: 68px; }
   .trip-planner-app.is-result.is-mobile-timeline .planner-map-bottom { bottom: calc(80dvh + 7px); left: 10px; right: 10px; }
   .trip-planner-app.is-result.is-mobile-timeline .planner-map-empty { display: none; }
@@ -1781,6 +1823,8 @@ div.planner-route-ideas-empty { display: grid; gap: 8px; }
   .planner-building-steps li.is-active .planner-building-step-dot,
   .planner-building-live i,
   .planner-fresh-status i { animation: none; }
+  /* TC-038: the timeline-hover marker highlight snaps instead of animating. */
+  .planner-map-chip { transition: none; }
 }
 
 @media (max-width: 460px) {
