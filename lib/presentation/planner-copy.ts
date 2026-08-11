@@ -227,7 +227,22 @@ export const ui = {
     dayPlannedLabel: "予定",
     dayAvailableLabel: "利用可能",
     dayTravelLabel: "移動",
-    estimated: "移動時間は目安。Google Maps経路データを取得できた区間だけ自動で更新します。",
+    // Copy Deck data.estimated (verbatim headline); the provider detail is
+    // secondary text, never the headline.
+    estimated: "所要時間は目安です",
+    estimatedDetail: "Google Maps経路データを取得できた区間だけ自動で更新します。",
+    // Copy Deck data.checkhours (verbatim): the standard unverified-hours phrasing.
+    checkHours: "出発前に営業時間を確認",
+    // Copy Deck scope.beta (verbatim): shown only for non-deep coverage regions.
+    betaRegion: "この地域はベータ対応です",
+    // Copy Deck share.warning (verbatim primary line); the nuance stays secondary.
+    shareWarning: "リンクを知っている人は旅程を見られます",
+    shareWarningDetail: "このリンク自体が旅程データです。受信者、ブラウザ履歴、拡張機能から読めます。公開場所へ貼らないでください。",
+    // TC-052 §9.3 sheet-size controls: explicit buttons, never drag-only.
+    sheetExpand: "シートを全画面に広げる",
+    sheetShrink: "シートを半分の高さに戻す",
+    sheetMinimize: "シートを最小化",
+    sheetPeekOpen: "シートを開く",
     openingAdjusted: "営業時間に合わせて訪問時刻を調整",
     openingConflict: "営業時間と予約時刻を再確認",
     openingClosedDay: "この日は休業の可能性 — 日の移動を検討",
@@ -504,7 +519,22 @@ export const ui = {
     dayPlannedLabel: "Planned",
     dayAvailableLabel: "Available",
     dayTravelLabel: "Travel",
-    estimated: "Times are estimates. Legs update only when Google Maps route data is available.",
+    // Copy Deck data.estimated (verbatim headline); the provider detail is
+    // secondary text, never the headline.
+    estimated: "Travel time is estimated",
+    estimatedDetail: "Legs update automatically only where Google Maps route data is available.",
+    // Copy Deck data.checkhours (verbatim): the standard unverified-hours phrasing.
+    checkHours: "Check opening hours before you go",
+    // Copy Deck scope.beta (verbatim): shown only for non-deep coverage regions.
+    betaRegion: "Beta coverage in this region",
+    // Copy Deck share.warning (verbatim primary line); the nuance stays secondary.
+    shareWarning: "Anyone with the full link can view this trip",
+    shareWarningDetail: "The link itself contains the trip data. Recipients, browser history and extensions can read it. Do not post it publicly.",
+    // TC-052 §9.3 sheet-size controls: explicit buttons, never drag-only.
+    sheetExpand: "Expand sheet",
+    sheetShrink: "Back to half height",
+    sheetMinimize: "Minimize sheet",
+    sheetPeekOpen: "Open the sheet",
     openingAdjusted: "Timed to verified opening hours",
     openingConflict: "Recheck opening hours and booking time",
     openingClosedDay: "Likely closed this day — consider moving it",
@@ -863,7 +893,7 @@ export function minimumDaysCopy(result: FeasibilityResult, locale: PlannerLocale
         + (unresolved.length > 2 ? (locale === "ja" ? ` 他${unresolved.length - 2}件` : ` +${unresolved.length - 2} more`) : "");
       if (result.partialMinimumDays !== null) {
         return locale === "ja"
-          ? `「${names}」が未確定のため判定を保留しています。確定済みの場所だけなら最短${result.partialMinimumDays}日です。上の「確認する」から場所を確定してください。`
+          ? `「${names}」が未確定のため、確認が終わるまで結論を出しません。確定済みの場所だけなら最短${result.partialMinimumDays}日です。上の「確認する」から場所を確定してください。`
           : `On hold because “${names}” is not settled yet. The confirmed places alone need at least ${result.partialMinimumDays} day${result.partialMinimumDays === 1 ? "" : "s"}. Use “Confirm” above to settle the place.`;
       }
       return locale === "ja"
@@ -880,7 +910,7 @@ export function minimumDaysCopy(result: FeasibilityResult, locale: PlannerLocale
       : `Searched through ${result.searchedThroughDays} days, but a fixed constraint still conflicts. Revisit one booked or fixed-time constraint.`;
     if (result.partialMinimumDays !== null || result.conflicts.some((conflict) => conflict.code === "PLACE_UNAVAILABLE")) {
       return locale === "ja"
-        ? `選んだ日程では営業しない場所があるため、判定を保留しています。${result.partialMinimumDays !== null ? `配置できる場所だけなら最短${result.partialMinimumDays}日です。` : ""}「予定から外した場所」を確認してください。`
+        ? `選んだ日程では営業しない場所があるため、確認が終わるまで結論を出しません。${result.partialMinimumDays !== null ? `配置できる場所だけなら最短${result.partialMinimumDays}日です。` : ""}「予定から外した場所」を確認してください。`
         : `On hold because some places cannot open on the chosen days. ${result.partialMinimumDays !== null ? `The placeable stops alone need at least ${result.partialMinimumDays} day${result.partialMinimumDays === 1 ? "" : "s"}. ` : ""}Review the places left out of this plan.`;
     }
     return locale === "ja"

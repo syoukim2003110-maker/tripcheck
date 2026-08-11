@@ -9,7 +9,7 @@ import Icon from "../../../PlannerIcons";
 import type { AlternativePlan, FeasibilityResult } from "../../../../lib/feasibility-result.ts";
 import type { BuiltTripPlan } from "../../../../lib/trip-builder.ts";
 import { destinationName, type Destination } from "../../../../lib/destinations.ts";
-import { coveragePublicCopy } from "../../../../lib/coverage-profile.ts";
+import { coveragePublicCopy, isDeepCoverageProfile } from "../../../../lib/coverage-profile.ts";
 import { P0_CORE_ONLY, builtPlanTravelMinutes } from "../../../../lib/planner-app-state.ts";
 import {
   alternativeCopy,
@@ -113,8 +113,15 @@ export default function TripSummaryCard({
           </p>
         ) : null}
 
+        {/* Copy Deck scope.beta: a small always-visible one-liner for
+            non-deep coverage regions only; the per-capability detail stays
+            inside the coverage disclosure below. Deep regions show nothing. */}
+        {regionalCoverage && !isDeepCoverageProfile(regionalCoverage) ? (
+          <p className="planner-beta-region">{text.betaRegion}</p>
+        ) : null}
+
         <details className="planner-verdict-details">
-          <summary>{locale === "ja" ? "判定の詳細" : "Verdict details"}</summary>
+          <summary>{locale === "ja" ? "結論の詳細" : "Result details"}</summary>
           <div className="planner-verdict-details-body">
 
         <div className="planner-trip-days" role="group" aria-label={text.fitSelectedDays}>
@@ -147,7 +154,7 @@ export default function TripSummaryCard({
         {regionalCoverage ? (
           <details className="planner-regional-coverage">
             <summary>
-              <span>{locale === "ja" ? "地域別の対応品質" : "Regional coverage"}</span>
+              <span>{locale === "ja" ? "この地域の対応" : "Coverage in this region"}</span>
               <b>{regionalCoverage.label[locale]}</b>
             </summary>
             <div aria-label={locale === "ja" ? "地域別の機能評価" : "Regional capability grades"}>
@@ -294,7 +301,7 @@ export default function TripSummaryCard({
         ) : null}
 
         <details className="planner-plan-assumptions">
-          <summary>{locale === "ja" ? `この判定の前提 ${feasibilityResult.assumptions.length}件` : `${feasibilityResult.assumptions.length} assumptions behind this verdict`}</summary>
+          <summary>{locale === "ja" ? `この結論の前提 ${feasibilityResult.assumptions.length}件` : `${feasibilityResult.assumptions.length} assumptions behind this result`}</summary>
           <ul>
             {feasibilityResult.assumptions.map((assumption) => <li key={assumption.code}>{assumptionCopy(assumption, locale)}</li>)}
             {feasibilityResult.assumptions.length === 0 ? <li>{locale === "ja" ? "重要な前提はすべて確認済みです。" : "All critical assumptions are confirmed."}</li> : null}

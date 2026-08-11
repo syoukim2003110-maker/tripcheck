@@ -754,6 +754,8 @@ body:has(.trip-planner-app) {
 .planner-result-decision > button { background: var(--pl-ink); border: 0; border-radius: 10px; color: white; font-size: 11.5px; font-weight: 800; min-height: 42px; padding: 0 13px; }
 .planner-one-warning { align-items: flex-start; background: var(--pl-warn-bg); border-radius: 10px; color: var(--pl-warn-ink); display: flex; font-size: 11px; gap: 7px; line-height: 1.45; margin: 0; padding: 9px 10px; }
 .planner-one-warning svg { margin-top: 1px; }
+/* Copy Deck scope.beta: small, always visible, deliberately non-alarming. */
+.planner-beta-region { background: var(--pl-tile); border-radius: 999px; color: var(--pl-ink-2); font-size: 10.5px; font-weight: 700; margin: 0; padding: 5px 11px; width: fit-content; }
 .planner-verdict-details { border-top: 1px solid rgb(11 11 14 / 8%); }
 .planner-verdict-details > summary { color: var(--pl-ink-2); font-size: 10.5px; font-weight: 750; list-style-position: inside; min-height: 34px; padding: 9px 1px 0; }
 .planner-verdict-details-body { display: grid; gap: 10px; padding-top: 10px; }
@@ -858,6 +860,9 @@ details.planner-excluded { display: block; }
 /* QA-045: no pointer target below 24 CSS px, including folded audit rows. */
 .planner-regional-coverage summary { min-height: 28px; }
 .planner-day-summary small { color: var(--pl-muted); font-size: 10.5px; max-width: 100%; text-align: left; }
+/* Copy Deck data.estimated: the deck line is the headline; the provider
+   mechanics render as this smaller secondary line under it. */
+.planner-estimate-detail { display: block; font-size: 9.5px; font-weight: 400; margin-top: 1px; opacity: 0.85; }
 .planner-day-summary em { background: var(--pl-warn-bg); border: 1px solid var(--pl-warn-border); border-radius: 9px; color: var(--pl-warn-ink); font-size: 10.5px; font-style: normal; font-weight: 650; max-width: 100%; padding: 6px 9px; text-align: left; }
 /* TC-032: the clock range and planned/available/travel totals relocated from
    the day header into the day-settings disclosure. */
@@ -1182,7 +1187,10 @@ details.planner-excluded { display: block; }
 .planner-share-dialog > header span { color: var(--pl-muted); font-size: 10px; font-weight: 800; text-transform: uppercase; }
 .planner-share-dialog h2 { font-size: 19px; margin: 0; }
 .planner-share-dialog > header button { align-items: center; background: var(--pl-tile); border: 0; border-radius: 50%; display: flex; height: 44px; justify-content: center; width: 44px; }
-.planner-share-warning { background: #fff3ef; border-left: 3px solid var(--pl-accent); border-radius: 9px; color: #702a20; font-size: 11px; line-height: 1.55; margin: 0; padding: 9px 10px; }
+/* Copy Deck share.warning: the deck sentence is the headline; the mechanics
+   detail joins it inside the same warning box as secondary text. */
+.planner-share-warning { background: #fff3ef; border-left: 3px solid var(--pl-accent); border-radius: 9px 9px 0 0; color: #702a20; font-size: 11.5px; font-weight: 800; line-height: 1.55; margin: 0; padding: 9px 10px 2px; }
+.planner-share-dialog > p.planner-share-warning-detail { background: #fff3ef; border-left: 3px solid var(--pl-accent); border-radius: 0 0 9px 9px; color: #702a20; margin-top: -12px; padding: 0 10px 9px; }
 .planner-share-dialog fieldset { border: 1px solid var(--pl-line); border-radius: 12px; display: grid; gap: 3px; margin: 0; padding: 8px 10px 10px; }
 .planner-share-dialog legend { color: var(--pl-muted); font-size: 10px; font-weight: 800; padding: 0 4px; }
 .planner-share-dialog fieldset label { align-items: center; display: flex; gap: 9px; min-height: 40px; }
@@ -1345,13 +1353,19 @@ details.planner-excluded { display: block; }
   scrollbar-color: #d3d3da transparent;
   scrollbar-width: thin;
   top: 122px;
-  width: min(380px, calc(100vw - 32px));
+  /* TC-052 §9.3 desktop geometry: the panel never covers more than half the
+     map pane (map = 100vw − rail). Where half the map is narrower than the
+     380px design width — roughly the 841–1460px window — the panel shrinks
+     and relies on its internal scroll instead of covering more map. */
+  width: min(380px, calc((100vw - var(--pl-rail)) / 2), calc(100vw - 32px));
   z-index: 25;
 }
 .planner-inspector-close { align-items: center; background: var(--pl-tile); border: 0; border-radius: 10px; color: var(--pl-ink-2); display: flex; height: 34px; justify-content: center; position: absolute; right: 14px; top: 14px; width: 34px; }
 .planner-inspector-close:hover { background: var(--pl-tile-deep); color: var(--pl-ink); }
-/* v1.1 §9.3: the sheet-size toggle only exists in the phone bottom-sheet mode. */
-.planner-inspector-expand { align-items: center; background: var(--pl-tile); border: 0; border-radius: 10px; color: var(--pl-ink-2); display: none; font-size: 13px; height: 34px; justify-content: center; position: absolute; right: 54px; top: 14px; width: 34px; }
+/* v1.1 §9.3: the sheet-size toggles only exist in the phone bottom-sheet mode. */
+.planner-inspector-expand { align-items: center; background: var(--pl-tile); border: 0; border-radius: 10px; color: var(--pl-ink-2); display: none; font-size: 13px; height: 34px; justify-content: center; position: absolute; right: 94px; top: 14px; width: 34px; }
+/* TC-052 §9.3: the explicit collapse-to-peek control (aria-expanded button). */
+.planner-inspector-collapse { align-items: center; background: var(--pl-tile); border: 0; border-radius: 10px; color: var(--pl-ink-2); display: none; font-size: 13px; height: 34px; justify-content: center; position: absolute; right: 54px; top: 14px; width: 34px; }
 
 .planner-inspector-head { align-items: center; display: grid; gap: 12px; grid-template-columns: 40px minmax(0, 1fr); padding-right: 34px; }
 .planner-inspector-num {
@@ -1380,6 +1394,8 @@ details.planner-excluded { display: block; }
 .planner-inspector-meta .is-must { background: #edeafc; color: #5b3ea8; }
 .planner-inspector-meta .is-optional { color: var(--pl-muted); }
 .planner-inspector-meta .is-crowd { background: var(--pl-good-soft); color: var(--pl-good); }
+/* Copy Deck data.checkhours: the unverified-hours chip on a stop. */
+.planner-inspector-meta .is-check-hours { background: var(--pl-warn-bg); border: 1px solid var(--pl-warn-border); color: var(--pl-warn-ink); }
 
 .planner-inspector-actions { display: flex; gap: 8px; margin-top: 14px; }
 .planner-check-button { align-items: center; background: var(--pl-cta); border: 0; border-radius: 12px; color: white; display: inline-flex; flex: 1; font-size: 13px; font-weight: 750; gap: 8px; justify-content: center; min-height: 46px; padding: 0 14px; }
@@ -1628,8 +1644,11 @@ div.planner-route-ideas-empty { display: grid; gap: 8px; }
 .planner-hotel-card > footer a { color: var(--pl-muted); font-size: 8.5px; max-width: 165px; overflow: hidden; text-decoration: none; text-overflow: ellipsis; white-space: nowrap; }
 .planner-hotel-card > footer a:last-child { color: var(--pl-ink); flex: 0 0 auto; font-size: 9.5px; font-weight: 750; }
 
-.planner-remove-stop { align-items: center; background: transparent; border: 1px solid var(--pl-line); border-radius: 12px; color: var(--pl-muted); display: flex; font-size: 11.5px; font-weight: 700; gap: 6px; justify-content: center; margin-top: 8px; min-height: 36px; width: 100%; }
-.planner-remove-stop:hover { border-color: var(--pl-accent-deep); color: var(--pl-accent-deep); }
+/* TC-053 §9.2: the destructive action sits at the very bottom of the panel
+   and is ALWAYS in danger styling (border + text on --pl-danger), never a
+   muted control that only reveals danger on hover. Target stays ≥24px. */
+.planner-remove-stop { align-items: center; background: transparent; border: 1px solid var(--pl-danger); border-radius: 12px; color: var(--pl-danger); display: flex; font-size: 11.5px; font-weight: 700; gap: 6px; justify-content: center; margin-top: 18px; min-height: 36px; width: 100%; }
+.planner-remove-stop:hover { background: #fdf0ee; }
 
 .planner-removed li { align-items: center; display: flex; gap: 8px; justify-content: space-between; }
 .planner-removed li button { background: white; border: 1px solid var(--pl-line); border-radius: 8px; color: var(--pl-ink); font-size: 10.5px; font-weight: 700; padding: 4px 9px; }
@@ -1833,7 +1852,18 @@ div.planner-route-ideas-empty { display: grid; gap: 8px; }
   }
   .planner-inspector::before { background: var(--pl-tile-deep); border-radius: 999px; content: ""; height: 4px; left: 50%; position: absolute; top: 9px; transform: translateX(-50%); width: 44px; }
   .planner-inspector.is-sheet-full { max-height: 92dvh; }
-  .planner-inspector-expand { display: flex; }
+  .planner-inspector-expand,
+  .planner-inspector-collapse { display: flex; }
+  /* Three explicit control buttons share the top row; keep the title clear. */
+  .planner-inspector-head { padding-right: 108px; }
+  /* TC-052 §9.3 collapsed peek (~84px): only the title row and the explicit
+     controls stay; the map behind remains visible and interactive. Closing
+     is not required to get the map back. */
+  .planner-inspector.is-sheet-peek { height: 84px; max-height: 84px; overflow: hidden; padding-bottom: 0; padding-top: 22px; }
+  .planner-inspector.is-sheet-peek > :not(header):not(.planner-inspector-close):not(.planner-inspector-collapse) { display: none; }
+  .planner-inspector.is-sheet-peek .planner-inspector-head p { display: none; }
+  .planner-inspector.is-sheet-peek .planner-inspector-head h2 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .planner-inspector.is-sheet-peek .planner-inspector-collapse { right: 54px; }
   .planner-combobox-list { box-shadow: 0 8px 22px rgb(11 11 14 / 9%); margin-top: 7px; max-height: min(240px, 35dvh); position: static; }
   .planner-core-choices { grid-template-columns: 1fr; }
   .planner-review-button { bottom: 10px; }

@@ -11,7 +11,7 @@ import MealRecommendationCard from "../recommendation/MealRecommendationCard";
 import { foodSearchLinks } from "../../../../lib/food-recommendations-client.ts";
 import type { FoodCandidate } from "../../../../lib/google-food.ts";
 import type { FoodRecommendationSlot } from "../../../../lib/trip-builder.ts";
-import { type FoodState, type Inspector } from "../../../../lib/planner-app-state.ts";
+import { type FoodState, type Inspector, type PlannerSheetState } from "../../../../lib/planner-app-state.ts";
 import { detourWalkingMinutes, type DetourPartition } from "../../../../lib/recommendation-evaluator.ts";
 import type { PlanImpactMetrics } from "../../../../lib/recommendation-impact.ts";
 import { ui, type PlannerLocale } from "../../../../lib/presentation/planner-copy.ts";
@@ -27,10 +27,11 @@ type MealInspectorProps = {
   mealDetourBySlot: Record<string, DetourPartition<FoodCandidate>>;
   mealImpactBySlot: Record<string, Record<string, PlanImpactMetrics>>;
   mealSelections: Record<string, string>;
-  sheetExpanded: boolean;
+  sheetState: PlannerSheetState;
   panelRef: RefObject<HTMLElement | null>;
   onClose: () => void;
   onToggleSheet: () => void;
+  onToggleSheetPeek: () => void;
   onToggleMealSelection: (slotId: string, candidateId: string) => void;
   onPhotoError: (event: SyntheticEvent<HTMLImageElement>) => void;
 };
@@ -45,10 +46,11 @@ export default function MealInspector({
   mealDetourBySlot,
   mealImpactBySlot,
   mealSelections,
-  sheetExpanded,
+  sheetState,
   panelRef,
   onClose,
   onToggleSheet,
+  onToggleSheetPeek,
   onToggleMealSelection,
   onPhotoError,
 }: MealInspectorProps) {
@@ -56,12 +58,12 @@ export default function MealInspector({
   return (
     <aside
       aria-labelledby="planner-food-inspector-title"
-      className={`planner-inspector is-food${sheetExpanded ? " is-sheet-full" : ""}`}
+      className={`planner-inspector is-food${sheetState === "full" ? " is-sheet-full" : ""}${sheetState === "peek" ? " is-sheet-peek" : ""}`}
       ref={panelRef}
       role="dialog"
       tabIndex={-1}
     >
-      <button className="planner-inspector-close" onClick={onClose} type="button" aria-label={text.close}><Icon name="close" size={13} /></button><button aria-label={locale === "ja" ? (sheetExpanded ? "シートを縮小" : "シートを全画面に広げる") : (sheetExpanded ? "Collapse sheet" : "Expand sheet")} className="planner-inspector-expand" onClick={onToggleSheet} type="button">{sheetExpanded ? "▾" : "▴"}</button>
+      <button className="planner-inspector-close" onClick={onClose} type="button" aria-label={text.close}><Icon name="close" size={13} /></button><button aria-label={sheetState === "full" ? text.sheetShrink : text.sheetExpand} className="planner-inspector-expand" onClick={onToggleSheet} type="button">{sheetState === "full" ? "▾" : "▴"}</button><button aria-expanded={sheetState !== "peek"} aria-label={sheetState === "peek" ? text.sheetPeekOpen : text.sheetMinimize} className="planner-inspector-collapse" onClick={onToggleSheetPeek} type="button">{sheetState === "peek" ? "▴" : "▾"}</button>
       <header className="planner-inspector-head">
         <span className="planner-inspector-num is-food" aria-hidden="true"><Icon name={activeFoodSlot.kind === "lunch" ? "sun" : "moon"} size={17} /></span>
         <div>

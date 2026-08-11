@@ -53,7 +53,7 @@ const copy = {
     use: "この候補を使う",
     selected: "選択中",
     source: (code: string) => `${code}空港の公式情報`,
-    disclaimer: "航空券価格・空席・手荷物条件・遅延実績は取得していません。空港内と市街地移動の分数は、リンク先空港が示した事実ではなくTripCheckの計画用仮定です。またホテルまでの実測ではありません。最終確認は航空会社で行ってください。",
+    disclaimer: "航空券価格・空席・手荷物条件・遅延実績は取得していません。空港内と市街地移動の分数は、リンク先空港が示した事実ではなくTripCheckの計画用仮定です。またホテルまでの確認済みの経路ではなく、主要市街地までの目安です。最終確認は航空会社で行ってください。",
     option: (label: string) => `便の候補 ${label}`,
     airportInput: (label: string) => `候補${label}の空港`,
     arrivalTimeInput: (label: string) => `候補${label}の到着予定時刻`,

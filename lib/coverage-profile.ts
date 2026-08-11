@@ -119,7 +119,7 @@ const unsupported = freezeProfile({
   lastValidatedAt: null,
   publicCopy: {
     en: "TripCheck has not validated regional route, place, opening-hour, or transit coverage here. Any plan is provisional and every consequential fact should be checked.",
-    ja: "この地域では経路・地点・営業時間・公共交通の対応品質を検証していません。旅程は暫定として扱い、重要な事実を個別に確認してください。",
+    ja: "この地域では経路・地点・営業時間・公共交通の対応を検証していません。旅程は暫定として扱い、重要な事実を個別に確認してください。",
   },
 });
 
@@ -252,4 +252,18 @@ export function coveragePublicCopy(
 export function hasUnknownRegionalCoverage(profile: RegionalCoverageProfile | null | undefined) {
   return (["routes", "poi", "hours", "transit"] as const)
     .some((dimension) => coverageGrade(profile, dimension) === "unknown");
+}
+
+/**
+ * Deep coverage = every capability validated at A or B. Any C or unknown
+ * grade means the always-visible Copy Deck scope.beta notice must appear;
+ * deep-coverage destinations show nothing (the per-capability detail stays
+ * in the coverage disclosure either way).
+ */
+export function isDeepCoverageProfile(profile: RegionalCoverageProfile | null | undefined) {
+  return profile != null && (["routes", "poi", "hours", "transit"] as const)
+    .every((dimension) => {
+      const grade = coverageGrade(profile, dimension);
+      return grade === "A" || grade === "B";
+    });
 }

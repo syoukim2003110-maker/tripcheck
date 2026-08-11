@@ -105,7 +105,7 @@ export default function TripPrintSheet({
       ) : null}
       {feasibilityResult ? (
         <section className="planner-print-assumptions">
-          <h2>{locale === "ja" ? "この判定の前提" : "Assumptions behind this verdict"}</h2>
+          <h2>{locale === "ja" ? "この結論の前提" : "Assumptions behind this result"}</h2>
           {feasibilityResult.assumptions.length ? (
             <ul>{feasibilityResult.assumptions.map((assumption) => <li key={assumption.code}>{assumptionCopy(assumption, locale)}</li>)}</ul>
           ) : <p>{locale === "ja" ? "重要な前提はすべて確認済みです。" : "All critical assumptions are confirmed."}</p>}
@@ -198,7 +198,7 @@ export default function TripPrintSheet({
       ))}
       {regionalCoverage ? (
         <section className="planner-print-coverage">
-          <h2>{locale === "ja" ? "地域別の対応品質" : "Regional coverage"}</h2>
+          <h2>{locale === "ja" ? "この地域の対応" : "Coverage in this region"}</h2>
           <p>{regionalCoverage.label[locale]} · Routes {regionalCoverage.grades.routes} · Places {regionalCoverage.grades.poi} · Hours {regionalCoverage.grades.hours} · Transit {regionalCoverage.grades.transit}</p>
           <p>{coveragePublicCopy(regionalCoverage, locale)}</p>
         </section>

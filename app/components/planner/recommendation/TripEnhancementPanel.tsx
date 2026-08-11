@@ -9,7 +9,7 @@ import Icon from "../../../PlannerIcons";
 import GapRecommendationCard from "./GapRecommendationCard";
 import type { ItineraryGap } from "../../../../lib/gap-detection.ts";
 import type { RouteRecommendation } from "../../../../lib/route-recommendations.ts";
-import type { RouteRecommendationState } from "../../../../lib/planner-app-state.ts";
+import type { PlannerSheetState, RouteRecommendationState } from "../../../../lib/planner-app-state.ts";
 import type { PlanImpactMetrics } from "../../../../lib/recommendation-impact.ts";
 import { recommendationStopId } from "../../../../lib/presentation/recommendation-presentation.ts";
 import { formatCheckedAt } from "../../../../lib/presentation/trip-presentation.ts";
@@ -26,13 +26,14 @@ type TripEnhancementPanelProps = {
   overCapIds: Set<string>;
   impactById: Record<string, PlanImpactMetrics>;
   notice: string;
-  sheetExpanded: boolean;
+  sheetState: PlannerSheetState;
   alternativesExpanded: boolean;
   selectedCandidateId: string | undefined;
   plannedStopIds: Set<string>;
   panelRef: RefObject<HTMLElement | null>;
   onClose: () => void;
   onToggleSheet: () => void;
+  onToggleSheetPeek: () => void;
   onRetry: () => void;
   onExpandAlternatives: () => void;
   onSelectCandidate: (candidateId: string) => void;
@@ -49,13 +50,14 @@ export default function TripEnhancementPanel({
   overCapIds,
   impactById,
   notice,
-  sheetExpanded,
+  sheetState,
   alternativesExpanded,
   selectedCandidateId,
   plannedStopIds,
   panelRef,
   onClose,
   onToggleSheet,
+  onToggleSheetPeek,
   onRetry,
   onExpandAlternatives,
   onSelectCandidate,
@@ -66,12 +68,12 @@ export default function TripEnhancementPanel({
   return (
     <aside
       aria-labelledby="planner-route-ideas-title"
-      className={`planner-inspector is-recommendations${sheetExpanded ? " is-sheet-full" : ""}`}
+      className={`planner-inspector is-recommendations${sheetState === "full" ? " is-sheet-full" : ""}${sheetState === "peek" ? " is-sheet-peek" : ""}`}
       ref={panelRef}
       role="dialog"
       tabIndex={-1}
     >
-      <button className="planner-inspector-close" onClick={onClose} type="button" aria-label={text.close}><Icon name="close" size={13} /></button><button aria-label={locale === "ja" ? (sheetExpanded ? "シートを縮小" : "シートを全画面に広げる") : (sheetExpanded ? "Collapse sheet" : "Expand sheet")} className="planner-inspector-expand" onClick={onToggleSheet} type="button">{sheetExpanded ? "▾" : "▴"}</button>
+      <button className="planner-inspector-close" onClick={onClose} type="button" aria-label={text.close}><Icon name="close" size={13} /></button><button aria-label={sheetState === "full" ? text.sheetShrink : text.sheetExpand} className="planner-inspector-expand" onClick={onToggleSheet} type="button">{sheetState === "full" ? "▾" : "▴"}</button><button aria-expanded={sheetState !== "peek"} aria-label={sheetState === "peek" ? text.sheetPeekOpen : text.sheetMinimize} className="planner-inspector-collapse" onClick={onToggleSheetPeek} type="button">{sheetState === "peek" ? "▴" : "▾"}</button>
       <header className="planner-inspector-head">
         <span className="planner-inspector-num is-recommendation" aria-hidden="true"><Icon name="spark" size={17} /></span>
         <div>

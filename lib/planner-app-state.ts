@@ -33,6 +33,8 @@ export type TransitLegBoarding = {
 export type PlannerInputStep = "places" | "conditions";
 export type PlannerBuildMode = "automatic" | "custom";
 export type MobileResultView = "timeline" | "map" | "compact";
+/** TC-052 §9.3: the mobile inspector bottom sheet has three explicit sizes. */
+export type PlannerSheetState = "peek" | "half" | "full";
 export type PlannerMapScope = "all" | "day";
 export type PassportCountry = "unset" | "JP" | "other";
 export type TransitConvergenceState = {

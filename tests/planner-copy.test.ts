@@ -166,3 +166,19 @@ test("recommendation surfaces carry the Copy Deck strings verbatim in both local
   assert.equal(ui.ja.detourLine(12), "動線から約12分");
   assert.equal(ui.en.detourLine(12), "~12 min from the route");
 });
+
+// Copy Deck data.estimated / data.checkhours / scope.beta / share.warning:
+// deck strings verbatim; provider mechanics and nuance stay secondary keys.
+test("data, scope and share surfaces carry the Copy Deck strings verbatim", () => {
+  assert.equal(ui.ja.estimated, "所要時間は目安です");
+  assert.equal(ui.en.estimated, "Travel time is estimated");
+  assert.equal(ui.ja.checkHours, "出発前に営業時間を確認");
+  assert.equal(ui.en.checkHours, "Check opening hours before you go");
+  assert.equal(ui.ja.betaRegion, "この地域はベータ対応です");
+  assert.equal(ui.en.betaRegion, "Beta coverage in this region");
+  assert.equal(ui.ja.shareWarning, "リンクを知っている人は旅程を見られます");
+  assert.equal(ui.en.shareWarning, "Anyone with the full link can view this trip");
+  // The deck line stays the headline; the detail keys exist and differ.
+  assert.notEqual(ui.ja.estimatedDetail, ui.ja.estimated);
+  assert.notEqual(ui.en.shareWarningDetail, ui.en.shareWarning);
+});

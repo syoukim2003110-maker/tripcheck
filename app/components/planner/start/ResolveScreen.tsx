@@ -317,7 +317,7 @@ export default function ResolveScreen({
             );
           })}
         </ul>
-        {unresolvedReviewedCount > 0 ? <p className="planner-inline-status is-warning" role="status">{locale === "ja" ? `${unresolvedReviewedCount}件は未解決です。判定は保留または条件付きになります。` : `${unresolvedReviewedCount} place${unresolvedReviewedCount === 1 ? " is" : "s are"} unresolved. The verdict will remain conditional or unknown.`}</p> : null}
+        {unresolvedReviewedCount > 0 ? <p className="planner-inline-status is-warning" role="status">{locale === "ja" ? `${unresolvedReviewedCount}件は未解決です。確認が終わるまで結論を出しません。` : `${unresolvedReviewedCount} place${unresolvedReviewedCount === 1 ? " is" : "s are"} unresolved. The result stays conditional until they are confirmed.`}</p> : null}
         {ambiguousReviewedCount > 0 ? <p className="planner-inline-status is-warning" role="status">{locale === "ja" ? `${ambiguousReviewedCount}件は同名候補があります。住所を見て選んでください。` : `${ambiguousReviewedCount} place${ambiguousReviewedCount === 1 ? " has" : "s have"} same-name matches. Choose by address.`}</p> : null}
       </section>
 

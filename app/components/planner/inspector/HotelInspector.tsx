@@ -18,6 +18,7 @@ import {
   type HotelStayMode,
   type HotelStyleChoice,
   type NightlyHotelState,
+  type PlannerSheetState,
   type SourcePreviewState,
 } from "../../../../lib/planner-app-state.ts";
 import { formatDistanceMeters } from "../../../../lib/presentation/trip-presentation.ts";
@@ -48,10 +49,11 @@ type HotelInspectorProps = {
   bestHotelTravelMinutes: number;
   hasRakutenHotelEvidence: boolean;
   sourcePreviews: Record<string, SourcePreviewState>;
-  sheetExpanded: boolean;
+  sheetState: PlannerSheetState;
   panelRef: RefObject<HTMLElement | null>;
   onClose: () => void;
   onToggleSheet: () => void;
+  onToggleSheetPeek: () => void;
   onRefreshHotels: () => void;
   onEnableNightly: () => void;
   onSelectStayModeSingle: () => void;
@@ -84,10 +86,11 @@ export default function HotelInspector({
   bestHotelTravelMinutes,
   hasRakutenHotelEvidence,
   sourcePreviews,
-  sheetExpanded,
+  sheetState,
   panelRef,
   onClose,
   onToggleSheet,
+  onToggleSheetPeek,
   onRefreshHotels,
   onEnableNightly,
   onSelectStayModeSingle,
@@ -158,12 +161,12 @@ export default function HotelInspector({
   return (
     <aside
       aria-labelledby="planner-hotel-inspector-title"
-      className={`planner-inspector is-hotel${sheetExpanded ? " is-sheet-full" : ""}`}
+      className={`planner-inspector is-hotel${sheetState === "full" ? " is-sheet-full" : ""}${sheetState === "peek" ? " is-sheet-peek" : ""}`}
       ref={panelRef}
       role="dialog"
       tabIndex={-1}
     >
-      <button className="planner-inspector-close" onClick={onClose} type="button" aria-label={text.close}><Icon name="close" size={13} /></button><button aria-label={locale === "ja" ? (sheetExpanded ? "シートを縮小" : "シートを全画面に広げる") : (sheetExpanded ? "Collapse sheet" : "Expand sheet")} className="planner-inspector-expand" onClick={onToggleSheet} type="button">{sheetExpanded ? "▾" : "▴"}</button>
+      <button className="planner-inspector-close" onClick={onClose} type="button" aria-label={text.close}><Icon name="close" size={13} /></button><button aria-label={sheetState === "full" ? text.sheetShrink : text.sheetExpand} className="planner-inspector-expand" onClick={onToggleSheet} type="button">{sheetState === "full" ? "▾" : "▴"}</button><button aria-expanded={sheetState !== "peek"} aria-label={sheetState === "peek" ? text.sheetPeekOpen : text.sheetMinimize} className="planner-inspector-collapse" onClick={onToggleSheetPeek} type="button">{sheetState === "peek" ? "▴" : "▾"}</button>
       <header className="planner-inspector-head">
         <span className="planner-inspector-num is-hotel" aria-hidden="true"><Icon name="bed" size={17} /></span>
         <div>

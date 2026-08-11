@@ -1,9 +1,10 @@
 "use client";
 
 // The stop inspector aside (spec v2.1 inspector/): close/expand controls,
-// header and meta badges, the stay-minutes and last-entry edits, the day
-// move group and remove button, the Google intel card, the check-place
-// actions row and the fresh public-voices card with its evidence sources.
+// header and meta badges, the stay-minutes and last-entry edits and the day
+// move group, then the secondary detail sections (Google intel card, the
+// check-place actions row, the fresh public-voices card with its evidence
+// sources) and finally the remove button at the very bottom (TC-053 §9.2).
 // Emits events only — plan edits and AI checks stay with the parent.
 import type { RefObject, SyntheticEvent } from "react";
 import Icon from "../../../PlannerIcons";
@@ -14,6 +15,7 @@ import {
   P0_CORE_ONLY,
   type FreshState,
   type IntelligenceState,
+  type PlannerSheetState,
   type SourcePreviewState,
 } from "../../../../lib/planner-app-state.ts";
 import {
@@ -42,10 +44,11 @@ type StopInspectorProps = {
   selectedCheckRetry: boolean;
   aiEnabled: boolean;
   sourcePreviews: Record<string, SourcePreviewState>;
-  sheetExpanded: boolean;
+  sheetState: PlannerSheetState;
   panelRef: RefObject<HTMLElement | null>;
   onClose: () => void;
   onToggleSheet: () => void;
+  onToggleSheetPeek: () => void;
   onCommitStayMinutes: (stopId: string, value: string) => void;
   onCommitLastEntry: (stopId: string, value: string) => void;
   onMoveStopToDay: (stopId: string, dayIndex: number) => void;
@@ -71,10 +74,11 @@ export default function StopInspector({
   selectedCheckRetry,
   aiEnabled,
   sourcePreviews,
-  sheetExpanded,
+  sheetState,
   panelRef,
   onClose,
   onToggleSheet,
+  onToggleSheetPeek,
   onCommitStayMinutes,
   onCommitLastEntry,
   onMoveStopToDay,
@@ -87,12 +91,12 @@ export default function StopInspector({
   return (
     <aside
       aria-labelledby="planner-stop-inspector-title"
-      className={`planner-inspector${sheetExpanded ? " is-sheet-full" : ""}`}
+      className={`planner-inspector${sheetState === "full" ? " is-sheet-full" : ""}${sheetState === "peek" ? " is-sheet-peek" : ""}`}
       ref={panelRef}
       role="dialog"
       tabIndex={-1}
     >
-      <button className="planner-inspector-close" onClick={onClose} type="button" aria-label={text.close}><Icon name="close" size={13} /></button><button aria-label={locale === "ja" ? (sheetExpanded ? "シートを縮小" : "シートを全画面に広げる") : (sheetExpanded ? "Collapse sheet" : "Expand sheet")} className="planner-inspector-expand" onClick={onToggleSheet} type="button">{sheetExpanded ? "▾" : "▴"}</button>
+      <button className="planner-inspector-close" onClick={onClose} type="button" aria-label={text.close}><Icon name="close" size={13} /></button><button aria-label={sheetState === "full" ? text.sheetShrink : text.sheetExpand} className="planner-inspector-expand" onClick={onToggleSheet} type="button">{sheetState === "full" ? "▾" : "▴"}</button><button aria-expanded={sheetState !== "peek"} aria-label={sheetState === "peek" ? text.sheetPeekOpen : text.sheetMinimize} className="planner-inspector-collapse" onClick={onToggleSheetPeek} type="button">{sheetState === "peek" ? "▴" : "▾"}</button>
       <header className="planner-inspector-head">
         <span className="planner-inspector-num">{selectedStopIndex + 1}</span>
         <div>
@@ -107,6 +111,7 @@ export default function StopInspector({
         {selectedBuiltStop.priority === "must" ? <span className="is-must">{text.must}</span> : null}
         {selectedBuiltStop.priority === "optional" ? <span className="is-optional">{text.optional}</span> : null}
         {selectedBuiltStop.openingStatus === "verified_open" ? <span>{text.openingAdjusted}</span> : null}
+        {selectedBuiltStop.openingStatus === "unknown" ? <span className="is-check-hours">{text.checkHours}</span> : null}
         {selectedBuiltStop.openingStatus === "conflict" ? <span className="is-booked">{text.openingConflict}</span> : null}
         {selectedBuiltStop.openingStatus === "closed_day" ? <span className="is-booked">{text.openingClosedDay}</span> : null}
         {selectedBuiltStop.openingStatus === "last_entry_conflict" ? <span className="is-booked">{locale === "ja" ? "最終入場に間に合いません" : "Misses last entry"}</span> : null}
@@ -169,9 +174,6 @@ export default function StopInspector({
           </div>
         </div>
       ) : null}
-      <button className="planner-remove-stop" onClick={() => onRemoveStop(selectedBuiltStop.stop)} type="button">
-        <Icon name="close" size={11} />{text.removeStop}
-      </button>
       {selectedIntel?.status === "loading" ? (
         <section className="planner-intel-card is-loading" aria-live="polite">
           <header><h3>{text.fieldEvidence}</h3></header>
@@ -340,6 +342,12 @@ export default function StopInspector({
           </details>
         );
       })() : null}
+
+      {/* TC-053 §9.2: the destructive action is the LAST interactive element,
+          in always-danger styling — never mid-panel between edit controls. */}
+      <button className="planner-remove-stop" onClick={() => onRemoveStop(selectedBuiltStop.stop)} type="button">
+        <Icon name="close" size={11} />{text.removeStop}
+      </button>
     </aside>
   );
 }

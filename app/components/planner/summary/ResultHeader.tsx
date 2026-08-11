@@ -73,7 +73,7 @@ export default function ResultHeader({
               ? locale === "ja"
                 ? `${scheduledStopCount}/${scheduledStopCount + deferredAnchorCount}か所を日程化`
                 : `${scheduledStopCount} of ${scheduledStopCount + deferredAnchorCount} places planned`
-              : resultStateCopy?.label ?? (locale === "ja" ? "判定結果" : "Feasibility result")}
+              : resultStateCopy?.label ?? (locale === "ja" ? "旅程の結論" : "Plan result")}
           </span>
           <h1>{resultStateCopy?.headline ?? dayTheme}</h1>
           {tripStats || planIssueCount > 0 ? (
@@ -108,7 +108,7 @@ export default function ResultHeader({
                   details.scrollIntoView({ behavior: "smooth", block: "start" });
                 }}
                 type="button"
-              >{locale === "ja" ? "判定の詳細" : "Verdict details"}</button>
+              >{locale === "ja" ? "結論の詳細" : "Result details"}</button>
               <button aria-label={locale === "ja" ? "変更を取り消す" : "Undo change"} disabled={!canUndo} onClick={onUndo} title={locale === "ja" ? "取り消す (⌘/Ctrl+Z)" : "Undo (⌘/Ctrl+Z)"} type="button">↶ {locale === "ja" ? "元に戻す" : "Undo"}</button>
               <button aria-label={locale === "ja" ? "変更をやり直す" : "Redo change"} disabled={!canRedo} onClick={onRedo} title={locale === "ja" ? "やり直す (⌘/Ctrl+Shift+Z)" : "Redo (⌘/Ctrl+Shift+Z)"} type="button">↷ {locale === "ja" ? "やり直す" : "Redo"}</button>
               <button onClick={onPrint} title={text.printTitle} type="button">{text.print}</button>

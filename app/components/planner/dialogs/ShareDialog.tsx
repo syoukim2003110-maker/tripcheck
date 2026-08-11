@@ -29,9 +29,10 @@ export default function ShareDialog({ locale, preview, shareScope, dialogRef, on
           <div><span>{locale === "ja" ? "共有する内容を選択" : "Choose what to share"}</span><h2 id="planner-share-title">{locale === "ja" ? "リンクに含める情報" : "Information in the link"}</h2></div>
           <button aria-label={text.close} onClick={onClose} type="button"><Icon name="close" size={13} /></button>
         </header>
-        <p className="planner-share-warning" id="planner-share-description">{locale === "ja"
-          ? "このリンク自体が旅程データです。受信者、ブラウザ履歴、拡張機能から読めます。公開場所へ貼らないでください。"
-          : "The link itself contains the trip data. Recipients, browser history and extensions can read it. Do not post it publicly."}</p>
+        {/* Copy Deck share.warning is the primary line; the mechanics stay
+            as secondary nuance below it. */}
+        <p className="planner-share-warning" id="planner-share-description">{text.shareWarning}</p>
+        <p className="planner-share-warning-detail">{text.shareWarningDetail}</p>
         <fieldset>
           <legend>{locale === "ja" ? "含める情報" : "Include"}</legend>
           {([

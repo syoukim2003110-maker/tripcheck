@@ -5,7 +5,7 @@
 // warnings - each with its one next action. Emits events only.
 import { destinationName, type Destination } from "../../../../lib/destinations.ts";
 import type { BuiltTripPlan } from "../../../../lib/trip-builder.ts";
-import type { PlannerLocale } from "../../../../lib/presentation/planner-copy.ts";
+import { ui, type PlannerLocale } from "../../../../lib/presentation/planner-copy.ts";
 
 type IssueCardProps = {
   locale: PlannerLocale;
@@ -89,9 +89,11 @@ export default function IssueCard({
         ))}
         {unknownHoursStops.length > 0 ? (
           <li key="hours">
+            {/* Copy Deck data.checkhours is the standard unverified-hours
+                phrasing; the affected places stay as the parameter. */}
             <span>{locale === "ja"
-              ? `営業時間を確認したい場所 ${unknownHoursStops.length}（${unknownHoursStops.slice(0, 2).map((stop) => stop.name).join("・")}${unknownHoursStops.length > 2 ? " ほか" : ""}）`
-              : `${unknownHoursStops.length} place${unknownHoursStops.length === 1 ? "" : "s"} to check hours for (${unknownHoursStops.slice(0, 2).map((stop) => stop.name).join(", ")}${unknownHoursStops.length > 2 ? ", …" : ""})`}</span>
+              ? `${ui.ja.checkHours} — ${unknownHoursStops.length}件（${unknownHoursStops.slice(0, 2).map((stop) => stop.name).join("・")}${unknownHoursStops.length > 2 ? " ほか" : ""}）`
+              : `${ui.en.checkHours} — ${unknownHoursStops.length} place${unknownHoursStops.length === 1 ? "" : "s"} (${unknownHoursStops.slice(0, 2).map((stop) => stop.name).join(", ")}${unknownHoursStops.length > 2 ? ", …" : ""})`}</span>
             <button onClick={() => onOpenStop(unknownHoursStops[0].id)} type="button">{locale === "ja" ? "場所を開く" : "Open the place"}</button>
           </li>
         ) : null}

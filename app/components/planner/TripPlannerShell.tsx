@@ -86,6 +86,7 @@ import {
   type PlannerInputStep,
   type PlannerBuildMode,
   type MobileResultView,
+  type PlannerSheetState,
   type PlannerMapScope,
   type Inspector,
   type ManualPlaceDraft,
@@ -299,7 +300,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
   const placesInputRef = useRef<HTMLTextAreaElement | null>(null);
   // v1.1 §9.3: on phones the detail panel is a bottom sheet (half height by
   // default, full on request via an explicit button, never drag-only).
-  const [inspectorSheetExpanded, setInspectorSheetExpanded] = useState(false);
+  const [inspectorSheetState, setInspectorSheetState] = useState<PlannerSheetState>("half");
   const [comparisonAlternative, setComparisonAlternative] = useState<AlternativePlan | null>(null);
   const inspectorPanelRef = useRef<HTMLElement | null>(null);
   const inspectorTriggerRef = useRef<HTMLElement | null>(null);
@@ -960,7 +961,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
 
   useEffect(() => {
     // A newly opened panel always starts at the half-height sheet state.
-    setInspectorSheetExpanded(false);
+    setInspectorSheetState("half");
     // v1.1 §15.1: panel opens are funnel signals (no content fields).
     if (inspector?.kind === "hotel") trackProductEvent("hotel_opened", {});
     else if (inspector?.kind === "food") trackProductEvent("meal_opened", {});
@@ -1716,7 +1717,8 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
             onMoveStopToDay={moveStopToDay}
             onPhotoError={handlePhotoError}
             onRemoveStop={removeStopFromPlan}
-            onToggleSheet={() => setInspectorSheetExpanded((current) => !current)}
+            onToggleSheet={() => setInspectorSheetState((current) => current === "full" ? "half" : "full")}
+            onToggleSheetPeek={() => setInspectorSheetState((current) => current === "peek" ? "half" : "peek")}
             panelRef={inspectorPanelRef}
             plan={plan}
             selectedBuiltStop={selectedBuiltStop}
@@ -1726,7 +1728,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
             selectedFresh={selectedFresh}
             selectedIntel={selectedIntel}
             selectedStopIndex={selectedStopIndex}
-            sheetExpanded={inspectorSheetExpanded}
+            sheetState={inspectorSheetState}
             sourcePreviews={sourcePreviews}
             userStayMinutes={userStayMinutes}
           />
@@ -1761,11 +1763,12 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
             onSelectHotelCandidate={selectHotelCandidate}
             onSelectNightCandidate={selectNightCandidate}
             onSelectStayModeSingle={() => setHotelStayMode("single")}
-            onToggleSheet={() => setInspectorSheetExpanded((current) => !current)}
+            onToggleSheet={() => setInspectorSheetState((current) => current === "full" ? "half" : "full")}
+            onToggleSheetPeek={() => setInspectorSheetState((current) => current === "peek" ? "half" : "peek")}
             panelRef={inspectorPanelRef}
             plan={plan}
             selectedHotel={selectedHotel}
-            sheetExpanded={inspectorSheetExpanded}
+            sheetState={inspectorSheetState}
             sourcePreviews={sourcePreviews}
           />
         ) : null}
@@ -1784,9 +1787,10 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
             onClose={() => setInspector(null)}
             onPhotoError={handlePhotoError}
             onToggleMealSelection={toggleMealSelection}
-            onToggleSheet={() => setInspectorSheetExpanded((current) => !current)}
+            onToggleSheet={() => setInspectorSheetState((current) => current === "full" ? "half" : "full")}
+            onToggleSheetPeek={() => setInspectorSheetState((current) => current === "peek" ? "half" : "peek")}
             panelRef={inspectorPanelRef}
-            sheetExpanded={inspectorSheetExpanded}
+            sheetState={inspectorSheetState}
           />
         ) : null}
 
@@ -1804,13 +1808,14 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
             onPhotoError={handlePhotoError}
             onRetry={() => void findRouteRecommendations()}
             onSelectCandidate={selectRouteRecommendation}
-            onToggleSheet={() => setInspectorSheetExpanded((current) => !current)}
+            onToggleSheet={() => setInspectorSheetState((current) => current === "full" ? "half" : "full")}
+            onToggleSheetPeek={() => setInspectorSheetState((current) => current === "peek" ? "half" : "peek")}
             orderedCandidates={orderedGapCandidates}
             overCapIds={gapOverCapIds}
             panelRef={inspectorPanelRef}
             plannedStopIds={plannedStopIds}
             selectedCandidateId={inspector.candidateId}
-            sheetExpanded={inspectorSheetExpanded}
+            sheetState={inspectorSheetState}
             state={activeRouteRecommendationState}
           />
         ) : null}
@@ -2170,7 +2175,11 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
               </div>
               {day.deadlineOverrunMinutes > 0 && day.deadline
                 ? <em>{day.deadlineKind === "curfew" ? text.curfewOver(day.deadline) : text.deadlineOver(day.deadline)}</em>
-                : <small>{measuredRouteCount > 0 ? text.walkingSafety : text.estimated}</small>}
+                : <small>{measuredRouteCount > 0
+                  ? text.walkingSafety
+                  // Copy Deck data.estimated is the visible headline; the
+                  // provider mechanics stay as secondary text below it.
+                  : <>{text.estimated}<span className="planner-estimate-detail">{text.estimatedDetail}</span></>}</small>}
             </details>
 
             {!hintDismissed ? <p className="planner-select-hint">{text.selectHint}</p> : null}
