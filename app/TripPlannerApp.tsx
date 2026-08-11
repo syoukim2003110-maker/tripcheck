@@ -27,14 +27,14 @@ import ShareDialog from "./components/planner/dialogs/ShareDialog";
 import DayTimeline from "./components/planner/timeline/DayTimeline";
 import ItineraryTimeline from "./components/planner/timeline/ItineraryTimeline";
 import TripMap from "./components/planner/map/TripMap";
-import HotelRecommendationCard from "./components/planner/recommendation/HotelRecommendationCard";
-import MealRecommendationCard from "./components/planner/recommendation/MealRecommendationCard";
 import TripEnhancementPanel from "./components/planner/recommendation/TripEnhancementPanel";
+import StopInspector from "./components/planner/inspector/StopInspector";
+import HotelInspector from "./components/planner/inspector/HotelInspector";
+import MealInspector from "./components/planner/inspector/MealInspector";
 import {
   FoodRecommendationsError,
   foodCandidateReason,
   foodRecommendationRequestKey,
-  foodSearchLinks,
   requestFoodRecommendations,
   requestFoodRanking,
 } from "../lib/food-recommendations-client";
@@ -42,7 +42,7 @@ import { requestLinkPreview } from "../lib/link-preview-client";
 import { defaultFoodDiscoveryQuery, type FoodCandidate } from "../lib/google-food";
 import { bayesianWeightedRating, restaurantRatingPrior } from "../lib/rating-confidence";
 import { requestHotelRecommendations, requestHotelRanking } from "../lib/hotel-recommendations-client";
-import { placeTypesIncludeLodging, type HotelCandidate, type HotelPriceLevel, type HotelStyle } from "../lib/google-hotels";
+import { placeTypesIncludeLodging, type HotelCandidate, type HotelPriceLevel } from "../lib/google-hotels";
 import { fullTripDemo } from "../lib/mock-trip";
 import { requestFreshVoices, requestPlaceIntelligence, PlaceIntelligenceError } from "../lib/place-intelligence-client";
 import { requestAiStatus } from "../lib/ai-status-client";
@@ -154,15 +154,10 @@ import {
 } from "../lib/presentation/planner-copy";
 import {
   weekdayInfo,
-  formatDistanceMeters,
   formatDuration,
-  formatWindowClock,
   shiftPlannerClock,
-  formatCheckedAt,
-  paymentLabel,
   safeRemovedStopLabels,
   priceBand,
-  googleMapsSearchUrl,
   airportOptionsFor,
   airportComparisonDestination,
 } from "../lib/presentation/trip-presentation";
@@ -2655,57 +2650,6 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
     postBuildLegBudgetRef.current = Math.max(postBuildLegBudgetRef.current, 6);
   }
 
-  function renderHotelComparison() {
-    if (!selectedHotel || hotelState.candidates.length <= 1) return null;
-    const comparisonCandidates = hotelState.ai.status === "ready"
-      ? hotelState.candidates
-      : hotelShortlist(hotelState.candidates, selectedHotel.id);
-    return (
-      <section className="planner-hotel-compare">
-        <header><span>{text.hotelCompareHeading}</span><small>{comparisonCandidates.length}</small></header>
-        {hotelState.ai.status === "loading" ? (
-          <p className="planner-hotel-ai-status">{locale === "ja" ? "AIが候補の評判を照合しています…" : "AI is researching these candidates…"}</p>
-        ) : null}
-        <div className="planner-hotel-compare-list">
-          {comparisonCandidates.map((candidate) => {
-            const aiNote = hotelState.ai.notes[candidate.id];
-            const tags = [
-              ...(hotelState.ai.recommendedId === candidate.id ? [locale === "ja" ? "AIのおすすめ" : "AI pick"] : []),
-              ...hotelAxisLabels(candidate),
-              ...(candidate.styles.includes("luxury") ? [text.styleLuxury] : []),
-            ];
-            return (
-              <HotelRecommendationCard
-                aiNote={aiNote}
-                candidate={candidate}
-                facts={[
-                  candidate.rating !== null
-                    ? locale === "ja"
-                      ? `★ ${candidate.rating.toFixed(1)}（${candidate.userRatingCount?.toLocaleString("ja-JP") ?? "—"}）`
-                      : `★ ${candidate.rating.toFixed(1)} (${candidate.userRatingCount?.toLocaleString("en-US") ?? "—"})`
-                    : null,
-                  hotelTravelMinutesById[candidate.id] !== undefined
-                    ? locale === "ja"
-                      ? `全日程の移動 約${hotelTravelMinutesById[candidate.id]}分${Number.isFinite(bestHotelTravelMinutes) && hotelTravelMinutesById[candidate.id] > bestHotelTravelMinutes ? `（最短比 +${hotelTravelMinutesById[candidate.id] - bestHotelTravelMinutes}分）` : ""}`
-                      : `~${hotelTravelMinutesById[candidate.id]} min total travel${Number.isFinite(bestHotelTravelMinutes) && hotelTravelMinutesById[candidate.id] > bestHotelTravelMinutes ? ` (+${hotelTravelMinutesById[candidate.id] - bestHotelTravelMinutes} vs best)` : ""}`
-                    : text.distanceFrom(formatDistanceMeters(candidate.routeAverageDistanceMeters)),
-                ].filter(Boolean).join(" · ")}
-                isSelected={candidate.id === selectedHotel.id}
-                key={candidate.id}
-                locale={locale}
-                onPhotoError={handlePhotoError}
-                onSelect={() => selectHotelCandidate(candidate)}
-                priceLabel={hotelPriceLabel(candidate)}
-                rakutenLine={candidate.rakuten?.reviewAverage ? text.rakutenTag(candidate.rakuten.reviewAverage, candidate.rakuten.reviewCount ?? 0) : null}
-                tags={tags}
-              />
-            );
-          })}
-        </div>
-      </section>
-    );
-  }
-
   function currentShareableTripInput(): ShareableTripInput {
     return {
       destination: requestDestination,
@@ -4477,543 +4421,101 @@ export default function TripPlannerApp({ initialLocale = "en", mapsApiKey = "" }
         tripDateTouched={tripDateTouched}
       >
         {selectedBuiltStop ? (
-          <aside
-            aria-labelledby="planner-stop-inspector-title"
-            className={`planner-inspector${inspectorSheetExpanded ? " is-sheet-full" : ""}`}
-            ref={inspectorPanelRef}
-            role="dialog"
-            tabIndex={-1}
-          >
-            <button className="planner-inspector-close" onClick={() => { setInspector(null); setRouteAlternativesExpanded(false); }} type="button" aria-label={text.close}><Icon name="close" size={13} /></button><button aria-label={locale === "ja" ? (inspectorSheetExpanded ? "シートを縮小" : "シートを全画面に広げる") : (inspectorSheetExpanded ? "Collapse sheet" : "Expand sheet")} className="planner-inspector-expand" onClick={() => setInspectorSheetExpanded((current) => !current)} type="button">{inspectorSheetExpanded ? "▾" : "▴"}</button>
-            <header className="planner-inspector-head">
-              <span className="planner-inspector-num">{selectedStopIndex + 1}</span>
-              <div>
-                <h2 id="planner-stop-inspector-title">{selectedBuiltStop.stop.name}</h2>
-                <p>{selectedBuiltStop.stop.area}</p>
-              </div>
-            </header>
-            <div className="planner-inspector-meta">
-              <span>{selectedBuiltStop.arrival}–{selectedBuiltStop.departure}</span>
-              {selectedBuiltStop.fixedTime ? <span className="is-booked">{selectedBuiltStop.isReservation ? text.reservation : text.timePinned} {selectedBuiltStop.fixedTime}</span> : null}
-              {selectedBuiltStop.reservationLateMinutes > 0 ? <span className="is-booked">{text.lateBy(selectedBuiltStop.reservationLateMinutes)}</span> : null}
-              {selectedBuiltStop.priority === "must" ? <span className="is-must">{text.must}</span> : null}
-              {selectedBuiltStop.priority === "optional" ? <span className="is-optional">{text.optional}</span> : null}
-              {selectedBuiltStop.openingStatus === "verified_open" ? <span>{text.openingAdjusted}</span> : null}
-              {selectedBuiltStop.openingStatus === "conflict" ? <span className="is-booked">{text.openingConflict}</span> : null}
-              {selectedBuiltStop.openingStatus === "closed_day" ? <span className="is-booked">{text.openingClosedDay}</span> : null}
-              {selectedBuiltStop.openingStatus === "last_entry_conflict" ? <span className="is-booked">{locale === "ja" ? "最終入場に間に合いません" : "Misses last entry"}</span> : null}
-              {selectedBuiltStop.crowd ? (
-                <span className="is-crowd">
-                  {text.crowd[selectedBuiltStop.crowd.level]}{selectedBuiltStop.crowd.isWeekend ? text.crowdWeekend : ""}{text.crowdForecast}
-                </span>
-              ) : null}
-            </div>
-            <label className="planner-stay-edit">
-              <span>{text.stayLabel}</span>
-              <select
-                onChange={(event) => {
-                  const value = event.target.value;
-                  const stopId = selectedBuiltStop.stop.id;
-                  // Only the user's own edits live here; clearing back to auto
-                  // re-exposes the evidence buffer kept in durationOverrides.
-                  const next = { ...userStayMinutes };
-                  if (!value) delete next[stopId];
-                  else next[stopId] = Number(value);
-                  commitPlannerEdit({ userStayMinutes: next });
-                }}
-                value={String(userStayMinutes[selectedBuiltStop.stop.id] ?? "")}
-              >
-                <option value="">
-                  {userStayMinutes[selectedBuiltStop.stop.id] == null
-                    ? `${text.stayAuto} · ${text.minutes(selectedBuiltStop.stop.planningDurationMinutes)}`
-                    : text.stayAuto}
-                </option>
-                {[30, 45, 60, 90, 120, 150, 180, 240].map((minutes) => (
-                  <option key={minutes} value={minutes}>{text.minutes(minutes)}</option>
-                ))}
-              </select>
-            </label>
-            <label className="planner-stay-edit">
-              <span>{locale === "ja" ? "最終入場（分かる場合）" : "Last entry (if known)"}</span>
-              <input
-                aria-describedby="planner-last-entry-note"
-                onChange={(event) => {
-                  const value = event.target.value;
-                  const stopId = selectedBuiltStop.stop.id;
-                  const next = { ...lastEntryTimes };
-                  if (!value) delete next[stopId];
-                  else next[stopId] = value;
-                  commitPlannerEdit({ lastEntryTimes: next });
-                }}
-                type="time"
-                value={lastEntryTimes[selectedBuiltStop.stop.id] ?? ""}
-              />
-              <small id="planner-last-entry-note">{locale === "ja" ? "閉館時刻とは別の入場締切です。入力した値はあなたが確認した条件として扱います。" : "This is the admission cutoff, not closing time. It is treated as a condition you supplied."}</small>
-            </label>
-            {plan && plan.days.length > 1 ? (
-              <div className="planner-day-move" role="group" aria-label={text.moveDay}>
-                <span>{text.moveDay}</span>
-                <div>
-                  {plan.days.map((_, dayIndex) => (
-                    <button
-                      aria-pressed={dayIndex === activeDay}
-                      className={dayIndex === activeDay ? "is-active" : ""}
-                      key={dayIndex}
-                      onClick={() => moveStopToDay(selectedBuiltStop.stop.id, dayIndex)}
-                      title={text.previewDay(dayIndex + 1)}
-                      type="button"
-                    >
-                      {dayIndex + 1}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-            <button className="planner-remove-stop" onClick={() => removeStopFromPlan(selectedBuiltStop.stop)} type="button">
-              <Icon name="close" size={11} />{text.removeStop}
-            </button>
-            {selectedIntel?.status === "loading" ? (
-              <section className="planner-intel-card is-loading" aria-live="polite">
-                <header><h3>{text.fieldEvidence}</h3></header>
-                <p className="planner-fresh-status"><i aria-hidden="true" />{text.fieldChecking}</p>
-              </section>
-            ) : null}
-            {selectedIntel?.status === "unavailable" ? <p className="planner-intel-unavailable" role="status">{text.fieldUnavailable}</p> : null}
-            {selectedIntel?.status === "ready" && selectedIntel.result ? (() => {
-              const intel = selectedIntel.result;
-              const listedPayment = P0_CORE_ONLY ? null : paymentLabel(intel, locale);
-              const currentDayWindows = day?.date
-                ? googleCurrentOpeningWindowsForDate({
-                  businessStatus: intel.place.businessStatus,
-                  currentOpeningPeriods: intel.place.currentOpeningPeriods,
-                  currentSpecialDays: intel.place.currentSpecialDays,
-                }, day.date)
-                : null;
-              const dayWindows = currentDayWindows ?? (day?.date
-                ? googleOpeningWindowsForDate({
-                  businessStatus: intel.place.businessStatus,
-                  regularOpeningPeriods: intel.place.regularOpeningPeriods,
-                }, day.date)
-                : null);
-              const dayHoursText = dayWindows && dayWindows.length > 0
-                ? dayWindows.map((window) => `${formatWindowClock(window.openMinutes)}–${formatWindowClock(window.closeMinutes)}`).join(" / ")
-                : null;
-              return (
-                <section className="planner-intel-card" aria-label={`${selectedBuiltStop.stop.name} · ${text.fieldEvidence}`}>
-                  <header>
-                    <h3>{text.fieldEvidence}</h3>
-                    <small>{intel.analyzedBy === "anthropic" ? text.aiAudited : text.rulesAudited}</small>
-                  </header>
-                  {!P0_CORE_ONLY && intel.place.photoName ? (
-                    <a className="planner-intel-hero" href={intel.place.googleMapsUrl} key={intel.place.photoName} rel="noreferrer" target="_blank">
-                      {/* Google place photos are proxied at request time and are not stored. */}
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img alt={intel.place.name} loading="lazy" onError={handlePhotoError} src={`/api/place-photo?name=${encodeURIComponent(intel.place.photoName)}`} />
-                    </a>
-                  ) : null}
-                  {!P0_CORE_ONLY && intel.place.photoAttribution ? (
-                    <a className="planner-photo-credit" href={intel.place.photoAttribution.uri} rel="noreferrer" target="_blank">{text.photoLabel} {intel.place.photoAttribution.name}</a>
-                  ) : null}
-                  <div className="planner-intel-facts">
-                    <span className={intel.place.openNow === false ? "is-warning" : ""}>
-                      {intel.place.openNow === true ? text.openNow : intel.place.openNow === false ? text.closedNow : text.hoursUnknown}
-                    </span>
-                    {dayWindows !== null ? (
-                      dayHoursText
-                        ? <span>{text.dayHours(dayHoursText)}</span>
-                        : <span className="is-warning">{text.dayClosed}</span>
-                    ) : null}
-                    {listedPayment ? <span className={intel.place.payment.cashOnly === true ? "is-warning" : ""}>{listedPayment}</span> : null}
-                    {intel.place.websiteUrl === null ? <span className="is-warning">{text.noWebsite}</span> : null}
-                    {!P0_CORE_ONLY && intel.place.rating !== null ? (
-                      <span>★ {intel.place.rating.toFixed(1)} · {intel.place.userRatingCount?.toLocaleString(locale === "ja" ? "ja-JP" : "en-US") ?? "—"}</span>
-                    ) : null}
-                  </div>
-                  <small className="planner-evidence-provenance">
-                    Google Places · {formatCheckedAt(intel.checkedAt, locale)} · {currentDayWindows !== null
-                      ? (locale === "ja" ? "指定日を含む現在の営業時間" : "current hours covering this date")
-                      : (locale === "ja" ? "通常週の営業時間（祝日・臨時変更は未確認）" : "regular weekly hours; holidays and exceptions unverified")}
-                  </small>
-                  {intel.place.address ? <p className="planner-intel-address">{intel.place.address}</p> : null}
-                  {!P0_CORE_ONLY ? <p className="planner-intel-summary">{intel.analysis.summary}</p> : null}
-                  {!P0_CORE_ONLY && intel.analysis.signals.length > 0 ? (
-                    <ul className="planner-intel-signals">
-                      {intel.analysis.signals.slice(0, 2).map((signal, signalIndex) => (
-                        <li className={`is-${signal.severity}`} key={`${signal.kind}-${signalIndex}`}>
-                          <i aria-hidden="true" />
-                          <div><b>{signal.title}</b><p>{signal.detail}</p><small>{signal.evidence}</small></div>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
-                  {!P0_CORE_ONLY && intel.reviews.length > 0 ? (
-                    <div className="planner-intel-reviews">
-                      <h4>{text.recentVoices}</h4>
-                      {intel.reviews.slice(0, 1).map((review, reviewIndex) => (
-                        <blockquote key={`${review.authorName}-${reviewIndex}`}>
-                          <p>{review.text}</p>
-                          <footer>
-                            <span>{review.rating !== null ? `★ ${review.rating}` : ""} {review.relativeTime}</span>
-                            <a href={review.authorUri ?? review.googleMapsUri ?? intel.place.googleMapsUrl} rel="noreferrer" target="_blank">{review.authorName} ↗</a>
-                          </footer>
-                        </blockquote>
-                      ))}
-                    </div>
-                  ) : null}
-                  <div className="planner-intel-links">
-                    {!P0_CORE_ONLY ? <a href={intel.links.x} rel="noreferrer" target="_blank">{text.latestX} ↗</a> : null}
-                    {!P0_CORE_ONLY ? <a href={intel.links.instagram} rel="noreferrer" target="_blank">{text.instagram} ↗</a> : null}
-                    {intel.place.websiteUrl ? <a href={intel.place.websiteUrl} rel="noreferrer" target="_blank">{text.official} ↗</a> : null}
-                    <a href={intel.place.googleMapsUrl} rel="noreferrer" target="_blank">Google Maps ↗</a>
-                  </div>
-                </section>
-              );
-            })() : null}
-
-            <div className="planner-inspector-actions">
-              {aiEnabled ? (
-                <button
-                  className="planner-check-button"
-                  disabled={selectedCheckLoading || selectedCheckReady}
-                  onClick={() => checkPlace(selectedBuiltStop.stop)}
-                  type="button"
-                >
-                  <i aria-hidden="true" />{selectedCheckLoading ? text.fieldChecking : selectedCheckReady ? text.fieldChecked : selectedCheckRetry ? text.fieldRetry : text.fieldCheck}
-                </button>
-              ) : null}
-              <a href={googleMapsSearchUrl(selectedBuiltStop.stop)} rel="noreferrer" target="_blank">Google Maps ↗</a>
-            </div>
-
-            {selectedFresh?.status === "loading" ? (
-              <section className="planner-fresh-card is-loading" aria-live="polite">
-                <header><span aria-hidden="true"><Icon name="signal" size={15} /></span><div><h3>{text.freshHeading}</h3><small>{text.freshAiRole}</small></div></header>
-                <p className="planner-fresh-status"><i aria-hidden="true" />{text.freshLoading}</p>
-              </section>
-            ) : null}
-
-            {selectedFresh?.status === "unavailable" ? (
-              <section className="planner-fresh-card" aria-live="polite">
-                <header><span aria-hidden="true"><Icon name="signal" size={15} /></span><div><h3>{text.freshHeading}</h3><small>{text.freshAiRole}</small></div></header>
-                <p className="planner-fresh-empty">{text.freshUnavailable}</p>
-              </section>
-            ) : null}
-
-            {selectedFresh?.status === "paused" ? (
-              <section className="planner-fresh-card">
-                <header><span aria-hidden="true"><Icon name="signal" size={15} /></span><div><h3>{text.freshHeading}</h3></div></header>
-                <p className="planner-fresh-empty">{text.freshPaused}</p>
-              </section>
-            ) : null}
-
-            {selectedFresh?.status === "ready" && selectedFresh.result ? (() => {
-              const fresh = selectedFresh.result;
-              return (
-                <details
-                  className="planner-evidence-sources"
-                  aria-label={`${selectedBuiltStop.stop.name} · ${text.freshHeading}`}
-                  key={selectedBuiltStop.stop.id}
-                  onToggle={(event) => {
-                    if ((event.target as HTMLDetailsElement).open) ensureSourcePreviews(fresh.findings.slice(0, 3).map((finding) => finding.url));
-                  }}
-                >
-                  <summary>{text.publicSources} · {fresh.findings.length} <small>{formatCheckedAt(fresh.checkedAt, locale)}</small></summary>
-                  {fresh.findings.length > 0 ? (
-                    <div className="planner-fresh-list">
-                      {fresh.findings.slice(0, 3).map((finding) => (
-                        <a href={finding.url} key={finding.url} rel="noreferrer" target="_blank">
-                          <div>
-                            <span className={`is-${finding.sourceKind}`}>{text.freshSource[finding.sourceKind]}</span>
-                            <small>{finding.age ?? text.freshAgeUnknown}</small>
-                          </div>
-                          <b>{finding.title}</b>
-                          <p>{finding.note}</p>
-                          {sourcePreviews[finding.url]?.imageUrl ? <>
-                            {/* Open Graph preview from the cited page itself; broken images fall back to the media badge. */}
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img alt="" className="planner-fresh-thumb" loading="lazy" onError={handlePhotoError} referrerPolicy="no-referrer" src={sourcePreviews[finding.url].imageUrl ?? undefined} />
-                          </> : null}
-                          <i aria-hidden="true">↗</i>
-                        </a>
-                      ))}
-                    </div>
-                  ) : <p className="planner-fresh-empty">{text.freshEmpty}</p>}
-                </details>
-              );
-            })() : null}
-          </aside>
+          <StopInspector
+            activeDay={activeDay}
+            aiEnabled={aiEnabled}
+            day={day}
+            lastEntryTimes={lastEntryTimes}
+            locale={locale}
+            onCheckPlace={checkPlace}
+            onClose={() => { setInspector(null); setRouteAlternativesExpanded(false); }}
+            onCommitLastEntry={(stopId, value) => {
+              const next = { ...lastEntryTimes };
+              if (!value) delete next[stopId];
+              else next[stopId] = value;
+              commitPlannerEdit({ lastEntryTimes: next });
+            }}
+            onCommitStayMinutes={(stopId, value) => {
+              // Only the user's own edits live here; clearing back to auto
+              // re-exposes the evidence buffer kept in durationOverrides.
+              const next = { ...userStayMinutes };
+              if (!value) delete next[stopId];
+              else next[stopId] = Number(value);
+              commitPlannerEdit({ userStayMinutes: next });
+            }}
+            onEnsureSourcePreviews={ensureSourcePreviews}
+            onMoveStopToDay={moveStopToDay}
+            onPhotoError={handlePhotoError}
+            onRemoveStop={removeStopFromPlan}
+            onToggleSheet={() => setInspectorSheetExpanded((current) => !current)}
+            panelRef={inspectorPanelRef}
+            plan={plan}
+            selectedBuiltStop={selectedBuiltStop}
+            selectedCheckLoading={selectedCheckLoading}
+            selectedCheckReady={selectedCheckReady}
+            selectedCheckRetry={selectedCheckRetry}
+            selectedFresh={selectedFresh}
+            selectedIntel={selectedIntel}
+            selectedStopIndex={selectedStopIndex}
+            sheetExpanded={inspectorSheetExpanded}
+            sourcePreviews={sourcePreviews}
+            userStayMinutes={userStayMinutes}
+          />
         ) : null}
 
         {inspector?.kind === "hotel" && selectedHotel ? (
-          <aside
-            aria-labelledby="planner-hotel-inspector-title"
-            className={`planner-inspector is-hotel${inspectorSheetExpanded ? " is-sheet-full" : ""}`}
-            ref={inspectorPanelRef}
-            role="dialog"
-            tabIndex={-1}
-          >
-            <button className="planner-inspector-close" onClick={() => setInspector(null)} type="button" aria-label={text.close}><Icon name="close" size={13} /></button><button aria-label={locale === "ja" ? (inspectorSheetExpanded ? "シートを縮小" : "シートを全画面に広げる") : (inspectorSheetExpanded ? "Collapse sheet" : "Expand sheet")} className="planner-inspector-expand" onClick={() => setInspectorSheetExpanded((current) => !current)} type="button">{inspectorSheetExpanded ? "▾" : "▴"}</button>
-            <header className="planner-inspector-head">
-              <span className="planner-inspector-num is-hotel" aria-hidden="true"><Icon name="bed" size={17} /></span>
-              <div>
-                <h2 id="planner-hotel-inspector-title">{hotelStayMode === "nightly" ? text.stayNightly : selectedHotel.name}</h2>
-                <p>{text.hotelCandidate}</p>
-              </div>
-            </header>
-            {hotelUsesRecommendations && hotelStayMode === "single" ? (
-              <div className={`planner-hotel-refresh-wrap${hotelPlanDirty ? " is-dirty" : ""}`}>
-                {hotelPlanDirty ? <p>{text.hotelRefreshHint}</p> : null}
-                <button className="planner-hotel-refresh" disabled={hotelRefreshing || !plan} onClick={() => void refreshHotelRecommendations()} type="button">
-                  <Icon name="search" size={14} />
-                  {hotelRefreshing ? text.hotelRefreshing : hotelPlanDirty ? text.hotelRefreshChanged : text.hotelRefresh}
-                </button>
-                {hotelRefreshFailed ? <small role="status">{text.hotelRefreshFailed}</small> : null}
-              </div>
-            ) : null}
-            {hotelRouteContext && hotelRouteContext.spreadKm >= 70 ? (
-              <div className="planner-hotel-wide-note">
-                <Icon name="train" size={15} />
-                <p>{text.hotelWideTrip}</p>
-                <button onClick={() => void enableNightlyHotels()} type="button">{text.stayNightly}</button>
-              </div>
-            ) : null}
-            {plan && plan.days.length >= 2 ? (
-              <div className="planner-stay-mode" role="group" aria-label={text.stayModeHeading}>
-                <button
-                  aria-pressed={hotelStayMode === "single"}
-                  className={hotelStayMode === "single" ? "is-active" : ""}
-                  onClick={() => setHotelStayMode("single")}
-                  type="button"
-                >
-                  {text.staySame}
-                </button>
-                <button
-                  aria-pressed={hotelStayMode === "nightly"}
-                  className={hotelStayMode === "nightly" ? "is-active" : ""}
-                  onClick={() => void enableNightlyHotels()}
-                  type="button"
-                >
-                  {text.stayNightly}
-                </button>
-              </div>
-            ) : null}
-            {(() => {
-              if (hotelStayMode !== "nightly") return null;
-              const nightCandidates = nightlyHotels.status === "ready" ? nightlyHotels.nights.flatMap((night) => night.candidates) : [];
-              const styleAvailable = (style: HotelStyle) => hotelState.candidates.some((candidate) => candidate.styles.includes(style))
-                || nightCandidates.some((candidate) => candidate.styles.includes(style));
-              if (!styleAvailable("luxury")) return null;
-              const choices: Array<{ value: HotelStyleChoice; label: string; enabled: boolean }> = [
-                { value: "recommended", label: text.styleRecommended, enabled: true },
-                { value: "luxury", label: text.styleLuxury, enabled: styleAvailable("luxury") },
-              ];
-              return (
-                <div className="planner-hotel-styles" role="group" aria-label={text.styleNote}>
-                  {choices.map((choice) => (
-                    <button
-                      aria-pressed={hotelStyle === choice.value}
-                      className={hotelStyle === choice.value ? "is-active" : ""}
-                      disabled={!choice.enabled}
-                      key={choice.value}
-                      onClick={() => applyHotelStyle(choice.value)}
-                      type="button"
-                    >
-                      {choice.label}
-                    </button>
-                  ))}
-                </div>
-              );
-            })()}
-            {hotelStayMode === "nightly" ? (
-              <div className="planner-night-list">
-                {nightlyHotels.status === "loading" ? <p className="planner-food-status" role="status">{text.nightlyLoading}</p> : null}
-                {nightlyHotels.status === "unavailable" ? <p className="planner-food-status">{text.nightlyUnavailable}</p> : null}
-                {nightlyHotels.status === "ready" ? nightlyHotels.nights.map((night, nightIndex) => {
-                  const selected = night.candidates.find((candidate) => candidate.id === night.selectedId) ?? null;
-                  const shortlist = hotelShortlist(night.candidates, night.selectedId);
-                  const nightAxes = hotelAxisWinners(night.candidates);
-                  return (
-                    <section className="planner-night" key={`night-${nightIndex}`}>
-                      <header><b>{text.nightLabel(nightIndex + 1)}</b><small>{night.area}</small></header>
-                      {selected ? (
-                        <div className="planner-night-options">
-                          {shortlist.map((candidate) => (
-                            <HotelRecommendationCard
-                              candidate={candidate}
-                              facts={[
-                                candidate.rating !== null ? `★ ${candidate.rating.toFixed(1)} (${candidate.userRatingCount?.toLocaleString(locale === "ja" ? "ja-JP" : "en-US") ?? "—"})` : null,
-                                text.distanceFrom(formatDistanceMeters(candidate.routeAverageDistanceMeters)),
-                              ].filter(Boolean).join(" · ")}
-                              isSelected={candidate.id === selected.id}
-                              key={candidate.id}
-                              locale={locale}
-                              onPhotoError={handlePhotoError}
-                              onSelect={() => selectNightCandidate(nightIndex, candidate.id)}
-                              priceLabel={hotelPriceLabel(candidate)}
-                              showEmptyTags
-                              tags={([
-                                candidate.id === night.candidates[0]?.id ? text.hotelPurposeBalanced : null,
-                                candidate.id === nightAxes.nearestId ? text.hotelPurposeNearest : null,
-                                candidate.id === nightAxes.topRatedId ? text.hotelPurposeRated : null,
-                                candidate.styles.includes("luxury") ? text.styleLuxury : null,
-                              ] as Array<string | null>).filter((tag): tag is string => tag !== null)}
-                            />
-                          ))}
-                        </div>
-                      ) : <p className="planner-food-status">{text.nightlyNightMissing}</p>}
-                    </section>
-                  );
-                }) : null}
-                <p className="planner-food-note">{text.hotelRankNote} {text.styleNote} {text.hotelNoAvailability}</p>
-              </div>
-            ) : (<>
-            {hotelUsesRecommendations ? <div className="planner-hotel-purpose">
-              <b>{text.hotelPurposeHeading}</b>
-              <div role="group" aria-label={text.hotelPurposeHeading}>
-                {([
-                  { purpose: "balanced" as const, label: text.hotelPurposeBalanced, id: hotelState.candidates[0]?.id ?? null },
-                  { purpose: "nearest" as const, label: text.hotelPurposeNearest, id: hotelAxis.nearestId },
-                  { purpose: "rated" as const, label: text.hotelPurposeRated, id: hotelAxis.topRatedId },
-                ]).map((choice) => {
-                  const candidate = choice.id ? hotelState.candidates.find((item) => item.id === choice.id) ?? null : null;
-                  return (
-                    <button
-                      aria-pressed={hotelPurpose === choice.purpose}
-                      className={hotelPurpose === choice.purpose ? "is-active" : ""}
-                      disabled={!candidate}
-                      key={choice.purpose}
-                      onClick={() => candidate && selectHotelCandidate(candidate, choice.purpose)}
-                      type="button"
-                    >
-                      {choice.label}
-                    </button>
-                  );
-                })}
-              </div>
-              <small>{text.hotelPurposeHelp}</small>
-            </div> : null}
-            {renderHotelComparison()}
-            <p className="planner-hotel-reason">
-              {!hotelUsesRecommendations ? text.hotelReasonSpecified
-                : hotelPurpose === "nearest" ? text.hotelReasonNearest
-                : hotelPurpose === "rated" ? text.hotelReasonRated
-                  : hotelPurpose === "value" ? text.hotelReasonValue
-                    : hotelPurpose === "balanced" ? text.hotelReasonTop
-                      : text.hotelReasonPicked}
-            </p>
-            <a className="planner-hotel-hero" href={selectedHotel.googleMapsUrl} key={selectedHotel.id} rel="noreferrer" target="_blank">
-              {selectedHotel.photo ? <>
-                {/* Google place photos are proxied at request time and are not stored. */}
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img alt={selectedHotel.name} onError={handlePhotoError} src={`/api/place-photo?name=${encodeURIComponent(selectedHotel.photo.name)}`} />
-              </> : <span aria-hidden="true"><Icon name="bed" size={26} /></span>}
-              <i>{hotelPriceLabel(selectedHotel)}</i>
-            </a>
-            {selectedHotel.photo?.attribution ? <a className="planner-photo-credit" href={selectedHotel.photo.attribution.uri} rel="noreferrer" target="_blank">{text.photoLabel} {selectedHotel.photo.attribution.name} ↗</a> : null}
-            <div className="planner-hotel-facts">
-              {selectedHotel.rating !== null ? <span className="is-rating">★ {selectedHotel.rating.toFixed(1)} · {selectedHotel.userRatingCount?.toLocaleString(locale === "ja" ? "ja-JP" : "en-US") ?? "—"}</span> : null}
-              <span className={selectedHotel.rakuten?.minCharge ? "is-price" : ""}>{hotelPriceLabel(selectedHotel)}</span>
-              <span>{text.distanceFrom(formatDistanceMeters(selectedHotel.routeAverageDistanceMeters))}</span>
-              {hotelAxisLabels(selectedHotel).map((label) => <span className="is-axis" key={label}>{label}</span>)}
-              {selectedHotel.styles.includes("luxury") ? <span>{text.styleLuxury}</span> : null}
-              {selectedHotel.rakuten?.reviewAverage ? (
-                <a className="is-rakuten" href={selectedHotel.rakuten.url} rel="noreferrer" target="_blank">
-                  {text.rakutenTag(selectedHotel.rakuten.reviewAverage, selectedHotel.rakuten.reviewCount ?? 0)} ↗
-                </a>
-              ) : null}
-              {selectedHotel.payment?.cashOnly === true ? <span>{text.cashOnly}</span> : null}
-              {selectedHotel.payment?.acceptedMethods.includes("credit_card") ? <span>{text.cardsAccepted}</span> : null}
-              {hotelState.fresh.result?.findings.length ? <span>{text.foodFresh(hotelState.fresh.result.findings.length)}</span> : null}
-            </div>
-            <p className="planner-hotel-address">{selectedHotel.address}</p>
-            {selectedHotel.reviews?.[0] ? (
-              <blockquote className="planner-hotel-review">
-                <p>“{selectedHotel.reviews[0].text}”</p>
-                <footer>
-                  <span>{selectedHotel.reviews[0].rating !== null ? `★ ${selectedHotel.reviews[0].rating}` : ""} {selectedHotel.reviews[0].relativeTime ?? ""}</span>
-                  <a href={selectedHotel.reviews[0].googleMapsUrl ?? selectedHotel.googleMapsUrl} rel="noreferrer" target="_blank">{selectedHotel.reviews[0].authorName ?? "Google Maps"} ↗</a>
-                </footer>
-              </blockquote>
-            ) : null}
-            <div className="planner-inspector-actions">
-              <a href={selectedHotel.googleMapsUrl} rel="noreferrer" target="_blank">Google Maps ↗</a>
-              {selectedHotel.websiteUrl ? <a href={selectedHotel.websiteUrl} rel="noreferrer" target="_blank">{text.official} ↗</a> : null}
-            </div>
-            {hotelState.fresh.result?.findings.length ? (
-              <details
-                className="planner-evidence-sources"
-                onToggle={(event) => {
-                  if ((event.target as HTMLDetailsElement).open) ensureSourcePreviews((hotelState.fresh.result?.findings ?? []).slice(0, 3).map((finding) => finding.url));
-                }}
-              >
-                <summary>{text.publicSources} · {hotelState.fresh.result.findings.length}</summary>
-                <div className="planner-fresh-list">
-                  {hotelState.fresh.result.findings.map((finding) => (
-                    <a href={finding.url} key={finding.url} rel="noreferrer" target="_blank">
-                      <div><span className={`is-${finding.sourceKind}`}>{text.freshSource[finding.sourceKind]}</span><small>{finding.age ?? text.freshAgeUnknown}</small></div>
-                      <b>{finding.title}</b><p>{finding.note}</p>
-                      {sourcePreviews[finding.url]?.imageUrl ? <>
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img alt="" className="planner-fresh-thumb" loading="lazy" onError={handlePhotoError} referrerPolicy="no-referrer" src={sourcePreviews[finding.url].imageUrl ?? undefined} />
-                      </> : null}
-                      <i aria-hidden="true">↗</i>
-                    </a>
-                  ))}
-                </div>
-              </details>
-            ) : null}
-            <p className="planner-food-note">
-              {text.hotelRankNote} {hasRakutenHotelEvidence ? `${text.hotelPriceNote} ` : ""}{text.styleNote} {text.hotelNoAvailability}
-            </p>
-            </>)}
-          </aside>
+          <HotelInspector
+            bestHotelTravelMinutes={bestHotelTravelMinutes}
+            hasRakutenHotelEvidence={hasRakutenHotelEvidence}
+            hotelAxis={hotelAxis}
+            hotelAxisLabels={hotelAxisLabels}
+            hotelPlanDirty={hotelPlanDirty}
+            hotelPriceLabel={hotelPriceLabel}
+            hotelPurpose={hotelPurpose}
+            hotelRefreshFailed={hotelRefreshFailed}
+            hotelRefreshing={hotelRefreshing}
+            hotelRouteContext={hotelRouteContext}
+            hotelState={hotelState}
+            hotelStayMode={hotelStayMode}
+            hotelStyle={hotelStyle}
+            hotelTravelMinutesById={hotelTravelMinutesById}
+            hotelUsesRecommendations={hotelUsesRecommendations}
+            locale={locale}
+            nightlyHotels={nightlyHotels}
+            onApplyHotelStyle={applyHotelStyle}
+            onClose={() => setInspector(null)}
+            onEnableNightly={() => void enableNightlyHotels()}
+            onEnsureSourcePreviews={ensureSourcePreviews}
+            onPhotoError={handlePhotoError}
+            onRefreshHotels={() => void refreshHotelRecommendations()}
+            onSelectHotelCandidate={selectHotelCandidate}
+            onSelectNightCandidate={selectNightCandidate}
+            onSelectStayModeSingle={() => setHotelStayMode("single")}
+            onToggleSheet={() => setInspectorSheetExpanded((current) => !current)}
+            panelRef={inspectorPanelRef}
+            plan={plan}
+            selectedHotel={selectedHotel}
+            sheetExpanded={inspectorSheetExpanded}
+            sourcePreviews={sourcePreviews}
+          />
         ) : null}
 
         {activeFoodSlot && activeFoodState ? (
-          <aside
-            aria-labelledby="planner-food-inspector-title"
-            className={`planner-inspector is-food${inspectorSheetExpanded ? " is-sheet-full" : ""}`}
-            ref={inspectorPanelRef}
-            role="dialog"
-            tabIndex={-1}
-          >
-            <button className="planner-inspector-close" onClick={() => setInspector(null)} type="button" aria-label={text.close}><Icon name="close" size={13} /></button><button aria-label={locale === "ja" ? (inspectorSheetExpanded ? "シートを縮小" : "シートを全画面に広げる") : (inspectorSheetExpanded ? "Collapse sheet" : "Expand sheet")} className="planner-inspector-expand" onClick={() => setInspectorSheetExpanded((current) => !current)} type="button">{inspectorSheetExpanded ? "▾" : "▴"}</button>
-            <header className="planner-inspector-head">
-              <span className="planner-inspector-num is-food" aria-hidden="true"><Icon name={activeFoodSlot.kind === "lunch" ? "sun" : "moon"} size={17} /></span>
-              <div>
-                <h2 id="planner-food-inspector-title">{text.mealIdeas}</h2>
-                <p>{activeFoodSlot.area} · {activeFoodSlot.window}</p>
-              </div>
-            </header>
-            <p className="planner-food-rationale">{activeFoodSlot.rationale}</p>
-            {foodRecommendationNotice ? <p className="planner-route-ideas-feedback" role="status">{foodRecommendationNotice}</p> : null}
-            {activeFoodState.status === "loading" ? <p className="planner-food-status" role="status">{text.foodLoading}</p> : null}
-            {activeFoodState.status === "unavailable" ? (
-              <p className="planner-food-status">
-                {text.foodUnavailable}{" "}
-                <a href={foodSearchLinks(activeFoodState.query, activeFoodSlot.area, locale).googleMaps} rel="noreferrer" target="_blank">Google Maps ↗</a>
-              </p>
-            ) : null}
-            {activeFoodState.status === "ready" ? (
-              <div className="planner-food-results">
-                {(mealCandidatesBySlot[activeFoodSlot.id] ?? []).map((candidate, index) => (
-                  <MealRecommendationCard
-                    aiOrdered={activeFoodState.aiOrdered}
-                    candidate={candidate}
-                    foodFresh={activeFoodState.fresh[candidate.id]?.result}
-                    index={index}
-                    isChosen={mealSelections[activeFoodSlot.id] === candidate.id}
-                    isSelected={inspector?.kind === "food" && inspector.candidateId === candidate.id}
-                    key={candidate.id}
-                    locale={locale}
-                    note={activeFoodState.notes[candidate.id]}
-                    onChoose={() => toggleMealSelection(activeFoodSlot.id, candidate.id)}
-                    onPhotoError={handlePhotoError}
-                  />
-                ))}
-                <p className="planner-food-note">{text.foodNote}</p>
-              </div>
-            ) : null}
-          </aside>
+          <MealInspector
+            activeFoodSlot={activeFoodSlot}
+            activeFoodState={activeFoodState}
+            foodRecommendationNotice={foodRecommendationNotice}
+            inspector={inspector}
+            locale={locale}
+            mealCandidatesBySlot={mealCandidatesBySlot}
+            mealSelections={mealSelections}
+            onClose={() => setInspector(null)}
+            onPhotoError={handlePhotoError}
+            onToggleMealSelection={toggleMealSelection}
+            onToggleSheet={() => setInspectorSheetExpanded((current) => !current)}
+            panelRef={inspectorPanelRef}
+            sheetExpanded={inspectorSheetExpanded}
+          />
         ) : null}
 
         {inspector?.kind === "recommendations" && inspector.dayIndex === activeDay ? (
