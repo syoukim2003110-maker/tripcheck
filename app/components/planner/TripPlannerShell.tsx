@@ -9,7 +9,7 @@
 // This file is intentionally scanned by the planner-surface contract tests
 // (app/**/*.tsx), which pin the lifecycle rotation, hydration and storage
 // contracts to the code wherever it lives.
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Icon from "../../PlannerIcons";
 import ErrorState from "./states/ErrorState";
 import LoadingState from "./states/LoadingState";
@@ -54,7 +54,8 @@ import {
 import type { RouteRecommendationPoint } from "../../../lib/route-recommendations";
 import { trackProductEvent, type ProductEventFields, type ProductEventName } from "../../../lib/product-analytics";
 import { rotateTripRequestToken } from "../../../lib/trip-request-identity";
-import { type AirportCode, type MealPlan, type VisitWindow } from "../../../lib/trip-builder";
+import { routeLegKey, type AirportCode, type MealPlan, type VisitWindow } from "../../../lib/trip-builder";
+import { tripScopeWarnings } from "../../../lib/trip-scope";
 import {
   removeWishlistPlace,
   updateWishlistPlaceConstraints,
@@ -930,6 +931,20 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
   useEffect(() => {
     if (inputStep !== "conditions" || hasPlan) setManualPinTarget(null);
   }, [hasPlan, inputStep]);
+  // TC-062: scope warnings when the resolved trip leaves supported territory
+  // (border crossing, multiple time zones) or measured transit boardings show
+  // a ferry ride. Only boardings the current plan's legs actually consume are
+  // scanned, so evidence for an edited-away leg cannot keep a warning alive.
+  const scopeWarnings = useMemo(() => {
+    if (!plan) return [];
+    const boardingSteps = plan.days.flatMap((day) => day.legs.flatMap((leg) => (
+      prefetchTransitSteps[routeLegKey(leg.from.id, leg.to.id)]?.steps ?? []
+    )));
+    return tripScopeWarnings(
+      [...resolvedStops, ...(resolvedBase ? [resolvedBase] : [])],
+      boardingSteps,
+    );
+  }, [plan, prefetchTransitSteps, resolvedBase, resolvedStops]);
   const autoBumpedDaysRef = useRef(0);
   useEffect(() => {
     if (maxParsedDay <= tripDays || maxParsedDay > 14) return;
@@ -2055,6 +2070,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
                 regionalCoverage={regionalCoverage}
                 resultStateCopy={resultStateCopy}
                 routeFactCount={routeFactCount}
+                scopeWarnings={scopeWarnings}
                 tripDays={tripDays}
                 tripFit={tripFit}
               />

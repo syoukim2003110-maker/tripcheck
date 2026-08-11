@@ -9,6 +9,7 @@ import Icon from "../../../PlannerIcons";
 import type { AlternativePlan, FeasibilityResult } from "../../../../lib/feasibility-result.ts";
 import type { BuiltTripPlan } from "../../../../lib/trip-builder.ts";
 import { destinationName, type Destination } from "../../../../lib/destinations.ts";
+import type { TripScopeWarning } from "../../../../lib/trip-scope.ts";
 import { coveragePublicCopy, isDeepCoverageProfile } from "../../../../lib/coverage-profile.ts";
 import { P0_CORE_ONLY, builtPlanTravelMinutes } from "../../../../lib/planner-app-state.ts";
 import {
@@ -33,6 +34,7 @@ type TripSummaryCardProps = {
   routeFactCount: number;
   openingVerificationCount: number;
   regionalCoverage: Parameters<typeof coveragePublicCopy>[0] | null;
+  scopeWarnings: ReadonlyArray<TripScopeWarning>;
   tripFit: { days: ReadonlyArray<{ placeCount: number; slackMinutes: number }> } | null;
   comparisonAlternative: AlternativePlan | null;
   placeWarning: "unavailable" | "quota_exhausted" | false;
@@ -57,6 +59,7 @@ export default function TripSummaryCard({
   routeFactCount,
   openingVerificationCount,
   regionalCoverage,
+  scopeWarnings,
   tripFit,
   comparisonAlternative,
   placeWarning,
@@ -119,6 +122,16 @@ export default function TripSummaryCard({
         {regionalCoverage && !isDeepCoverageProfile(regionalCoverage) ? (
           <p className="planner-beta-region">{text.betaRegion}</p>
         ) : null}
+
+        {/* TC-062: deterministic scope warnings when the trip leaves the
+            supported territory (border crossing, multiple time zones, ferry
+            evidence). One short line per triggered case in the scope.beta
+            badge family; nothing renders otherwise and planning never blocks. */}
+        {scopeWarnings.map((warning) => (
+          <p className="planner-scope-warning" key={warning.kind}>
+            {warning.kind === "border" ? text.scopeBorder : warning.kind === "timezone" ? text.scopeTimezone : text.scopeFerry}
+          </p>
+        ))}
 
         <details className="planner-verdict-details">
           <summary>{locale === "ja" ? "結論の詳細" : "Result details"}</summary>

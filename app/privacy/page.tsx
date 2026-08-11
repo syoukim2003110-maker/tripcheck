@@ -3,10 +3,37 @@ import Link from "next/link";
 export default function PrivacyPage() {
   return (
     <main className="legal-page">
-      <header><p>TRIPCHECK / LEGAL / 001</p><h1>Privacy.</h1><span>Last updated August 9, 2026</span></header>
+      <header><p>TRIPCHECK / LEGAL / 001</p><h1>Privacy.</h1><span>Last updated August 12, 2026</span></header>
+      {/* Spec §14.1 consumer summary: the four-point plain-language layer.
+          The page has no locale routing, so the Japanese block renders first
+          and the English block follows, each clearly labelled. Every bullet
+          must stay true to the technical sections below it. */}
       <section>
-        <h2>The short version</h2>
-        <p>Your itinerary is parsed and scheduled in your browser. Place and hotel text is sent through protected TripCheck endpoints only when a map provider must locate it. TripCheck does not store the itinerary in a server database or make it available for human review. Up to ten recent plans may be kept only in this browser so you can reopen them.</p>
+        <h2>Consumer summary / 要点</h2>
+        <div>
+          <div lang="ja">
+            <h3>日本語</h3>
+            <ul>
+              <li>旅程は基本的にこの端末へ保存</li>
+              <li>経路や施設を探す時だけ、必要な情報を外部サービスへ送信</li>
+              <li>旅程全文をAIへ送らない</li>
+              <li>共有リンクを知る人は旅程を読める</li>
+            </ul>
+          </div>
+          <div lang="en">
+            <h3>English</h3>
+            <ul>
+              <li>Your itinerary stays on this device by default</li>
+              <li>Only what&apos;s needed to look up routes and places is sent to external services, only when you search</li>
+              <li>Your full itinerary is never sent to an AI</li>
+              <li>Anyone with a share link can read that trip</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+      <section>
+        <h2>Technical details / 詳細</h2>
+        <p>The sections below are the full technical layer behind the summary above: what each feature sends, to which provider, and what is stored where. Your itinerary is parsed and scheduled in your browser. Place and hotel text is sent through protected TripCheck endpoints only when a map provider must locate it. TripCheck does not store the itinerary in a server database or make it available for human review. Up to ten recent plans may be kept only in this browser so you can reopen them.<span lang="ja"> 以下は上の要点を裏づける技術的な詳細です。</span></p>
       </section>
       <section>
         <h2>Weather outlook</h2>

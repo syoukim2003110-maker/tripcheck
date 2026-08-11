@@ -235,6 +235,12 @@ export const ui = {
     checkHours: "出発前に営業時間を確認",
     // Copy Deck scope.beta (verbatim): shown only for non-deep coverage regions.
     betaRegion: "この地域はベータ対応です",
+    // TC-062 scope warnings (terms: border crossings, multiple time zones and
+    // ferries are unsupported). One short honest line per triggered case, each
+    // naming a safe next step (spec QA-050); planning is never blocked.
+    scopeBorder: "国をまたぐ旅程は精度が下がります。国境をまたぐ移動は公式サイトで確認してください。",
+    scopeTimezone: "複数の時間帯にまたがる旅程です。時刻は各地の現地時間で確認してください。",
+    scopeFerry: "フェリー区間は対応範囲外です。運航時刻は公式サイトで確認してください。",
     // Copy Deck share.warning (verbatim primary line); the nuance stays secondary.
     shareWarning: "リンクを知っている人は旅程を見られます",
     shareWarningDetail: "このリンク自体が旅程データです。受信者、ブラウザ履歴、拡張機能から読めます。公開場所へ貼らないでください。",
@@ -527,6 +533,12 @@ export const ui = {
     checkHours: "Check opening hours before you go",
     // Copy Deck scope.beta (verbatim): shown only for non-deep coverage regions.
     betaRegion: "Beta coverage in this region",
+    // TC-062 scope warnings (terms: border crossings, multiple time zones and
+    // ferries are unsupported). One short honest line per triggered case, each
+    // naming a safe next step (spec QA-050); planning is never blocked.
+    scopeBorder: "This trip crosses a national border, so accuracy drops. Confirm cross-border legs on official sites.",
+    scopeTimezone: "This trip spans more than one time zone. Confirm each time in the local zone.",
+    scopeFerry: "Ferry legs are outside TripCheck's scope. Confirm sailing times on the official site.",
     // Copy Deck share.warning (verbatim primary line); the nuance stays secondary.
     shareWarning: "Anyone with the full link can view this trip",
     shareWarningDetail: "The link itself contains the trip data. Recipients, browser history and extensions can read it. Do not post it publicly.",

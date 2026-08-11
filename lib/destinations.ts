@@ -1585,7 +1585,8 @@ export function destinationOptions(locale: Locale) {
   ];
 }
 
-function utcOffsetMinutesAt(instant: Date, timeZone: string) {
+/** UTC offset of an IANA zone at an instant, in minutes; null for an unknown zone. */
+export function utcOffsetMinutesAt(instant: Date, timeZone: string) {
   const part = new Intl.DateTimeFormat("en-US", { timeZone, timeZoneName: "longOffset" })
     .formatToParts(instant)
     .find((candidate) => candidate.type === "timeZoneName")?.value;
