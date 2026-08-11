@@ -104,15 +104,18 @@ test("gapEnhancement keeps identity and clamps the added-minute impact", () => {
   assert.equal(gapEnhancement(routeCandidate()).impact.addedMinutes, 0);
 });
 
-test("gapEnhancement assembles rating and detour evidence only from present facts", () => {
+test("gapEnhancement assembles the gap card's rating and detour lines verbatim", () => {
   const full = gapEnhancement(routeCandidate());
-  assert.deepEqual(full.evidence, ["★ 4.4 (2100)", "240m off the route"]);
+  assert.deepEqual(full.evidence, ["★ 4.4 · 2,100", "About 240m from the route"]);
 
   const bare = gapEnhancement(routeCandidate({ rating: null, userRatingCount: null }));
-  assert.deepEqual(bare.evidence, ["240m off the route"]);
+  assert.deepEqual(bare.evidence, ["About 240m from the route"]);
 
   const noCount = gapEnhancement(routeCandidate({ userRatingCount: null }));
-  assert.deepEqual(noCount.evidence, ["★ 4.4", "240m off the route"]);
+  assert.deepEqual(noCount.evidence, ["★ 4.4 · —", "About 240m from the route"]);
+
+  const ja = gapEnhancement(routeCandidate(), { locale: "ja" });
+  assert.deepEqual(ja.evidence, ["★ 4.4 · 2,100", "予定経路から約240m"]);
 });
 
 test("hotelEnhancement reports saved minutes from the travel delta and defaults to 0", () => {
@@ -128,20 +131,26 @@ test("hotelEnhancement reports saved minutes from the travel delta and defaults 
   assert.equal(hotelEnhancement(hotelCandidate(), { travelMinutes: Number.NaN }).impact.savedMinutes, 0);
 });
 
-test("hotelEnhancement folds Google and Rakuten facts into evidence", () => {
+test("hotelEnhancement folds the comparison list's Google and Rakuten fact lines into evidence", () => {
   const enhancement = hotelEnhancement(hotelCandidate({
     rakuten: { minCharge: 18000, reviewAverage: 4.3, reviewCount: 812, url: "https://travel.rakuten.co.jp/x" },
   }));
-  assert.deepEqual(enhancement.evidence, ["★ 4.6 (3200)", "Rakuten ★ 4.3 (812)", "¥18000~"]);
+  assert.deepEqual(enhancement.evidence, ["★ 4.6 (3,200)", "Rakuten Travel ★4.3 (812)", "¥18,000〜"]);
+
+  const ja = hotelEnhancement(hotelCandidate({
+    rakuten: { minCharge: 18000, reviewAverage: 4.3, reviewCount: 812, url: "https://travel.rakuten.co.jp/x" },
+  }), { locale: "ja" });
+  assert.deepEqual(ja.evidence, ["★ 4.6（3,200）", "楽天トラベル ★4.3（812件）", "¥18,000〜"]);
 
   const noFacts = hotelEnhancement(hotelCandidate({ rating: null, userRatingCount: null }));
   assert.deepEqual(noFacts.evidence, []);
 
+  // A Rakuten review with no count renders (0), exactly as the card does.
   const partialRakuten = hotelEnhancement(hotelCandidate({
     rating: null,
     rakuten: { minCharge: null, reviewAverage: 4.1, reviewCount: null, url: "https://travel.rakuten.co.jp/y" },
   }));
-  assert.deepEqual(partialRakuten.evidence, ["Rakuten ★ 4.1"]);
+  assert.deepEqual(partialRakuten.evidence, ["Rakuten Travel ★4.1 (0)"]);
 });
 
 test("mealEnhancement carries the slot kind in its id and clamps the detour", () => {
@@ -159,10 +168,13 @@ test("mealEnhancement carries the slot kind in its id and clamps the detour", ()
 
 test("mealEnhancement prefers planned-open evidence over open-now and includes payment", () => {
   const planned = mealEnhancement(foodCandidate({ plannedOpen: true }), { slotKind: "lunch" });
-  assert.deepEqual(planned.evidence, ["★ 4.2 (5400)", "open at the planned time"]);
+  assert.deepEqual(planned.evidence, ["★ 4.2 · 5,400", "Open for this meal time"]);
 
   const openNow = mealEnhancement(foodCandidate(), { slotKind: "lunch" });
-  assert.deepEqual(openNow.evidence, ["★ 4.2 (5400)", "open now"]);
+  assert.deepEqual(openNow.evidence, ["★ 4.2 · 5,400", "Listed open now"]);
+
+  const ja = mealEnhancement(foodCandidate({ plannedOpen: true }), { slotKind: "lunch", locale: "ja" });
+  assert.deepEqual(ja.evidence, ["★ 4.2 · 5,400", "食事時間に営業予定"]);
 
   const withPayment = mealEnhancement(foodCandidate({
     rating: null,

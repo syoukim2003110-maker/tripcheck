@@ -3,12 +3,15 @@
 // One food candidate card from the meal inspector (spec v2.1
 // recommendation/): photo, AI/tag line, stats, choose toggle and fresh-proof
 // links. Emits onChoose only — the parent owns the meal selection state.
+// The rating/open/payment stat lines come from the shared presentation rules
+// that also feed mealEnhancement, so the card and the tested model agree.
 import type { SyntheticEvent } from "react";
 import Icon from "../../../PlannerIcons";
 import { foodCandidateReason } from "../../../../lib/food-recommendations-client.ts";
 import type { FoodCandidate } from "../../../../lib/google-food.ts";
 import type { FreshVoicesResult } from "../../../../lib/fresh-voices.ts";
 import { ui, type PlannerLocale } from "../../../../lib/presentation/planner-copy.ts";
+import { openStatusLabel, paymentEvidenceLabel, ratingFactLine } from "../../../../lib/presentation/recommendation-presentation.ts";
 
 type MealRecommendationCardProps = {
   candidate: FoodCandidate;
@@ -36,6 +39,9 @@ export default function MealRecommendationCard({
   onPhotoError,
 }: MealRecommendationCardProps) {
   const text = ui[locale];
+  const ratingLine = ratingFactLine(candidate.rating, candidate.userRatingCount, locale);
+  const openStatus = openStatusLabel(candidate, locale);
+  const paymentLabel = paymentEvidenceLabel(candidate);
   return (
     <article
       className={isSelected ? "is-selected" : undefined}
@@ -58,9 +64,9 @@ export default function MealRecommendationCard({
         <h3>{candidate.name}</h3>
         <p>{note?.reason ?? foodCandidateReason(candidate, locale)}</p>
         <div className="planner-food-stats">
-          {candidate.rating !== null ? <span className="is-rating">★ {candidate.rating.toFixed(1)} · {candidate.userRatingCount?.toLocaleString(locale === "ja" ? "ja-JP" : "en-US") ?? "—"}</span> : null}
-          {candidate.plannedOpen === true ? <span>{text.plannedOpen}</span> : candidate.plannedOpen == null && candidate.openNow === true ? <span>{text.openNow}</span> : null}
-          {candidate.paymentEvidence[0] ? <span>{candidate.paymentEvidence[0].label}</span> : null}
+          {ratingLine !== null ? <span className="is-rating">{ratingLine}</span> : null}
+          {openStatus !== null ? <span>{openStatus}</span> : null}
+          {paymentLabel !== null ? <span>{paymentLabel}</span> : null}
           {foodFresh?.findings.length ? <span className="is-fresh">{text.foodFresh(foodFresh.findings.length)}</span> : null}
         </div>
         <button

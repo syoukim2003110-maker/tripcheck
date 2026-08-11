@@ -2,9 +2,10 @@
 
 // One route-idea candidate card (spec v2.1 recommendation/): main select
 // button, add/added action and photo credit. The card consumes the unified
-// Enhancement model via gapEnhancement — its title is the displayed name —
-// so the gap card provably renders from the same shape the other
-// recommendation surfaces can build. Emits onSelect/onAdd only.
+// Enhancement model via gapEnhancement — its title is the displayed name and
+// its evidence lines are the rating/distance facts — so the gap card provably
+// renders from the same shape the other recommendation surfaces build.
+// Emits onSelect/onAdd only.
 import type { SyntheticEvent } from "react";
 import Icon from "../../../PlannerIcons";
 import type { RouteRecommendation } from "../../../../lib/route-recommendations.ts";
@@ -33,9 +34,10 @@ export default function GapRecommendationCard({
   onPhotoError,
 }: GapRecommendationCardProps) {
   const text = ui[locale];
-  // Enhancement.title is defined as the candidate name, so rendering it here
-  // keeps the DOM byte-identical while exercising the unified model.
-  const enhancement = gapEnhancement(candidate);
+  // Enhancement.title is the candidate name and Enhancement.evidence holds
+  // the rating/distance fact lines verbatim, so rendering them here keeps the
+  // DOM byte-identical while exercising the unified model.
+  const enhancement = gapEnhancement(candidate, { locale });
   return (
     <article className={selected ? "is-selected" : undefined}>
       <button
@@ -55,8 +57,7 @@ export default function GapRecommendationCard({
           <small>{candidate.type}</small>
           <b>{enhancement.title}</b>
           <span>
-            {candidate.rating !== null ? <em>★ {candidate.rating.toFixed(1)} · {candidate.userRatingCount?.toLocaleString(locale === "ja" ? "ja-JP" : "en-US") ?? "—"}</em> : null}
-            <em>{text.routeIdeasDistance(candidate.routeDistanceMeters)}</em>
+            {enhancement.evidence.map((line, index) => <em key={index}>{line}</em>)}
           </span>
         </span>
       </button>

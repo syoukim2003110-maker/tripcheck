@@ -32,6 +32,7 @@ import {
   styledBestCandidate,
   hotelAxisWinners,
   hotelShortlist,
+  rakutenMinChargeLine,
 } from "../../../../lib/presentation/recommendation-presentation";
 import { priceBand } from "../../../../lib/presentation/trip-presentation";
 import {
@@ -175,9 +176,9 @@ export function useHotelActions({
 
   const hotelAxis = useMemo(() => hotelAxisWinners(hotelState.candidates), [hotelState.candidates]);
   const hotelPriceLabel = useCallback((candidate: HotelCandidate) => (
-    candidate.rakuten?.minCharge
-      ? `¥${candidate.rakuten.minCharge.toLocaleString(locale === "ja" ? "ja-JP" : "en-US")}〜`
-      : priceBand(candidate.priceLevel, activeDestination) ?? text.priceUnlisted
+    rakutenMinChargeLine(candidate.rakuten, locale)
+      ?? priceBand(candidate.priceLevel, activeDestination)
+      ?? text.priceUnlisted
   ), [activeDestination, locale, text]);
   // v1.1 TC-041: every shortlist slot names its itinerary-derived axis —
   // the overall pick, the least-travel base and the review leader. A price

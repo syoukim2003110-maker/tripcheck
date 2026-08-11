@@ -4,7 +4,9 @@
 // refresh, the wide-trip note, stay-mode toggle and style chooser, the
 // nightly night shortlists and the single-stay purpose group, comparison,
 // hero, facts, review, links and evidence sources. Every hotel data
-// computation stays with the parent; this component owns the DOM only.
+// computation stays with the parent; this component owns the DOM only. The
+// rating and Rakuten fact lines come from the shared presentation rules that
+// also feed hotelEnhancement, so the inspector and the tested model agree.
 import type { RefObject, SyntheticEvent } from "react";
 import Icon from "../../../PlannerIcons";
 import HotelRecommendationCard from "../recommendation/HotelRecommendationCard";
@@ -19,7 +21,7 @@ import {
   type SourcePreviewState,
 } from "../../../../lib/planner-app-state.ts";
 import { formatDistanceMeters } from "../../../../lib/presentation/trip-presentation.ts";
-import { hotelAxisWinners, hotelShortlist } from "../../../../lib/presentation/recommendation-presentation.ts";
+import { hotelAxisWinners, hotelShortlist, rakutenReviewLine, ratingFactLine } from "../../../../lib/presentation/recommendation-presentation.ts";
 import { ui, type PlannerLocale } from "../../../../lib/presentation/planner-copy.ts";
 
 type HotelInspectorProps = {
@@ -92,6 +94,8 @@ export default function HotelInspector({
   onPhotoError,
 }: HotelInspectorProps) {
   const text = ui[locale];
+  const selectedRatingLine = ratingFactLine(selectedHotel.rating, selectedHotel.userRatingCount, locale);
+  const selectedRakutenLine = rakutenReviewLine(selectedHotel.rakuten, locale);
 
   function renderHotelComparison() {
     if (!selectedHotel || hotelState.candidates.length <= 1) return null;
@@ -117,11 +121,7 @@ export default function HotelInspector({
                 aiNote={aiNote}
                 candidate={candidate}
                 facts={[
-                  candidate.rating !== null
-                    ? locale === "ja"
-                      ? `★ ${candidate.rating.toFixed(1)}（${candidate.userRatingCount?.toLocaleString("ja-JP") ?? "—"}）`
-                      : `★ ${candidate.rating.toFixed(1)} (${candidate.userRatingCount?.toLocaleString("en-US") ?? "—"})`
-                    : null,
+                  ratingFactLine(candidate.rating, candidate.userRatingCount, locale, "compare-paren"),
                   hotelTravelMinutesById[candidate.id] !== undefined
                     ? locale === "ja"
                       ? `全日程の移動 約${hotelTravelMinutesById[candidate.id]}分${Number.isFinite(bestHotelTravelMinutes) && hotelTravelMinutesById[candidate.id] > bestHotelTravelMinutes ? `（最短比 +${hotelTravelMinutesById[candidate.id] - bestHotelTravelMinutes}分）` : ""}`
@@ -134,7 +134,7 @@ export default function HotelInspector({
                 onPhotoError={onPhotoError}
                 onSelect={() => onSelectHotelCandidate(candidate)}
                 priceLabel={hotelPriceLabel(candidate)}
-                rakutenLine={candidate.rakuten?.reviewAverage ? text.rakutenTag(candidate.rakuten.reviewAverage, candidate.rakuten.reviewCount ?? 0) : null}
+                rakutenLine={rakutenReviewLine(candidate.rakuten, locale)}
                 tags={tags}
               />
             );
@@ -241,7 +241,7 @@ export default function HotelInspector({
                       <HotelRecommendationCard
                         candidate={candidate}
                         facts={[
-                          candidate.rating !== null ? `★ ${candidate.rating.toFixed(1)} (${candidate.userRatingCount?.toLocaleString(locale === "ja" ? "ja-JP" : "en-US") ?? "—"})` : null,
+                          ratingFactLine(candidate.rating, candidate.userRatingCount, locale, "ascii-paren"),
                           text.distanceFrom(formatDistanceMeters(candidate.routeAverageDistanceMeters)),
                         ].filter(Boolean).join(" · ")}
                         isSelected={candidate.id === selected.id}
@@ -311,14 +311,14 @@ export default function HotelInspector({
       </a>
       {selectedHotel.photo?.attribution ? <a className="planner-photo-credit" href={selectedHotel.photo.attribution.uri} rel="noreferrer" target="_blank">{text.photoLabel} {selectedHotel.photo.attribution.name} ↗</a> : null}
       <div className="planner-hotel-facts">
-        {selectedHotel.rating !== null ? <span className="is-rating">★ {selectedHotel.rating.toFixed(1)} · {selectedHotel.userRatingCount?.toLocaleString(locale === "ja" ? "ja-JP" : "en-US") ?? "—"}</span> : null}
+        {selectedRatingLine !== null ? <span className="is-rating">{selectedRatingLine}</span> : null}
         <span className={selectedHotel.rakuten?.minCharge ? "is-price" : ""}>{hotelPriceLabel(selectedHotel)}</span>
         <span>{text.distanceFrom(formatDistanceMeters(selectedHotel.routeAverageDistanceMeters))}</span>
         {hotelAxisLabels(selectedHotel).map((label) => <span className="is-axis" key={label}>{label}</span>)}
         {selectedHotel.styles.includes("luxury") ? <span>{text.styleLuxury}</span> : null}
-        {selectedHotel.rakuten?.reviewAverage ? (
+        {selectedRakutenLine !== null && selectedHotel.rakuten ? (
           <a className="is-rakuten" href={selectedHotel.rakuten.url} rel="noreferrer" target="_blank">
-            {text.rakutenTag(selectedHotel.rakuten.reviewAverage, selectedHotel.rakuten.reviewCount ?? 0)} ↗
+            {selectedRakutenLine} ↗
           </a>
         ) : null}
         {selectedHotel.payment?.cashOnly === true ? <span>{text.cashOnly}</span> : null}
