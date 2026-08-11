@@ -10,7 +10,7 @@ import type { AlternativePlan, FeasibilityResult } from "../../../../lib/feasibi
 import type { BuiltTripPlan } from "../../../../lib/trip-builder.ts";
 import { destinationName, type Destination } from "../../../../lib/destinations.ts";
 import { coveragePublicCopy } from "../../../../lib/coverage-profile.ts";
-import { P0_CORE_ONLY } from "../../../../lib/planner-app-state.ts";
+import { P0_CORE_ONLY, builtPlanTravelMinutes } from "../../../../lib/planner-app-state.ts";
 import {
   alternativeCopy,
   alternativeLossCopy,
@@ -188,9 +188,8 @@ export default function TripSummaryCard({
           const currentMetrics = {
             hardConflictCount: plan.scheduleConflictCount + plan.deferredUnavailableStops.length,
             minimumSlackMinutes: populated.length > 0 ? Math.min(...populated.map((fitDay) => fitDay.slackMinutes)) : null,
-            travelMinutes: plan.days.reduce((total, planDay) => total
-              + planDay.legs.reduce((sum, leg) => sum + leg.comparison.recommended.minutes, 0)
-              + (planDay.hotelTravelMinutes ?? 0), 0),
+            // The same shared computation the headline stats line uses.
+            travelMinutes: builtPlanTravelMinutes(plan),
           };
           const cards = [
             {

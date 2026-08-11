@@ -191,12 +191,58 @@ try {
     })());
 
     await expect("QA-021 day tabs expose selection", (async () => {
-      const tabs = await page.$$(".planner-day-tabs button");
-      if (tabs.length < 2) throw new Error(`only ${tabs.length} day tabs`);
+      // DoD-A11Y-5 / §12.3: the switcher is a real WAI-ARIA tablist — roving
+      // tabindex, aria-selected (aria-current is gone), aria-controls to the
+      // labelled tabpanel, and arrow keys move the selection (automatic
+      // activation: selection follows focus).
+      const semantics = await page.evaluate(() => {
+        const list = document.querySelector(".planner-day-tabs");
+        const tabs = [...(list?.querySelectorAll("[role=\"tab\"]") ?? [])];
+        const panel = document.getElementById("planner-day-panel");
+        return {
+          listRole: list?.getAttribute("role") ?? null,
+          tabCount: tabs.length,
+          selectedCount: tabs.filter((tab) => tab.getAttribute("aria-selected") === "true").length,
+          controlsPanel: tabs.length > 0 && tabs.every((tab) => tab.getAttribute("aria-controls") === "planner-day-panel"),
+          rovingOk: tabs.filter((tab) => tab.tabIndex === 0).length === 1
+            && tabs.every((tab) => tab.tabIndex === 0 || tab.tabIndex === -1),
+          hasAriaCurrent: tabs.some((tab) => tab.hasAttribute("aria-current")),
+          panelRole: panel?.getAttribute("role") ?? null,
+          panelLabelledBy: panel?.getAttribute("aria-labelledby") ?? null,
+        };
+      });
+      if (semantics.listRole !== "tablist") throw new Error(`day switcher role is ${semantics.listRole}, not tablist`);
+      if (semantics.tabCount < 2) throw new Error(`only ${semantics.tabCount} day tabs`);
+      if (semantics.selectedCount !== 1) throw new Error(`${semantics.selectedCount} tabs claim aria-selected`);
+      if (!semantics.controlsPanel) throw new Error("tabs do not aria-controls the day panel");
+      if (!semantics.rovingOk) throw new Error("roving tabindex is broken");
+      if (semantics.hasAriaCurrent) throw new Error("aria-current lingers; aria-selected owns selection");
+      if (semantics.panelRole !== "tabpanel") throw new Error(`day panel role is ${semantics.panelRole}, not tabpanel`);
+      if (!semantics.panelLabelledBy) throw new Error("tabpanel is not aria-labelledby a tab");
+
+      // Clicking a tab selects it and relabels the panel from that tab.
+      const tabs = await page.$$(".planner-day-tabs [role=\"tab\"]");
       await tabs[1].click();
       await page.waitForFunction(() => {
-        const buttons = [...document.querySelectorAll(".planner-day-tabs button")];
-        return buttons[1]?.getAttribute("aria-current") === "true" || buttons[1]?.getAttribute("aria-current") === "page";
+        const buttons = [...document.querySelectorAll(".planner-day-tabs [role=\"tab\"]")];
+        return buttons[1]?.getAttribute("aria-selected") === "true"
+          && document.getElementById("planner-day-panel")?.getAttribute("aria-labelledby") === buttons[1]?.id;
+      }, { timeout: 5_000 });
+
+      // ArrowRight moves both focus and selection; Home returns to day 1.
+      await tabs[1].focus();
+      await page.keyboard.press("ArrowRight");
+      await page.waitForFunction(() => {
+        const buttons = [...document.querySelectorAll(".planner-day-tabs [role=\"tab\"]")];
+        const expected = buttons.length > 2 ? 2 : 0;
+        return buttons[expected]?.getAttribute("aria-selected") === "true"
+          && document.activeElement === buttons[expected];
+      }, { timeout: 5_000 });
+      await page.keyboard.press("Home");
+      await page.waitForFunction(() => {
+        const buttons = [...document.querySelectorAll(".planner-day-tabs [role=\"tab\"]")];
+        return buttons[0]?.getAttribute("aria-selected") === "true"
+          && document.getElementById("planner-day-panel")?.getAttribute("aria-labelledby") === buttons[0]?.id;
       }, { timeout: 5_000 });
     })());
 

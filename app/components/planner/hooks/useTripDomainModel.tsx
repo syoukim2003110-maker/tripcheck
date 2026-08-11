@@ -1113,6 +1113,17 @@ export function usePlannerViewModel({
     // its own action — reduce the candidate list to 15 places or fewer.
     + (feasibilityResult?.unknownCause === "COMPUTATION_LIMIT" ? 1 : 0)
     + (placeWarning ? 1 : 0);
+  // Copy Deck plan.stats: the trip totals line under the headline reuses the
+  // exact numbers the collapsed verdict details already show — the shared
+  // builtPlanTravelMinutes computation and the fit engine's per-day slack —
+  // never a second, diverging tally.
+  const tripStats = useMemo(() => plan && tripFit
+    ? {
+      placeCount: plan.scheduledStopCount,
+      travelMinutes: builtPlanTravelMinutes(plan),
+      bufferMinutes: tripFit.days.reduce((sum, fitDay) => sum + Math.max(0, fitDay.slackMinutes), 0),
+    }
+    : null, [plan, tripFit]);
   // Copy Deck plan.state.conditional: the headline's check count is the same
   // real number the issue chip shows — never a separate, invented tally.
   const resultStateCopy = feasibilityResult
@@ -1297,6 +1308,7 @@ export function usePlannerViewModel({
     selectedIntel,
     selectedRouteRecommendation,
     selectedStopIndex,
+    tripStats,
     unknownHoursStops,
     unresolvedReviewedCount,
     visibleBuildStages,

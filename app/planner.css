@@ -767,7 +767,10 @@ body:has(.trip-planner-app) {
 .planner-trip-days button { align-items: center; background: white; border: 0; border-radius: 10px; color: var(--pl-ink); display: flex; font-size: 18px; height: 44px; justify-content: center; width: 44px; }
 .planner-trip-days button:disabled { cursor: not-allowed; opacity: .28; }
 .planner-trip-days output { font-size: 11px; font-variant-numeric: tabular-nums; font-weight: 800; min-width: 58px; text-align: center; }
-.planner-day-tabs { display: flex; gap: 5px; margin: 12px 0 10px; overflow-x: auto; padding: 0 0 3px; scrollbar-width: thin; }
+/* TC-055: the day rail stays pinned while a long day scrolls. It sticks to
+   the scrollport top (below the mobile view toggle on phones — see the 840px
+   block) and keeps its own inner horizontal scroll when days overflow. */
+.planner-day-tabs { background: var(--pl-panel); display: flex; gap: 5px; margin: 12px 0 10px; overflow-x: auto; padding: 0 0 3px; position: sticky; scrollbar-width: thin; top: 0; z-index: 20; }
 .planner-day-tabs button {
   align-items: center;
   background: transparent;
@@ -798,6 +801,12 @@ body:has(.trip-planner-app) {
 .planner-day-tabs button.is-day-6 { --day-color: #0F766E; }
 .planner-day-tabs button.is-day-7 { --day-color: #A16207; }
 .planner-day-tabs button.is-active { background: color-mix(in srgb, var(--day-color) 9%, white); border-bottom-color: var(--day-color); color: var(--pl-ink); }
+
+/* Copy Deck plan.stats: headline → one compact totals line, issue chip on
+   the right. TC-029 keeps audit counts out of this default view. */
+.planner-headline-facts { align-items: center; display: flex; flex-wrap: wrap; gap: 6px 10px; margin-top: 7px; }
+.planner-trip-stats { color: var(--pl-ink-2); font-size: 12px; font-variant-numeric: tabular-nums; font-weight: 650; margin: 0; }
+.planner-headline-facts .planner-issue-chip { flex: 0 0 auto; margin-left: auto; margin-top: 0; }
 
 /* v1.1 issue surface: one chip in the header, one card with per-cause rows. */
 .planner-issue-chip { background: var(--pl-warn-bg); border: 1px solid var(--pl-warn-border); border-radius: 11px; color: var(--pl-warn-ink); font-size: 11.5px; font-weight: 800; justify-self: start; margin-top: 7px; min-height: 34px; padding: 5px 11px; }
@@ -850,10 +859,12 @@ details.planner-excluded { display: block; }
 .planner-regional-coverage summary { min-height: 28px; }
 .planner-day-summary small { color: var(--pl-muted); font-size: 10.5px; max-width: 100%; text-align: left; }
 .planner-day-summary em { background: var(--pl-warn-bg); border: 1px solid var(--pl-warn-border); border-radius: 9px; color: var(--pl-warn-ink); font-size: 10.5px; font-style: normal; font-weight: 650; max-width: 100%; padding: 6px 9px; text-align: left; }
-.planner-day-metrics { display: grid; gap: 6px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.planner-day-metrics > span { background: var(--pl-tile); border-radius: 10px; display: grid; min-width: 0; padding: 7px 8px; }
-.planner-day-metrics > span > span { color: var(--pl-muted); font-size: 10px; font-weight: 700; }
-.planner-day-metrics > span > b { font-family: inherit; font-size: 12px; font-variant-numeric: tabular-nums; font-weight: 800; letter-spacing: 0; line-height: 1.3; margin: 1px 0 0; overflow: hidden; text-overflow: ellipsis; }
+/* TC-032: the clock range and planned/available/travel totals relocated from
+   the day header into the day-settings disclosure. */
+.planner-day-window-facts { display: grid; gap: 6px; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0 0 7px; }
+.planner-day-window-facts > span { background: var(--pl-tile); border-radius: 10px; display: grid; min-width: 0; padding: 7px 8px; }
+.planner-day-window-facts > span > small { color: var(--pl-muted); font-size: 10px; font-weight: 700; }
+.planner-day-window-facts > span > b { font-family: inherit; font-size: 12px; font-variant-numeric: tabular-nums; font-weight: 800; letter-spacing: 0; line-height: 1.3; margin: 1px 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .planner-day-settings { border-top: 1px solid var(--pl-line); }
 .planner-day-settings > summary { color: var(--pl-muted); font-size: 10.5px; font-weight: 750; min-height: 36px; padding: 9px 1px 0; }
 .planner-day-settings[open] > summary { margin-bottom: 7px; }
@@ -1732,6 +1743,10 @@ div.planner-route-ideas-empty { display: grid; gap: 8px; }
   .trip-planner-app.is-result.is-mobile-map .planner-mobile-result-toggle { position: static; }
   .planner-mobile-result-toggle button { background: transparent; border: 0; border-radius: 999px; color: var(--pl-muted); font-size: 11px; font-weight: 750; min-height: 44px; padding: 0 14px; }
   .planner-mobile-result-toggle button.is-active { background: var(--pl-ink); color: white; }
+  /* TC-055: the sticky day rail sits below the sticky view toggle (top 2px +
+     3px padding ×2 + 44px buttons) and under its z-index 50, so the view
+     switch stays reachable while the rail stays on screen. */
+  .planner-day-tabs { top: 54px; }
   /* bottom-sheet grab handle */
   .planner-sheet::before {
     background: #d9d9e0;
@@ -1852,8 +1867,8 @@ div.planner-route-ideas-empty { display: grid; gap: 8px; }
   .planner-day-summary { gap: 4px; padding-bottom: 6px; }
   .planner-day-summary b { font-size: 19px; }
   .planner-day-time-bar { margin-top: 4px; }
-  .planner-day-metrics { gap: 4px; }
-  .planner-day-metrics > span { padding: 4px 6px; }
+  .planner-day-window-facts { gap: 4px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .planner-day-window-facts > span { padding: 4px 6px; }
   .planner-result-menu > div { max-width: calc(100vw - 24px); }
   .planner-build-mode > div { grid-template-columns: 1fr; }
   .planner-map-chip span { max-width: 96px; }
@@ -1884,9 +1899,9 @@ div.planner-route-ideas-empty { display: grid; gap: 8px; }
   .planner-building-view { padding-left: 12px; padding-right: 12px; }
   .planner-top-actions { gap: 5px; }
   .planner-language button { padding-left: 8px; padding-right: 8px; }
-  .planner-day-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .planner-day-metrics b,
-  .planner-day-metrics small { overflow: visible; text-overflow: clip; white-space: normal; }
+  .planner-day-window-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .planner-day-window-facts b,
+  .planner-day-window-facts small { overflow: visible; text-overflow: clip; white-space: normal; }
   .planner-priority-picker { display: grid; grid-template-columns: 1fr; }
   .planner-priority-picker button { min-width: 52px; }
 }

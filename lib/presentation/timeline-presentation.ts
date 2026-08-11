@@ -4,7 +4,9 @@
 import type { BuiltTripPlan, FoodRecommendationSlot } from "../trip-builder.ts";
 import type { TransportMode, TravelPreference } from "../time-feasibility.ts";
 import type { EvidenceStatus } from "../feasibility-result.ts";
+import type { DayPresentation } from "../day-presentation.ts";
 import { clockToMinutes, type TransitLegBoarding } from "../planner-app-state.ts";
+import { formatDuration } from "./trip-presentation.ts";
 import { ui, type PlannerLocale } from "./planner-copy.ts";
 
 type BuiltPlanDay = BuiltTripPlan["days"][number];
@@ -27,6 +29,23 @@ export function dayTabDensityLabel(stopCount: number, locale: PlannerLocale) {
 
 export function dayTabTitle(index: number, locale: PlannerLocale) {
   return locale === "ja" ? `${index + 1}日目` : `Day ${index + 1}`;
+}
+
+/** Copy Deck plan.day.summary / TC-032: the day header carries exactly two
+ * numbers — stop count and buffer — read from the DayPresentation single
+ * source (ja 「4か所・余裕1時間30分」 / en "4 stops · 1h 30m buffer"). The
+ * clock range and the remaining totals live in the day-settings disclosure.
+ * A day without stops or without positive slack (fit unknown, or fully
+ * packed) shows the count alone rather than claiming zero buffer. */
+export function dayHeaderSummary(
+  presentation: Pick<DayPresentation, "stopCount" | "slackMinutes">,
+  locale: PlannerLocale,
+) {
+  const count = presentation.stopCount;
+  const stops = locale === "ja" ? `${count}か所` : `${count} stop${count === 1 ? "" : "s"}`;
+  if (count === 0 || presentation.slackMinutes <= 0) return stops;
+  const buffer = formatDuration(presentation.slackMinutes, locale);
+  return locale === "ja" ? `${stops}・余裕${buffer}` : `${stops} · ${buffer} buffer`;
 }
 
 /** Date + weekday heading for the active day, falling back to the day label. */

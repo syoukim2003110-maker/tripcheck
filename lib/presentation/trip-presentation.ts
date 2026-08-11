@@ -103,6 +103,22 @@ export function formatDuration(minutes: number, locale: PlannerLocale) {
   return hours > 0 ? `${hours}h${remainder > 0 ? ` ${remainder}m` : ""}` : `${remainder}m`;
 }
 
+/** Copy Deck plan.stats: the one compact trip-totals line under the state
+ * headline — places, total travel, total buffer (ja 「8か所・移動8時間40分・
+ * 余裕4時間10分」 / en "8 places · 8h 40m travel · 4h 10m buffer"). TC-029:
+ * this is a single line, never an audit block — verification counts stay in
+ * the verdict details. Callers pass the plan's existing totals (the same
+ * numbers the collapsed details use), never a fresh computation. */
+export function tripStatsLine(
+  totals: { placeCount: number; travelMinutes: number; bufferMinutes: number },
+  locale: PlannerLocale,
+) {
+  const travel = formatDuration(totals.travelMinutes, locale);
+  const buffer = formatDuration(totals.bufferMinutes, locale);
+  if (locale === "ja") return `${totals.placeCount}か所・移動${travel}・余裕${buffer}`;
+  return `${totals.placeCount} place${totals.placeCount === 1 ? "" : "s"} · ${travel} travel · ${buffer} buffer`;
+}
+
 export function formatWindowClock(minutes: number) {
   const normalized = ((minutes % 1440) + 1440) % 1440;
   return `${Math.floor(normalized / 60)}:${String(normalized % 60).padStart(2, "0")}`;

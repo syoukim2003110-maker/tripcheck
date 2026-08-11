@@ -1,14 +1,16 @@
 "use client";
 
 // Result header (spec v2.1 summary/): mobile view toggle, verdict label,
-// headline, issue-count chip and the actions menu (edit, verdict details,
-// undo/redo, print, share). Emits events; history and dialogs live above.
+// headline, the Copy Deck plan.stats totals line, issue-count chip and the
+// actions menu (edit, verdict details, undo/redo, print, share). Emits
+// events; history and dialogs live above.
 import type { RefObject } from "react";
 import Icon from "../../../PlannerIcons";
 import { feasibilityStateIcon } from "../icon-maps";
 import type { FeasibilityResult } from "../../../../lib/feasibility-result.ts";
 import type { MobileResultView } from "../../../../lib/planner-app-state.ts";
 import { ui, type PlannerLocale } from "../../../../lib/presentation/planner-copy.ts";
+import { tripStatsLine } from "../../../../lib/presentation/trip-presentation.ts";
 
 type ResultHeaderProps = {
   locale: PlannerLocale;
@@ -17,6 +19,8 @@ type ResultHeaderProps = {
   feasibilityResult: FeasibilityResult | null;
   resultStateCopy: { label: string; headline: string } | null;
   dayTheme: string;
+  /** Copy Deck plan.stats totals — the same numbers the verdict details use. */
+  tripStats: { placeCount: number; travelMinutes: number; bufferMinutes: number } | null;
   scheduledStopCount: number | null;
   deferredAnchorCount: number;
   planIssueCount: number;
@@ -38,6 +42,7 @@ export default function ResultHeader({
   feasibilityResult,
   resultStateCopy,
   dayTheme,
+  tripStats,
   scheduledStopCount,
   deferredAnchorCount,
   planIssueCount,
@@ -71,12 +76,20 @@ export default function ResultHeader({
               : resultStateCopy?.label ?? (locale === "ja" ? "判定結果" : "Feasibility result")}
           </span>
           <h1>{resultStateCopy?.headline ?? dayTheme}</h1>
-          {planIssueCount > 0 ? (
-            <button
-              className="planner-issue-chip"
-              onClick={() => document.getElementById("planner-issue-card")?.scrollIntoView({ behavior: "smooth", block: "center" })}
-              type="button"
-            >{locale === "ja" ? `確認したいこと ${planIssueCount}` : `${planIssueCount} thing${planIssueCount === 1 ? "" : "s"} to check`}</button>
+          {tripStats || planIssueCount > 0 ? (
+            // Copy Deck plan.stats: one compact totals line directly under
+            // the headline, the issue chip on its right (TC-029: no audit
+            // counts here — those stay inside the verdict details).
+            <div className="planner-headline-facts">
+              {tripStats ? <p className="planner-trip-stats">{tripStatsLine(tripStats, locale)}</p> : null}
+              {planIssueCount > 0 ? (
+                <button
+                  className="planner-issue-chip"
+                  onClick={() => document.getElementById("planner-issue-card")?.scrollIntoView({ behavior: "smooth", block: "center" })}
+                  type="button"
+                >{locale === "ja" ? `確認したいこと ${planIssueCount}` : `${planIssueCount} thing${planIssueCount === 1 ? "" : "s"} to check`}</button>
+              ) : null}
+            </div>
           ) : null}
         </div>
         <div className="planner-result-actions">

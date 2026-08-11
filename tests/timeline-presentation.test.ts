@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   activityFlags,
   dayDateLabel,
+  dayHeaderSummary,
   dayTabDensityLabel,
   dayTabTitle,
   durationSourceLabel,
@@ -12,6 +13,7 @@ import {
   transitBoardingText,
   transportModeLabel,
 } from "../lib/presentation/timeline-presentation.ts";
+import { tripStatsLine } from "../lib/presentation/trip-presentation.ts";
 import { ui } from "../lib/presentation/planner-copy.ts";
 
 test("transportModeLabel honors the car preference and falls back on null", () => {
@@ -31,6 +33,37 @@ test("day tab copy states density in the traveller's language", () => {
   assert.equal(dayTabDensityLabel(4, "en"), "4 stops");
   assert.equal(dayTabTitle(0, "ja"), "1日目");
   assert.equal(dayTabTitle(2, "en"), "Day 3");
+});
+
+// Copy Deck plan.day.summary / TC-032: the day header carries exactly two
+// numbers — stop count and buffer — in the deck's exact form.
+test("dayHeaderSummary renders the deck's two-number day line", () => {
+  assert.equal(dayHeaderSummary({ stopCount: 4, slackMinutes: 90 }, "ja"), "4か所・余裕1時間30分");
+  assert.equal(dayHeaderSummary({ stopCount: 4, slackMinutes: 90 }, "en"), "4 stops · 1h 30m buffer");
+  // en says "buffer", never "Spare".
+  assert.match(dayHeaderSummary({ stopCount: 3, slackMinutes: 45 }, "en"), /buffer$/);
+  assert.doesNotMatch(dayHeaderSummary({ stopCount: 3, slackMinutes: 45 }, "en"), /spare/i);
+  assert.equal(dayHeaderSummary({ stopCount: 1, slackMinutes: 60 }, "en"), "1 stop · 1h buffer");
+});
+
+test("dayHeaderSummary drops the buffer claim without positive slack or stops", () => {
+  // Fully packed day (or fit unknown): the count stands alone — no fake 0m buffer.
+  assert.equal(dayHeaderSummary({ stopCount: 4, slackMinutes: 0 }, "ja"), "4か所");
+  assert.equal(dayHeaderSummary({ stopCount: 4, slackMinutes: -30 }, "en"), "4 stops");
+  // An empty day never advertises buffer even though the whole window is free.
+  assert.equal(dayHeaderSummary({ stopCount: 0, slackMinutes: 600 }, "ja"), "0か所");
+  assert.equal(dayHeaderSummary({ stopCount: 0, slackMinutes: 600 }, "en"), "0 stops");
+});
+
+// Copy Deck plan.stats / TC-029: one compact trip totals line, deck form.
+test("tripStatsLine renders places, travel and buffer in the deck's form", () => {
+  const totals = { placeCount: 8, travelMinutes: 520, bufferMinutes: 250 };
+  assert.equal(tripStatsLine(totals, "ja"), "8か所・移動8時間40分・余裕4時間10分");
+  assert.equal(tripStatsLine(totals, "en"), "8 places · 8h 40m travel · 4h 10m buffer");
+  assert.equal(
+    tripStatsLine({ placeCount: 1, travelMinutes: 0, bufferMinutes: 0 }, "en"),
+    "1 place · 0m travel · 0m buffer",
+  );
 });
 
 test("dayDateLabel uses the calendar date only after the user set one", () => {

@@ -70,6 +70,7 @@ import {
   type PlannerLocale,
 } from "../../../lib/presentation/planner-copy";
 import {
+  formatDuration,
   weekdayInfo,
   safeRemovedStopLabels,
 } from "../../../lib/presentation/trip-presentation";
@@ -850,6 +851,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
     selectedIntel,
     selectedRouteRecommendation,
     selectedStopIndex,
+    tripStats,
     unknownHoursStops,
     unresolvedReviewedCount,
     visibleBuildStages,
@@ -1922,6 +1924,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
               scheduledStopCount={plan.scheduledStopCount}
               shareCopied={shareCopied}
               shareTriggerRef={shareTriggerRef}
+              tripStats={tripStats}
             />
             <p aria-atomic="true" aria-live="polite" className="sr-only">{historyAnnouncement}</p>
             {shareDialogOpen ? (
@@ -2042,6 +2045,20 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
 
             <details className="planner-day-settings planner-day-settings-after">
               <summary>{locale === "ja" ? "日程設定と移動データ" : "Day settings and route data"}</summary>
+              {/* TC-032: the clock range and the planned/available/travel
+                  totals relocated here from the day header, still read from
+                  the DayPresentation single source. An invalid day withholds
+                  them exactly like the header does. */}
+              {activeDayPresentation && activeDayPresentation.consistency === "valid" ? (
+                <div aria-label={text.dayBreakdownLabel} className="planner-day-window-facts" role="group">
+                  <span><small>{text.dayWindowLabel}</small><b>{activeDayPresentation.startClock}—{activeDayPresentation.endClock}</b></span>
+                  <span><small>{text.dayPlannedLabel}</small><b>{formatDuration(activeDayPresentation.usedMinutes, locale)}</b></span>
+                  {activeDayPresentation.availableMinutes > 0
+                    ? <span><small>{text.dayAvailableLabel}</small><b>{formatDuration(activeDayPresentation.availableMinutes, locale)}</b></span>
+                    : null}
+                  <span><small>{text.dayTravelLabel}</small><b>{formatDuration(activeDayPresentation.travelMinutes, locale)}</b></span>
+                </div>
+              ) : null}
               <div className="planner-day-time-controls">
                 <label className="planner-day-start">
                   <span>{text.dayStart}</span>

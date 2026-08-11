@@ -1,9 +1,11 @@
 "use client";
 
-// One day of the itinerary (spec v2.1 timeline/): the day summary (clocks,
-// time bar, metrics, forecast, cautions), the tonight-hotel shortcut and the
-// ordered activity/movement list. Renders view state and emits events; it
-// never calls an API or edits the plan itself.
+// One day of the itinerary (spec v2.1 timeline/): the day summary (Copy Deck
+// plan.day.summary two-number header, time bar, forecast, cautions), the
+// tonight-hotel shortcut and the ordered activity/movement list. Renders view
+// state and emits events; it never calls an API or edits the plan itself.
+// TC-032: the clock range and the planned/available/travel totals live in the
+// day-settings disclosure the shell renders below this timeline.
 import { Fragment, type ReactNode } from "react";
 import Icon from "../../../PlannerIcons";
 import PlannerDayTimeBar from "../../../PlannerDayTimeBar";
@@ -20,9 +22,9 @@ import type { TripHoliday } from "../../../../lib/holidays";
 import { poiAccessPolicyForStop } from "../../../../lib/poi-access";
 import { buildDayPresentation, dayPresentationFallbackCopy } from "../../../../lib/day-presentation";
 import { ui, type PlannerLocale } from "../../../../lib/presentation/planner-copy";
-import { formatDuration } from "../../../../lib/presentation/trip-presentation";
 import {
   dayDateLabel,
+  dayHeaderSummary,
   transportModeLabel,
   type DurationEvidenceStatus,
   type TimelineFillerKind,
@@ -103,14 +105,11 @@ export default function DayTimeline({
             </em>
           ) : (
             <>
-              <b>{presentation?.startClock ?? day.startTime}—{presentation?.endClock ?? day.finishTime}</b>
+              <b>{dayHeaderSummary(presentation ?? { stopCount: day.stops.length, slackMinutes: 0 }, locale)}</b>
               <PlannerDayTimeBar day={day} fit={fitDay} locale={locale} />
-              {fitDay && presentation ? (
-                <div className="planner-day-metrics" role="group" aria-label={locale === "ja" ? "この日の時間内訳" : "Day time breakdown"}>
-                  <span><small>{locale === "ja" ? "予定" : "Planned"}</small><b>{formatDuration(presentation.usedMinutes, locale)}</b></span>
-                  <span><small>{locale === "ja" ? "余裕" : "Spare"}</small><b>{formatDuration(Math.max(0, presentation.slackMinutes), locale)}</b></span>
-                </div>
-              ) : dayTravelTotal > 0 ? <small className="planner-day-total">{text.travelTotal(dayTravelTotal)}</small> : null}
+              {!(fitDay && presentation) && dayTravelTotal > 0
+                ? <small className="planner-day-total">{text.travelTotal(dayTravelTotal)}</small>
+                : null}
             </>
           )}
           {weather ? (
