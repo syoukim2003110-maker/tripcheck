@@ -16,6 +16,12 @@ import type { TransportMode, TravelPreference } from "./time-feasibility.ts";
 import type { BuiltTripPlan, Pace, TripBase } from "./trip-builder.ts";
 import type { ParsedWishlistPlace } from "./wishlist-parser.ts";
 import { destinationById, localDateIn, type Destination } from "./destinations.ts";
+import {
+  hardEditBookingDelayTitle,
+  hardEditConflictSentence,
+  type HardEditConflictKind,
+  type PlannerLocale,
+} from "./presentation/planner-copy.ts";
 
 export type TransitLegBoarding = {
   steps: TransitStepSummary[];
@@ -204,6 +210,105 @@ export function builtPlanTravelMinutes(plan: BuiltTripPlan) {
     + (planDay.hotelInboundMinutes ?? 0)
     + planDay.legs.reduce((legSum, leg) => legSum + leg.comparison.recommended.minutes, 0)
   ), 0);
+}
+
+// v1.1 TC-007 / §8.2: the hard-conflict damage a candidate plan would
+// introduce compared to the current one. Only the three protected promises
+// are inspected — booking lateness, a dropped Must stop and the airport
+// cutoff. Every guarded edit path (remove/move/day-count, leg mode, stay
+// time, last entry, day windows) shares this one detector.
+export type PlannerHardEditConflict = {
+  kind: HardEditConflictKind;
+  message: string;
+  minutes: number;
+};
+
+export function plannerHardEditConflicts(
+  plan: BuiltTripPlan,
+  candidatePlan: BuiltTripPlan,
+  locale: PlannerLocale,
+  allowDropStopId?: string,
+): PlannerHardEditConflict[] {
+  const conflicts: PlannerHardEditConflict[] = [];
+  const lateNow = new Map<string, number>();
+  for (const planDay of plan.days) {
+    for (const built of planDay.stops) {
+      if (built.reservationLateMinutes > 0) lateNow.set(built.stop.id, built.reservationLateMinutes);
+    }
+  }
+  for (const planDay of candidatePlan.days) {
+    for (const built of planDay.stops) {
+      if (built.reservationLateMinutes > (lateNow.get(built.stop.id) ?? 0)) {
+        conflicts.push({
+          kind: "booking_late",
+          minutes: built.reservationLateMinutes,
+          message: hardEditConflictSentence("booking_late", built.stop.name, built.reservationLateMinutes, locale),
+        });
+      }
+    }
+  }
+  const scheduledAfter = new Set(candidatePlan.days.flatMap((planDay) => planDay.stops.map((built) => built.stop.id)));
+  for (const planDay of plan.days) {
+    for (const built of planDay.stops) {
+      if (built.priority !== "must" || built.stop.id === allowDropStopId || scheduledAfter.has(built.stop.id)) continue;
+      conflicts.push({
+        kind: "must_drop",
+        minutes: 0,
+        message: hardEditConflictSentence("must_drop", built.stop.name, 0, locale),
+      });
+    }
+  }
+  const deadlineOverrun = (candidate: BuiltTripPlan) => candidate.days.reduce((sum, planDay) => sum + Math.max(0, planDay.deadlineOverrunMinutes ?? 0), 0);
+  const overrunAfter = deadlineOverrun(candidatePlan);
+  if (overrunAfter > deadlineOverrun(plan)) {
+    conflicts.push({
+      kind: "airport_cutoff",
+      minutes: overrunAfter,
+      message: hardEditConflictSentence("airport_cutoff", "", overrunAfter, locale),
+    });
+  }
+  return conflicts;
+}
+
+export type PlannerHardEditEvaluation =
+  | { decision: "apply"; travelDeltaMinutes: number }
+  | { decision: "confirm"; title: string; conflicts: string[] };
+
+/**
+ * The one simulate-then-confirm decision behind every guarded planner edit:
+ * a clean candidate applies instantly, and only NEW hard damage queues the
+ * confirmation dialog. When the only new damage is a single booking delay,
+ * the dialog title becomes the Copy Deck delay sentence.
+ */
+export function evaluatePlannerHardEdit(input: {
+  title: string;
+  locale: PlannerLocale;
+  plan: BuiltTripPlan | null;
+  candidatePlan: BuiltTripPlan | null;
+  allowDropStopId?: string;
+  extraConflicts?: string[];
+}): PlannerHardEditEvaluation {
+  const extra = input.extraConflicts ?? [];
+  if (!input.plan || !input.candidatePlan) {
+    if (extra.length > 0) return { decision: "confirm", title: input.title, conflicts: [...new Set(extra)] };
+    return { decision: "apply", travelDeltaMinutes: 0 };
+  }
+  const hardConflicts = plannerHardEditConflicts(input.plan, input.candidatePlan, input.locale, input.allowDropStopId);
+  const messages = [...new Set([...extra, ...hardConflicts.map((conflict) => conflict.message)])];
+  if (messages.length === 0) {
+    return {
+      decision: "apply",
+      travelDeltaMinutes: builtPlanTravelMinutes(input.candidatePlan) - builtPlanTravelMinutes(input.plan),
+    };
+  }
+  const singleBookingDelay = extra.length === 0 && hardConflicts.length === 1 && hardConflicts[0].kind === "booking_late"
+    ? hardConflicts[0]
+    : null;
+  return {
+    decision: "confirm",
+    title: singleBookingDelay ? hardEditBookingDelayTitle(singleBookingDelay.minutes, input.locale) : input.title,
+    conflicts: messages,
+  };
 }
 
 export function clockToMinutes(value: string) {

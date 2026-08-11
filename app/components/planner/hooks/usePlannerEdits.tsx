@@ -57,7 +57,7 @@ import {
   undoPlannerHistory,
   type PlannerHistory,
 } from "../../../../lib/planner-history";
-import { ui, type PlannerLocale } from "../../../../lib/presentation/planner-copy";
+import { hardEditTitles, legModeLabel, ui, type PlannerLocale } from "../../../../lib/presentation/planner-copy";
 import { shiftPlannerClock } from "../../../../lib/presentation/trip-presentation";
 import {
   boundedRecommendationScore,
@@ -69,6 +69,7 @@ import {
   builtPlanTravelMinutes,
   clampTripDays,
   clockRangeContainsVisit,
+  evaluatePlannerHardEdit,
   upsertResolutionOverride,
   type FoodState,
   type Inspector,
@@ -318,8 +319,10 @@ export function useGuardedPlannerEdits({
   dayEndTimes,
   dayOverrides,
   dayStartTimes,
+  durationOverrides,
   hasPlan,
   itinerary,
+  lastEntryTimes,
   legModeOverrides,
   locale,
   lockedOrderByDay,
@@ -342,6 +345,7 @@ export function useGuardedPlannerEdits({
   showEditToast,
   trackMilestone,
   tripDays,
+  userStayMinutes,
 }: {
   activeDay: number;
   activePlannerContext: TripPlannerContext;
@@ -351,8 +355,11 @@ export function useGuardedPlannerEdits({
   dayEndTimes: Record<number, string>;
   dayOverrides: Record<string, number>;
   dayStartTimes: Record<number, string>;
+  /** Evidence-derived stay buffers; user edits sit on top of them. */
+  durationOverrides: Record<string, number>;
   hasPlan: boolean;
   itinerary: string;
+  lastEntryTimes: Record<string, string>;
   legModeOverrides: Record<string, TransportMode>;
   locale: PlannerLocale;
   lockedOrderByDay: Record<number, string[]>;
@@ -375,46 +382,12 @@ export function useGuardedPlannerEdits({
   showEditToast: (message: string, detail?: string | null) => void;
   trackMilestone: (event: ProductEventName, fields?: ProductEventFields) => void;
   tripDays: number;
+  userStayMinutes: Record<string, number>;
 }) {
-  // Hard-conflict damage a candidate plan would introduce compared to the
-  // current one. Only the three protected promises are inspected (v1.1 §8.2).
-  function hardEditConflicts(candidatePlan: BuiltTripPlan, allowDropStopId?: string) {
-    if (!plan) return [];
-    const conflicts: string[] = [];
-    const lateNow = new Map<string, number>();
-    for (const planDay of plan.days) {
-      for (const built of planDay.stops) {
-        if (built.reservationLateMinutes > 0) lateNow.set(built.stop.id, built.reservationLateMinutes);
-      }
-    }
-    for (const planDay of candidatePlan.days) {
-      for (const built of planDay.stops) {
-        if (built.reservationLateMinutes > (lateNow.get(built.stop.id) ?? 0)) {
-          conflicts.push(locale === "ja"
-            ? `「${built.stop.name}」の予約に${built.reservationLateMinutes}分遅れます`
-            : `You would be ${built.reservationLateMinutes} minutes late for “${built.stop.name}”`);
-        }
-      }
-    }
-    const scheduledAfter = new Set(candidatePlan.days.flatMap((planDay) => planDay.stops.map((built) => built.stop.id)));
-    for (const planDay of plan.days) {
-      for (const built of planDay.stops) {
-        if (built.priority !== "must" || built.stop.id === allowDropStopId || scheduledAfter.has(built.stop.id)) continue;
-        conflicts.push(locale === "ja"
-          ? `必須の「${built.stop.name}」が日程に入らなくなります`
-          : `Must-visit “${built.stop.name}” would no longer fit the plan`);
-      }
-    }
-    const deadlineOverrun = (candidate: BuiltTripPlan) => candidate.days.reduce((sum, planDay) => sum + Math.max(0, planDay.deadlineOverrunMinutes ?? 0), 0);
-    const overrunAfter = deadlineOverrun(candidatePlan);
-    if (overrunAfter > deadlineOverrun(plan)) {
-      conflicts.push(locale === "ja"
-        ? `空港へ向かう締切を${overrunAfter}分超えます`
-        : `The airport cutoff would be missed by ${overrunAfter} minutes`);
-    }
-    return conflicts;
-  }
-
+  // v1.1 TC-007: EVERY plan-affecting edit runs the same simulate-then-confirm
+  // pipeline. The conflict detection itself is the shared, framework-free
+  // evaluatePlannerHardEdit (lib/planner-app-state); this wrapper only builds
+  // the candidate plan from the pending context patch and owns the toast.
   function applyGuardedEdit(input: {
     title: string;
     apply: () => void;
@@ -424,31 +397,35 @@ export function useGuardedPlannerEdits({
     extraConflicts?: string[];
     toast?: string;
   }) {
-    const extra = input.extraConflicts ?? [];
-    if (!plan) {
-      if (extra.length > 0) {
-        setPendingHardEdit({ title: input.title, conflicts: extra, apply: input.apply });
-        return;
-      }
-      input.apply();
+    const candidatePlan = plan
+      ? buildTripFromWishlist(itinerary, input.candidateDays ?? tripDays, pace, locale, { ...activePlannerContext, ...(input.contextPatch ?? {}) })
+      : null;
+    const evaluation = evaluatePlannerHardEdit({
+      title: input.title,
+      locale,
+      plan,
+      candidatePlan,
+      allowDropStopId: input.allowDropStopId,
+      extraConflicts: input.extraConflicts,
+    });
+    if (evaluation.decision === "confirm") {
+      setPendingHardEdit({ title: evaluation.title, conflicts: evaluation.conflicts, apply: input.apply });
       return;
     }
-    const candidateContext: TripPlannerContext = { ...activePlannerContext, ...(input.contextPatch ?? {}) };
-    const candidatePlan = buildTripFromWishlist(itinerary, input.candidateDays ?? tripDays, pace, locale, candidateContext);
-    const conflicts = [...extra, ...hardEditConflicts(candidatePlan, input.allowDropStopId)];
-    if (conflicts.length === 0) {
-      input.apply();
-      if (input.toast) {
-        const travelDelta = builtPlanTravelMinutes(candidatePlan) - builtPlanTravelMinutes(plan);
-        showEditToast(input.toast, travelDelta !== 0
-          ? locale === "ja"
-            ? `移動 ${travelDelta > 0 ? "+" : "−"}${Math.abs(travelDelta)}分`
-            : `travel ${travelDelta > 0 ? "+" : "−"}${Math.abs(travelDelta)} min`
-          : null);
-      }
-      return;
+    input.apply();
+    if (input.toast && plan) {
+      const travelDelta = evaluation.travelDeltaMinutes;
+      showEditToast(input.toast, travelDelta !== 0
+        ? locale === "ja"
+          ? `移動 ${travelDelta > 0 ? "+" : "−"}${Math.abs(travelDelta)}分`
+          : `travel ${travelDelta > 0 ? "+" : "−"}${Math.abs(travelDelta)} min`
+        : null);
     }
-    setPendingHardEdit({ title: input.title, conflicts: [...new Set(conflicts)], apply: input.apply });
+  }
+
+  function plannedStopName(stopId: string) {
+    return plan?.days.flatMap((planDay) => planDay.stops).find((built) => built.stop.id === stopId)?.stop.name
+      ?? (locale === "ja" ? "この場所" : "this stop");
   }
 
   function removeStopFromPlan(stop: RouteStop) {
@@ -497,8 +474,7 @@ export function useGuardedPlannerEdits({
   }
 
   function moveStopToDay(stopId: string, dayIndex: number) {
-    const stopName = plan?.days.flatMap((planDay) => planDay.stops).find((built) => built.stop.id === stopId)?.stop.name
-      ?? (locale === "ja" ? "この場所" : "this stop");
+    const stopName = plannedStopName(stopId);
     if (dayIndex === activeDay) {
       // Tapping the current day releases the stop back to automatic placement.
       if (!(stopId in dayOverrides)) return;
@@ -565,7 +541,8 @@ export function useGuardedPlannerEdits({
   function setLegMode(legKey: string, mode: TransportMode) {
     const next = { ...legModeOverrides };
     // Tapping the already-pinned mode releases the leg back to automatic.
-    if (next[legKey] === mode) delete next[legKey];
+    const releasing = next[legKey] === mode;
+    if (releasing) delete next[legKey];
     else next[legKey] = mode;
     const nextLockedOrder = { ...lockedOrderByDay };
     const dayIndex = plan?.days.findIndex((planDay) => planDay.legs.some((leg) => routeLegKey(leg.from.id, leg.to.id) === legKey)) ?? -1;
@@ -576,7 +553,64 @@ export function useGuardedPlannerEdits({
       if (stillHasPinnedLeg) nextLockedOrder[dayIndex] = day.stops.map((stop) => stop.stop.id);
       else delete nextLockedOrder[dayIndex];
     }
-    commitPlannerEdit({ legModeOverrides: next, lockedOrderByDay: nextLockedOrder });
+    const titles = hardEditTitles[locale];
+    applyGuardedEdit({
+      title: releasing ? titles.legModeAuto : titles.legMode(legModeLabel(mode, locale)),
+      apply: () => commitPlannerEdit({ legModeOverrides: next, lockedOrderByDay: nextLockedOrder }),
+      contextPatch: { legModeOverrides: next, lockedOrderByDay: nextLockedOrder },
+    });
+  }
+
+  function setStayMinutes(stopId: string, minutes: number | null) {
+    // Only the user's own edits live in userStayMinutes; clearing back to
+    // auto re-exposes the evidence buffer kept in durationOverrides.
+    const next = { ...userStayMinutes };
+    if (minutes === null) delete next[stopId];
+    else next[stopId] = minutes;
+    const titles = hardEditTitles[locale];
+    const name = plannedStopName(stopId);
+    applyGuardedEdit({
+      title: minutes === null ? titles.stayMinutesAuto(name) : titles.stayMinutes(name, minutes),
+      apply: () => commitPlannerEdit({ userStayMinutes: next }),
+      contextPatch: { durationOverrides: { ...durationOverrides, ...next } },
+    });
+  }
+
+  function setLastEntryTime(stopId: string, time: string | null) {
+    const next = { ...lastEntryTimes };
+    if (!time) delete next[stopId];
+    else next[stopId] = time;
+    const titles = hardEditTitles[locale];
+    const name = plannedStopName(stopId);
+    applyGuardedEdit({
+      title: time ? titles.lastEntry(name, time) : titles.lastEntryClear(name),
+      apply: () => commitPlannerEdit({ lastEntryTimes: next }),
+      contextPatch: { lastEntryTimes: next },
+    });
+  }
+
+  function setDayStartTime(dayIndex: number, time: string | null) {
+    const next = { ...dayStartTimes };
+    if (!time) delete next[dayIndex];
+    else next[dayIndex] = time;
+    const titles = hardEditTitles[locale];
+    applyGuardedEdit({
+      title: time ? titles.dayStart(dayIndex + 1, time) : titles.dayStartAuto(dayIndex + 1),
+      apply: () => commitPlannerEdit({ dayStartTimes: next }),
+      contextPatch: { dayStartTimes: next },
+    });
+  }
+
+  function setDayEndTime(dayIndex: number, time: string | null) {
+    const next = { ...dayEndTimes };
+    if (!time) delete next[dayIndex];
+    else next[dayIndex] = time;
+    const titles = hardEditTitles[locale];
+    applyGuardedEdit({
+      title: time ? titles.dayEnd(dayIndex + 1, time) : titles.dayEndAuto(dayIndex + 1),
+      apply: () => commitPlannerEdit({ dayEndTimes: next }),
+      contextPatch: { dayEndTimes: next },
+    });
   }
 
   function applyTripAlternative(alternative: AlternativePlan) {
@@ -631,6 +665,10 @@ export function useGuardedPlannerEdits({
     moveStopToDay,
     changeTripDays,
     setLegMode,
+    setStayMinutes,
+    setLastEntryTime,
+    setDayStartTime,
+    setDayEndTime,
     applyTripAlternative,
   };
 }

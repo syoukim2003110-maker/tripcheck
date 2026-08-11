@@ -112,6 +112,13 @@ export type Assumption = {
 
 export type AlternativePlan = TripCounterfactualAlternative;
 
+/**
+ * Why a verdict is UNKNOWN. The computation cap (LIMIT) is a distinct
+ * user-facing cause with its own action (shrink the candidate list); it must
+ * never be blended into a generic "something is unresolved" sentence.
+ */
+export type FeasibilityUnknownCause = "UNRESOLVED_PLACE" | "COMPUTATION_LIMIT";
+
 export type CriticalFactCounts = {
   total: number;
   verified: number;
@@ -122,6 +129,8 @@ export type CriticalFactCounts = {
 
 export type FeasibilityResult = {
   state: FeasibilityState;
+  /** Set only when state is UNKNOWN: which blocker withheld the verdict. */
+  unknownCause: FeasibilityUnknownCause | null;
   minimumDays: number | null;
   /** Qualified subset answer while unresolved/unavailable entries block the verdict. */
   partialMinimumDays: number | null;
@@ -768,8 +777,13 @@ export function deriveFeasibilityResult(
     });
   const assumptions = collectAssumptions(snapshot);
   const hasUnresolvedPlace = plan.unknownEntries.length > 0;
+  // Unresolved places stay the operative blocker; the computation cap only
+  // names itself when everything the traveller typed did resolve.
+  const unknownCause: FeasibilityUnknownCause | null = hasUnresolvedPlace
+    ? "UNRESOLVED_PLACE"
+    : snapshot.solverTimedOut ? "COMPUTATION_LIMIT" : null;
   let state: FeasibilityState;
-  if (snapshot.solverTimedOut || hasUnresolvedPlace) state = "UNKNOWN";
+  if (unknownCause) state = "UNKNOWN";
   else if (conflicts.length > 0) state = "INFEASIBLE_HARD_CONFLICT";
   else if (criticalFacts.unknown > 0) state = "FEASIBLE_IF_ASSUMPTIONS";
   else if (criticalFacts.estimated > 0) state = "PROVISIONAL_FEASIBLE";
@@ -831,6 +845,7 @@ export function deriveFeasibilityResult(
 
   return {
     state,
+    unknownCause,
     minimumDays: fit.minimumDays,
     partialMinimumDays: fit.partialMinimumDays,
     unresolvedPlaceNames: [...plan.unknownEntries],

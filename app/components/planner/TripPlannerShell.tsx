@@ -1010,6 +1010,10 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
     moveStopToDay,
     changeTripDays,
     setLegMode,
+    setStayMinutes,
+    setLastEntryTime,
+    setDayStartTime,
+    setDayEndTime,
     applyTripAlternative,
   } = useGuardedPlannerEdits({
     activeDay,
@@ -1020,8 +1024,10 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
     dayEndTimes,
     dayOverrides,
     dayStartTimes,
+    durationOverrides,
     hasPlan,
     itinerary,
+    lastEntryTimes,
     legModeOverrides,
     locale,
     lockedOrderByDay,
@@ -1044,6 +1050,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
     showEditToast,
     trackMilestone,
     tripDays,
+    userStayMinutes,
   });
 
   // Meal slots interleave with the stop rows by TIME: a slot renders after
@@ -1533,20 +1540,8 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
             locale={locale}
             onCheckPlace={checkPlace}
             onClose={() => { setInspector(null); setRouteAlternativesExpanded(false); }}
-            onCommitLastEntry={(stopId, value) => {
-              const next = { ...lastEntryTimes };
-              if (!value) delete next[stopId];
-              else next[stopId] = value;
-              commitPlannerEdit({ lastEntryTimes: next });
-            }}
-            onCommitStayMinutes={(stopId, value) => {
-              // Only the user's own edits live here; clearing back to auto
-              // re-exposes the evidence buffer kept in durationOverrides.
-              const next = { ...userStayMinutes };
-              if (!value) delete next[stopId];
-              else next[stopId] = Number(value);
-              commitPlannerEdit({ userStayMinutes: next });
-            }}
+            onCommitLastEntry={(stopId, value) => setLastEntryTime(stopId, value || null)}
+            onCommitStayMinutes={(stopId, value) => setStayMinutes(stopId, value ? Number(value) : null)}
             onEnsureSourcePreviews={ensureSourcePreviews}
             onMoveStopToDay={moveStopToDay}
             onPhotoError={handlePhotoError}
@@ -1896,6 +1891,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
             {planIssueCount > 0 ? (
               <IssueCard
                 ambiguousIssuePlaces={ambiguousIssuePlaces}
+                computationLimited={feasibilityResult?.unknownCause === "COMPUTATION_LIMIT"}
                 conflictingDestinations={conflictingDestinations}
                 deferredAnchorStops={deferredAnchorStops}
                 locale={locale}
@@ -1960,13 +1956,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
                 <label className="planner-day-start">
                   <span>{text.dayStart}</span>
                   <input
-                    onChange={(event) => {
-                      const value = event.target.value;
-                      const next = { ...dayStartTimes };
-                      if (value) next[activeDay] = value;
-                      else delete next[activeDay];
-                      commitPlannerEdit({ dayStartTimes: next });
-                    }}
+                    onChange={(event) => setDayStartTime(activeDay, event.target.value || null)}
                     type="time"
                     value={dayStartTimes[activeDay] ?? day.requestedStartTime}
                   />
@@ -1974,13 +1964,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
                 <label className="planner-day-start">
                   <span>{text.dayEnd}</span>
                   <input
-                    onChange={(event) => {
-                      const value = event.target.value;
-                      const next = { ...dayEndTimes };
-                      if (value) next[activeDay] = value;
-                      else delete next[activeDay];
-                      commitPlannerEdit({ dayEndTimes: next });
-                    }}
+                    onChange={(event) => setDayEndTime(activeDay, event.target.value || null)}
                     type="time"
                     value={(dayEndTimes[activeDay] ?? dayEndTarget) || "22:00"}
                   />

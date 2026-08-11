@@ -691,9 +691,67 @@ export function alternativeLossCopy(alternative: AlternativePlan, locale: Planne
   return locale === "ja" ? `失うもの: ${stopName}` : `Trade-off: remove ${stopName}`;
 }
 
+// v1.1 TC-007 hard-edit confirmations: every guarded edit shares these
+// sentences, so the dialog reads the same whether the change came from a leg
+// mode, a stay time, a last-entry cutoff or a day window.
+export type HardEditConflictKind = "booking_late" | "must_drop" | "airport_cutoff";
+
+export function hardEditConflictSentence(
+  kind: HardEditConflictKind,
+  name: string,
+  minutes: number,
+  locale: PlannerLocale,
+) {
+  if (kind === "booking_late") return locale === "ja"
+    ? `「${name}」の予約に${minutes}分遅れます`
+    : `You would be ${minutes} minutes late for “${name}”`;
+  if (kind === "must_drop") return locale === "ja"
+    ? `必須の「${name}」が日程に入らなくなります`
+    : `Must-visit “${name}” would no longer fit the plan`;
+  return locale === "ja"
+    ? `空港へ向かう締切を${minutes}分超えます`
+    : `The airport cutoff would be missed by ${minutes} minutes`;
+}
+
+// Copy Deck confirm.delay.title: when the only new damage is a single booking
+// delay, the dialog title states the delay itself.
+export function hardEditBookingDelayTitle(minutes: number, locale: PlannerLocale) {
+  return locale === "ja"
+    ? `この変更で予約に${minutes}分遅れます`
+    : `This change makes you ${minutes} minutes late`;
+}
+
+export const hardEditTitles = {
+  ja: {
+    legMode: (mode: string) => `この区間の移動を${mode}に変更しますか？`,
+    legModeAuto: "この区間の移動手段を自動に戻しますか？",
+    stayMinutes: (name: string, minutes: number) => `「${name}」の滞在時間を${minutes}分にしますか？`,
+    stayMinutesAuto: (name: string) => `「${name}」の滞在時間を自動に戻しますか？`,
+    lastEntry: (name: string, time: string) => `「${name}」の最終入場を${time}にしますか？`,
+    lastEntryClear: (name: string) => `「${name}」の最終入場指定を外しますか？`,
+    dayStart: (day: number, time: string) => `${day}日目の開始を${time}にしますか？`,
+    dayStartAuto: (day: number) => `${day}日目の開始時刻を標準に戻しますか？`,
+    dayEnd: (day: number, time: string) => `${day}日目の終了を${time}にしますか？`,
+    dayEndAuto: (day: number) => `${day}日目の終了時刻を標準に戻しますか？`,
+  },
+  en: {
+    legMode: (mode: string) => `Change this leg to ${mode}?`,
+    legModeAuto: "Return this leg to automatic mode?",
+    stayMinutes: (name: string, minutes: number) => `Set the stay at “${name}” to ${minutes} minutes?`,
+    stayMinutesAuto: (name: string) => `Return the stay at “${name}” to automatic?`,
+    lastEntry: (name: string, time: string) => `Set the last entry for “${name}” to ${time}?`,
+    lastEntryClear: (name: string) => `Clear the last-entry time for “${name}”?`,
+    dayStart: (day: number, time: string) => `Start day ${day} at ${time}?`,
+    dayStartAuto: (day: number) => `Return day ${day} to the standard start time?`,
+    dayEnd: (day: number, time: string) => `End day ${day} at ${time}?`,
+    dayEndAuto: (day: number) => `Return day ${day} to the standard end time?`,
+  },
+} as const;
+
 export function minimumDaysCopy(result: FeasibilityResult, locale: PlannerLocale) {
   if (result.minimumDays === null) {
-    // Name the actual blocker instead of reciting every theoretical cause.
+    // Name the ONE actual blocker and its one next action instead of reciting
+    // every theoretical cause (v1.1 TC-004).
     const unresolved = result.unresolvedPlaceNames;
     if (unresolved.length > 0) {
       const names = unresolved.slice(0, 2).join(locale === "ja" ? "・" : ", ")
@@ -707,12 +765,22 @@ export function minimumDaysCopy(result: FeasibilityResult, locale: PlannerLocale
         ? `「${names}」が未確定のため、最短日数はまだ判定できません。上の「確認する」から場所を確定するか、入力を直してください。`
         : `Minimum days are withheld because “${names}” is not settled. Use “Confirm” above to pick the place, or edit the input.`;
     }
+    // The computation cap is its own cause with its own action: shrinking the
+    // candidate list, never a generic "something failed".
+    if (result.unknownCause === "COMPUTATION_LIMIT") return locale === "ja"
+      ? "計算の上限に達したため、最短日数を判定できませんでした。場所を15件以下にしてください。"
+      : "The computation limit was reached before minimum days could be settled. Remove optional places to bring the list to 15 or fewer.";
     if (result.searchedThroughDays > 0) return locale === "ja"
-      ? `${result.searchedThroughDays}日まで探索しましたが、重要な事実が足りないか固定条件が競合しています。`
-      : `Searched through ${result.searchedThroughDays} days; critical evidence is missing or a fixed constraint conflicts.`;
+      ? `${result.searchedThroughDays}日まで探索しましたが、固定条件が競合して収まりませんでした。予約・時間指定の固定条件を1つ見直してください。`
+      : `Searched through ${result.searchedThroughDays} days, but a fixed constraint still conflicts. Revisit one booked or fixed-time constraint.`;
+    if (result.partialMinimumDays !== null || result.conflicts.some((conflict) => conflict.code === "PLACE_UNAVAILABLE")) {
+      return locale === "ja"
+        ? `選んだ日程では営業しない場所があるため、判定を保留しています。${result.partialMinimumDays !== null ? `配置できる場所だけなら最短${result.partialMinimumDays}日です。` : ""}「予定から外した場所」を確認してください。`
+        : `On hold because some places cannot open on the chosen days. ${result.partialMinimumDays !== null ? `The placeable stops alone need at least ${result.partialMinimumDays} day${result.partialMinimumDays === 1 ? "" : "s"}. ` : ""}Review the places left out of this plan.`;
+    }
     return locale === "ja"
-      ? "未解決の場所・対応範囲外の日指定・または計算上限のため、最短日数はまだ判定していません。"
-      : "Minimum days are withheld until unresolved places, unsupported day pins, or the solve limit are cleared.";
+      ? "14日を超える日指定があるため、最短日数はまだ判定していません。日指定を14日以内へ直してください。"
+      : "Minimum days are withheld because a day pin is beyond the supported range. Move day pins within 14 days.";
   }
   const assumptions = result.minimumDaysAssumptions;
   const windows = assumptions.dayWindows.map((window) => `${window.start}–${window.end}`);

@@ -1118,6 +1118,9 @@ export function usePlannerViewModel({
     + ambiguousIssuePlaces.length
     + (conflictingDestinations.length > 0 ? 1 : 0)
     + (unknownHoursStops.length > 0 ? 1 : 0)
+    // v1.1 TC-004: the computation cap (LIMIT) renders its own issue row with
+    // its own action — reduce the candidate list to 15 places or fewer.
+    + (feasibilityResult?.unknownCause === "COMPUTATION_LIMIT" ? 1 : 0)
     + (placeWarning ? 1 : 0);
   const displayedMapStops = hasPlan ? mapStops : previewStops;
   const displayedMapBase = hasPlan ? base : null;

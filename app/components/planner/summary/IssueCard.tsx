@@ -15,6 +15,8 @@ type IssueCardProps = {
   ambiguousIssuePlaces: ReadonlyArray<{ input: string; candidates: readonly unknown[] }>;
   deferredAnchorStops: ReadonlyArray<{ id: string; name: string }>;
   unknownHoursStops: ReadonlyArray<{ id: string; name: string }>;
+  /** v1.1 TC-004: the feasibility check hit its computation cap (LIMIT). */
+  computationLimited: boolean;
   placeWarning: "unavailable" | "quota_exhausted" | false;
   onFixInput: () => void;
   onPickAmbiguous: () => void;
@@ -31,6 +33,7 @@ export default function IssueCard({
   ambiguousIssuePlaces,
   deferredAnchorStops,
   unknownHoursStops,
+  computationLimited,
   placeWarning,
   onFixInput,
   onPickAmbiguous,
@@ -90,6 +93,14 @@ export default function IssueCard({
               ? `営業時間を確認したい場所 ${unknownHoursStops.length}（${unknownHoursStops.slice(0, 2).map((stop) => stop.name).join("・")}${unknownHoursStops.length > 2 ? " ほか" : ""}）`
               : `${unknownHoursStops.length} place${unknownHoursStops.length === 1 ? "" : "s"} to check hours for (${unknownHoursStops.slice(0, 2).map((stop) => stop.name).join(", ")}${unknownHoursStops.length > 2 ? ", …" : ""})`}</span>
             <button onClick={() => onOpenStop(unknownHoursStops[0].id)} type="button">{locale === "ja" ? "場所を開く" : "Open the place"}</button>
+          </li>
+        ) : null}
+        {computationLimited ? (
+          <li key="computation-limit">
+            <span>{locale === "ja"
+              ? "場所が多く計算の上限に達しました。場所を15件以下にしてください"
+              : "The place list hit the computation limit. Reduce it to 15 places or fewer"}</span>
+            <button onClick={onFixInput} type="button">{locale === "ja" ? "任意の場所を外す" : "Remove optional places"}</button>
           </li>
         ) : null}
         {placeWarning ? (
