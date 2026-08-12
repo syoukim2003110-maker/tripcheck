@@ -201,7 +201,10 @@ body:has(.trip-planner-app) {
   border-radius: 999px;
   box-shadow: var(--pl-shadow-soft);
   left: 16px;
-  max-width: min(430px, calc(100% - 32px));
+  /* Wide enough that a four-day trip shows day chips, the measured/estimated
+     line key and the planned-pin key without clipping the last word; longer
+     trips still scroll inside .planner-map-legend-body. */
+  max-width: min(560px, calc(100% - 32px));
   padding: 4px;
   position: absolute;
   top: 122px;

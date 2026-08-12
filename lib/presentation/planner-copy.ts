@@ -17,7 +17,6 @@ export const ui = {
     optionCount: (count: number) => `${count}件の候補`,
     newTrip: "新しい旅",
     inputLabel: "行きたい場所",
-    placeholder: "例）\n1日目\n浅草寺\nチームラボプラネッツ 15:30 予約\n2日目\n三鷹の森ジブリ美術館 必須\n渋谷スカイ 時間があれば",
     sample: "サンプルを見る",
     swissDemo: "スイスデモ",
     parseHint: "改行のほか「・」「／」「,」でまとめて貼っても、場所ごとに分けます。「1日目」、時刻、予約、必須、滞在時間も読み取ります。地名は現地表記でも英語でも大丈夫です。",
@@ -315,7 +314,6 @@ export const ui = {
     optionCount: (count: number) => `${count} option${count === 1 ? "" : "s"}`,
     newTrip: "New trip",
     inputLabel: "Places you want to visit",
-    placeholder: "Example\nDay 1\nSenso-ji\nteamLab Planets 15:30 booked\nDay 2\nGhibli Museum must\nShibuya Sky optional",
     sample: "Try a sample",
     swissDemo: "Swiss demo",
     parseHint: "Paste one per line, or use commas, slashes and middle dots; we separate the places. Day headings, times, booked / must / optional and stay length are also read. Local-language names are fine.",
@@ -561,11 +559,11 @@ export const ui = {
     walkingSafety: "Walking routes are beta. Check real-world safety conditions.",
     deadlineOver: (time: string) => `Runs past the ${time} airport cutoff`,
     language: "Language",
-    // Copy Deck privacy.short, shortened for the ≤200px header slot (the full
-    // deck sentence measures ~209px at 11.5px). The complete deck string and
-    // the "no account" fact live in the link's title/aria-label; the policy
-    // page carries the full statement.
-    privacy: "Recent plans stay on this device",
+    // Copy Deck privacy.short, verbatim. The chip is an auto-width flex item
+    // in the header row, so the full sentence fits; the mobile breakpoint
+    // hides the label entirely. The "no account" fact rides in the link's
+    // title/aria-label and the policy page carries the full statement.
+    privacy: "Your recent plans stay on this device",
     privacyTitle: "No account needed · Your recent plans stay on this device · Privacy policy",
     resolveRemove: "Remove",
     resolveRemoveAria: (name: string) => `Remove “${name}” from the list`,
