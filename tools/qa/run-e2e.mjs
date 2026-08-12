@@ -679,6 +679,81 @@ try {
     })());
     await page.close();
   }
+
+  // --- Definition of Done: first view + 200% zoom. ---
+  // DoD-START-4 「CTAが1280×800と390×844で見える」 and DoD-PLAN-1 「最初の2地点
+  // がファーストビューに見える」 are *without scrolling* claims, so they are
+  // measured as "the element's box finishes inside the initial viewport".
+  // DoD-A11Y-3 「200% zoomで機能欠損なし」 is modelled the way a browser
+  // actually zooms: 1280×800 at 200% is a 640×400 CSS-px viewport at
+  // devicePixelRatio 2.
+  {
+    const assertInFirstView = async (page, selector, index, label) => {
+      const box = await page.evaluate((sel, n) => {
+        const node = document.querySelectorAll(sel)[n];
+        if (!node) return null;
+        const rect = node.getBoundingClientRect();
+        return { top: rect.top, bottom: rect.bottom, height: rect.height, viewport: window.innerHeight };
+      }, selector, index);
+      if (!box) throw new Error(`${label}: ${selector}[${index}] not rendered`);
+      if (box.height < 1) throw new Error(`${label}: ${selector}[${index}] has no box`);
+      if (box.top < 0 || box.bottom > box.viewport + 1) {
+        throw new Error(`${label}: ${selector}[${index}] spans ${Math.round(box.top)}–${Math.round(box.bottom)} in a ${box.viewport}px viewport`);
+      }
+    };
+
+    for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
+      const label = `${viewport.width}×${viewport.height}`;
+      const startPage = await newPage(browser, viewport);
+      await expect(`DoD-START-4 start CTA sits in the first view (${label})`, (async () => {
+        await gotoStart(startPage, "ja");
+        await settle(startPage, 400);
+        await assertInFirstView(startPage, ".planner-review-button", 0, `start-${label}`);
+      })());
+      await startPage.close();
+
+      const planPage = await newPage(browser, viewport);
+      await expect(`DoD-PLAN-1 first two stops sit in the first view (${label})`, (async () => {
+        await buildSamplePlan(planPage, "ja");
+        await settle(planPage, 500);
+        await assertInFirstView(planPage, ".planner-stop-row", 0, `plan-${label}`);
+        await assertInFirstView(planPage, ".planner-stop-row", 1, `plan-${label}`);
+      })());
+      await planPage.close();
+    }
+
+    const zoomed = await newPage(browser, { width: 640, height: 400, deviceScaleFactor: 2 });
+    await expect("DoD-A11Y-3 200% zoom keeps the start CTA and reflow intact", (async () => {
+      await gotoStart(zoomed, "ja");
+      await settle(zoomed, 400);
+      await assertInFirstView(zoomed, ".planner-review-button", 0, "start-200%");
+      const state = await zoomed.evaluate(() => ({
+        scrollWidth: document.scrollingElement.scrollWidth,
+        innerWidth: window.innerWidth,
+      }));
+      if (state.scrollWidth > state.innerWidth + 1) {
+        throw new Error(`start-200%: document scrollWidth ${state.scrollWidth} exceeds viewport ${state.innerWidth}`);
+      }
+    })());
+    await expect("DoD-A11Y-3 200% zoom keeps the plan usable", (async () => {
+      await buildSamplePlan(zoomed, "ja");
+      await settle(zoomed, 500);
+      await assertInFirstView(zoomed, ".planner-stop-row", 0, "plan-200%");
+      const state = await zoomed.evaluate(() => ({
+        scrollWidth: document.scrollingElement.scrollWidth,
+        innerWidth: window.innerWidth,
+        tabs: document.querySelectorAll(".planner-day-tabs [role=\"tab\"]").length,
+        stops: document.querySelectorAll(".planner-stop-row").length,
+      }));
+      if (state.scrollWidth > state.innerWidth + 1) {
+        throw new Error(`plan-200%: document scrollWidth ${state.scrollWidth} exceeds viewport ${state.innerWidth}`);
+      }
+      if (state.tabs < 1 || state.stops < 1) {
+        throw new Error(`plan-200%: day rail/timeline missing (tabs ${state.tabs}, stops ${state.stops})`);
+      }
+    })());
+    await zoomed.close();
+  }
 } finally {
   await browser.close();
 }

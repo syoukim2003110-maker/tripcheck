@@ -1730,15 +1730,19 @@ div.planner-route-ideas-empty { display: grid; gap: 8px; }
   .trip-planner-app.is-result .planner-map-canvas { left: 0; }
   .trip-planner-app.is-conditions .planner-sheet { height: 48dvh; }
   .trip-planner-app.is-conditions .planner-map-bottom { bottom: calc(48dvh + 12px); }
+  /* §11.2 "画面下にMap preview bar" + DoD-PLAN-1: the timeline view keeps the
+     map as a preview strip, not a half screen. 15dvh (≈127px at 390×844) still
+     carries the route status, the legend toggle and the map chips, and it is
+     what lets the first TWO stop rows finish above the fold. */
   .trip-planner-app.is-result.is-mobile-timeline .planner-map-canvas {
     display: block;
-    height: 20dvh;
+    height: 15dvh;
     inset: 0 0 auto;
   }
   .trip-planner-app.is-result.is-mobile-timeline .planner-sheet {
     border-radius: 18px 18px 0 0;
-    height: 80dvh;
-    inset: 20dvh 0 0;
+    height: 85dvh;
+    inset: 15dvh 0 0;
   }
   .trip-planner-app.is-result.is-mobile-compact .planner-map-canvas,
   .trip-planner-app.is-result.is-mobile-compact .planner-map-bottom { display: none; }
@@ -1842,7 +1846,13 @@ div.planner-route-ideas-empty { display: grid; gap: 8px; }
   .planner-map-legend-body { display: none; }
   .planner-map-day-legend.is-expanded .planner-map-legend-body { display: flex; flex-wrap: wrap; padding: 0 4px 6px; }
   .planner-map-empty { bottom: auto; left: 50%; top: 68px; }
-  .trip-planner-app.is-result.is-mobile-timeline .planner-map-bottom { bottom: calc(80dvh + 7px); left: 10px; right: 10px; }
+  /* The chip row belongs to the map surface. In the timeline view the map is
+     a preview strip, and anchoring the row above the sheet parked it outside
+     the viewport — invisible, but still in the tab order. It is hidden here
+     the way it already is in the compact view; every chip has a timeline
+     equivalent (hotel row, meal/gap recommendation rows, per-stop Google
+     Maps link) and the 地図 view shows the row itself. */
+  .trip-planner-app.is-result.is-mobile-timeline .planner-map-bottom { display: none; }
   .trip-planner-app.is-result.is-mobile-timeline .planner-map-empty { display: none; }
   .planner-meal-chip { flex: 0 0 auto; }
   .planner-open-maps { font-size: 0; gap: 0; padding: 0 13px; }
