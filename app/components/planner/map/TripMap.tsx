@@ -64,6 +64,9 @@ type TripMapProps = {
   selectedHotel: HotelCandidate | null;
   /** TC-025: the hotel shortlist attaches after the reveal; the slot shows a pending chip until it lands. */
   hotelPending: boolean;
+  /** TC-068: the lookup failed — say so and offer the retry, never render nothing. */
+  hotelUnavailable: boolean;
+  onRetryHotels: () => void;
   selectedRouteRecommendationId: string | null;
   daySlots: FoodRecommendationSlot[];
   foodSearches: Record<string, FoodState>;
@@ -118,6 +121,8 @@ export default function TripMap({
   mapHoverChannel,
   selectedHotel,
   hotelPending,
+  hotelUnavailable,
+  onRetryHotels,
   selectedRouteRecommendationId,
   daySlots,
   foodSearches,
@@ -244,6 +249,14 @@ export default function TripMap({
             <span className="planner-hotel-chip is-pending" role="status">
               <span aria-hidden="true"><Icon name="bed" size={15} /></span>{text.hotelPending}
             </span>
+          ) : !P0_CORE_ONLY && hotelUnavailable ? (
+            // TC-068: a failed base lookup used to render nothing, which looks
+            // exactly like a trip that never wanted a base. The failure says so
+            // where the search happened, and offers the retry.
+            <button className="planner-hotel-chip is-unavailable" onClick={onRetryHotels} type="button">
+              <span aria-hidden="true"><Icon name="bed" size={15} /></span>{text.hotelUnavailable}
+              <b>{text.fieldRetry}</b>
+            </button>
           ) : null}
           {!P0_CORE_ONLY ? daySlots.map((slot) => {
             const slotState = foodSearches[slot.id];

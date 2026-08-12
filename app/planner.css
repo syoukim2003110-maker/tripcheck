@@ -455,6 +455,9 @@ body:has(.trip-planner-app) {
 /* TC-025: the hotel shortlist attaches after the reveal; the slot stays visibly pending until it lands. */
 .planner-hotel-chip.is-pending { color: var(--pl-ink-2); font-weight: 600; }
 .planner-hotel-chip.is-pending > span { animation: planner-pulse 900ms infinite alternate; }
+/* TC-068: a failed base lookup reads as a warning, not as an absent base. */
+.planner-hotel-chip.is-unavailable { background: var(--pl-warn-bg); border-color: var(--pl-warn-border); color: var(--pl-warn-ink); font-weight: 600; }
+.planner-hotel-chip.is-unavailable b { color: var(--pl-ink); font-weight: 800; text-decoration: underline; text-underline-offset: 3px; }
 .planner-meal-chip.is-lunch > span { color: #c47a08; }
 .planner-meal-chip.is-dinner > span { color: #4d4b99; }
 .planner-meal-chip.is-active > span { color: white; }

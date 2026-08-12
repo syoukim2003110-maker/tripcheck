@@ -1714,6 +1714,8 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
         routeTransitGeometry={routeTransitGeometry}
         selectedHotel={selectedHotel}
         hotelPending={hotelState.status === "loading"}
+        hotelUnavailable={hotelState.status === "unavailable"}
+        onRetryHotels={() => void refreshHotelRecommendations()}
         selectedRouteRecommendationId={selectedRouteRecommendation?.id ?? null}
         tripDateTouched={tripDateTouched}
       >
@@ -2096,6 +2098,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
                 computationLimited={feasibilityResult?.unknownCause === "COMPUTATION_LIMIT"}
                 conflictingDestinations={conflictingDestinations}
                 deferredAnchorStops={deferredAnchorStops}
+                hotelUnavailable={hotelState.status === "unavailable"}
                 locale={locale}
                 onChooseCountry={(destinationId) => {
                   setDestinationChoice(destinationId);
@@ -2107,6 +2110,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
                 onOpenStop={handleSelectStop}
                 onPickAmbiguous={() => { setHasPlan(false); setInputStep("conditions"); setInspector(null); }}
                 onRetryBuild={() => void buildPlan({ preserveEdits: true })}
+                onRetryHotels={() => void refreshHotelRecommendations()}
                 placeWarning={placeWarning}
                 plan={plan}
                 planIssueCount={planIssueCount}

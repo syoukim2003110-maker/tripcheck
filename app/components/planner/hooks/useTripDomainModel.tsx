@@ -1272,6 +1272,10 @@ export function usePlannerViewModel({
     // v1.1 TC-004: the computation cap (LIMIT) renders its own issue row with
     // its own action — reduce the candidate list to 15 places or fewer.
     + (feasibilityResult?.unknownCause === "COMPUTATION_LIMIT" ? 1 : 0)
+    // TC-068: a failed base lookup is a thing to check, not silence. Without
+    // this row the only disclosure sits two <details> deep in the verdict card
+    // and the map chip simply renders nothing.
+    + (hotelState.status === "unavailable" ? 1 : 0)
     + (placeWarning ? 1 : 0);
   // Copy Deck plan.stats: the trip totals line under the headline reuses the
   // exact numbers the collapsed verdict details already show — the shared

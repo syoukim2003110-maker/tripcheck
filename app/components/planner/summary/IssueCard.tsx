@@ -17,12 +17,15 @@ type IssueCardProps = {
   unknownHoursStops: ReadonlyArray<{ id: string; name: string }>;
   /** v1.1 TC-004: the feasibility check hit its computation cap (LIMIT). */
   computationLimited: boolean;
+  /** TC-068: the base lookup failed; the plan still works without one. */
+  hotelUnavailable: boolean;
   placeWarning: "unavailable" | "quota_exhausted" | false;
   onFixInput: () => void;
   onPickAmbiguous: () => void;
   onChooseCountry: (destinationId: Destination["id"]) => void;
   onOpenStop: (stopId: string) => void;
   onRetryBuild: () => void;
+  onRetryHotels: () => void;
 };
 
 export default function IssueCard({
@@ -34,12 +37,14 @@ export default function IssueCard({
   deferredAnchorStops,
   unknownHoursStops,
   computationLimited,
+  hotelUnavailable,
   placeWarning,
   onFixInput,
   onPickAmbiguous,
   onChooseCountry,
   onOpenStop,
   onRetryBuild,
+  onRetryHotels,
 }: IssueCardProps) {
   return (
     <section aria-labelledby="planner-issues-title" className="planner-issue-card" id="planner-issue-card">
@@ -103,6 +108,12 @@ export default function IssueCard({
               ? "場所が多く計算の上限に達しました。場所を15件以下にしてください"
               : "The place list hit the computation limit. Reduce it to 15 places or fewer"}</span>
             <button onClick={onFixInput} type="button">{locale === "ja" ? "任意の場所を外す" : "Remove optional places"}</button>
+          </li>
+        ) : null}
+        {hotelUnavailable ? (
+          <li key="hotel-unavailable">
+            <span>{ui[locale].hotelUnavailable}{locale === "ja" ? "旅程は拠点なしで成立しています。" : " The itinerary still works without one."}</span>
+            <button onClick={onRetryHotels} type="button">{ui[locale].fieldRetry}</button>
           </li>
         ) : null}
         {placeWarning ? (
