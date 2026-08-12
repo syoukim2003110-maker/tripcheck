@@ -2,7 +2,7 @@
 
 対象: `TripCheck_Live_UX_Handoff_v1.1_2026-08-11.zip`
 ブランチ: `claude/architecture-v2` (P0 アーキテクチャ改修 `1f6b5ac` の続き)
-範囲: `1f6b5ac..HEAD` = 13 コミット / 113 ファイル / +4,848 −877 行
+範囲: `1f6b5ac..HEAD` = 16 コミット
 
 仕様の優先順位は指示どおり **コード構造・責務分離・データフロー = Code Level
 Refactor Spec v2.1**、**画面・情報設計・コピー・地図表現・推薦表示・モバイル・
@@ -44,6 +44,24 @@ v1.1 の実装は 2026-08-11 のコミット `1fd3eda` / `39634e5` で一度完�
 | 検証 | `972e6e8` | 凡例クリップ修正、privacy チップを Copy Deck 逐語へ、VR ベースライン整理 |
 | Phase 4 (モバイル, 旧P1モバイル改善を吸収) | `fcca1b2` | モバイルで 2 地点目が折り返し上に収まる、DoD 初見・200% ズーム検査 (38 項目) |
 | 検証 | `04c6a2b` | stale レスポンス防止 (build generation) の契約テスト |
+| 再監査の修正 | `2139eae` | ガード迂回 5 経路 / テストスクリプトの取りこぼし 11 ファイル / LIMIT の判定文とCTA / 44px 2 件 / timeline の list セマンティクス (44 項目) |
+| 再監査の修正 | `40a6813` | ホテル取得失敗を「確認したいこと」に出す (TC-068) |
+
+### 再監査 (2 回目) の結果
+
+ギャップ埋めの完了を自己申告で終わらせず、6 エージェントで **57 件を再検証**した。
+結果は **CLOSED 45 / PARTIAL 10 / OPEN 2**。PARTIAL のうち実害のあるものを
+`2139eae` と `40a6813` で解消している。特に重かったのは以下。
+
+- **編集 5 経路がガードを通っていなかった** — `restoreRemovedStop` と
+  `applyTripAlternative` の START_EARLIER / END_LATER / CHANGE_MODE /
+  OPTIMIZE_ORDER。CHANGE_MODE は「タイムラインのチップから同じ操作をすると
+  ガードされる」状態で、どのボタンを押したかで予約が守られるかが変わっていた。
+- **`pnpm test` が新しいテスト 11 本を実行していなかった** — テストファイルを
+  手書き列挙していたため、banned-terms も Copy Deck 照合も hard-edit 契約も
+  プロジェクトのスイートからは死んでいた。glob に変更。
+- **計算上限の判定文が「場所を確認してください」だった** — 全部解決済みなのに
+  確認を促す文言と CTA。原因を判定文と CTA に通した。
 
 ## 3. 全テスト結果 (2026-08-12 最終)
 
@@ -51,14 +69,18 @@ v1.1 の実装は 2026-08-11 のコミット `1fd3eda` / `39634e5` で一度完�
 | --- | --- |
 | `tsc --noEmit` | 0 エラー |
 | `vinext build` | 成功 (`npm run build` は scratchpad の npm が壊れているため `./node_modules/.bin/vinext build` を使用) |
-| `node --experimental-strip-types --test tests/*.test.ts` | 569 / 569 |
+| `node --experimental-strip-types --test tests/*.test.ts` | 571 / 571 |
 | `node --test tests/*.mjs` | 10 / 10 |
-| E2E (`tools/qa/run-e2e.mjs`) | 38 / 38 |
+| E2E (`tools/qa/run-e2e.mjs`) | 44 / 44 |
 | axe WCAG 2.2 AA (`run-axe.mjs`) | 違反 0 (`.planner-route-status` の contrast 1 件は半透明背景による "incomplete"。最悪条件 = 地図が真っ黒でも実効背景 #E6E6E6 に対し **8.5:1** で手動合格) |
 | VR (`run-vr.mjs`) | 24 / 24 一致 |
 | eslint (`--ignore-pattern dist`) | 12 error / 2 warning — **`b1eee1e` 時点と同一**。今回の作業で増減なし (React Compiler の setState-in-effect 系、既存の負債) |
 | privacy 契約テスト | 8 / 8 (面全体スキャン方式を弱体化していない) |
-| hard constraint 回帰 | `planner-guarded-edits` + E2E QA-036 で緑 |
+| hard constraint 回帰 | `planner-guarded-edits` 5/5 + E2E QA-036 で緑。ガードを 1 つ外すと落ちることを実際に確認済み |
+| golden (決定論) | 500 シナリオ一致 |
+
+既存テストは 1 つも削除・緩和していない。`pnpm test` はむしろ**取りこぼしていた
+11 ファイルを実行するようになった**(手書き列挙 → glob)。
 
 ## 4. VR ベースラインの扱い
 
@@ -81,6 +103,14 @@ v1.1 の実装は 2026-08-11 のコミット `1fd3eda` / `39634e5` で一度完�
 | `detail-*` (6枚) | 最終入場・日を移動、正直な失敗表示、モバイル sheet の 3 状態 | 意図した変更 |
 | `plan-*-1440`, `detail-*-1440` | 地図凡例が最後のキーまで表示 (430px → 560px) | 意図した変更 (バグ修正) |
 | `plan-*-{768,390}`, `detail-*-{768,390}` | 地図プレビュー帯 20dvh → 15dvh | 意図した変更 (DoD 対応) |
+| `detail-*-{768,390}` | bottom sheet の 3 コントロールが 34px → 44px | 意図した変更 (§11.3) |
+| `plan-*`, `detail-*-1440`, `detail-ja-390` | ホテル取得失敗の行とチップが出る | 意図した変更 (TC-068。ハーネスは外部ホストを遮断するので、この状態が正しい表示) |
+
+**VR の感度限界(記録)**: `run-vr.mjs` は pixelmatch の threshold 0.12 / 許容 0.3%
+で走るため、**白地に淡いグレー(`--pl-tile`)の面積変化は検出できない**。bottom
+sheet のボタンが 34px → 44px になった変更は、実測 (44×44 を puppeteer で計測) と
+E2E の 44px 検査では捕まるが、VR は 32px しか差分を出さなかった。ピクセル比較を
+唯一の証拠にしない。
 
 ## 5. Definition of Done 監査 (22 項目)
 
@@ -130,10 +160,13 @@ v1.1 の実装は 2026-08-11 のコミット `1fd3eda` / `39634e5` で一度完�
 
 | ID | 状態 | 理由 |
 | --- | --- | --- |
-| TC-064 週次プロダクトダッシュボード | 未実装 | `app/api/product-events/route.ts` は `console.info` のみでイベントストアがリポジトリ内に存在しない。保存先の決定はインフラ側の判断が要る |
+| TC-064 週次プロダクトダッシュボード | 未実装 | `app/api/product-events/route.ts` は `console.info` のみでイベントストアがリポジトリ内に存在しない。保存先の決定はインフラ側の判断が要る。`plan_ready` に経過時間フィールドも無いので、time-to-first-plan は現状のイベントからは測れない |
 | TC-067 実機ブラウザマトリクス | 実施不可 | 実機 6 ブラウザが必要。ヘッドレス Chrome の VR / axe / E2E で代替している |
 | TC-041 ホテルの価格バランス軸 | 意図的に除外 | 楽天の参考最低価格は日付なしのため、「価格バランスが最良」と順位付けすると事実と異なる表示になる |
-| QA-021 の `aria-current` | 意図的に非採用 | 仕様 §12.3「Day 切替は Tab semantics」に従い `role="tab"` + `aria-selected` を使用。tab パターンでは `aria-current` は重複になる |
+| QA-021 の `aria-current` | 意図的に非採用 | 仕様 §12.3「Day 切替は Tab semantics」に従い `role="tab"` + `aria-selected` を使用。tab パターンでは `aria-current` は重複になる。E2E は `aria-current` が残っていたら**落ちる** |
+| TC-026 ホテル比較行の共通ヘルパー | 未着手 | Copy Deck のキー(`plan.hotel.*`)は逐語で一致しているが、比較カードの事実行 (「全日程の移動 約N分（最短比 +N分）」) は 2 箇所でインライン合成されており、宣言上の単一ソース `hotelEnhancement` に本番の利用者がいない。コピーの重複であって誤表示ではないため、今回は触っていない |
+| COPY-EXTRA (構造面) | 未着手 | `app/components/planner/**` に `locale === "ja" ? … : …` のインライン三項が 219 箇所残っている。Copy Deck のキーはすべて `planner-copy.ts` にあり banned-terms も走るが、「画面側で文を増やせない」構造にはなっていない |
+| TC-053 privacy チップの幅 | 仕様優先で維持 | 以前のコミットが自ら課した「ヘッダー 200px 以内」を en で ~256px 超過する。Copy Deck が正本なので**デッキの文を採用**した。ヘッダーは flex の auto 幅で衝突は無く、モバイルではラベルごと隠れる |
 
 ## 7. 既知の制約
 
@@ -147,7 +180,15 @@ v1.1 の実装は 2026-08-11 のコミット `1fd3eda` / `39634e5` で一度完�
 - **cloudflared quick tunnel は半日〜1日で切れる**。張り替え時は `.dev.vars` の
   `TRIPCHECK_PUBLIC_ORIGIN` と `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS` を同時に
   更新しないと、有料エンドポイントが 403 になる。
-- **eslint 12 error は既存**。React Compiler 系の指摘で、今回の作業では増えていない。
+- **eslint 12 error は既存**。React Compiler 系の指摘で、今回の作業では増えていない
+  (`b1eee1e` 時点で 12 error / 2 warning、現在も同じ)。
+- **QA Matrix 54 行の自動カバレッジは全面的ではない**。E2E ハーネスが直接触るのは
+  16 行程度で、残りは単体テスト (時間モデル、POI アクセス、gap の境界、決定論の
+  golden) と VR/axe が受け持つ。実プロバイダが要る行 (QA-052 性能実測など) と
+  実機が要る行は自動化していない。
+- **モバイルのファーストビューは余裕が薄い**。390×844 で 2 地点目の下端は 836px。
+  「確認したいこと」に行が 1 つ増えるたびに削れるので、`DoD-PLAN-1` の E2E 検査が
+  最後の砦になる。
 
 ## 8. 旧 P1 の吸収先
 
