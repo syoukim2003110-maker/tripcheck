@@ -85,22 +85,37 @@ export default function TripSummaryCard({
             <span id="planner-feasibility-title">{locale === "ja" ? "旅程の結論" : "Plan result"}</span>
             <small>{minimumDaysCopy(feasibilityResult, locale)}</small>
           </div>
-          <button
-            onClick={() => {
-              if (feasibilityResult.state === "INFEASIBLE_HARD_CONFLICT") {
-                document.getElementById("planner-alternatives-title")?.scrollIntoView({ behavior: "smooth", block: "center" });
-                return;
-              }
-              if (feasibilityResult.state === "UNKNOWN" || feasibilityResult.state === "FEASIBLE_IF_ASSUMPTIONS") {
-                onReviewConditions();
-                return;
-              }
-              document.querySelector(".planner-day-tabs")?.scrollIntoView({ behavior: "smooth", block: "start" });
-            }}
-            type="button"
-          >{locale === "ja"
-            ? feasibilityResult.state === "INFEASIBLE_HARD_CONFLICT" ? "直し方を見る" : feasibilityResult.state === "UNKNOWN" || feasibilityResult.state === "FEASIBLE_IF_ASSUMPTIONS" ? "確認する" : "このプランを見る"
-            : feasibilityResult.state === "INFEASIBLE_HARD_CONFLICT" ? "See how to fix it" : feasibilityResult.state === "UNKNOWN" || feasibilityResult.state === "FEASIBLE_IF_ASSUMPTIONS" ? "Review details" : "View this plan"}</button>
+          {/* TC-004: the card's one action follows the cause. A computation-cap
+              UNKNOWN cannot be answered by confirming places — its action is
+              the issue card's "remove optional places". */}
+          {(() => {
+            const computationLimited = feasibilityResult.state === "UNKNOWN"
+              && feasibilityResult.unknownCause === "COMPUTATION_LIMIT";
+            const reviewable = !computationLimited
+              && (feasibilityResult.state === "UNKNOWN" || feasibilityResult.state === "FEASIBLE_IF_ASSUMPTIONS");
+            return (
+              <button
+                onClick={() => {
+                  if (feasibilityResult.state === "INFEASIBLE_HARD_CONFLICT") {
+                    document.getElementById("planner-alternatives-title")?.scrollIntoView({ behavior: "smooth", block: "center" });
+                    return;
+                  }
+                  if (computationLimited) {
+                    document.getElementById("planner-issues-title")?.scrollIntoView({ behavior: "smooth", block: "center" });
+                    return;
+                  }
+                  if (reviewable) {
+                    onReviewConditions();
+                    return;
+                  }
+                  document.querySelector(".planner-day-tabs")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                }}
+                type="button"
+              >{locale === "ja"
+                ? feasibilityResult.state === "INFEASIBLE_HARD_CONFLICT" ? "直し方を見る" : computationLimited ? "減らし方を見る" : reviewable ? "確認する" : "このプランを見る"
+                : feasibilityResult.state === "INFEASIBLE_HARD_CONFLICT" ? "See how to fix it" : computationLimited ? "See what to remove" : reviewable ? "Review details" : "View this plan"}</button>
+            );
+          })()}
         </header>
 
         {feasibilityResult.primaryConflict || deferredAnchorStops.length > 0 || feasibilityResult.primaryAttention ? (

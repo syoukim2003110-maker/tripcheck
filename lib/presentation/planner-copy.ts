@@ -1,7 +1,15 @@
 // User-facing copy for the planner: the full ja/en UI table plus the
 // localized sentence builders for feasibility verdicts, conflicts,
 // assumptions and alternatives. Pure data and string functions - no React.
-import type { AlternativePlan, Assumption, Attention, Conflict, FeasibilityResult, FeasibilityState } from "../feasibility-result.ts";
+import type {
+  AlternativePlan,
+  Assumption,
+  Attention,
+  Conflict,
+  FeasibilityResult,
+  FeasibilityState,
+  FeasibilityUnknownCause,
+} from "../feasibility-result.ts";
 import type { BuiltTripPlan } from "../trip-builder.ts";
 import type { TransportMode } from "../time-feasibility.ts";
 
@@ -221,6 +229,7 @@ export const ui = {
     dayStart: "開始時刻",
     dayEnd: "終了時刻",
     dayTabsLabel: "日程を選ぶ",
+    dayTimelineLabel: (day: string) => `${day}の行程`,
     dayBreakdownLabel: "この日の時間内訳",
     dayWindowLabel: "時間帯",
     dayPlannedLabel: "予定",
@@ -518,6 +527,7 @@ export const ui = {
     dayStart: "Start time",
     dayEnd: "End time",
     dayTabsLabel: "Choose a day",
+    dayTimelineLabel: (day: string) => `${day} itinerary`,
     dayBreakdownLabel: "Day time breakdown",
     dayWindowLabel: "Day window",
     dayPlannedLabel: "Planned",
@@ -631,7 +641,24 @@ export function printTransferCopy(
 // the real check count when one exists (matching the issue chip) and the
 // infeasible headline says what has to move. With assumptions but nothing
 // countable to check, the assumptions phrasing stays — no fabricated counts.
-export function feasibilityStateCopy(state: FeasibilityState, locale: PlannerLocale, days: number, stops: number, unplacedCount = 0, checkCount = 0) {
+export function feasibilityStateCopy(
+  state: FeasibilityState,
+  locale: PlannerLocale,
+  days: number,
+  stops: number,
+  unplacedCount = 0,
+  checkCount = 0,
+  unknownCause: FeasibilityUnknownCause | null = null,
+) {
+  // TC-004: UNKNOWN has two causes and they need two different sentences. The
+  // default headline asks the traveller to confirm a place — useless advice
+  // when every place resolved and the solver simply ran out of budget, whose
+  // one action is to shorten the list.
+  if (state === "UNKNOWN" && unknownCause === "COMPUTATION_LIMIT") {
+    return locale === "ja"
+      ? { label: "計算上限", headline: "場所が多く、計算しきれませんでした" }
+      : { label: "Too many places", headline: "There were too many places to finish the calculation" };
+  }
   if (locale === "ja") {
     if (state === "VERIFIED_FEASIBLE") return { label: `全${stops}か所`, headline: `${days}日なら、無理なく回れます` };
     if (state === "PROVISIONAL_FEASIBLE") return { label: `全${stops}か所`, headline: `${days}日で回れそうです` };
@@ -857,6 +884,10 @@ export const hardEditTitles = {
     dayStartAuto: (day: number) => `${day}日目の開始時刻を標準に戻しますか？`,
     dayEnd: (day: number, time: string) => `${day}日目の終了を${time}にしますか？`,
     dayEndAuto: (day: number) => `${day}日目の終了時刻を標準に戻しますか？`,
+    restoreStop: (name: string) => `「${name}」を予定に戻しますか？`,
+    startEarlier: (minutes: number) => `全日程の開始を${minutes}分早めますか？`,
+    endLater: (minutes: number) => `全日程の終了を${minutes}分遅らせますか？`,
+    optimizeOrder: "各日の回る順番を並べ替えますか？",
   },
   en: {
     legMode: (mode: string) => `Change this leg to ${mode}?`,
@@ -869,6 +900,10 @@ export const hardEditTitles = {
     dayStartAuto: (day: number) => `Return day ${day} to the standard start time?`,
     dayEnd: (day: number, time: string) => `End day ${day} at ${time}?`,
     dayEndAuto: (day: number) => `Return day ${day} to the standard end time?`,
+    restoreStop: (name: string) => `Put “${name}” back into the plan?`,
+    startEarlier: (minutes: number) => `Start every day ${minutes} minutes earlier?`,
+    endLater: (minutes: number) => `End every day ${minutes} minutes later?`,
+    optimizeOrder: "Reorder the stops on each day?",
   },
 } as const;
 

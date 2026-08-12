@@ -1294,6 +1294,10 @@ export function usePlannerViewModel({
       plan?.scheduledStopCount ?? 0,
       plan ? plan.deferredUnavailableStops.length + plan.deferredOptionalStops.length : 0,
       planIssueCount,
+      // TC-004: the verdict names the cause it actually has. A computation-cap
+      // UNKNOWN must not tell the traveller to confirm places that are already
+      // confirmed.
+      feasibilityResult.unknownCause,
     )
     : null;
   const displayedMapStops = hasPlan ? mapStops : previewStops;

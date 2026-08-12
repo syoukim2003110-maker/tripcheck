@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   createPlannerEvidenceSnapshot,
@@ -134,6 +135,42 @@ test("conditional and infeasible state copy follow the deck with real counts onl
   assert.equal(feasibilityStateCopy("INFEASIBLE_HARD_CONFLICT", "en", 3, 8, 2).headline, "In 3 days, 2 stops need to move or be removed");
   assert.equal(feasibilityStateCopy("INFEASIBLE_HARD_CONFLICT", "ja", 3, 8, 0).headline, "このままだと予約・時間に間に合いません");
   assert.equal(feasibilityStateCopy("INFEASIBLE_HARD_CONFLICT", "en", 3, 8, 0).headline, "A booking or time constraint cannot be met as planned");
+});
+
+// TC-004: UNKNOWN has two causes and the verdict must not offer the wrong
+// action. Unresolved places → "confirm the places"; the solver's computation
+// cap → say so, because every place already resolved and the only real action
+// is shortening the list (the issue card's own row).
+test("the verdict separates an unresolved place from the computation cap", () => {
+  assert.equal(feasibilityStateCopy("UNKNOWN", "ja", 4, 8).headline, "場所を確認すると完成します");
+  assert.equal(feasibilityStateCopy("UNKNOWN", "en", 4, 8).headline, "Confirm the places to finish the plan");
+  assert.equal(feasibilityStateCopy("UNKNOWN", "ja", 4, 8, 0, 0, "UNRESOLVED_PLACE").headline, "場所を確認すると完成します");
+
+  const ja = feasibilityStateCopy("UNKNOWN", "ja", 4, 8, 0, 0, "COMPUTATION_LIMIT");
+  assert.equal(ja.headline, "場所が多く、計算しきれませんでした");
+  assert.equal(ja.label, "計算上限");
+  const en = feasibilityStateCopy("UNKNOWN", "en", 4, 8, 0, 0, "COMPUTATION_LIMIT");
+  assert.equal(en.headline, "There were too many places to finish the calculation");
+  assert.equal(en.label, "Too many places");
+
+  // The cause only speaks for UNKNOWN; a feasible plan is never relabelled.
+  assert.equal(
+    feasibilityStateCopy("VERIFIED_FEASIBLE", "ja", 4, 8, 0, 0, "COMPUTATION_LIMIT").headline,
+    "4日なら、無理なく回れます",
+  );
+});
+
+// The card's single CTA follows the same cause: confirming places cannot
+// answer a computation cap, so that state points at the issue card instead.
+test("the verdict card routes the computation cap to the issue card, not to place review", () => {
+  const source = readFileSync(new URL("../app/components/planner/summary/TripSummaryCard.tsx", import.meta.url), "utf8");
+  assert.match(source, /feasibilityResult\.unknownCause === "COMPUTATION_LIMIT"/);
+  assert.match(source, /computationLimited[^]*?getElementById\("planner-issues-title"\)/);
+  assert.match(source, /computationLimited \? "減らし方を見る"/);
+  assert.match(source, /computationLimited \? "See what to remove"/);
+  // …and the domain model actually passes the cause into the headline.
+  const modelSource = readFileSync(new URL("../app/components/planner/hooks/useTripDomainModel.tsx", import.meta.url), "utf8");
+  assert.match(modelSource, /feasibilityStateCopy\([^]*?feasibilityResult\.unknownCause,/);
 });
 
 // Copy Deck recommendation and hotel keys (TC-044/DoD-PLAN-6/Task plan.reco &

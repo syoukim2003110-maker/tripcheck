@@ -519,7 +519,19 @@ export function useGuardedPlannerEdits({
   }
 
   function restoreRemovedStop(stopId: string) {
-    commitPlannerEdit({ removedStops: removedStops.filter((entry) => entry.id !== stopId) });
+    // Putting a stop back is as plan-affecting as taking one out: the returning
+    // visit consumes minutes that can push a booked stop late or breach the
+    // airport cutoff. Same simulate-then-confirm pipeline as every other edit.
+    const next = removedStops.filter((entry) => entry.id !== stopId);
+    if (next.length === removedStops.length) return;
+    const restoredName = removedStops.find((entry) => entry.id === stopId)?.name
+      ?? (locale === "ja" ? "この場所" : "this stop");
+    applyGuardedEdit({
+      title: hardEditTitles[locale].restoreStop(restoredName),
+      apply: () => commitPlannerEdit({ removedStops: next }),
+      contextPatch: { excludedStopIds: next.map((entry) => entry.id) },
+      toast: locale === "ja" ? `「${restoredName}」を戻しました` : `Restored “${restoredName}”`,
+    });
   }
 
   function removeSystemFiller(stop: RouteStop) {
@@ -677,17 +689,30 @@ export function useGuardedPlannerEdits({
     if (alternative.kind === "CHANGE_DAYS" && alternative.change.days) {
       changeTripDays(alternative.change.days);
     } else if (alternative.kind === "START_EARLIER") {
+      // Accepting an alternative is still an edit. Moving every day's clock can
+      // land a fixed booking or a last-entry cutoff on the wrong side of the
+      // line, so it runs the guard exactly like the per-day time fields do.
       const minutes = alternative.change.minutes ?? 60;
-      commitPlannerEdit({ dayStartTimes: Object.fromEntries(plan.days.map((planDay, dayIndex) => [
+      const nextStartTimes = Object.fromEntries(plan.days.map((planDay, dayIndex) => [
         dayIndex,
         shiftPlannerClock(dayStartTimes[dayIndex] ?? planDay.requestedStartTime, -minutes),
-      ])) });
+      ]));
+      applyGuardedEdit({
+        title: hardEditTitles[locale].startEarlier(minutes),
+        apply: () => commitPlannerEdit({ dayStartTimes: nextStartTimes }),
+        contextPatch: { dayStartTimes: nextStartTimes },
+      });
     } else if (alternative.kind === "END_LATER") {
       const minutes = alternative.change.minutes ?? 60;
-      commitPlannerEdit({ dayEndTimes: Object.fromEntries(plan.days.map((_, dayIndex) => [
+      const nextEndTimes = Object.fromEntries(plan.days.map((_, dayIndex) => [
         dayIndex,
         shiftPlannerClock((dayEndTimes[dayIndex] ?? dayEndTarget) || "22:00", minutes),
-      ])) });
+      ]));
+      applyGuardedEdit({
+        title: hardEditTitles[locale].endLater(minutes),
+        apply: () => commitPlannerEdit({ dayEndTimes: nextEndTimes }),
+        contextPatch: { dayEndTimes: nextEndTimes },
+      });
     } else if (alternative.kind === "CHANGE_BASE" && alternative.change.baseId) {
       const candidate = plan.baseRecommendations.find((entry) => entry.base.id === alternative.change.baseId)?.base;
       if (candidate) {
@@ -706,15 +731,28 @@ export function useGuardedPlannerEdits({
         });
       }
     } else if (alternative.kind === "CHANGE_MODE" && alternative.change.legId && alternative.change.mode) {
+      // The identical edit made from the timeline chip goes through setLegMode
+      // and is guarded; which button the traveller pressed must not decide
+      // whether their booking is protected.
       const dayIndex = plan.days.findIndex((planDay) => planDay.legs.some((leg) => routeLegKey(leg.from.id, leg.to.id) === alternative.change.legId));
       const nextLockedOrder = { ...lockedOrderByDay };
       if (dayIndex >= 0) nextLockedOrder[dayIndex] = plan.days[dayIndex].stops.map((stop) => stop.stop.id);
-      commitPlannerEdit({
-        legModeOverrides: { ...legModeOverrides, [alternative.change.legId]: alternative.change.mode },
-        lockedOrderByDay: nextLockedOrder,
+      const nextModes = { ...legModeOverrides, [alternative.change.legId]: alternative.change.mode };
+      applyGuardedEdit({
+        title: hardEditTitles[locale].legMode(legModeLabel(alternative.change.mode, locale)),
+        apply: () => commitPlannerEdit({ legModeOverrides: nextModes, lockedOrderByDay: nextLockedOrder }),
+        contextPatch: { legModeOverrides: nextModes, lockedOrderByDay: nextLockedOrder },
       });
     } else if (alternative.kind === "OPTIMIZE_ORDER" && alternative.change.orderByDay) {
-      commitPlannerEdit({ lockedOrderByDay: alternative.change.orderByDay });
+      // Reordering is proposed on travel-minute savings alone (trip-scenarios
+      // skips the improvesFeasibility gate here), so this guard is the only
+      // thing standing between a faster route and a missed booking.
+      const nextOrder = alternative.change.orderByDay;
+      applyGuardedEdit({
+        title: hardEditTitles[locale].optimizeOrder,
+        apply: () => commitPlannerEdit({ lockedOrderByDay: nextOrder }),
+        contextPatch: { lockedOrderByDay: nextOrder },
+      });
     } else if (alternative.kind === "REMOVE_OPTIONAL" && alternative.change.stopId) {
       const stop = plan.days.flatMap((planDay) => planDay.stops.map((built) => built.stop))
         .concat(plan.deferredOptionalStops)

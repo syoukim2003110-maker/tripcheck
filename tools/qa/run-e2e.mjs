@@ -470,7 +470,42 @@ try {
       await settle(mobilePlan, 400);
       await auditTargets(mobilePlan, "sheet-390", { scope: ".planner-inspector" });
     })());
+    // §9.3 makes the sheet's three explicit controls the non-drag way to
+    // operate it, and §11.3 puts phone primaries at 44px.
+    await expect("TC-056 primary targets ≥44px (mobile sheet controls)", auditPrimaryTargets(mobilePlan, "sheet-390", [
+      ".planner-inspector-close",
+      ".planner-inspector-collapse",
+      ".planner-inspector-expand",
+    ]));
     await mobilePlan.close();
+
+    // Copy Deck toast.undo is a primary action and the toast is fixed to the
+    // bottom edge on phones. Measured in EN too: the audits above all run in
+    // ja, where every label is narrower.
+    for (const locale of ["ja", "en"]) {
+      const undoPage = await newPage(browser, { width: 390, height: 844, fixtures: { foodRecommendations: foodRecommendationsFixture(locale) } });
+      await expect(`TC-056 primary targets ≥44px (undo in the edit toast, ${locale})`, (async () => {
+        await buildSamplePlan(undoPage, locale);
+        await waitForText(undoPage, ".planner-filler-actions button", locale === "ja" ? "ここにする" : "Add this", { timeout: 15_000 });
+        await clickByText(undoPage, ".planner-meal-row .planner-filler-actions button", locale === "ja" ? "ここにする" : "Add this");
+        await undoPage.waitForSelector(".planner-edit-toast button", { timeout: 10_000 });
+        await settle(undoPage, 300);
+        await auditPrimaryTargets(undoPage, `toast-390-${locale}`, [".planner-edit-toast button"]);
+      })());
+      await undoPage.close();
+    }
+
+    // The plan's own primaries, measured with the wider English labels.
+    const planEn = await newPage(browser, { fixtures: { foodRecommendations: foodRecommendationsFixture("en") } });
+    await expect("TC-056 primary targets ≥44px (plan 1440, en labels)", (async () => {
+      await buildSamplePlan(planEn, "en");
+      await waitForText(planEn, ".planner-filler-actions button", "Add this", { timeout: 15_000 });
+      await auditPrimaryTargets(planEn, "plan-1440-en", [
+        ".planner-day-tabs [role=\"tab\"]",
+        ".planner-meal-row .planner-filler-actions button:first-child",
+      ]);
+    })());
+    await planEn.close();
   }
 
   // --- DoD-A11Y-4: 320×568 reflow — no horizontal document scroll. ---
@@ -676,6 +711,59 @@ try {
       }
       await page.waitForSelector(".planner-resolve-intro", { timeout: 3_000 });
       await waitForText(page, "#planner-reviewed-title", "場所を確認してください");
+    })());
+
+    // DoD-A11Y-2: the same run continues THROUGH Resolve into the plan without
+    // a mouse — choosing the ambiguous candidate and pressing the continue CTA
+    // by keyboard. Until this existed, the only keyboard path to a plan was
+    // the sample link, which skips Resolve entirely.
+    await expect("QA-042 keyboard continues from Resolve into the plan", (async () => {
+      await pressTabUntil(
+        page,
+        () => document.activeElement?.closest(".planner-candidate-options") !== null
+          && (document.activeElement?.textContent ?? "").includes("リギ・クルム"),
+        { max: 60, label: "ambiguous candidate option" },
+      );
+      await page.keyboard.press("Enter");
+      await page.waitForFunction(
+        () => document.querySelectorAll(".planner-candidate-options").length === 0,
+        { timeout: 10_000 },
+      );
+      await pressTabUntil(
+        page,
+        () => document.activeElement?.classList.contains("planner-build-button") === true,
+        { max: 60, label: "resolve continue CTA" },
+      );
+      await page.keyboard.press("Enter");
+      await page.waitForSelector(".trip-planner-app.is-result", { timeout: 30_000 });
+    })());
+    await page.close();
+  }
+
+  // --- DoD-A11Y-5: the timeline is a real list for screen readers. ---
+  // planner.css removes the markers, which drops list semantics in Safari and
+  // VoiceOver unless the role is explicit — that is where "item N of M in this
+  // day" comes from.
+  {
+    const page = await newPage(browser);
+    await expect("DoD-A11Y-5 the day timeline exposes list semantics", (async () => {
+      await buildSamplePlan(page, "ja");
+      await settle(page, 400);
+      const semantics = await page.evaluate(() => {
+        const list = document.querySelector(".planner-timeline");
+        const panel = document.getElementById("planner-day-panel");
+        return {
+          role: list?.getAttribute("role") ?? null,
+          label: list?.getAttribute("aria-label") ?? "",
+          items: list ? [...list.children].filter((node) => node.tagName === "LI").length : 0,
+          stops: document.querySelectorAll(".planner-stop-row").length,
+          insidePanel: Boolean(panel && list && panel.contains(list)),
+        };
+      });
+      if (semantics.role !== "list") throw new Error(`timeline role: ${semantics.role}`);
+      if (!semantics.label.includes("行程")) throw new Error(`timeline label: ${semantics.label}`);
+      if (semantics.items < semantics.stops) throw new Error(`list items ${semantics.items} < stops ${semantics.stops}`);
+      if (!semantics.insidePanel) throw new Error("the timeline is not inside the day tabpanel");
     })());
     await page.close();
   }

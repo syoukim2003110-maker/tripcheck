@@ -144,7 +144,15 @@ export default function DayTimeline({
       ) : null}
 
       {day.stops.length === 0 ? <EmptyState locale={locale} /> : (
-        <ol className="planner-timeline">
+        // DoD-A11Y-5: planner.css sets list-style: none, which makes Safari and
+        // VoiceOver drop list semantics — the "item N of M" relationship a
+        // screen-reader user needs to follow a day. The explicit role restores
+        // it; the label says which day the list belongs to.
+        <ol
+          aria-label={text.dayTimelineLabel(day.label)}
+          className="planner-timeline"
+          role="list"
+        >
           {leadingRows}
           {day.stops.map((builtStop, index) => {
             const leg = index > 0 ? day.legs[index - 1] : null;

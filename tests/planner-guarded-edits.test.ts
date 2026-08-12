@@ -108,6 +108,50 @@ test("stay, last-entry, day-window and leg-mode edits are wired through the guar
     const body = hookSource.slice(bodyStart, bodyEnd > bodyStart ? bodyEnd : undefined);
     assert.match(body, /applyGuardedEdit\(\{/, `${action} must run the simulate-then-confirm pipeline`);
   }
+  // Restoring a removed stop is an edit too: the returning visit spends
+  // minutes and can push a booked stop late or breach the airport cutoff.
+  const restoreStart = hookSource.indexOf("function restoreRemovedStop(");
+  assert.ok(restoreStart >= 0, "restoreRemovedStop must exist");
+  const restoreBody = hookSource.slice(restoreStart, hookSource.indexOf("\n  function ", restoreStart + 1));
+  assert.match(restoreBody, /applyGuardedEdit\(\{/, "restoring a stop must run the simulate-then-confirm pipeline");
+  assert.match(restoreBody, /contextPatch: \{ excludedStopIds: next\.map/);
+
+  // Accepting an alternative is an edit as well. Every branch of
+  // applyTripAlternative that changes the plan runs the guard — the only
+  // exceptions are CHANGE_DAYS and REMOVE_OPTIONAL, which delegate to
+  // changeTripDays / removeStopFromPlan (both guarded in their own right).
+  const alternativeStart = hookSource.indexOf("function applyTripAlternative(");
+  assert.ok(alternativeStart >= 0, "applyTripAlternative must exist");
+  const alternativeBody = hookSource.slice(alternativeStart, hookSource.indexOf("\n  return {", alternativeStart));
+  for (const [kind, delegate] of [
+    ["CHANGE_DAYS", /changeTripDays\(alternative\.change\.days\)/],
+    ["START_EARLIER", null],
+    ["END_LATER", null],
+    ["CHANGE_BASE", null],
+    ["CHANGE_MODE", null],
+    ["OPTIMIZE_ORDER", null],
+    ["REMOVE_OPTIONAL", /removeStopFromPlan\(stop\)/],
+  ] as const) {
+    const branchStart = alternativeBody.indexOf(`alternative.kind === "${kind}"`);
+    assert.ok(branchStart >= 0, `${kind} branch must exist`);
+    const nextBranch = alternativeBody.indexOf("} else if", branchStart);
+    const branch = alternativeBody.slice(branchStart, nextBranch > branchStart ? nextBranch : undefined);
+    if (delegate) {
+      assert.match(branch, delegate, `${kind} must delegate to a guarded action`);
+      continue;
+    }
+    assert.match(branch, /applyGuardedEdit\(\{/, `${kind} must run the simulate-then-confirm pipeline`);
+    // …and the commit must sit INSIDE that pipeline's apply callback, never
+    // ahead of it, which is exactly how these branches used to bypass it.
+    const commitIndex = branch.indexOf("commitPlannerEdit(");
+    if (commitIndex >= 0) {
+      assert.ok(
+        commitIndex > branch.indexOf("applyGuardedEdit({"),
+        `${kind} commits before it asks — the guard is bypassed`,
+      );
+    }
+  }
+
   // The shared evaluation is the single conflict detector.
   assert.match(hookSource, /evaluatePlannerHardEdit\(\{/);
 
