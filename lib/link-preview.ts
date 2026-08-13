@@ -10,6 +10,8 @@ export type LinkPreview = {
   title: string;
   description: string;
   imageUrl: string | null;
+  /** Minted by the route; the browser needs it to load the thumbnail. */
+  imageSignature?: string | null;
   siteName: string;
 };
 
@@ -84,6 +86,15 @@ export async function fetchLinkPreview(
     current = next;
   }
   if (!response?.ok || !response.headers.get("content-type")?.toLowerCase().includes("text/html")) throw new Error("preview_unavailable");
+  // The address checked before the request is not necessarily the address the
+  // fetch connected to — it resolves the hostname again, and a short-TTL
+  // record can change in between. Workers give no way to pin the connect
+  // address for https, so instead the answer has to still be public *after*
+  // the response is in hand. A rebind now has to flip the record to a private
+  // address and back again, inside this window, without either side of it
+  // ever showing the private answer. It does not close the hole; it means the
+  // content of a body fetched from a private address is not handed back.
+  await assertPublicNetworkTarget(current, resolver);
   const html = await readLimitedText(response);
   const titleTag = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.replace(/<[^>]+>/g, "").trim() ?? "";
   const title = metaContent(html, ["og:title", "twitter:title"]) || decodeHtml(titleTag) || current.hostname;

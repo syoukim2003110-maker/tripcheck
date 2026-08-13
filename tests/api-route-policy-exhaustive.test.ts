@@ -92,6 +92,7 @@ test("the full classification is pinned, so a reclassification is a reviewed cha
       "POST /api/weather": ["free_public", null, "handler_guarded"],
       "POST /api/holidays": ["free_public", null, "handler_guarded"],
       "POST /api/link-preview": ["free_public", null, "handler_guarded"],
+      "GET /api/link-image": ["free_public", null, "signed_resource"],
       "GET /api/ai-status": ["local", null, "handler_guarded"],
       "POST /api/product-events": ["local", null, "handler_guarded"],
     },

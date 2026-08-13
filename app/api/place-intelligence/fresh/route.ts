@@ -7,6 +7,7 @@ import {
 } from "../../../../lib/fresh-voices";
 import { enabledAnthropicApiKey } from "../../../../lib/anthropic-runtime";
 import { paidApiDenialResponse, paidProviderGateway } from "../../../../lib/server/provider-gateway";
+import { signFindingUrls } from "../../../../lib/server/external-url-token";
 
 const noStoreHeaders = { "Cache-Control": "private, no-store, max-age=0" };
 const cacheTtlMs = 30 * 60 * 1000;
@@ -89,12 +90,12 @@ export async function POST(request: Request) {
   const key = cacheKey(parsed.name, parsed.area, parsed.languageCode, parsed.intent, parsed.depth, parsed.destination);
   const cached = resultCache.get(key);
   if (cached && cached.expiresAt > now) {
-    return Response.json(cached.result, { headers: { ...noStoreHeaders, "X-TripCheck-Cache": "hit" } });
+    return Response.json(await signFindingUrls(cached.result), { headers: { ...noStoreHeaders, "X-TripCheck-Cache": "hit" } });
   }
   const existing = inFlight.get(key);
   if (existing) {
     try {
-      return Response.json(await existing, { headers: { ...noStoreHeaders, "X-TripCheck-Cache": "shared" } });
+      return Response.json(await signFindingUrls(await existing), { headers: { ...noStoreHeaders, "X-TripCheck-Cache": "shared" } });
     } catch {
       return Response.json({ code: "unavailable" }, { status: 502, headers: noStoreHeaders });
     }
@@ -118,7 +119,7 @@ export async function POST(request: Request) {
     settleQuota(reservation, result.searchCount);
     access.complete();
     resultCache.set(key, { expiresAt: now + cacheTtlMs, result });
-    return Response.json(result, { headers: { ...noStoreHeaders, ...access.headers, "X-TripCheck-Cache": "miss" } });
+    return Response.json(await signFindingUrls(result), { headers: { ...noStoreHeaders, ...access.headers, "X-TripCheck-Cache": "miss" } });
   } catch (error) {
     access.complete({ failedUnits: providerUnits });
     console.warn("fresh_voices_unavailable", {

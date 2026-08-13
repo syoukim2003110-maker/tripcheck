@@ -25,7 +25,7 @@ import {
   paymentLabel,
 } from "../../../../lib/presentation/trip-presentation.ts";
 import { ui, type PlannerLocale } from "../../../../lib/presentation/planner-copy.ts";
-import { placePhotoSrc } from "../../../../lib/presentation/place-photo";
+import { linkImageSrc, placePhotoSrc } from "../../../../lib/presentation/place-photo";
 
 type BuiltPlanStop = BuiltTripPlan["days"][number]["stops"][number];
 
@@ -55,7 +55,7 @@ type StopInspectorProps = {
   onMoveStopToDay: (stopId: string, dayIndex: number) => void;
   onRemoveStop: (stop: RouteStop) => void;
   onCheckPlace: (stop: RouteStop) => void;
-  onEnsureSourcePreviews: (urls: string[]) => void;
+  onEnsureSourcePreviews: (sources: ReadonlyArray<{ url: string; urlSignature?: string | null }>) => void;
   onPhotoError: (event: SyntheticEvent<HTMLImageElement>) => void;
 };
 
@@ -319,7 +319,7 @@ export default function StopInspector({
             aria-label={`${selectedBuiltStop.stop.name} · ${text.freshHeading}`}
             key={selectedBuiltStop.stop.id}
             onToggle={(event) => {
-              if ((event.target as HTMLDetailsElement).open) onEnsureSourcePreviews(fresh.findings.slice(0, 3).map((finding) => finding.url));
+              if ((event.target as HTMLDetailsElement).open) onEnsureSourcePreviews(fresh.findings.slice(0, 3));
             }}
           >
             <summary>{text.publicSources} · {fresh.findings.length} <small>{formatCheckedAt(fresh.checkedAt, locale)}</small></summary>
@@ -333,10 +333,10 @@ export default function StopInspector({
                     </div>
                     <b>{finding.title}</b>
                     <p>{finding.note}</p>
-                    {sourcePreviews[finding.url]?.imageUrl ? <>
-                      {/* Open Graph preview from the cited page itself; broken images fall back to the media badge. */}
+                    {linkImageSrc(sourcePreviews[finding.url]?.imageUrl, sourcePreviews[finding.url]?.imageSignature) ? <>
+                      {/* Open Graph preview from the cited page, proxied through this origin so the page's host never sees the traveller; broken images fall back to the media badge. */}
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img alt="" className="planner-fresh-thumb" loading="lazy" onError={onPhotoError} referrerPolicy="no-referrer" src={sourcePreviews[finding.url].imageUrl ?? undefined} />
+                      <img alt="" className="planner-fresh-thumb" loading="lazy" onError={onPhotoError} src={linkImageSrc(sourcePreviews[finding.url].imageUrl, sourcePreviews[finding.url].imageSignature)} />
                     </> : null}
                     <i aria-hidden="true">↗</i>
                   </a>

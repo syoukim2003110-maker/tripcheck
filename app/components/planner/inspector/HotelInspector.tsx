@@ -25,7 +25,7 @@ import { formatDistanceMeters } from "../../../../lib/presentation/trip-presenta
 import { hotelAxisWinners, hotelShortlist, rakutenReviewLine, ratingFactLine } from "../../../../lib/presentation/recommendation-presentation.ts";
 import type { PlanImpactMetrics } from "../../../../lib/recommendation-impact.ts";
 import { bufferDeltaLine, travelDeltaLine, ui, type PlannerLocale } from "../../../../lib/presentation/planner-copy.ts";
-import { placePhotoSrc } from "../../../../lib/presentation/place-photo";
+import { linkImageSrc, placePhotoSrc } from "../../../../lib/presentation/place-photo";
 
 type HotelInspectorProps = {
   locale: PlannerLocale;
@@ -61,7 +61,7 @@ type HotelInspectorProps = {
   onApplyHotelStyle: (style: HotelStyleChoice) => void;
   onSelectNightCandidate: (nightIndex: number, candidateId: string) => void;
   onSelectHotelCandidate: (candidate: HotelCandidate, purpose?: HotelPurpose) => void;
-  onEnsureSourcePreviews: (urls: string[]) => void;
+  onEnsureSourcePreviews: (sources: ReadonlyArray<{ url: string; urlSignature?: string | null }>) => void;
   onPhotoError: (event: SyntheticEvent<HTMLImageElement>) => void;
 };
 
@@ -358,7 +358,7 @@ export default function HotelInspector({
         <details
           className="planner-evidence-sources"
           onToggle={(event) => {
-            if ((event.target as HTMLDetailsElement).open) onEnsureSourcePreviews((hotelState.fresh.result?.findings ?? []).slice(0, 3).map((finding) => finding.url));
+            if ((event.target as HTMLDetailsElement).open) onEnsureSourcePreviews((hotelState.fresh.result?.findings ?? []).slice(0, 3));
           }}
         >
           <summary>{text.publicSources} · {hotelState.fresh.result.findings.length}</summary>
@@ -367,9 +367,10 @@ export default function HotelInspector({
               <a href={finding.url} key={finding.url} rel="noreferrer" target="_blank">
                 <div><span className={`is-${finding.sourceKind}`}>{text.freshSource[finding.sourceKind]}</span><small>{finding.age ?? text.freshAgeUnknown}</small></div>
                 <b>{finding.title}</b><p>{finding.note}</p>
-                {sourcePreviews[finding.url]?.imageUrl ? <>
+                {linkImageSrc(sourcePreviews[finding.url]?.imageUrl, sourcePreviews[finding.url]?.imageSignature) ? <>
+                  {/* Proxied through this origin so the cited page's host never sees the traveller. */}
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img alt="" className="planner-fresh-thumb" loading="lazy" onError={onPhotoError} referrerPolicy="no-referrer" src={sourcePreviews[finding.url].imageUrl ?? undefined} />
+                  <img alt="" className="planner-fresh-thumb" loading="lazy" onError={onPhotoError} src={linkImageSrc(sourcePreviews[finding.url].imageUrl, sourcePreviews[finding.url].imageSignature)} />
                 </> : null}
                 <i aria-hidden="true">↗</i>
               </a>

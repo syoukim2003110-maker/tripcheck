@@ -34,6 +34,12 @@ export type FreshFinding = {
   isRecent: boolean | null;
   sourceKind: FreshSourceKind;
   evidenceLevel?: "cited_claim" | "source_only";
+  /**
+   * Minted at the route boundary by signFindingUrls. The preview and image
+   * routes serve only URLs carrying one, so a client cannot aim them at a
+   * host TripCheck never surfaced.
+   */
+  urlSignature?: string | null;
 };
 
 export type FreshVoicesResult = {

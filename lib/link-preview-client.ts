@@ -2,13 +2,13 @@ import type { LinkPreview } from "./link-preview.ts";
 
 export class LinkPreviewError extends Error {}
 
-export async function requestLinkPreview(url: string): Promise<LinkPreview> {
+export async function requestLinkPreview(url: string, signature: string): Promise<LinkPreview> {
   let response: Response;
   try {
     response = await fetch("/api/link-preview", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url }),
+      body: JSON.stringify({ url, sig: signature }),
     });
   } catch {
     throw new LinkPreviewError("unavailable");

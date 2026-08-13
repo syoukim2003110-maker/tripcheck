@@ -104,6 +104,9 @@ export const API_ROUTE_POLICIES: Readonly<Record<ApiRouteKey, ApiRoutePolicy>> =
     route({ method: "POST", path: "/api/weather", class: "free_public", origin: "handler_guarded", cache: "no_store" }),
     route({ method: "POST", path: "/api/holidays", class: "free_public", origin: "handler_guarded", cache: "no_store" }),
     route({ method: "POST", path: "/api/link-preview", class: "free_public", origin: "handler_guarded", cache: "no_store" }),
+    // Reached by an <img>, so like the photo route it authorises itself with
+    // the signature this server minted rather than with an Origin header.
+    route({ method: "GET", path: "/api/link-image", class: "free_public", origin: "signed_resource", cache: "private_short" }),
     // Answered from this deployment alone.
     route({ method: "GET", path: "/api/ai-status", class: "local", origin: "handler_guarded", cache: "no_store" }),
     route({ method: "POST", path: "/api/product-events", class: "local", origin: "handler_guarded", cache: "no_store" }),

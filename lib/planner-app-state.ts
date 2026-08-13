@@ -178,7 +178,7 @@ export type Inspector =
   | { kind: "hotel" }
   | { kind: "recommendations"; dayIndex: number; candidateId?: string }
   | null;
-export type SourcePreviewState = { status: "loading" | "ready" | "failed"; imageUrl: string | null };
+export type SourcePreviewState = { status: "loading" | "ready" | "failed"; imageUrl: string | null; imageSignature?: string | null };
 export type ManualPlaceDraft = { address: string; latitude: string; longitude: string };
 
 export const emptyFreshState: FreshState = { status: "idle", result: null };

@@ -11,3 +11,17 @@ export function placePhotoSrc(photoName: string | null | undefined, signature: s
   if (!photoName || !signature) return undefined;
   return `/api/place-photo?name=${encodeURIComponent(photoName)}&sig=${encodeURIComponent(signature)}`;
 }
+
+/**
+ * The one place a link-preview thumbnail URL is written.
+ *
+ * The thumbnail comes from an og:image on a third-party host. Pointing an
+ * `<img>` straight at it told that host the traveller was reading about this
+ * place, and forced `img-src https:` — which is an exfiltration channel for
+ * anything that gets script onto the page. It is served through this origin
+ * instead, and only with the signature the server minted for that exact URL.
+ */
+export function linkImageSrc(imageUrl: string | null | undefined, signature: string | null | undefined) {
+  if (!imageUrl || !signature) return undefined;
+  return `/api/link-image?url=${encodeURIComponent(imageUrl)}&sig=${encodeURIComponent(signature)}`;
+}

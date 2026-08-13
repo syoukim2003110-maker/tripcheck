@@ -14,6 +14,8 @@
  * photo — it just means a forged or guessed name never reaches Google at all.
  */
 
+import { equalSignatures, hmacBase64Url, SIGNED_TOKEN_PATTERN, signingSecret, type SigningEnvironment } from "./hmac-signature.ts";
+
 export const PLACE_PHOTO_TOKEN_VERSION = "v1";
 
 /**
@@ -26,40 +28,13 @@ export const PLACE_PHOTO_TOKEN_VERSION = "v1";
 export const PLACE_PHOTO_TOKEN_TTL_SECONDS = 3_600;
 
 export const PLACE_PHOTO_NAME_PATTERN = /^places\/[A-Za-z0-9_-]{8,300}\/photos\/[A-Za-z0-9_-]{8,600}$/;
-const TOKEN_PATTERN = /^(\d{10,13})\.([A-Za-z0-9_-]{43})$/;
 
-export type PlacePhotoTokenEnvironment = Readonly<Record<string, string | undefined>>;
+export type PlacePhotoTokenEnvironment = SigningEnvironment;
 
-/**
- * Key material, in preference order. Every candidate is a server-only secret
- * that already has to be present for this route to function, so signing never
- * needs new configuration and can never silently fall back to "unsigned".
- */
-export function placePhotoTokenSecret(env: PlacePhotoTokenEnvironment): string | null {
-  for (const name of ["TRIPCHECK_PHOTO_TOKEN_SECRET", "TRIPCHECK_QUOTA_HASH_SECRET", "GOOGLE_PLACES_API_KEY"]) {
-    const value = env[name]?.trim();
-    if (value && value.length >= 16) return value;
-  }
-  return null;
-}
+/** @see signingSecret — the shared server-only key material. */
+export const placePhotoTokenSecret = signingSecret;
 
-function base64Url(bytes: Uint8Array) {
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
-}
-
-async function signature(secret: string, payload: string) {
-  const key = await globalThis.crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const signed = await globalThis.crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload));
-  return base64Url(new Uint8Array(signed));
-}
+const signature = hmacBase64Url;
 
 /** `<expiry seconds>.<base64url HMAC>` — opaque to the client. */
 export async function signPlacePhotoName(
@@ -73,16 +48,6 @@ export async function signPlacePhotoName(
   return `${expiry}.${await signature(secret, `${PLACE_PHOTO_TOKEN_VERSION}\n${expiry}\n${photoName}`)}`;
 }
 
-/** Length-independent comparison; both operands are fixed-length base64url. */
-function equalSignatures(left: string, right: string) {
-  if (left.length !== right.length) return false;
-  let difference = 0;
-  for (let index = 0; index < left.length; index += 1) {
-    difference |= left.charCodeAt(index) ^ right.charCodeAt(index);
-  }
-  return difference === 0;
-}
-
 export async function verifyPlacePhotoToken(input: {
   photoName: string;
   token: string;
@@ -90,7 +55,7 @@ export async function verifyPlacePhotoToken(input: {
   nowSeconds: number;
 }): Promise<boolean> {
   if (!PLACE_PHOTO_NAME_PATTERN.test(input.photoName)) return false;
-  const parts = TOKEN_PATTERN.exec(input.token);
+  const parts = SIGNED_TOKEN_PATTERN.exec(input.token);
   if (!parts) return false;
   const expiry = Number(parts[1]);
   if (!Number.isSafeInteger(expiry) || expiry < Math.floor(input.nowSeconds)) return false;

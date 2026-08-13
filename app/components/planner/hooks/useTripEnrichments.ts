@@ -96,21 +96,29 @@ export function useTripEnrichments({ plan, activeDestination }: {
   // source list is opened and cached for the session. Failures fall back to
   // the media-kind badge that is always rendered.
   const requestedSourcePreviewsRef = useRef<Set<string>>(new Set());
-  const ensureSourcePreviews = useCallback((urls: string[]) => {
-    const missing = urls.filter((url) => url.startsWith("https://") && !requestedSourcePreviewsRef.current.has(url)).slice(0, 3);
+  // The preview route only accepts URLs this server signed, so a finding
+  // without its signature is never requested — that is a source the app did
+  // not produce, and the card falls back to its media-kind badge.
+  const ensureSourcePreviews = useCallback((sources: ReadonlyArray<{ url: string; urlSignature?: string | null }>) => {
+    const missing = sources
+      .filter((source) => source.url.startsWith("https://") && source.urlSignature && !requestedSourcePreviewsRef.current.has(source.url))
+      .slice(0, 3);
     if (missing.length === 0) return;
-    for (const url of missing) requestedSourcePreviewsRef.current.add(url);
+    for (const source of missing) requestedSourcePreviewsRef.current.add(source.url);
     setSourcePreviews((state) => ({
       ...state,
-      ...Object.fromEntries(missing.map((url) => [url, { status: "loading", imageUrl: null } satisfies SourcePreviewState])),
+      ...Object.fromEntries(missing.map((source) => [source.url, { status: "loading", imageUrl: null } satisfies SourcePreviewState])),
     }));
-    for (const url of missing) {
-      void requestLinkPreview(url)
+    for (const source of missing) {
+      void requestLinkPreview(source.url, source.urlSignature ?? "")
         .then((preview) => {
-          setSourcePreviews((state) => ({ ...state, [url]: { status: "ready", imageUrl: preview.imageUrl } }));
+          setSourcePreviews((state) => ({
+            ...state,
+            [source.url]: { status: "ready", imageUrl: preview.imageUrl, imageSignature: preview.imageSignature ?? null },
+          }));
         })
         .catch(() => {
-          setSourcePreviews((state) => ({ ...state, [url]: { status: "failed", imageUrl: null } }));
+          setSourcePreviews((state) => ({ ...state, [source.url]: { status: "failed", imageUrl: null } }));
         });
     }
   }, []);
