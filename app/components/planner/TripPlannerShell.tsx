@@ -9,7 +9,7 @@
 // This file is intentionally scanned by the planner-surface contract tests
 // (app/**/*.tsx), which pin the lifecycle rotation, hydration and storage
 // contracts to the code wherever it lives.
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import Icon from "../../PlannerIcons";
 import ErrorState from "./states/ErrorState";
 import LoadingState from "./states/LoadingState";
@@ -41,23 +41,18 @@ import { useHotelActions, useHotels } from "./hooks/useHotels";
 import { usePlanBuild, usePlanBuildActions } from "./hooks/usePlanBuild";
 import { useDestinationModel, usePlannerViewModel, useStablePlannerContext, useTripDomainModel } from "./hooks/useTripDomainModel";
 import { useGuardedPlannerEdits, usePlannerEdits, useRecommendationEdits } from "./hooks/usePlannerEdits";
-import type { Pace } from "../../../lib/trip-builder";
-import type { TransportMode, TravelPreference } from "../../../lib/time-feasibility";
 import {
   destinationById,
   destinationName,
   type DestinationChoice,
 } from "../../../lib/destinations";
 import { type ShareableTripInput } from "../../../lib/share-link";
-import { buildScopedTripShare, type ShareScope } from "../../../lib/share-scope";
-import {
-  type AlternativePlan,
-} from "../../../lib/feasibility-result";
+import { buildScopedTripShare } from "../../../lib/share-scope";
 import type { RouteRecommendationPoint } from "../../../lib/route-recommendations";
 import { trackProductEvent, type ProductEventFields, type ProductEventName } from "../../../lib/product-analytics";
 import { rotateTripRequestToken } from "../../../lib/trip-request-identity";
 import { rebaseResolutionOverrides } from "../../../lib/place-suggestion-client";
-import { routeLegKey, type AirportCode, type MealPlan, type VisitWindow } from "../../../lib/trip-builder";
+import { routeLegKey, type AirportCode } from "../../../lib/trip-builder";
 import { tripScopeWarnings } from "../../../lib/trip-scope";
 import {
   removeWishlistPlace,
@@ -68,7 +63,6 @@ import {
   canRedoPlannerHistory,
   canUndoPlannerHistory,
 } from "../../../lib/planner-history";
-import { createPlannerMapHoverChannel } from "../../../lib/planner-map-hover";
 import {
   bufferDeltaLine,
   travelDeltaLine,
@@ -87,23 +81,88 @@ import {
   P1_TRAVEL_ENRICHMENTS,
   defaultTripDate,
   shouldUseRecommendedHotel,
-  type PlannerInputStep,
-  type PlannerBuildMode,
-  type MobileResultView,
-  type PlannerSheetState,
-  type PlannerMapScope,
-  type Inspector,
-  type ManualPlaceDraft,
   upsertResolutionOverride,
 } from "../../../lib/planner-app-state";
 import { mealSlotsAfterStop } from "../../../lib/presentation/timeline-presentation";
 import { usePlaceSuggestions } from "./hooks/usePlaceSuggestions";
+import { usePlanEditState } from "./hooks/usePlanEditState";
+import { usePlannerViewState } from "./hooks/usePlannerViewState";
+import { useTripRequestState } from "./hooks/useTripRequestState";
 
 export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = "" }: { initialLocale?: PlannerLocale; mapsApiKey?: string }) {
-  const [locale, setLocale] = useState<PlannerLocale>(initialLocale);
-  // "auto" is the honest default: the first resolved place names the country,
-  // so a wishlist works without asking where the trip is before it exists.
-  const [destinationChoice, setDestinationChoice] = useState<DestinationChoice>("auto");
+  // The shell used to declare all 53 of its state slices in one block. They
+  // are grouped by who reads them: the request the engine plans from, the
+  // edits it replans from, and the view state nothing outside the components
+  // ever sees. tests/planner-state-boundary.test.ts holds the third group to
+  // that promise.
+  const {
+    locale, setLocale,
+    destinationChoice, setDestinationChoice,
+    itinerary, setItinerary,
+    buildMode, setBuildMode,
+    tripDays, setTripDays,
+    daysUndecided, setDaysUndecided,
+    tripStartDate, setTripStartDate,
+    tripDateTouched, setTripDateTouched,
+    hotelQuery, setHotelQuery,
+    pace, setPace,
+    mealPlan, setMealPlan,
+    arrivalAirport, setArrivalAirport,
+    arrivalTime, setArrivalTime,
+    departureAirport, setDepartureAirport,
+    departureTime, setDepartureTime,
+    flightKind, setFlightKind,
+    travelPreference, setTravelPreference,
+    dayStartDefault, setDayStartDefault,
+    dayEndTarget, setDayEndTarget,
+    transferBufferMinutes, setTransferBufferMinutes,
+    maxWalkingMinutesPerLeg, setMaxWalkingMinutesPerLeg,
+    maxTransfersPerLeg, setMaxTransfersPerLeg,
+  } = useTripRequestState(initialLocale);
+  const {
+    legModeOverrides, setLegModeOverrides,
+    dayOverrides, setDayOverrides,
+    lockedOrderByDay, setLockedOrderByDay,
+    mealSelections, setMealSelections,
+    durationOverrides, setDurationOverrides,
+    userStayMinutes, setUserStayMinutes,
+    lastEntryTimes, setLastEntryTimes,
+    earlyVisitStopIds, setEarlyVisitStopIds,
+    dayStartTimes, setDayStartTimes,
+    dayEndTimes, setDayEndTimes,
+    removedStops, setRemovedStops,
+    openingWindowsByDay, setOpeningWindowsByDay,
+  } = usePlanEditState();
+  const {
+    inputStep, setInputStep,
+    mobileResultView, setMobileResultView,
+    mapScope, setMapScope,
+    printMode, setPrintMode,
+    manualPlaceDrafts, setManualPlaceDrafts,
+    manualPinTarget, setManualPinTarget,
+    hasPlan, setHasPlan,
+    activeDay, setActiveDay,
+    inspector, setInspector,
+    mapFocusedStopId, setMapFocusedStopId,
+    mapHoverChannel,
+    shareCopied, setShareCopied,
+    shareDialogOpen, setShareDialogOpen,
+    shareScope, setShareScope,
+    planReady, setPlanReady,
+    hintDismissed, setHintDismissed,
+    inspectorSheetState, setInspectorSheetState,
+    comparisonAlternative, setComparisonAlternative,
+    routeGeometryByDay, setRouteGeometryByDay,
+  } = usePlannerViewState();
+  // Grouping the state into hooks cost this file one lint signal: five effects
+  // below set state directly, and react-hooks/set-state-in-effect flagged all
+  // five while the setters came from useState in this scope. The rule cannot
+  // see through a custom hook's return, so it is silent on them now. The code
+  // is unchanged and the sites are: the airport reset and the trip-date reset
+  // when the destination changes, the hint dismissal when an inspector opens,
+  // the manual-pin reset when the step changes, and the sheet-size reset when
+  // the inspector changes. They were already in the accepted lint baseline;
+  // they are written down here because the linter no longer writes them down.
   // Place resolution, build lifecycle and per-place evidence state lives in
   // usePlanBuild, called here at the old state block's position — before the
   // planner-context memos that read the resolved stops and base, and before
@@ -144,56 +203,14 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
     placeReviewAbortRef,
     buildPlanRef,
   } = planBuild;
-  const [itinerary, setItinerary] = useState("");
-  const [inputStep, setInputStep] = useState<PlannerInputStep>("places");
-  const [buildMode, setBuildMode] = useState<PlannerBuildMode>("automatic");
-  const [mobileResultView, setMobileResultView] = useState<MobileResultView>("timeline");
-  const [mapScope, setMapScope] = useState<PlannerMapScope>("day");
-  const [tripDays, setTripDays] = useState(3);
   // v1.1 LIVE-P1-03: "how many days" may stay undecided. TripCheck then
   // proposes the deterministic minimum-day answer during the build.
-  const [daysUndecided, setDaysUndecided] = useState(false);
-  const [tripStartDate, setTripStartDate] = useState(() => defaultTripDate());
-  const [tripDateTouched, setTripDateTouched] = useState(false);
-  const [hotelQuery, setHotelQuery] = useState("");
-  const [pace, setPace] = useState<Pace>("balanced");
-  const [mealPlan, setMealPlan] = useState<MealPlan>("all");
-  const [arrivalAirport, setArrivalAirport] = useState<AirportCode>("none");
-  const [arrivalTime, setArrivalTime] = useState("");
-  const [departureAirport, setDepartureAirport] = useState<AirportCode>("none");
-  const [departureTime, setDepartureTime] = useState("");
-  const [flightKind, setFlightKind] = useState<"international" | "domestic">("international");
-  const [printMode, setPrintMode] = useState(false);
-  const [manualPlaceDrafts, setManualPlaceDrafts] = useState<Record<number, ManualPlaceDraft>>({});
-  const [manualPinTarget, setManualPinTarget] = useState<number | null>(null);
-  const [hasPlan, setHasPlan] = useState(false);
-  const [activeDay, setActiveDay] = useState(0);
-  const [inspector, setInspector] = useState<Inspector>(null);
-  const [mapFocusedStopId, setMapFocusedStopId] = useState<string | null>(null);
   // Timeline hover/focus → map highlight (spec §7.4). A ref-like channel, not
   // React state: pointer movement across the timeline must not re-render the
   // shell tree, and the map applies the highlight imperatively. Selection
   // stays in React state above and is untouched by this channel.
-  const [mapHoverChannel] = useState(() => createPlannerMapHoverChannel());
-  const [travelPreference, setTravelPreference] = useState<TravelPreference>("auto");
-  const [legModeOverrides, setLegModeOverrides] = useState<Record<string, TransportMode>>({});
-  const [dayOverrides, setDayOverrides] = useState<Record<string, number>>({});
-  const [lockedOrderByDay, setLockedOrderByDay] = useState<Record<number, string[]>>({});
-  const [mealSelections, setMealSelections] = useState<Record<string, string>>({});
-  const [dayStartDefault, setDayStartDefault] = useState("09:00");
-  const [shareCopied, setShareCopied] = useState(false);
-  const [shareDialogOpen, setShareDialogOpen] = useState(false);
-  const [shareScope, setShareScope] = useState<ShareScope>({ dates: true, hotel: false, airports: false, reservations: false });
   // Once a plan is built it stays available: "back to input" must never force
   // a full (paid, slow) rebuild just to peek at the form again.
-  const [planReady, setPlanReady] = useState(false);
-  const [hintDismissed, setHintDismissed] = useState(false);
-  const [dayEndTarget, setDayEndTarget] = useState("");
-  const [transferBufferMinutes, setTransferBufferMinutes] = useState<0 | 10 | 20 | 30>(10);
-  const [maxWalkingMinutesPerLeg, setMaxWalkingMinutesPerLeg] = useState<number | null>(null);
-  const [maxTransfersPerLeg, setMaxTransfersPerLeg] = useState<number | null>(null);
-  const [removedStops, setRemovedStops] = useState<Array<{ id: string; name: string }>>([]);
-  const [openingWindowsByDay, setOpeningWindowsByDay] = useState<Record<string, Record<number, VisitWindow[]>>>({});
   // Meal-slot and route-gap search state lives in useFoodAndGaps; the
   // discovery actions join below (useFoodAndGapDiscovery) once the derived
   // plan, slots and search keys they close over exist.
@@ -233,13 +250,6 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
     setNightlyHotels,
     hotelStyleRef,
   } = useHotels();
-  const [routeGeometryByDay, setRouteGeometryByDay] = useState<Record<string, RouteRecommendationPoint[]>>({});
-  const [durationOverrides, setDurationOverrides] = useState<Record<string, number>>({});
-  const [userStayMinutes, setUserStayMinutes] = useState<Record<string, number>>({});
-  const [lastEntryTimes, setLastEntryTimes] = useState<Record<string, string>>({});
-  const [earlyVisitStopIds, setEarlyVisitStopIds] = useState<string[]>([]);
-  const [dayStartTimes, setDayStartTimes] = useState<Record<number, string>>({});
-  const [dayEndTimes, setDayEndTimes] = useState<Record<number, string>>({});
   // The planner edit history, the hard-edit confirmation and the edit toast
   // live in usePlannerEdits together with the undo/redo core and the
   // Cmd/Ctrl+Z shortcut: unlike the other extracted actions, that core closes
@@ -307,8 +317,6 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
   const placesInputRef = useRef<HTMLTextAreaElement | null>(null);
   // v1.1 §9.3: on phones the detail panel is a bottom sheet (half height by
   // default, full on request via an explicit button, never drag-only).
-  const [inspectorSheetState, setInspectorSheetState] = useState<PlannerSheetState>("half");
-  const [comparisonAlternative, setComparisonAlternative] = useState<AlternativePlan | null>(null);
   const inspectorPanelRef = useRef<HTMLElement | null>(null);
   const inspectorTriggerRef = useRef<HTMLElement | null>(null);
   const shareDialogRef = useRef<HTMLElement | null>(null);
@@ -391,7 +399,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
         if (trigger?.isConnected) trigger.focus();
       }, 0);
     };
-  }, [inspectorOpen]);
+  }, [inspectorOpen, setInspector]);
 
   // An airport that the newly chosen country does not serve is not a plan;
   // clearing it beats silently squeezing the wrong day. While the country is
@@ -401,14 +409,14 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
     const offered = new Set(activeDestination.airports.map((airport) => airport.code));
     if (arrivalAirport !== "none" && !offered.has(arrivalAirport)) setArrivalAirport("none");
     if (departureAirport !== "none" && !offered.has(departureAirport)) setDepartureAirport("none");
-  }, [activeDestination, arrivalAirport, departureAirport]);
+  }, [activeDestination, arrivalAirport, departureAirport, setArrivalAirport, setDepartureAirport]);
 
   // Until the traveller edits the date themselves, keep it as "tomorrow where
   // the trip happens" — Auckland's tomorrow is not Zurich's.
   useEffect(() => {
     if (tripDateTouched) return;
     setTripStartDate(defaultTripDate(activeDestination));
-  }, [activeDestination, tripDateTouched]);
+  }, [activeDestination, tripDateTouched, setTripStartDate]);
 
   useEffect(() => {
     document.documentElement.lang = locale;
@@ -481,11 +489,14 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
     setRemovedStops(safeRemovedStopLabels(shared.removedStops, shared.itinerary, locale));
     setResolutionOverrides(shared.resolutionOverrides ?? []);
     setPendingSharedBuild(true);
-  }, [locale]);
+    // setPendingSharedBuild is stable, but it is destructured from a hook that
+    // runs further down this component, so naming it here would read it in the
+    // temporal dead zone. The callback only ever calls it after a render.
+  }, [locale, placeReviewAbortRef, setAmbiguousPlaces, setArrivalAirport, setArrivalTime, setDayEndTarget, setDayEndTimes, setDayOverrides, setDayStartDefault, setDayStartTimes, setDepartureAirport, setDepartureTime, setDestinationChoice, setDetectedDestinationId, setFlightKind, setHasPlan, setHotelQuery, setHotelUsesRecommendations, setInputStep, setIsResolvingPlaces, setItinerary, setLastEntryTimes, setLegModeOverrides, setLockedOrderByDay, setManualAddressResolution, setManualPinTarget, setManualPlaceDrafts, setMaxTransfersPerLeg, setMaxWalkingMinutesPerLeg, setMealPlan, setPace, setPlaceWarning, setPlanReady, setPreviewStops, setRemovedStops, setResolutionOverrides, setResolvedBase, setResolvedStops, setReviewedInputSignature, setTransferBufferMinutes, setTravelPreference, setTripDateTouched, setTripDays, setTripStartDate, setUserStayMinutes]);
 
   useEffect(() => {
     if (inspector !== null) setHintDismissed(true);
-  }, [inspector]);
+  }, [inspector, setHintDismissed]);
 
   useEffect(() => {
     if (!shareDialogOpen) return;
@@ -528,7 +539,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
       document.removeEventListener("keydown", handleKeyDown);
       returnTarget?.focus();
     };
-  }, [shareDialogOpen]);
+  }, [shareDialogOpen, setShareDialogOpen]);
 
   // The stable planner context (nightly bases folded in, live measurements
   // zeroed) and the transit-convergence input key live in
@@ -738,7 +749,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
       window.removeEventListener("afterprint", finish);
       window.cancelAnimationFrame(frame);
     };
-  }, [printMode]);
+  }, [printMode, setPrintMode]);
 
   // The hotel state lives in useHotels (called above, before the planner
   // context memos its stay mode feeds). The selection/refresh actions close
@@ -936,7 +947,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
   });
   useEffect(() => {
     if (inputStep !== "conditions" || hasPlan) setManualPinTarget(null);
-  }, [hasPlan, inputStep]);
+  }, [hasPlan, inputStep, setManualPinTarget]);
   // TC-062: scope warnings when the resolved trip leaves supported territory
   // (border crossing, multiple time zones) or measured transit boardings show
   // a ferry ride. Only boardings the current plan's legs actually consume are
@@ -957,7 +968,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
     if (autoBumpedDaysRef.current === maxParsedDay) return;
     autoBumpedDaysRef.current = maxParsedDay;
     setTripDays(maxParsedDay);
-  }, [maxParsedDay, tripDays]);
+  }, [maxParsedDay, tripDays, setTripDays]);
   useEffect(() => {
     if (!planReady || !tripDateTouched || !feasibilityResult || openingVerificationCount > 0 || !currentTransitConvergence) return;
     if (analyticsMilestonesRef.current.has("live_verification_completed")) return;
@@ -978,7 +989,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
       ));
       return same ? current : { ...current, [routeGeometryKey]: points };
     });
-  }, [routeGeometryKey]);
+  }, [routeGeometryKey, setRouteGeometryByDay]);
 
   useEffect(() => {
     // A newly opened panel always starts at the half-height sheet state.
@@ -987,7 +998,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
     if (inspector?.kind === "hotel") trackProductEvent("hotel_opened", {});
     else if (inspector?.kind === "food") trackProductEvent("meal_opened", {});
     else if (inspector?.kind === "recommendations") trackProductEvent("gap_opened", {});
-  }, [inspector]);
+  }, [inspector, setInspectorSheetState]);
 
   const handleSelectStop = useCallback((stopId: string | null) => {
     setMapFocusedStopId(stopId);
@@ -996,7 +1007,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
       const target = document.querySelector<HTMLElement>(`[data-planner-stop-id="${CSS.escape(stopId)}"]`);
       target?.scrollIntoView({ behavior: "smooth", block: "center" });
     }
-  }, []);
+  }, [setInspector, setMapFocusedStopId]);
 
   const handleTimelineHoverStop = useCallback((stopId: string | null) => {
     mapHoverChannel.set(stopId ? { kind: "stop", stopId } : null);
@@ -1035,7 +1046,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
     }, { root, rootMargin: "-28% 0px -42% 0px", threshold: [0.15, 0.5, 0.85] });
     rows.forEach((row) => observer.observe(row));
     return () => observer.disconnect();
-  }, [activeDay, hasPlan, plan?.days]);
+  }, [activeDay, hasPlan, plan?.days, setMapFocusedStopId]);
 
   // A photo that 404s must not leave a broken frame (17.4). The node stays in
   // the DOM (hidden) so React's reconciliation is never fighting a manually
@@ -1048,7 +1059,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
 
   const handleSelectFoodPin = useCallback((slotId: string, candidateId: string) => {
     setInspector({ kind: "food", slotId, candidateId });
-  }, []);
+  }, [setInspector]);
 
   // The transit-convergence loop lives in useTransitEvidence (called above,
   // before the planner-context memos its state feeds). The budgeted post-build
