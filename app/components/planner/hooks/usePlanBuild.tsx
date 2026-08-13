@@ -46,6 +46,8 @@ import {
 } from "../../../../lib/place-resolution-client";
 import { PLANNING_BUDGET, takeWithinPlanningBudget } from "../../../../lib/planning-budget";
 import { resolveKnownStops, type ResolvedInputStop, type RouteStop } from "../../../../lib/route-optimizer";
+import { resolveProvisionalTripLength } from "../../../../lib/provisional-trip-length";
+import { rankHotelCandidates, safestHotelCandidate } from "../../../../lib/hotel-handover";
 import {
   buildTripFromWishlist,
   hotelRouteContextForDraft,
@@ -63,7 +65,6 @@ import {
   type DestinationId,
 } from "../../../../lib/destinations";
 import type { ShareableResolutionOverride } from "../../../../lib/share-link";
-import { assessTripFit } from "../../../../lib/trip-scenarios";
 import type { AlternativePlan, RouteFactEvidence } from "../../../../lib/feasibility-result";
 import { estimateStayMinutes } from "../../../../lib/stay-estimates";
 import { trackProductEvent, type ProductEventFields, type ProductEventName } from "../../../../lib/product-analytics";
@@ -84,13 +85,10 @@ import {
   upsertResolutionOverride,
   withManualResolutionOverrides,
   addCalendarDays,
-  clampTripDays,
-  builtPlanTravelMinutes,
   hotelPlanSignature,
   defaultTripDate,
   mapWithConcurrency,
   hotelAsResolvedBase,
-  provisionalBaseAsResolved,
   normalizeHotelName,
   shouldUseRecommendedHotel,
   matchingHotelCandidate,
@@ -1142,24 +1140,34 @@ export function usePlanBuildActions({
       maxTransfersPerLeg: maxTransfersPerLeg ?? undefined,
       dayEndTimes,
     });
-    let buildDays = tripDays;
-    if (daysUndecided) {
-      // The traveller only promised places. Search the deterministic minimum
-      // day count over the resolved places — no provider call is involved —
-      // and propose it as the trip length (v1.1 §5.1 "未定").
-      const probeFit = assessTripFit(itinerary, buildDays, pace, locale, plannerContext(resolvedHotel));
-      const proposedDays = probeFit.minimumDays ?? probeFit.partialMinimumDays;
-      if (proposedDays !== null && clampTripDays(proposedDays) !== buildDays) {
-        buildDays = clampTripDays(proposedDays);
-        if (!commit(() => setTripDays(buildDays))) return;
-      }
-    }
-    let draft = buildTripFromWishlist(itinerary, buildDays, pace, locale, plannerContext(resolvedHotel));
+    // A trip without a typed hotel still starts and ends somewhere: the plan
+    // the traveller eventually sees routes through a deterministic provisional
+    // base and pays two transfer legs a day for it. The minimum-day search used
+    // to run before that base existed, so an undated trip was offered "one day
+    // is enough" and then told, on the same screen, that it needs two. The base
+    // is derived first, and probe, draft and final plan all read one context.
+    let draft = buildTripFromWishlist(itinerary, tripDays, pace, locale, plannerContext(resolvedHotel));
     if (buildDestination === "auto" && draft.destination !== "worldwide") {
       buildDestination = draft.destination;
       if (!tripDateTouched) buildTripStartDate = defaultTripDate(destinationById(draft.destination));
       if (!commit(() => setDetectedDestinationId(draft.destination))) return;
     }
+    // The traveller only promised places when the length is undecided. The
+    // deterministic minimum-day search and the provisional base settle
+    // together (v1.1 §5.1 "未定"); no provider call is involved.
+    const provisional = resolveProvisionalTripLength({
+      itinerary,
+      requestedDays: tripDays,
+      daysUndecided,
+      pace,
+      locale,
+      resolvedHotel,
+      contextFor: (base) => plannerContext(base),
+    });
+    let effectiveBase = provisional.base;
+    const buildDays = provisional.days;
+    draft = provisional.plan;
+    if (buildDays !== tripDays && !commit(() => setTripDays(buildDays))) return;
     if (!commit(() => setPreviewStops(draft.days.flatMap((candidate) => candidate.stops.map(({ stop }) => stop))))) return;
     // The first draft grouped the wishlist into days; what remains before the
     // reveal is the deterministic ordering/constraint pass (Copy Deck stage2).
@@ -1209,15 +1217,12 @@ export function usePlanBuildActions({
       ?? null;
     // The build does not fetch hotels on the critical path (TC-025 / §5.3),
     // but omitting a base would also omit two daily transfer legs and
-    // understate the required days. Use the deterministic best area as an
-    // explicitly provisional routing base: the reveal never waits on the
-    // hotel provider and a provider outage can never make the planner
-    // silently omit both daily hotel legs. The area recommendation remains a
-    // clearly provisional routing base until a live hotel is selected.
-    let effectiveBase = resolvedHotel
-      ?? (draft.baseRecommendations[0]?.base
-        ? provisionalBaseAsResolved(draft.baseRecommendations[0].base)
-        : null);
+    // understate the required days. The deterministic best area is used as an
+    // explicitly provisional routing base, derived above so that the day-count
+    // proposal and the plan agree: the reveal never waits on the hotel
+    // provider and a provider outage can never make the planner silently omit
+    // both daily hotel legs. The area recommendation remains a clearly
+    // provisional routing base until a live hotel is selected.
     // The late hotel attach recomputes the stored plan signature with the
     // schedule inputs applied by then; the post-reveal tail keeps this mirror
     // current so the "re-search hotels" prompt never fires on the attach.
@@ -1249,25 +1254,32 @@ export function usePlanBuildActions({
           ...(draftHotelContext?.routePoints.length ? { routePoints: draftHotelContext.routePoints } : {}),
         }, locale, buildDestination, controller.signal);
         if (cancelled()) return;
-        const hotelCandidatesByTripTime = hotelResponse.candidates
-          .map((candidate) => ({
+        // TC-007 / §8.2 case 4: a base change is a plan-affecting edit. Each
+        // candidate is solved against the whole trip and put through the same
+        // hard-constraint gate a manual hotel swap runs, so the automatic pick
+        // can never be one that makes a booking late or misses a flight.
+        const hotelEvaluations = rankHotelCandidates({
+          currentPlan: draft,
+          locale,
+          candidates: hotelResponse.candidates.map((candidate) => ({
             candidate,
-            travelMinutes: builtPlanTravelMinutes(buildTripFromWishlist(
+            plan: buildTripFromWishlist(
               itinerary,
               buildDays,
               pace,
               locale,
               plannerContext(hotelAsResolvedBase(candidate, hotelQuery, hotelAnchor.area, hotelResponse.fetchedAt)),
-            )),
-          }))
-          .sort((left, right) => left.travelMinutes - right.travelMinutes
-            || right.candidate.score - left.candidate.score
-            || left.candidate.id.localeCompare(right.candidate.id));
-        for (const entry of hotelCandidatesByTripTime) {
+            ),
+          })),
+        });
+        for (const entry of hotelEvaluations) {
           buildHotelTravelMinutes.set(entry.candidate.id, entry.travelMinutes);
         }
-        const rankedHotelCandidates = hotelCandidatesByTripTime.map(({ candidate }) => candidate);
-        const recommended = rankedHotelCandidates[0] ?? null;
+        const rankedHotelCandidates = hotelEvaluations.map(({ candidate }) => candidate);
+        // Only a safe candidate may be adopted without asking. When none is,
+        // the shortlist is still shown and the traveller's own pick goes
+        // through the confirmation dialog like any other plan edit.
+        const recommended = safestHotelCandidate(hotelEvaluations)?.candidate ?? null;
         const matchedExact = resolvedHotel ? matchingHotelCandidate(resolvedHotel, rankedHotelCandidates) : null;
         // A typed hotel name can still match a Google candidate directly, but
         // only when place resolution failed — once a resolved hotel is the

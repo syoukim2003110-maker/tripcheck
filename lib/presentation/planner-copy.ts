@@ -845,7 +845,13 @@ export function alternativeLossCopy(alternative: AlternativePlan, locale: Planne
 // v1.1 TC-007 hard-edit confirmations: every guarded edit shares these
 // sentences, so the dialog reads the same whether the change came from a leg
 // mode, a stay time, a last-entry cutoff or a day window.
-export type HardEditConflictKind = "booking_late" | "must_drop" | "airport_cutoff";
+export type HardEditConflictKind =
+  | "booking_late"
+  | "must_drop"
+  | "airport_cutoff"
+  | "day_end_missed"
+  | "opening_closed"
+  | "last_entry_missed";
 
 export function hardEditConflictSentence(
   kind: HardEditConflictKind,
@@ -859,6 +865,19 @@ export function hardEditConflictSentence(
   if (kind === "must_drop") return locale === "ja"
     ? `必須の「${name}」が日程に入らなくなります`
     : `Must-visit “${name}” would no longer fit the plan`;
+  // A day-end target and an airport cutoff are different promises. They used
+  // to share one sentence and one running total, so an airport breach could be
+  // hidden by an unrelated curfew improvement — and a curfew breach was
+  // announced as a missed flight.
+  if (kind === "day_end_missed") return locale === "ja"
+    ? `その日の終了時刻を${minutes}分超えます`
+    : `That day would run ${minutes} minutes past its end time`;
+  if (kind === "opening_closed") return locale === "ja"
+    ? `「${name}」の営業時間から外れます`
+    : `“${name}” would fall outside its opening hours`;
+  if (kind === "last_entry_missed") return locale === "ja"
+    ? `「${name}」の最終入場に間に合わなくなります`
+    : `You would arrive after the last entry for “${name}”`;
   return locale === "ja"
     ? `空港へ向かう締切を${minutes}分超えます`
     : `The airport cutoff would be missed by ${minutes} minutes`;

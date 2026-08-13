@@ -277,7 +277,7 @@ test("the signing pass reaches nested photo names in every payload shape", async
       { photo: { name: PHOTO_NAME, attribution: null } },
       { photoName: "not-a-photo-name" },
     ],
-    place: { photoName: PHOTO_NAME },
+    place: { photoName: PHOTO_NAME } as Record<string, unknown>,
   }, env);
   const [byField, byNested, invalid] = signed.candidates as Record<string, unknown>[];
   assert.equal(typeof byField.photoSignature, "string");

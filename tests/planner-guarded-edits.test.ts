@@ -191,3 +191,163 @@ test("hotel swaps and CHANGE_BASE alternatives run the hard-conflict guard; acce
   assert.equal(acceptCommits.length, 2, "both the meal accept and the gap accept must commit through history");
   assert.doesNotMatch(hookSource, /setResolvedStops\(\(current\)/, "accepts must not mutate tracked state outside history");
 });
+
+/* ------------------------------------------------------------------------ *
+ * P0-03 / P0-04. The detector used to inspect three promises through two
+ * running totals. Opening hours were not inspected at all, and deadline
+ * overrun was summed across every day and every kind, so an airport breach
+ * could hide behind an unrelated curfew improvement.
+ *
+ * The deadline cases below are built as plan literals rather than through
+ * buildTripFromWishlist: producing a two-day plan whose curfew improves by
+ * exactly 90 minutes while an airport cutoff slips by exactly 30 needs the
+ * numbers stated, not searched for. plannerHardEditConflicts is a pure
+ * comparison over these fields, so this is the whole input it sees.
+ * ------------------------------------------------------------------------ */
+
+type DeadlineDay = {
+  kind: "airport" | "curfew" | null;
+  overrun: number;
+};
+
+function deadlinePlan(days: DeadlineDay[]) {
+  return {
+    days: days.map((day, index) => ({
+      label: `Day ${index + 1}`,
+      date: null,
+      theme: "",
+      stops: [],
+      legs: [],
+      totalMinutes: 0,
+      startTime: "09:00",
+      requestedStartTime: "09:00",
+      startAdjustedByArrival: false,
+      finishTime: "18:00",
+      hotelTravelMinutes: 0,
+      hotelOutboundMinutes: null,
+      hotelInboundMinutes: null,
+      startBase: null,
+      endBase: null,
+      deadline: "20:00",
+      deadlineKind: day.kind,
+      deadlineOverrunMinutes: day.overrun,
+      reservationConflictCount: 0,
+      openingConflictCount: 0,
+      googleMapsUrl: null,
+    })),
+  } as unknown as Parameters<typeof plannerHardEditConflicts>[0];
+}
+
+test("an airport cutoff breach is never cancelled out by a curfew improvement", () => {
+  // Day 1 runs 90 minutes past its end time; the flight is comfortable.
+  const plan = deadlinePlan([{ kind: "curfew", overrun: 90 }, { kind: "airport", overrun: 0 }]);
+  // The candidate fixes the long day and misses the plane by half an hour.
+  const candidatePlan = deadlinePlan([{ kind: "curfew", overrun: 0 }, { kind: "airport", overrun: 30 }]);
+
+  const conflicts = plannerHardEditConflicts(plan, candidatePlan, "en");
+  assert.deepEqual(conflicts.map((conflict) => conflict.kind), ["airport_cutoff"]);
+  assert.equal(conflicts[0].minutes, 30);
+  assert.equal(
+    evaluatePlannerHardEdit({ title: "Apply?", locale: "en", plan, candidatePlan }).decision,
+    "confirm",
+    "a 60-minute net improvement must not buy a missed flight",
+  );
+});
+
+test("an airport cutoff that improves is an improvement, and one that appears is damage", () => {
+  const missing30 = deadlinePlan([{ kind: "airport", overrun: 30 }]);
+  const missing10 = deadlinePlan([{ kind: "airport", overrun: 10 }]);
+  const onTime = deadlinePlan([{ kind: "airport", overrun: 0 }]);
+  const missing1 = deadlinePlan([{ kind: "airport", overrun: 1 }]);
+
+  assert.deepEqual(plannerHardEditConflicts(missing30, missing10, "en"), [], "30 → 10 minutes late is better");
+  assert.deepEqual(plannerHardEditConflicts(missing30, missing30, "en"), [], "an unchanged breach is not new damage");
+  assert.deepEqual(
+    plannerHardEditConflicts(onTime, missing1, "en").map((conflict) => conflict.kind),
+    ["airport_cutoff"],
+    "0 → 1 minute late is a new breach",
+  );
+});
+
+test("deadlines on different days and of different kinds never net off", () => {
+  const plan = deadlinePlan([
+    { kind: "curfew", overrun: 0 },
+    { kind: "curfew", overrun: 120 },
+    { kind: "airport", overrun: 0 },
+  ]);
+  // Middle day improves a lot; the first day and the flight both get worse.
+  const candidatePlan = deadlinePlan([
+    { kind: "curfew", overrun: 20 },
+    { kind: "curfew", overrun: 0 },
+    { kind: "airport", overrun: 15 },
+  ]);
+  const kinds = plannerHardEditConflicts(plan, candidatePlan, "en").map((conflict) => conflict.kind).sort();
+  assert.deepEqual(kinds, ["airport_cutoff", "day_end_missed"]);
+});
+
+test("a missed day-end target says so, instead of announcing a missed flight", () => {
+  const conflicts = plannerHardEditConflicts(
+    deadlinePlan([{ kind: "curfew", overrun: 0 }]),
+    deadlinePlan([{ kind: "curfew", overrun: 45 }]),
+    "en",
+  );
+  assert.deepEqual(conflicts.map((conflict) => conflict.kind), ["day_end_missed"]);
+  assert.match(conflicts[0].message, /45 minutes past its end time/);
+  assert.doesNotMatch(conflicts[0].message, /airport/i);
+});
+
+/* Opening hours. A day-start change that pushes a stop past its verified
+ * closing time used to apply silently. */
+
+const openingRaw = "Senso-ji\nteamLab Planets";
+const morningOnly = { sensoji: { 0: [{ openMinutes: 9 * 60, closeMinutes: 11 * 60 }] } };
+
+test("a day start that breaks a verified closing time queues a confirmation", () => {
+  const plan = buildTripFromWishlist(openingRaw, 1, "balanced", "en", {
+    openingWindowsByDay: morningOnly,
+    defaultDayStart: "09:00",
+  });
+  assert.equal(plan.days[0].openingConflictCount, 0, "the baseline must be inside the window");
+
+  const candidatePlan = buildTripFromWishlist(openingRaw, 1, "balanced", "en", {
+    openingWindowsByDay: morningOnly,
+    defaultDayStart: "11:00",
+  });
+  assert.ok(candidatePlan.days[0].openingConflictCount > 0, "the candidate must really break the window");
+
+  const conflicts = plannerHardEditConflicts(plan, candidatePlan, "en");
+  assert.ok(
+    conflicts.some((conflict) => conflict.kind === "opening_closed"),
+    "a verified opening-hours breach is hard damage",
+  );
+  assert.equal(
+    evaluatePlannerHardEdit({ title: "Start day 1 at 11:00?", locale: "en", plan, candidatePlan }).decision,
+    "confirm",
+  );
+});
+
+test("a place with no verified window never queues an opening-hours confirmation", () => {
+  // Same edit, no opening evidence at all: "unknown" must stay unknown rather
+  // than being reported as a broken promise the app cannot actually verify.
+  const plan = buildTripFromWishlist(openingRaw, 1, "balanced", "en", { defaultDayStart: "09:00" });
+  const candidatePlan = buildTripFromWishlist(openingRaw, 1, "balanced", "en", { defaultDayStart: "11:00" });
+  assert.deepEqual(
+    plannerHardEditConflicts(plan, candidatePlan, "en").filter((conflict) => conflict.kind === "opening_closed"),
+    [],
+  );
+});
+
+test("an opening-hours breach that already existed is not re-reported by an unrelated edit", () => {
+  const brokenContext = { openingWindowsByDay: morningOnly, defaultDayStart: "11:00" };
+  const plan = buildTripFromWishlist(openingRaw, 1, "balanced", "en", brokenContext);
+  assert.ok(plan.days[0].openingConflictCount > 0);
+  const candidatePlan = buildTripFromWishlist(openingRaw, 1, "balanced", "en", {
+    ...brokenContext,
+    durationOverrides: { "teamlab-planets": 100 },
+  });
+  assert.deepEqual(
+    plannerHardEditConflicts(plan, candidatePlan, "en").filter((conflict) => conflict.kind === "opening_closed"),
+    [],
+    "the traveller has already been told about this one",
+  );
+});

@@ -219,14 +219,120 @@ export function builtPlanTravelMinutes(plan: BuiltTripPlan) {
 }
 
 // v1.1 TC-007 / §8.2: the hard-conflict damage a candidate plan would
-// introduce compared to the current one. Only the three protected promises
-// are inspected — booking lateness, a dropped Must stop and the airport
-// cutoff. Every guarded edit path (remove/move/day-count, leg mode, stay
-// time, last entry, day windows) shares this one detector.
+// introduce compared to the current one. Every guarded edit path
+// (remove/move/day-count, leg mode, stay time, last entry, day windows, hotel
+// swap) shares this one detector.
+//
+// It used to inspect three promises through two running totals, which cost it
+// two real defects:
+//
+//   * Deadline overrun was summed across every day AND every kind, so a
+//     candidate that fixed a 90-minute curfew overrun on one day and created a
+//     30-minute airport breach on another looked like a 60-minute improvement
+//     and applied silently. A plane does not wait for an arithmetic mean.
+//   * Opening hours were not inspected at all. Moving a day's start past a
+//     verified closing time produced a plan with a conflict on it and no
+//     confirmation — the traveller was shown a schedule that cannot happen.
+//
+// Facts are now keyed, and comparison happens per key. Nothing nets off
+// against anything else, and an `unknown` opening window is never promoted to
+// a verified conflict.
 export type PlannerHardEditConflict = {
   kind: HardEditConflictKind;
   message: string;
   minutes: number;
+};
+
+type HardConstraintKind = "booking" | "must" | "opening" | "last_entry" | "airport" | "day_deadline";
+
+type HardConstraintFact = Readonly<{
+  key: string;
+  kind: HardConstraintKind;
+  status: "ok" | "conflict" | "unknown";
+  minutes: number;
+  stopId: string;
+  label: string;
+}>;
+
+/**
+ * Keys deliberately avoid the day index for anything attached to a stop: a
+ * day-count change moves stops between days, and a stop carrying its existing
+ * conflict to a new day is not new damage. Day deadlines are positional
+ * instead of numeric for the same reason — the departure day is the last one
+ * whether the trip is two days long or four.
+ */
+function dayDeadlinePosition(index: number, dayCount: number) {
+  if (index === 0) return "first";
+  if (index === dayCount - 1) return "last";
+  return String(index);
+}
+
+function hardConstraintSnapshot(plan: BuiltTripPlan): Map<string, HardConstraintFact> {
+  const facts = new Map<string, HardConstraintFact>();
+  const record = (fact: HardConstraintFact) => {
+    const existing = facts.get(fact.key);
+    // A stop should appear once, but if it ever appears twice the worse
+    // reading is the honest one to compare against.
+    if (existing && (existing.status === "conflict" && fact.status !== "conflict")) return;
+    if (existing && existing.status === fact.status && existing.minutes >= fact.minutes) return;
+    facts.set(fact.key, fact);
+  };
+  plan.days.forEach((planDay, dayIndex) => {
+    for (const built of planDay.stops) {
+      const stopId = built.stop.id;
+      const label = built.stop.name;
+      if (built.isReservation || built.fixedTime !== null) {
+        record({
+          key: `booking:${stopId}`,
+          kind: "booking",
+          status: built.reservationLateMinutes > 0 ? "conflict" : "ok",
+          minutes: built.reservationLateMinutes,
+          stopId,
+          label,
+        });
+      }
+      if (built.priority === "must") {
+        record({ key: `must:${stopId}`, kind: "must", status: "ok", minutes: 0, stopId, label });
+      }
+      if (built.openingStatus === "last_entry_conflict") {
+        record({ key: `last_entry:${stopId}`, kind: "last_entry", status: "conflict", minutes: 0, stopId, label });
+      } else {
+        record({
+          key: `opening:${stopId}`,
+          kind: "opening",
+          // "unknown" means no verified window exists. It stays unknown: an
+          // unverified place must never queue a confirmation dialog claiming
+          // the traveller is about to break opening hours.
+          status: built.openingStatus === "conflict" || built.openingStatus === "closed_day"
+            ? "conflict"
+            : built.openingStatus === "unknown" ? "unknown" : "ok",
+          minutes: 0,
+          stopId,
+          label,
+        });
+      }
+    }
+    const overrun = Math.max(0, planDay.deadlineOverrunMinutes ?? 0);
+    if (planDay.deadlineKind === null) return;
+    const airport = planDay.deadlineKind === "airport";
+    record({
+      key: `${airport ? "airport" : "day_deadline"}:${dayDeadlinePosition(dayIndex, plan.days.length)}`,
+      kind: airport ? "airport" : "day_deadline",
+      status: overrun > 0 ? "conflict" : "ok",
+      minutes: overrun,
+      stopId: "",
+      label: "",
+    });
+  });
+  return facts;
+}
+
+const HARD_CONFLICT_SENTENCE_KIND: Record<Exclude<HardConstraintKind, "must">, HardEditConflictKind> = {
+  booking: "booking_late",
+  opening: "opening_closed",
+  last_entry: "last_entry_missed",
+  airport: "airport_cutoff",
+  day_deadline: "day_end_missed",
 };
 
 export function plannerHardEditConflicts(
@@ -236,41 +342,29 @@ export function plannerHardEditConflicts(
   allowDropStopId?: string,
 ): PlannerHardEditConflict[] {
   const conflicts: PlannerHardEditConflict[] = [];
-  const lateNow = new Map<string, number>();
-  for (const planDay of plan.days) {
-    for (const built of planDay.stops) {
-      if (built.reservationLateMinutes > 0) lateNow.set(built.stop.id, built.reservationLateMinutes);
-    }
-  }
-  for (const planDay of candidatePlan.days) {
-    for (const built of planDay.stops) {
-      if (built.reservationLateMinutes > (lateNow.get(built.stop.id) ?? 0)) {
-        conflicts.push({
-          kind: "booking_late",
-          minutes: built.reservationLateMinutes,
-          message: hardEditConflictSentence("booking_late", built.stop.name, built.reservationLateMinutes, locale),
-        });
-      }
-    }
-  }
-  const scheduledAfter = new Set(candidatePlan.days.flatMap((planDay) => planDay.stops.map((built) => built.stop.id)));
-  for (const planDay of plan.days) {
-    for (const built of planDay.stops) {
-      if (built.priority !== "must" || built.stop.id === allowDropStopId || scheduledAfter.has(built.stop.id)) continue;
-      conflicts.push({
-        kind: "must_drop",
-        minutes: 0,
-        message: hardEditConflictSentence("must_drop", built.stop.name, 0, locale),
-      });
-    }
-  }
-  const deadlineOverrun = (candidate: BuiltTripPlan) => candidate.days.reduce((sum, planDay) => sum + Math.max(0, planDay.deadlineOverrunMinutes ?? 0), 0);
-  const overrunAfter = deadlineOverrun(candidatePlan);
-  if (overrunAfter > deadlineOverrun(plan)) {
+  const before = hardConstraintSnapshot(plan);
+  const after = hardConstraintSnapshot(candidatePlan);
+
+  for (const fact of before.values()) {
+    if (fact.kind !== "must" || fact.stopId === allowDropStopId || after.has(fact.key)) continue;
     conflicts.push({
-      kind: "airport_cutoff",
-      minutes: overrunAfter,
-      message: hardEditConflictSentence("airport_cutoff", "", overrunAfter, locale),
+      kind: "must_drop",
+      minutes: 0,
+      message: hardEditConflictSentence("must_drop", fact.label, 0, locale),
+    });
+  }
+
+  for (const fact of after.values()) {
+    if (fact.kind === "must" || fact.status !== "conflict") continue;
+    const baseline = before.get(fact.key);
+    // A conflict that already existed and did not get worse is not new damage;
+    // the traveller has already been told about it.
+    if (baseline?.status === "conflict" && fact.minutes <= baseline.minutes) continue;
+    const sentenceKind = HARD_CONFLICT_SENTENCE_KIND[fact.kind];
+    conflicts.push({
+      kind: sentenceKind,
+      minutes: fact.minutes,
+      message: hardEditConflictSentence(sentenceKind, fact.label, fact.minutes, locale),
     });
   }
   return conflicts;

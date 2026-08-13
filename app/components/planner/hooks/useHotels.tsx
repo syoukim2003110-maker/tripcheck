@@ -38,7 +38,6 @@ import {
 } from "../../../../lib/presentation/recommendation-presentation";
 import { priceBand } from "../../../../lib/presentation/trip-presentation";
 import {
-  builtPlanTravelMinutes,
   emptyHotelState,
   emptyNightlyHotelState,
   evaluatePlannerHardEdit,
@@ -55,6 +54,7 @@ import {
   type NightlyHotelState,
   type PlannerEditState,
 } from "../../../../lib/planner-app-state";
+import { hotelRebaseIsWorthwhile, rankHotelCandidates } from "../../../../lib/hotel-handover";
 
 export function useHotels() {
   const [hotelState, setHotelState] = useState<HotelState>(emptyHotelState);
@@ -305,73 +305,90 @@ export function useHotelActions({
       }, locale, requestDestination, controller.signal);
       if (controller.signal.aborted || hotelPlanSignatureRef.current !== signatureAtStart) return;
       const travelMinutesById = new Map<string, number>();
-      const rankedCandidates = response.candidates
-        .map((candidate) => ({
+      // TC-007 / §8.2 case 4: the re-search used to attach its own winner to
+      // the plan without a word, so a candidate that broke a fixed booking
+      // could replace a working base and never show up in Undo. Candidates are
+      // scored against the whole trip through the same hard-constraint gate a
+      // manual swap runs.
+      const evaluations = rankHotelCandidates({
+        currentPlan: plan,
+        locale,
+        candidates: response.candidates.map((candidate) => ({
           candidate,
-          travelMinutes: builtPlanTravelMinutes(buildTripFromWishlist(
+          plan: buildTripFromWishlist(
             itinerary,
             tripDays,
             pace,
             locale,
             { ...activePlannerContext, resolvedBase: hotelAsResolvedBase(candidate, hotelQuery, searchAnchor.area, response.fetchedAt) },
-          )),
-        }))
-        .map((entry) => {
-          travelMinutesById.set(entry.candidate.id, entry.travelMinutes);
-          return entry;
-        })
-        .sort((left, right) => left.travelMinutes - right.travelMinutes
-          || right.candidate.score - left.candidate.score
-          || left.candidate.id.localeCompare(right.candidate.id))
-        .map(({ candidate }) => candidate);
-      const axes = hotelAxisWinners(rankedCandidates);
-      const selected = hotelStyle !== "recommended"
-        ? styledBestCandidate(rankedCandidates, hotelStyle) ?? rankedCandidates[0] ?? null
+          ),
+        })),
+      });
+      for (const entry of evaluations) travelMinutesById.set(entry.candidate.id, entry.travelMinutes);
+      const rankedCandidates = evaluations.map(({ candidate }) => candidate);
+      const safeById = new Map(evaluations.map((entry) => [entry.candidate.id, entry]));
+      const safeOnly = evaluations.filter((entry) => entry.safe).map(({ candidate }) => candidate);
+      const axes = hotelAxisWinners(safeOnly);
+      // Style and purpose choose among the candidates the planner may adopt on
+      // its own; an unsafe one is still shown, but only the traveller may pick it.
+      const preferred = hotelStyle !== "recommended"
+        ? styledBestCandidate(safeOnly, hotelStyle) ?? safeOnly[0] ?? null
         : hotelPurpose === "nearest"
-          ? rankedCandidates.find((candidate) => candidate.id === axes.nearestId) ?? rankedCandidates[0] ?? null
+          ? safeOnly.find((candidate) => candidate.id === axes.nearestId) ?? safeOnly[0] ?? null
           : hotelPurpose === "rated"
-            ? rankedCandidates.find((candidate) => candidate.id === axes.topRatedId) ?? rankedCandidates[0] ?? null
+            ? safeOnly.find((candidate) => candidate.id === axes.topRatedId) ?? safeOnly[0] ?? null
             : hotelPurpose === "value"
-              ? rankedCandidates.find((candidate) => candidate.id === axes.valueId) ?? rankedCandidates[0] ?? null
-              : rankedCandidates[0] ?? null;
-      if (!selected) throw new Error("no_hotel_candidates");
-      const shortlist = hotelShortlist(rankedCandidates, selected.id);
+              ? safeOnly.find((candidate) => candidate.id === axes.valueId) ?? safeOnly[0] ?? null
+              : safeOnly[0] ?? null;
+      if (rankedCandidates.length === 0) throw new Error("no_hotel_candidates");
+      // A base that is already carrying the plan is only replaced silently to
+      // fix real damage or to save time the traveller would notice; otherwise
+      // the new shortlist is offered and the current base stays put.
+      const adoption = preferred && hotelRebaseIsWorthwhile(safeById.get(preferred.id) ?? null, resolvedBase === null)
+        ? preferred
+        : null;
+      const selected = adoption ?? rankedCandidates.find((candidate) => candidate.id === hotelState.selectedId) ?? null;
+      const shortlist = hotelShortlist(rankedCandidates, selected?.id);
       setHotelState({
         status: "ready",
         candidates: shortlist,
-        selectedId: selected.id,
+        selectedId: selected?.id ?? null,
         fresh: { status: "loading", result: null },
         ai: { status: "idle", notes: {} },
       });
-      // The re-search hands over a whole new shortlist; its auto-pick is a
-      // baseline handover (the old candidates are gone, so an "Undo" could
-      // not honestly restore the prior comparison) — rebase, don't commit.
-      attachPlannerBase(hotelAsResolvedBase(selected, hotelQuery, selected.address.slice(0, 100) || searchAnchor.area, response.fetchedAt));
+      // The re-search hands over a whole new shortlist; a safe, worthwhile
+      // auto-pick is a baseline handover (the old candidates are gone, so an
+      // "Undo" could not honestly restore the prior comparison) — rebase,
+      // don't commit. Anything else waits for the traveller.
+      if (adoption) {
+        attachPlannerBase(hotelAsResolvedBase(adoption, hotelQuery, adoption.address.slice(0, 100) || searchAnchor.area, response.fetchedAt));
+      }
       setHotelSearchSignature(signatureAtStart);
       clearNightlyHotelResults();
       postBuildLegBudgetRef.current = Math.max(postBuildLegBudgetRef.current, 16);
       setInspector({ kind: "hotel" });
 
-      if (!aiEnabledRef.current) {
-        setHotelState((current) => current.selectedId === selected.id
+      if (!selected || !aiEnabledRef.current) {
+        setHotelState((current) => current.selectedId === (selected?.id ?? null)
           ? { ...current, fresh: { status: "paused", result: null } }
           : current);
         return;
       }
+      const researched = selected;
       // The route decision is deterministic; the optional public-source check
       // follows in the background and never blocks or changes the hotel rank.
       void requestFreshVoices(
-        { name: selected.name, area: selected.address.slice(0, 100) || searchAnchor.area },
+        { name: researched.name, area: researched.address.slice(0, 100) || searchAnchor.area },
         locale,
         { intent: "hotel", depth: "quick", destination: requestDestination, signal: controller.signal },
       ).then((result) => {
         if (controller.signal.aborted || hotelPlanSignatureRef.current !== signatureAtStart) return;
-        setHotelState((current) => current.selectedId === selected.id
+        setHotelState((current) => current.selectedId === researched.id
           ? { ...current, fresh: { status: "ready", result } }
           : current);
       }).catch(() => {
         if (controller.signal.aborted) return;
-        setHotelState((current) => current.selectedId === selected.id
+        setHotelState((current) => current.selectedId === researched.id
           ? { ...current, fresh: { status: "unavailable", result: null } }
           : current);
       });
