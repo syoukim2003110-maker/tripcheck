@@ -43,7 +43,7 @@ next-env.d.ts
 /.wrangler/
 /outputs/
 /work/
-.dev.vars
+.dev.vars*
 
 # QA harness output (baselines are tracked in tests/vr/baselines)
 /tools/qa/vr-out/

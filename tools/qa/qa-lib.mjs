@@ -75,7 +75,20 @@ export async function launchBrowser() {
  * localStorage, so "recent trips" from another scenario can never leak into
  * a screenshot.
  */
-export async function newPage(browser, { width = 1440, height = 900, fixtures = {}, isolated = false } = {}) {
+/* Every route the Worker gates as paid. A harness run must not be able to
+ * spend the project's provider budget, and a screenshot must not depend on
+ * what a provider felt like returning. */
+const PAID_ENDPOINTS = [
+  "/api/live-routes",
+  "/api/place-suggestions",
+  "/api/place-resolution",
+  "/api/place-intelligence",
+  "/api/hotel-recommendations",
+  "/api/food-recommendations",
+  "/api/route-recommendations",
+];
+
+export async function newPage(browser, { width = 1440, height = 900, fixtures = {}, isolated = false, offlineProviders = false } = {}) {
   const context = isolated ? await browser.createBrowserContext() : browser;
   const page = await context.newPage();
   if (isolated) {
@@ -125,6 +138,14 @@ export async function newPage(browser, { width = 1440, height = 900, fixtures = 
         contentType: "application/json",
         body: JSON.stringify(body),
       }).catch(() => {});
+      return;
+    }
+    // Paid endpoints are same-origin, so the external-host block does not stop
+    // them: a plan screenshot was quietly spending real provider budget, and
+    // its content changed with whatever the providers happened to answer.
+    // Refusing them pins the screen to its documented degraded state.
+    if (offlineProviders && request.method() === "POST" && PAID_ENDPOINTS.some((path) => url.startsWith(`${BASE_URL}${path}`))) {
+      request.abort().catch(() => {});
       return;
     }
     if (url.startsWith(BASE_URL) || url.startsWith("data:") || url.startsWith("blob:")) {

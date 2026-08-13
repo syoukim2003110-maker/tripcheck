@@ -165,7 +165,6 @@ body:has(.trip-planner-app) {
   overflow: hidden;
   position: absolute;
 }
-.planner-map-embed { border: 0; height: 100%; inset: 0; position: absolute; width: 100%; }
 .planner-google-map { height: 100%; inset: 0; opacity: 0; pointer-events: none; position: absolute; transition: opacity 220ms ease; width: 100%; }
 .planner-google-map.is-visible { opacity: 1; pointer-events: auto; }
 .planner-google-map.is-coordinate-picking { cursor: crosshair; }
@@ -828,7 +827,7 @@ body:has(.trip-planner-app) {
 /* TC-055: the day rail stays pinned while a long day scrolls. It sticks to
    the scrollport top (below the mobile view toggle on phones — see the 840px
    block) and keeps its own inner horizontal scroll when days overflow. */
-.planner-day-tabs { background: var(--pl-panel); display: flex; gap: 5px; margin: 12px 0 10px; overflow-x: auto; padding: 0 0 3px; position: sticky; scrollbar-width: thin; top: 0; z-index: 20; }
+.planner-day-tabs { background: var(--pl-panel); display: flex; gap: 5px; margin: 8px 0 6px; overflow-x: auto; padding: 0 0 3px; position: sticky; scrollbar-width: thin; top: 0; z-index: 20; }
 .planner-day-tabs button {
   align-items: center;
   background: transparent;
@@ -869,7 +868,7 @@ body:has(.trip-planner-app) {
 /* v1.1 issue surface: one chip in the header, one card with per-cause rows. */
 .planner-issue-chip { background: var(--pl-warn-bg); border: 1px solid var(--pl-warn-border); border-radius: 11px; color: var(--pl-warn-ink); font-size: 11.5px; font-weight: 800; justify-self: start; margin-top: 7px; min-height: 34px; padding: 5px 11px; }
 .planner-issue-chip:hover { border-color: var(--pl-warn-ink); }
-.planner-issue-card { background: var(--pl-warn-bg); border: 1px solid var(--pl-warn-border); border-radius: 12px; color: var(--pl-warn-ink); display: grid; gap: 8px; margin: 0 0 12px; padding: 11px 12px; }
+.planner-issue-card { background: var(--pl-warn-bg); border: 1px solid var(--pl-warn-border); border-radius: 12px; color: var(--pl-warn-ink); display: grid; gap: 8px; margin: 0 0 8px; padding: 11px 12px; }
 .planner-issue-card > b { font-size: 12px; font-weight: 800; }
 .planner-issue-card ul { display: grid; gap: 6px; list-style: none; margin: 0; padding: 0; }
 .planner-issue-card li { align-items: center; display: flex; gap: 9px; justify-content: space-between; }
@@ -903,7 +902,7 @@ details.planner-excluded { display: block; }
 .planner-plan-notices a { color: inherit; font-weight: 750; }
 .planner-plan-notices .planner-excluded ul { margin: 5px 0 0; padding-left: 17px; }
 
-.planner-day-summary { align-items: stretch; border-bottom: 1px solid var(--pl-line); display: grid; gap: 6px; grid-template-columns: minmax(0, 1fr); padding: 2px 0 10px; }
+.planner-day-summary { align-items: stretch; border-bottom: 1px solid var(--pl-line); display: grid; gap: 5px; grid-template-columns: minmax(0, 1fr); padding: 0 0 6px; }
 .planner-day-summary > div:first-child { display: grid; flex: 1 1 auto; min-width: 0; }
 .planner-day-summary span { color: var(--pl-muted); font-size: 11px; font-weight: 650; }
 .planner-day-summary b { font-family: var(--pl-display); font-size: 24px; font-weight: 400; letter-spacing: 0.025em; line-height: 1.05; margin-top: 3px; white-space: nowrap; }
@@ -1148,7 +1147,7 @@ details.planner-excluded { display: block; }
 .planner-date-field > small { color: var(--pl-muted); font-size: 10.5px; line-height: 1.45; }
 
 .planner-mobile-result-toggle { display: none; }
-.planner-feasibility-card { background: #f7f7f8; border: 1px solid var(--pl-line); border-radius: 18px; display: grid; gap: 14px; margin: 16px 0 18px; padding: 16px; }
+.planner-feasibility-card { background: #f7f7f8; border: 1px solid var(--pl-line); border-radius: 18px; display: grid; gap: 10px; margin: 10px 0 10px; padding: 13px 16px; }
 .planner-feasibility-card.is-infeasible_hard_conflict { background: #fff8f5; border-color: #f0d3c9; }
 .planner-feasibility-card.is-unknown { background: #faf8f1; border-color: var(--pl-warn-border); }
 .planner-feasibility-card > header { display: grid; gap: 5px; }
@@ -1271,7 +1270,9 @@ details.planner-excluded { display: block; }
 
 /* timeline */
 
-.planner-timeline { list-style: none; margin: 6px 0 0; padding: 0; }
+/* DoD-PLAN-1: the rows above the rail are kept tight enough that the first
+   two stops finish inside the first view at 1280×800 and 390×844. */
+.planner-timeline { list-style: none; margin: 2px 0 0; padding: 0; }
 .planner-timeline > li { position: relative; }
 .planner-timeline > li::before { background: var(--pl-line); bottom: 0; content: ""; left: 62px; position: absolute; top: 0; width: 2px; }
 .planner-timeline > li:first-child::before { top: 24px; }
@@ -1790,28 +1791,26 @@ div.planner-route-ideas-empty { display: grid; gap: 8px; }
   .trip-planner-app.is-conditions .planner-sheet { height: 48dvh; }
   .trip-planner-app.is-conditions .planner-map-bottom { bottom: calc(48dvh + 12px); }
   /* §11.2 "画面下にMap preview bar" + DoD-PLAN-1: the timeline view keeps the
-     map as a preview strip, not a half screen. 15dvh (≈127px at 390×844) still
+     map as a preview strip, not a half screen. 12dvh (≈101px at 390×844) still
      carries the route status, the legend toggle and the map chips, and it is
-     what lets the first TWO stop rows finish above the fold. */
+     what lets the first TWO stop rows finish above the fold. The strip used to
+     be 15dvh; the extra 3dvh was only affordable while the sheet opened
+     already scrolled past its own headline, which is no longer the case. */
   .trip-planner-app.is-result.is-mobile-timeline .planner-map-canvas {
     display: block;
-    height: 15dvh;
+    height: 12dvh;
     inset: 0 0 auto;
   }
   .trip-planner-app.is-result.is-mobile-timeline .planner-sheet {
     border-radius: 18px 18px 0 0;
-    height: 85dvh;
-    inset: 15dvh 0 0;
+    height: 88dvh;
+    inset: 12dvh 0 0;
   }
-  /* In a 15dvh strip only the headline and the way back fit. The explanatory
-     sentence is dropped rather than allowed to push the panel over the
-     floating header. */
-  .trip-planner-app.is-result.is-mobile-timeline .planner-map-provider-unavailable {
-    gap: 6px;
-    padding: 6px 12px;
-  }
-  .trip-planner-app.is-result.is-mobile-timeline .planner-map-provider-unavailable span { display: none; }
-  .trip-planner-app.is-result.is-mobile-timeline .planner-map-provider-unavailable b { font-size: 13px; }
+  /* The 15dvh strip is almost entirely covered by the floating header, the
+     legend chip and the route-state chip, so a message placed there is read
+     through them. Same treatment as .planner-map-empty below: the strip stays
+     a quiet preview, and the "Map" tab carries the explanation and the retry. */
+  .trip-planner-app.is-result.is-mobile-timeline .planner-map-provider-unavailable { display: none; }
   .trip-planner-app.is-result.is-mobile-compact .planner-map-canvas,
   .trip-planner-app.is-result.is-mobile-compact .planner-map-bottom { display: none; }
   .trip-planner-app.is-result.is-mobile-compact .planner-sheet {
@@ -1871,7 +1870,7 @@ div.planner-route-ideas-empty { display: grid; gap: 8px; }
   .planner-result-view,
   .planner-building-view { padding: 24px 16px 28px; }
   .trip-planner-app.is-places .planner-form-view { padding-top: 78px; }
-  .planner-result-view { padding-top: 12px; }
+  .planner-result-view { padding-top: 6px; }
   .planner-building-steps { margin-top: 16px; }
   .planner-building-steps li { min-height: 48px; }
   .planner-intro h1 { font-size: 27px; }
@@ -1994,8 +1993,15 @@ div.planner-route-ideas-empty { display: grid; gap: 8px; }
   .planner-mobile-verdict-action { display: block; }
   .planner-verdict-details:not([open]) { display: none; }
   .planner-result-decision small { display: none; }
-  .planner-day-summary { gap: 4px; padding-bottom: 6px; }
+  /* DoD-PLAN-1 headroom: every row above the timeline is trimmed so the
+     first two stops finish above the fold without the sheet needing to
+     be scrolled first. English wraps one line longer than Japanese in
+     the issue card, so the budget is set by the en layout. */
+  .planner-day-summary { gap: 3px; padding-bottom: 4px; padding-top: 0; }
+  .planner-issue-card { gap: 6px; margin-bottom: 6px; padding: 9px 11px; }
+  .planner-day-tabs { margin: 6px 0 4px; }
   .planner-day-summary b { font-size: 19px; }
+  .planner-timeline { margin-top: 2px; }
   .planner-day-time-bar { margin-top: 4px; }
   .planner-day-window-facts { gap: 4px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .planner-day-window-facts > span { padding: 4px 6px; }
@@ -2062,7 +2068,10 @@ div.planner-route-ideas-empty { display: grid; gap: 8px; }
 /* v0.3 first-view density: the answer, day switcher, time bar and first two
  * places must arrive before audit details or secondary utilities. */
 @media screen and (min-width: 841px) {
-  .planner-result-view { padding-top: 62px; }
+  /* DoD-PLAN-1: the sticky topbar already separates the result from the
+     page edge, so the extra breathing room here is what the first two
+     stops need instead. */
+  .planner-result-view { padding-top: 50px; }
   .planner-result-header { align-items: center; grid-template-columns: minmax(0, 1fr) auto; }
   .planner-result-actions { grid-template-columns: auto 44px; width: auto; }
   .planner-result-actions > button { min-width: 72px; }

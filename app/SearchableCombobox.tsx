@@ -205,7 +205,9 @@ function SearchableCombobox({
         <input
           aria-activedescendant={activeDescendant}
           aria-autocomplete="list"
-          aria-controls={listboxId}
+          // The listbox is only in the document while open, so pointing at it
+          // when closed leaves aria-controls referencing a missing id.
+          aria-controls={open ? listboxId : undefined}
           aria-expanded={open}
           aria-haspopup="listbox"
           aria-label={ariaLabel}

@@ -71,7 +71,26 @@ async function freezeAndCalm(page) {
 async function calmStyles(page) {
   await page.addStyleTag({ content: "*, *::before, *::after { animation: none !important; transition: none !important; caret-color: transparent !important; }" });
   await page.evaluate(() => document.fonts?.ready ?? null);
+  await settleMapSurface(page);
   await settle(page, 400);
+}
+
+/*
+ * External hosts are blocked in this harness, so the Google Maps script always
+ * fails - but *when* it fails is a race against the settle window. A cold run
+ * once photographed the map pane mid-"loading" and a warm run photographed the
+ * resolved offline panel, from identical code. Waiting for the surface to
+ * reach a terminal state makes the shot a property of the build rather than of
+ * the machine's mood.
+ */
+async function settleMapSurface(page) {
+  const hasMapSurface = await page.$(".planner-map-canvas, .planner-google-map, .planner-map-provider-unavailable");
+  if (!hasMapSurface) return;
+  await page.waitForFunction(
+    () => document.querySelector(".planner-google-map.is-visible") !== null
+      || document.querySelector(".planner-map-provider-unavailable") !== null,
+    { timeout: 20_000 },
+  ).catch(() => {});
 }
 
 const SCREENS = {
@@ -113,6 +132,10 @@ try {
           width: viewport.width,
           height: viewport.height,
           isolated: true,
+          // The resolve fixture is served locally; every other paid call is
+          // refused so the shot is a property of the build, not of the day's
+          // provider answers or remaining budget.
+          offlineProviders: true,
           fixtures: screen === "resolve" ? { placeResolution: ambiguityFixture(locale) } : {},
         });
         try {

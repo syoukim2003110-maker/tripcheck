@@ -222,3 +222,57 @@ test("discloses automatic core recommendations and their paid-provider controls"
   assert.match(gateSource, /route_recommendations: "ROUTE_RECOMMENDATIONS_ENABLED"/);
   assert.doesNotMatch(routeSource, /ROUTE_RECOMMENDATIONS_DAILY_LIMIT/);
 });
+
+/* Every browser-reachable paid endpoint has to be described on the privacy
+ * page. The disclosure for /api/place-suggestions was written by hand and
+ * nothing held it there, so deleting the paragraph - or adding a fourth
+ * endpoint with no paragraph at all - would have gone unnoticed. This
+ * enumerates the routes from disk instead of from a list someone maintains. */
+test("every paid client endpoint is disclosed on the privacy page", async () => {
+  // The authority for "paid endpoint" is the Worker's own gate table, not a
+  // list maintained inside this test. A new route added there without a
+  // privacy paragraph fails here.
+  const workerSource = await readFile(new URL("../worker/index.ts", import.meta.url), "utf8");
+  const gateTable = workerSource.slice(
+    workerSource.indexOf("const PAID_API_ROUTES"),
+    workerSource.indexOf("});", workerSource.indexOf("const PAID_API_ROUTES")),
+  );
+  assert.ok(gateTable.length > 0, "PAID_API_ROUTES table not found in the Worker");
+  const paidRoutes = [...gateTable.matchAll(/"\/api\/([^"]+)":/g)].map((match) => match[1]);
+  assert.ok(paidRoutes.length >= 8, `paid route enumeration looks too small: ${paidRoutes.join(", ")}`);
+
+  const privacySource = await readFile(privacySourceUrl, "utf8");
+  const disclosed = {
+    "live-routes": /travel times|route/,
+    "place-suggestions": /a short candidate list/,
+    "place-resolution": /so Google Maps Platform can resolve them/,
+    "place-intelligence": /opening-hour fields/,
+    "place-intelligence/fresh": /AI only writes short explanation labels/,
+    "hotel-recommendations": /Automatic hotel discovery sends/,
+    "food-recommendations": /Meal discovery sends/,
+    "food-recommendations/ai": /AI only writes short explanation labels/,
+    "hotel-recommendations/ai": /AI only writes short explanation labels/,
+    "route-recommendations": /one bounded along-route shortlist/,
+  };
+  for (const route of paidRoutes) {
+    const pattern = disclosed[route];
+    assert.ok(pattern, `/api/${route} is a paid endpoint with no privacy-page disclosure pinned here`);
+    assert.match(privacySource, pattern, `/api/${route} disclosure missing from the privacy page`);
+  }
+
+  // The suggestion endpoint is the only one a keystroke can reach, and the
+  // stable Place ID is the one field that outlives the request, so both
+  // properties are stated rather than implied.
+  assert.match(privacySource, /only its stable Google Place ID is retained/);
+  assert.match(privacySource, /The response is not stored by TripCheck/);
+  const suggestionClient = await readFile(new URL("../lib/place-suggestion-client.ts", import.meta.url), "utf8");
+  assert.match(suggestionClient, /body: JSON\.stringify\(\{ query, languageCode: locale === "ja" \? "ja" : "en", destination \}\)/);
+  // One place name per request: the itinerary as a whole never goes out here.
+  // Bounded to the transport function - the rest of the file holds pure
+  // helpers that legitimately read the whole textarea in memory.
+  const transportStart = suggestionClient.indexOf("export async function requestPlaceSuggestions");
+  const transportEnd = suggestionClient.indexOf("\nfunction normalizedPlaceName", transportStart);
+  assert.ok(transportStart >= 0 && transportEnd > transportStart, "suggestion transport slice anchors missing");
+  const transport = suggestionClient.slice(transportStart, transportEnd);
+  assert.doesNotMatch(transport, /itinerary|queries|hotelQuery|resolvedStops/);
+});

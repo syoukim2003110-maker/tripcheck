@@ -1004,6 +1004,14 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
     mapHoverChannel.set(legKey ? { kind: "leg", legKey } : null);
   }, [mapHoverChannel]);
 
+  // One scroll container carries Start, Resolve and the result, so a position
+  // reached on one screen was still applied to the next: building from a
+  // scrolled Start opened the plan already past its headline. Each screen
+  // starts at its own beginning.
+  useEffect(() => {
+    document.querySelector<HTMLElement>(".planner-sheet")?.scrollTo({ top: 0 });
+  }, [hasPlan, inputStep]);
+
   // While the traveller reads the timeline, keep the map centred on the item
   // closest to the rail's visual centre. This changes map focus only; it does
   // not open the inspector or mutate the plan.
