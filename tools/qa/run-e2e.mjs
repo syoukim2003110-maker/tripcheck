@@ -171,12 +171,16 @@ try {
       const rows = await page.evaluate(() => [...document.querySelectorAll(".planner-resolved-places li")].map((li) => ({
         cls: li.className,
         question: li.querySelector(".planner-candidate-question") !== null,
-        candidates: li.querySelectorAll(".planner-candidate-options button").length,
+        // ".is-none" is the "none of these — use an address" escape hatch, not
+        // a provider candidate; counting it would hide a real candidate change.
+        candidates: li.querySelectorAll(".planner-candidate-options button:not(.is-none)").length,
+        escapeHatch: li.querySelectorAll(".planner-candidate-options button.is-none").length,
         name: li.querySelector("b")?.textContent ?? "",
       })));
       if (rows.length !== 3) throw new Error(`expected 3 rows, saw ${rows.length}`);
       if (!rows[0].cls.includes("is-confirmed") || rows[0].question) throw new Error("high-confidence row was interrupted");
       if (!rows[1].cls.includes("is-review") || rows[1].candidates !== 2) throw new Error("ambiguous row did not ask with 2 candidates");
+      if (rows[1].escapeHatch !== 1) throw new Error("ambiguous row offered no address escape hatch");
       if (rows[2].question) throw new Error("not-found row rendered a candidate question");
     })());
 

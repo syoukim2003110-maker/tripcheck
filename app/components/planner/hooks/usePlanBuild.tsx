@@ -36,6 +36,8 @@ import { requestFreshVoices, requestPlaceIntelligence, PlaceIntelligenceError } 
 import { googleCurrentOpeningWindowsForDate, googleOpeningWindowsForDate } from "../../../../lib/google-opening-hours";
 import { deriveStopPlanningEvidence } from "../../../../lib/planning-evidence";
 import {
+  hasMixedResolvedPlaceCountries,
+  resolvedPlaceCountryCodes,
   PlaceResolutionError,
   placeReviewInputSignature,
   requestPlaceResolution,
@@ -114,6 +116,13 @@ import {
 import type { RouteRecommendationPoint } from "../../../../lib/route-recommendations";
 import type { PendingHardEdit } from "./usePlannerEdits";
 
+export type BuildPlanOptions = {
+  preserveEdits?: boolean;
+  prefetchedReview?: { places: ResolvedInputStop[] };
+  /** Bypasses React's previous-render closure when a country is chosen and rebuilt in one click. */
+  destinationOverride?: DestinationChoice;
+};
+
 export function usePlanBuild() {
   const [detectedDestinationId, setDetectedDestinationId] = useState<DestinationId | null>(null);
   const [isResolvingPlaces, setIsResolvingPlaces] = useState(false);
@@ -127,6 +136,10 @@ export function usePlanBuild() {
   const [intelligence, setIntelligence] = useState<Record<string, IntelligenceState>>({});
   const [freshVoices, setFreshVoices] = useState<Record<string, FreshState>>({});
   const [startInputError, setStartInputError] = useState<"" | "empty" | "limit">("");
+  // Auto detection refuses to merge a cross-country shortlist into one trip.
+  // The reason has to be readable, not only announced: without it the traveller
+  // is returned to Resolve with no explanation of what to change.
+  const [mixedCountryCodes, setMixedCountryCodes] = useState<string[]>([]);
   // v1.1 §12.3 / QA-043: recalculation completes politely, hard violations
   // (booking time, airport cutoff) interrupt. Both regions stay mounted so a
   // text change is what triggers the announcement, exactly once per event.
@@ -152,7 +165,7 @@ export function usePlanBuild() {
   // useTripPersistence, which needs to call it. Persistence receives a
   // forwarder that reads this ref; the actions hook writes each render's
   // buildPlan into it during render (see the note in the file header).
-  const buildPlanRef = useRef<(options?: { preserveEdits?: boolean; prefetchedReview?: { places: ResolvedInputStop[] } }) => Promise<void>>(async () => {});
+  const buildPlanRef = useRef<(options?: BuildPlanOptions) => Promise<void>>(async () => {});
 
   useEffect(() => {
     intelligenceRef.current = intelligence;
@@ -183,6 +196,8 @@ export function usePlanBuild() {
     setFreshVoices,
     startInputError,
     setStartInputError,
+    mixedCountryCodes,
+    setMixedCountryCodes,
     buildAnnouncement,
     setBuildAnnouncement,
     queuedDemoBuild,
@@ -343,6 +358,7 @@ export function usePlanBuildActions({
   setRouteGeometryByDay,
   setRouteRecommendationNotice,
   setRouteRecommendationSearches,
+  setMixedCountryCodes,
   setStartInputError,
   setTransferBufferMinutes,
   setTransitConvergence,
@@ -524,6 +540,19 @@ export function usePlanBuildActions({
       occurrenceResolved,
     ]);
     trackProductEvent("issue_resolved", { issue_type: "ambiguous_place" });
+  }
+
+  function rejectAmbiguousCandidates(placeIndex: number, inputName: string) {
+    const normalizedInput = inputName.normalize("NFKC").toLocaleLowerCase();
+    setAmbiguousPlaces((current) => current.filter((entry) => (
+      entry.input.normalize("NFKC").toLocaleLowerCase() !== normalizedInput
+    )));
+    setResolvedStops((current) => current.filter((entry) => entry.inputIndex !== placeIndex));
+    setResolutionOverrides((current) => current.filter((entry) => entry.inputIndex !== placeIndex));
+    setPreviewStops((current) => current.filter((stop) => (
+      !("inputIndex" in stop) || stop.inputIndex !== placeIndex
+    )));
+    setManualPinTarget((current) => current === placeIndex ? null : current);
   }
 
   // v1.1 §5.2: leaving the Resolve step with an unconfirmed Must or booked
@@ -792,6 +821,7 @@ export function usePlanBuildActions({
       confidence: "medium",
       planningDurationMinutes: stop.stayMinutes,
       isAnchor: false,
+      ...(stop.openingHoursApplicable === false ? { openingHoursApplicable: false } : {}),
     })) ?? null;
     setQueuedDemoBuild(true);
   }
@@ -807,16 +837,24 @@ export function usePlanBuildActions({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queuedDemoBuild]);
 
-  async function reviewWishlistPlaces(options: { continueCleanBuild?: boolean } = {}) {
+  async function reviewWishlistPlaces(options: { continueCleanBuild?: boolean; destinationOverride?: DestinationChoice } = {}) {
     if (!canReviewPlaces) return;
     trackMilestone("places_parsed", { place_count: parsedPlaceCount });
     placeReviewAbortRef.current?.abort();
     const controller = new AbortController();
     placeReviewAbortRef.current = controller;
     const rawAtStart = itinerary;
-    const signatureAtStart = currentInputSignature;
+    const resolutionDestination = options.destinationOverride ?? destinationChoice;
+    const signatureAtStart = placeReviewInputSignature(rawAtStart, locale, resolutionDestination);
+    const resolutionOverridesForReview = options.destinationOverride ? [] : resolutionOverrides;
+    if (options.destinationOverride) {
+      setDestinationChoice(resolutionDestination);
+      setDetectedDestinationId(null);
+      setResolutionOverrides([]);
+    }
     setIsResolvingPlaces(true);
     setPlaceWarning(false);
+    setMixedCountryCodes([]);
     setReviewedInputSignature("");
     setResolvedStops([]);
     setAmbiguousPlaces([]);
@@ -828,18 +866,18 @@ export function usePlanBuildActions({
     setResolvedBase(null);
     setPreviewStops([]);
     try {
-      let places: ResolvedInputStop[] = withManualResolutionOverrides([], resolutionOverrides);
+      let places: ResolvedInputStop[] = withManualResolutionOverrides([], resolutionOverridesForReview);
       let ambiguous: AmbiguousPlaceResolution[] = [];
       try {
         const response = await requestPlaceResolution(
           rawAtStart,
           "",
           locale,
-          destinationChoice,
+          resolutionDestination,
           controller.signal,
-          resolutionOverrides,
+          resolutionOverridesForReview,
         );
-        places = withManualResolutionOverrides(response.places, resolutionOverrides);
+        places = withManualResolutionOverrides(response.places, resolutionOverridesForReview);
         ambiguous = response.ambiguous;
       } catch (error) {
         if (controller.signal.aborted) return;
@@ -858,26 +896,31 @@ export function usePlanBuildActions({
         provider_name: places.length > 0 ? "google" : "derived",
       });
       const draft = buildTripFromWishlist(rawAtStart, tripDays, pace, locale, {
-        destination: destinationChoice,
+        destination: resolutionDestination,
         resolvedStops: places,
         tripStartDate,
         defaultDayStart: dayStartDefault,
         dayEndTarget: dayEndTarget || undefined,
       });
-      if (destinationChoice === "auto") {
+      if (resolutionDestination === "auto") {
         setDetectedDestinationId(draft.destination === "worldwide" ? null : draft.destination);
       }
       setReviewedInputSignature(signatureAtStart);
+      const mixedCountries = resolutionDestination === "auto" && hasMixedResolvedPlaceCountries(places)
+        ? resolvedPlaceCountryCodes(places)
+        : [];
+      setMixedCountryCodes(mixedCountries);
       // v1.1 §5.2: only places that resolved neither remotely nor from bundled
       // knowledge need a human decision. A clean result skips the Resolve step.
-      const needsAttention = parsedWishlistPlaces(rawAtStart).some((place, index) => {
+      const needsAttention = mixedCountries.length > 0
+        || parsedWishlistPlaces(rawAtStart).some((place, index) => {
         const normalized = place.name.normalize("NFKC").toLocaleLowerCase();
         const remote = places.find((candidate) => candidate.inputIndex === index)
           ?? places.find((candidate) => candidate.inputIndex === undefined && candidate.input.normalize("NFKC").toLocaleLowerCase() === normalized);
         return !remote && resolveKnownStops(place.name, locale).length === 0;
       });
       if (options.continueCleanBuild && !needsAttention) {
-        void buildPlan({ prefetchedReview: { places } });
+        void buildPlan({ prefetchedReview: { places }, destinationOverride: options.destinationOverride });
       } else {
         setInputStep("conditions");
       }
@@ -889,15 +932,22 @@ export function usePlanBuildActions({
     }
   }
 
-  async function buildPlan(options: { preserveEdits?: boolean; prefetchedReview?: { places: ResolvedInputStop[] } } = {}) {
+  async function buildPlan(options: BuildPlanOptions = {}) {
     if (!canBuild && !options.preserveEdits) return;
     const buildStartedAt = typeof performance !== "undefined" ? performance.now() : Date.now();
+    let buildDestination: DestinationChoice = options.destinationOverride ?? destinationChoice;
+    const resolutionOverridesForBuild = options.destinationOverride ? [] : resolutionOverrides;
+    if (options.destinationOverride) {
+      setDestinationChoice(buildDestination);
+      setDetectedDestinationId(null);
+      setResolutionOverrides([]);
+    }
     // Bind the place-resolution result to the exact paste/country/language that
     // produced it. The automatic path skips the separate review screen, but its
     // provider results are still a completed review. Without this signature,
     // returning from the result to "Review details" labels every resolved place
     // as unresolved even though the same provider records built the plan.
-    const inputSignatureAtBuildStart = currentInputSignature;
+    const inputSignatureAtBuildStart = placeReviewInputSignature(itinerary, locale, buildDestination);
     const authoredConstraintCount = parsedWishlistPlaces(itinerary).filter((place) => (
       place.priority !== "normal" || place.isReservation || place.time !== null || place.stayMinutes !== null || place.day !== null
     )).length
@@ -988,17 +1038,16 @@ export function usePlanBuildActions({
     // directly; React state (resolvedStops et al.) has not re-rendered yet.
     const prefetchedReview = options.prefetchedReview ?? null;
     const canReusePlaceReview = prefetchedReview !== null
-      || (placesHaveBeenReviewed && reviewedInputSignature === currentInputSignature);
+      || (!options.destinationOverride && placesHaveBeenReviewed && reviewedInputSignature === currentInputSignature);
     let places: ResolvedInputStop[] = prefetchedReview
       ? prefetchedReview.places
       : canReusePlaceReview
         ? resolvedStops
-        : withManualResolutionOverrides([], resolutionOverrides);
+        : withManualResolutionOverrides([], resolutionOverridesForBuild);
     let resolvedHotel: ResolvedInputStop | null = null;
     // Starts as the traveller's pick and is replaced by the detected country
     // once the first draft exists, so hotels, food and evidence for the rest
     // of this build are biased to the right place.
-    let buildDestination: DestinationChoice = destinationChoice;
     let buildTripStartDate = tripStartDate;
     let useRecommendedHotelForBuild = shouldUseRecommendedHotel(hotelQuery);
     try {
@@ -1008,10 +1057,10 @@ export function usePlanBuildActions({
         locale,
         buildDestination,
         controller.signal,
-        canReusePlaceReview ? [] : resolutionOverrides,
+        canReusePlaceReview ? [] : resolutionOverridesForBuild,
       );
       if (cancelled()) return;
-      if (!canReusePlaceReview) places = withManualResolutionOverrides(response.places, resolutionOverrides);
+      if (!canReusePlaceReview) places = withManualResolutionOverrides(response.places, resolutionOverridesForBuild);
       resolvedHotel = response.hotel;
       // The field accepts either a hotel or an area. Google place types settle
       // ambiguous plain inputs such as "新宿駅" or "Nara": non-lodging results
@@ -1040,6 +1089,23 @@ export function usePlanBuildActions({
       })) return;
     }
     if (cancelled()) return;
+    const placesForCountryCheck = resolvedHotel ? [...places, resolvedHotel] : places;
+    if (buildDestination === "auto" && hasMixedResolvedPlaceCountries(placesForCountryCheck)) {
+      commit(() => {
+        setReviewedInputSignature(inputSignatureAtBuildStart);
+        setDetectedDestinationId(null);
+        setMixedCountryCodes(resolvedPlaceCountryCodes(placesForCountryCheck));
+        setInputStep("conditions");
+        setHasPlan(false);
+        setPlanReady(false);
+        setIsBuilding(false);
+        setBuildProgress(initialBuildProgress);
+        setBuildAnnouncement(locale === "ja"
+          ? "場所が複数の国に分かれています。国を選んで検索し直してください。"
+          : "The places span multiple countries. Choose a country and search again.");
+      });
+      return;
+    }
     if (!commit(() => setHotelUsesRecommendations(useRecommendedHotelForBuild))) return;
 
     const plannerContext = (
@@ -1330,7 +1396,7 @@ export function usePlanBuildActions({
         itinerary,
         mealSelections: {},
         resolvedStops: places,
-        resolutionOverrides,
+        resolutionOverrides: resolutionOverridesForBuild,
       }, { limit: PLANNER_UNDO_LIMIT }));
       setHotelSearchSignature(hotelPlanSignature(draft));
       setReviewedInputSignature(inputSignatureAtBuildStart);
@@ -1488,8 +1554,10 @@ export function usePlanBuildActions({
     setMaxTransfersPerLeg(null);
     setTripDays(3);
     setHotelQuery("");
+    setDestinationChoice("auto");
     setDetectedDestinationId(null);
-    setTripStartDate(defaultTripDate(destinationById(destinationChoice === "auto" ? "worldwide" : destinationChoice)));
+    setMixedCountryCodes([]);
+    setTripStartDate(defaultTripDate(destinationById("worldwide")));
     setTripDateTouched(false);
     setPace("balanced");
     setMealPlan(P0_CORE_ONLY ? "none" : "all");
@@ -1706,6 +1774,7 @@ export function usePlanBuildActions({
   return {
     requestBuildFromStart,
     chooseAmbiguousCandidate,
+    rejectAmbiguousCandidates,
     continueFromResolve,
     confirmManualPlace,
     changeLocale,

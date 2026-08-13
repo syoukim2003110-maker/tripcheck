@@ -14,7 +14,7 @@ import type { ResolvedInputStop, RouteStop } from "../../../../lib/route-optimiz
 import type { ParsedWishlistPlace, WishlistPlaceConstraintPatch } from "../../../../lib/wishlist-parser.ts";
 import type { AirportCode, Pace } from "../../../../lib/trip-builder.ts";
 import type { TravelPreference } from "../../../../lib/time-feasibility.ts";
-import type { Destination } from "../../../../lib/destinations.ts";
+import type { Destination, DestinationChoice } from "../../../../lib/destinations.ts";
 import type { ManualPlaceDraft } from "../../../../lib/planner-app-state.ts";
 import { placeCandidateLabel, resolvedStopAddress } from "../../../../lib/presentation/trip-presentation.ts";
 import { ui, type PlannerLocale } from "../../../../lib/presentation/planner-copy.ts";
@@ -40,6 +40,10 @@ type ResolveScreenProps = {
   unresolvedReviewedCount: number;
   ambiguousReviewedCount: number;
   confirmedReviewedCount: number;
+  destinationChoice: DestinationChoice;
+  destinationComboOptions: ReadonlyArray<SearchableOption>;
+  /** ISO country codes auto-detection refused to merge; empty when there is no conflict. */
+  mixedCountryCodes: readonly string[];
   tripDays: number;
   tripStartDate: string;
   tripDateTouched: boolean;
@@ -61,9 +65,11 @@ type ResolveScreenProps = {
   departureAirportDestination: Destination;
   canBuild: boolean;
   onEditInput: () => void;
+  onDestinationChange: (value: string) => void;
   onSearchAgain: () => void;
   onEditPlaceName: () => void;
   onChooseCandidate: (placeIndex: number, candidate: ResolvedInputStop) => void;
+  onRejectCandidates: (placeIndex: number, inputName: string) => void;
   onManualDraftChange: (placeIndex: number, field: "address" | "latitude" | "longitude", value: string) => void;
   onToggleManualPin: (placeIndex: number) => void;
   onConfirmManualPlace: (placeIndex: number, name: string) => void;
@@ -103,6 +109,9 @@ export default function ResolveScreen({
   unresolvedReviewedCount,
   ambiguousReviewedCount,
   confirmedReviewedCount,
+  destinationChoice,
+  destinationComboOptions,
+  mixedCountryCodes,
   tripDays,
   tripStartDate,
   tripDateTouched,
@@ -124,9 +133,11 @@ export default function ResolveScreen({
   departureAirportDestination,
   canBuild,
   onEditInput,
+  onDestinationChange,
   onSearchAgain,
   onEditPlaceName,
   onChooseCandidate,
+  onRejectCandidates,
   onManualDraftChange,
   onToggleManualPin,
   onConfirmManualPlace,
@@ -160,6 +171,32 @@ export default function ResolveScreen({
       <div className="planner-resolve-intro">
         <button onClick={onEditInput} type="button">{locale === "ja" ? "入力を直す" : "Edit input"}</button>
       </div>
+      {/* Automatic detection stops rather than merge two countries into one
+          trip. The reason has to be on screen: the traveller is standing here
+          because the build refused, not because they navigated back. */}
+      {mixedCountryCodes.length > 1 ? (
+        <p className="planner-inline-status is-warning planner-resolve-country-conflict" role="status">
+          {locale === "ja"
+            ? `場所が${mixedCountryCodes.length}か国（${mixedCountryCodes.join("・")}）に分かれています。下で国を選ぶとその範囲で検索し直します。1か国に収まらない旅程は「世界中」を選んでください。`
+            : `Your places span ${mixedCountryCodes.length} countries (${mixedCountryCodes.join(", ")}). Choose a country below to search again inside it, or pick “Worldwide” for a trip that genuinely crosses borders.`}
+        </p>
+      ) : null}
+      <div className="planner-destination-field planner-field planner-place-country planner-resolve-country">
+        <label htmlFor="planner-resolve-destination"><span>{text.destination}</span></label>
+        <SearchableCombobox
+          ariaLabel={text.destination}
+          id="planner-resolve-destination"
+          noResultsLabel={text.noMatchingOption}
+          onChange={onDestinationChange}
+          options={destinationComboOptions}
+          placeholder={text.destinationSearch}
+          resultCountLabel={text.optionCount}
+          value={destinationChoice}
+        />
+        <small>{locale === "ja"
+          ? "国を選ぶと、現在の入力をその国の範囲で検索し直します。"
+          : "Choose a country to search the current input again inside that country."}</small>
+      </div>
       <section className="planner-resolved-places" aria-labelledby="planner-reviewed-title">
         <ul>
           {reviewedPlaceRows.map((row) => {
@@ -183,6 +220,9 @@ export default function ResolveScreen({
                           {placeCandidateLabel(candidate, resolvedStops, locale)}
                         </button>
                       ))}
+                      <button className="is-none" onClick={() => onRejectCandidates(row.placeIndex, row.place.name)} type="button">
+                        {locale === "ja" ? "候補にない（住所で指定）" : "None of these (use an address)"}
+                      </button>
                     </div>
                     {row.ambiguity.candidates.length > 3 ? (
                       <select

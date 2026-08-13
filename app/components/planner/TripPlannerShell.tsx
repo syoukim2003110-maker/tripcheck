@@ -54,6 +54,7 @@ import {
 import type { RouteRecommendationPoint } from "../../../lib/route-recommendations";
 import { trackProductEvent, type ProductEventFields, type ProductEventName } from "../../../lib/product-analytics";
 import { rotateTripRequestToken } from "../../../lib/trip-request-identity";
+import { rebaseResolutionOverrides } from "../../../lib/place-suggestion-client";
 import { routeLegKey, type AirportCode, type MealPlan, type VisitWindow } from "../../../lib/trip-builder";
 import { tripScopeWarnings } from "../../../lib/trip-scope";
 import {
@@ -91,6 +92,7 @@ import {
   type PlannerMapScope,
   type Inspector,
   type ManualPlaceDraft,
+  upsertResolutionOverride,
 } from "../../../lib/planner-app-state";
 import { mealSlotsAfterStop } from "../../../lib/presentation/timeline-presentation";
 
@@ -128,6 +130,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
     freshVoices,
     startInputError,
     setStartInputError,
+    mixedCountryCodes,
     buildAnnouncement,
     previewStops,
     setPreviewStops,
@@ -1474,6 +1477,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
   const {
     requestBuildFromStart,
     chooseAmbiguousCandidate,
+    rejectAmbiguousCandidates,
     continueFromResolve,
     confirmManualPlace,
     changeLocale,
@@ -1890,8 +1894,8 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
                   setPlanReady(false);
                 }}
                 onFormatItinerary={() => {
+                  setResolutionOverrides((current) => rebaseResolutionOverrides(itinerary, formattedItinerary, current));
                   setItinerary(formattedItinerary);
-                  setResolutionOverrides([]);
                   setReviewedInputSignature("");
                   setResolvedStops([]);
                   setAmbiguousPlaces([]);
@@ -1900,6 +1904,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
                 onHotelQueryChange={(value) => { setHotelQuery(value); setPlanReady(false); }}
                 onItineraryChange={(value) => {
                   if (!itinerary.trim() && value.trim()) trackMilestone("trip_input_started");
+                  setResolutionOverrides((current) => rebaseResolutionOverrides(itinerary, value, current));
                   setItinerary(value);
                   setStartInputError("");
                   setReviewedInputSignature("");
@@ -1907,7 +1912,6 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
                   setAmbiguousPlaces([]);
                   setManualPlaceDrafts({});
                   setManualAddressResolution({});
-                  setResolutionOverrides([]);
                   setPreviewStops([]);
                   setPlanReady(false);
                   clearNightlyHotelResults();
@@ -1915,6 +1919,14 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
                 onLoadSample={() => loadDemo(destinationById("switzerland"))}
                 onRequestBuild={requestBuildFromStart}
                 onReviewPlaces={() => void reviewWishlistPlaces()}
+                onSelectPlaceCandidate={(inputIndex, providerRef) => {
+                  setResolutionOverrides((current) => upsertResolutionOverride(current, { inputIndex, providerRef }));
+                  setReviewedInputSignature("");
+                  setResolvedStops([]);
+                  setAmbiguousPlaces([]);
+                  setPreviewStops([]);
+                  setPlanReady(false);
+                }}
                 onSelectDayStart={setDayStartDefault}
                 onSelectDays={(value) => { setDaysUndecided(false); changeTripDays(value); }}
                 onSelectPace={setPace}
@@ -1928,6 +1940,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
                 parsedPlaceCount={parsedPlaceCount}
                 placeWarning={placeWarning}
                 placesInputRef={placesInputRef}
+                resolutionOverrides={resolutionOverrides}
                 startInputError={startInputError}
                 travelPreference={travelPreference}
                 tripDateTouched={tripDateTouched}
@@ -1948,6 +1961,9 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
                 departureAirport={departureAirport}
                 departureAirportDestination={departureAirportDestination}
                 departureTime={departureTime}
+                destinationChoice={destinationChoice}
+                destinationComboOptions={destinationComboOptions}
+                mixedCountryCodes={mixedCountryCodes}
                 flightKind={flightKind}
                 hotelQuery={hotelQuery}
                 isResolvingPlaces={isResolvingPlaces}
@@ -1964,10 +1980,18 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
                 onChangeMaxWalking={setMaxWalkingMinutesPerLeg}
                 onChangeTripDays={changeTripDays}
                 onChooseCandidate={chooseAmbiguousCandidate}
+                onRejectCandidates={rejectAmbiguousCandidates}
                 onConfirmManualPlace={confirmManualPlace}
                 onContinue={continueFromResolve}
                 onDepartureAirportChange={setDepartureAirport}
                 onDepartureTimeChange={setDepartureTime}
+                onDestinationChange={(value) => {
+                  const next = value as DestinationChoice;
+                  setDestinationChoice(next);
+                  setDetectedDestinationId(null);
+                  setResolutionOverrides([]);
+                  void reviewWishlistPlaces({ destinationOverride: next });
+                }}
                 onEditInput={() => { setManualPinTarget(null); setInputStep("places"); }}
                 onEditPlaceName={() => { setManualPinTarget(null); setInputStep("places"); requestAnimationFrame(() => placesInputRef.current?.focus()); }}
                 onHotelQueryChange={(value) => {
@@ -2103,8 +2127,9 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
                 onChooseCountry={(destinationId) => {
                   setDestinationChoice(destinationId);
                   setDetectedDestinationId(null);
+                  setResolutionOverrides([]);
                   trackProductEvent("issue_resolved", { issue_type: "country_conflict" });
-                  void buildPlan({ preserveEdits: true });
+                  void buildPlan({ preserveEdits: true, destinationOverride: destinationId });
                 }}
                 onFixInput={() => { setHasPlan(false); setInputStep("places"); setInspector(null); }}
                 onOpenStop={handleSelectStop}

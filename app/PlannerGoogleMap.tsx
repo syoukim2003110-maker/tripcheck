@@ -4,7 +4,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { destinationName, type Destination } from "../lib/destinations";
+import type { Destination } from "../lib/destinations";
 import { decodeGooglePolyline } from "../lib/google-polyline";
 import type { RouteStop } from "../lib/route-optimizer";
 import type { TransportMode } from "../lib/time-feasibility";
@@ -127,11 +127,24 @@ declare global {
     google?: any;
     __tripcheckMapsPromise?: Promise<any>;
     __tripcheckMapsReady?: () => void;
+    __tripcheckMapsAuthFailed?: boolean;
+    gm_authFailure?: () => void;
   }
 }
 
+const MAPS_AUTH_FAILURE_EVENT = "tripcheck:maps-auth-failure";
 
-
+function installGoogleMapsAuthFailureBridge() {
+  const current = window.gm_authFailure as ((() => void) & { __tripcheckBridge?: boolean }) | undefined;
+  if (current?.__tripcheckBridge) return;
+  const bridge = (() => {
+    window.__tripcheckMapsAuthFailed = true;
+    window.__tripcheckMapsPromise = undefined;
+    window.dispatchEvent(new Event(MAPS_AUTH_FAILURE_EVENT));
+  }) as (() => void) & { __tripcheckBridge?: boolean };
+  bridge.__tripcheckBridge = true;
+  window.gm_authFailure = bridge;
+}
 /* Neutral, decluttered basemap (ride-hail style) so pins and the route stay the loudest layer. */
 const warmMapStyle = [
   { elementType: "geometry", stylers: [{ color: "#f4f4f5" }] },
@@ -150,12 +163,15 @@ const warmMapStyle = [
 ];
 
 async function loadGoogleMaps(apiKey: string) {
+  installGoogleMapsAuthFailureBridge();
+  if (window.__tripcheckMapsAuthFailed) throw new Error("maps_auth_failure");
   if (window.google?.maps?.importLibrary) return window.google;
   if (!apiKey) throw new Error("maps_not_configured");
   if (!window.__tripcheckMapsPromise) {
     window.__tripcheckMapsPromise = new Promise((resolve, reject) => {
       const script = document.createElement("script");
       script.async = true;
+      window.__tripcheckMapsAuthFailed = false;
       window.__tripcheckMapsReady = () => {
         delete window.__tripcheckMapsReady;
         resolve(window.google);
@@ -500,7 +516,13 @@ export default function PlannerGoogleMap({
   const onRouteGeometryRef = useRef(onRouteGeometry);
   const onPickCoordinateRef = useRef(onPickCoordinate);
   const coordinatePickActiveRef = useRef(coordinatePickActive);
-  const [engineState, setEngineState] = useState<"loading" | "js" | "embed">(apiKey ? "loading" : "embed");
+  const [engineState, setEngineState] = useState<"loading" | "js" | "unavailable">(apiKey ? "loading" : "unavailable");
+  // "auth" is a rejected key and retrying only fails again; "load" (script
+  // error or tiles that never arrived) is usually a slow or dropped network,
+  // so that case keeps an explicit way back instead of losing the map for
+  // the rest of the session.
+  const [unavailableReason, setUnavailableReason] = useState<"auth" | "load" | "not_configured">(apiKey ? "load" : "not_configured");
+  const [mapBootAttempt, setMapBootAttempt] = useState(0);
   const [routeState, setRouteState] = useState<RouteState>("idle");
 
   useEffect(() => {
@@ -531,7 +553,7 @@ export default function PlannerGoogleMap({
   // existing imperative seams: a CSS class on the marker chip and setOptions
   // on already-built polylines. No overlay is ever rebuilt for hover. The
   // mirrored data attributes make the state observable to the QA harness even
-  // when the JS map cannot load (embed fallback has no chips or lines).
+  // when the JS map cannot load.
   const applyTimelineHover = useCallback(() => {
     const target = hoverTargetRef.current;
     const hoveredStopId = target?.kind === "stop" ? target.stopId : null;
@@ -594,17 +616,32 @@ export default function PlannerGoogleMap({
 
   useEffect(() => {
     let cancelled = false;
+    let authFailed = false;
     let tilesListener: any = null;
     let clickListener: any = null;
+    let tilesTimeout: number | null = null;
+    const markUnavailable = (reason: "auth" | "load") => {
+      authFailed = true;
+      if (tilesTimeout !== null) window.clearTimeout(tilesTimeout);
+      if (cancelled) return;
+      setUnavailableReason(apiKey ? reason : "not_configured");
+      setEngineState("unavailable");
+    };
+    const onAuthFailure = () => markUnavailable("auth");
+    window.addEventListener(MAPS_AUTH_FAILURE_EVENT, onAuthFailure);
     async function boot() {
       if (!containerRef.current) return;
+      if (!apiKey) {
+        markUnavailable("load");
+        return;
+      }
       try {
         const google = await loadGoogleMaps(apiKey);
         const [{ Map }, core] = await Promise.all([
           google.maps.importLibrary("maps"),
           google.maps.importLibrary("core"),
         ]);
-        if (cancelled || !containerRef.current) return;
+        if (cancelled || authFailed || !containerRef.current) return;
         // Read through a ref: the opening view only matters at creation, and
         // rebuilding the whole map when the country changes would throw away
         // every overlay for nothing.
@@ -633,15 +670,19 @@ export default function PlannerGoogleMap({
         });
         engineRef.current = { google, map, maps: { core } };
         tilesListener = google.maps.event.addListenerOnce(map, "tilesloaded", () => {
-          if (!cancelled) setEngineState("js");
+          if (tilesTimeout !== null) window.clearTimeout(tilesTimeout);
+          if (!cancelled && !authFailed) setEngineState("js");
         });
-      } catch {
-        if (!cancelled) setEngineState("embed");
+        tilesTimeout = window.setTimeout(() => markUnavailable("load"), 12_000);
+      } catch (error) {
+        markUnavailable((error as Error)?.message === "maps_auth_failure" ? "auth" : "load");
       }
     }
     void boot();
     return () => {
       cancelled = true;
+      window.removeEventListener(MAPS_AUTH_FAILURE_EVENT, onAuthFailure);
+      if (tilesTimeout !== null) window.clearTimeout(tilesTimeout);
       chipsRef.current.forEach((chip) => chip.overlay.setMap(null));
       dayLayerChipsRef.current.forEach((chip) => chip.overlay.setMap(null));
       foodChipsRef.current.forEach((chip) => chip.overlay.setMap(null));
@@ -655,7 +696,7 @@ export default function PlannerGoogleMap({
       if (clickListener) clickListener.remove();
       engineRef.current = null;
     };
-  }, [apiKey]);
+  }, [apiKey, mapBootAttempt]);
 
   useEffect(() => {
     if (engineState !== "js" || !engineRef.current) return;
@@ -1182,32 +1223,6 @@ export default function PlannerGoogleMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [coordinatePickActive, coordinatePickSignature, engineState, locale]);
 
-  const embedPoints = pathStops.length > 0
-    ? pathStops.length <= 10 ? pathStops : [...pathStops.slice(0, 9), pathStops.at(-1)!]
-    : [{
-      latitude: destination.center.latitude,
-      longitude: destination.center.longitude,
-      name: destinationName(destination, locale),
-    }];
-  // A multi-point Embed request becomes Directions and silently uses the
-  // current timetable. While the traveller has not chosen a date (or live
-  // verification is still paused), keep this fallback view-only. Numbered JS
-  // markers still communicate visit order without inventing a route.
-  const embedViewPoints = routeRequestsPaused && embedPoints.length > 1
-    ? [{
-        latitude: embedPoints.reduce((sum, point) => sum + point.latitude, 0) / embedPoints.length,
-        longitude: embedPoints.reduce((sum, point) => sum + point.longitude, 0) / embedPoints.length,
-        name: destinationName(destination, locale),
-      }]
-    : embedPoints;
-  const embedParams = new URLSearchParams({
-    language: locale,
-    points: embedViewPoints.map((stop) => `${stop.latitude},${stop.longitude}`).join("|"),
-    labels: embedViewPoints.map((stop) => stop.name).join("|"),
-    ...(pathStops.length === 0 || routeRequestsPaused ? { overview: "1", zoom: String(destination.overviewZoom) } : {}),
-    ...(destination.id === "worldwide" ? {} : { destination: destination.id }),
-  });
-
   const displayedRouteState: RouteState = routeRequestsPaused
     ? routePauseReason === "date_required" ? "paused_date" : "loading"
     : routeState;
@@ -1217,19 +1232,36 @@ export default function PlannerGoogleMap({
 
   return (
     <>
-      <iframe
-        className="planner-map-embed"
-        loading="eager"
-        referrerPolicy="no-referrer-when-downgrade"
-        src={`/api/map-embed?${embedParams.toString()}`}
-        title={locale === "ja" ? "旅程のGoogleマップ" : "Itinerary on Google Maps"}
-      />
+      {/* The container stays mounted even while unavailable: the panel covers
+          it, and a retry can reuse the same node instead of losing the map
+          surface for the rest of the session. */}
       <div
+        aria-hidden={engineState === "js" ? undefined : true}
         className={`planner-google-map${engineState === "js" ? " is-visible" : ""}${coordinatePickActive ? " is-coordinate-picking" : ""} is-day-${routeView.dayNumber}${dayActive ? " is-active-day" : " is-inactive-day"}`}
         data-day-color={routeView.color}
         data-day-index={routeView.dayIndex}
         ref={containerRef}
       />
+      {engineState === "unavailable" ? (
+        <div className="planner-map-provider-unavailable" data-reason={unavailableReason} role="status">
+          <b>{locale === "ja" ? "地図を読み込めません" : "Map unavailable"}</b>
+          <span>{locale === "ja"
+            ? "旅程は引き続き利用できます。結果画面では「Google Mapsで開く」も利用できます。"
+            : "You can keep using the planner. Open in Google Maps is also available on the results screen."}</span>
+          {unavailableReason === "load" ? (
+            <button
+              className="planner-map-retry"
+              onClick={() => {
+                setEngineState("loading");
+                setMapBootAttempt((attempt) => attempt + 1);
+              }}
+              type="button"
+            >
+              {locale === "ja" ? "地図を再読み込み" : "Reload the map"}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       {drawRoute && pathStops.length > 1 ? (
         <span aria-live="polite" className={`planner-route-status is-${displayedRouteState}`}><i aria-hidden="true" />{statusText}</span>
       ) : null}

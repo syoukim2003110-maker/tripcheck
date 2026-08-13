@@ -169,6 +169,36 @@ body:has(.trip-planner-app) {
 .planner-google-map { height: 100%; inset: 0; opacity: 0; pointer-events: none; position: absolute; transition: opacity 220ms ease; width: 100%; }
 .planner-google-map.is-visible { opacity: 1; pointer-events: auto; }
 .planner-google-map.is-coordinate-picking { cursor: crosshair; }
+.planner-map-provider-unavailable {
+  align-content: center;
+  background: var(--pl-bg);
+  color: var(--pl-ink-2);
+  display: grid;
+  gap: 7px;
+  inset: 0;
+  justify-items: center;
+  /* The panel lives inside map surfaces as short as the 15dvh mobile strip.
+     Without containment its text escapes the pane and lands on the floating
+     header chips. */
+  overflow: hidden;
+  padding: 16px 24px;
+  position: absolute;
+  text-align: center;
+  z-index: 2;
+}
+.planner-map-provider-unavailable b { color: var(--pl-ink); font-size: 15px; }
+.planner-map-provider-unavailable span { font-size: 12px; line-height: 1.6; max-width: 380px; }
+.planner-map-retry {
+  background: white;
+  border: 1px solid var(--pl-control-border);
+  border-radius: 999px;
+  color: var(--pl-ink);
+  font-size: 11.5px;
+  font-weight: 750;
+  min-height: 44px;
+  padding: 6px 18px;
+}
+.planner-map-retry:hover { border-color: var(--pl-ink); }
 
 .planner-map-scope {
   backdrop-filter: blur(12px);
@@ -517,6 +547,7 @@ body:has(.trip-planner-app) {
 .planner-composer { background: var(--pl-tile); border-radius: 16px; display: block; padding: 15px; transition: background 150ms, box-shadow 150ms; }
 .planner-composer:focus-within { background: white; box-shadow: inset 0 0 0 2px var(--pl-ink); }
 .planner-composer > span,
+.planner-composer > label > span,
 .planner-primary-fields label > span,
 .planner-primary-fields .planner-field > label > span,
 .planner-hotel-field > span,
@@ -525,6 +556,22 @@ body:has(.trip-planner-app) {
 .planner-choice > span { color: var(--pl-muted); display: block; font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; margin-bottom: 7px; }
 .planner-composer textarea { background: transparent; border: 0; color: var(--pl-ink); font: inherit; font-size: 15px; font-weight: 550; height: 172px; line-height: 1.7; outline: 0; padding: 0; resize: none; width: 100%; }
 .planner-composer textarea::placeholder { color: var(--pl-muted); font-weight: 450; }
+.planner-place-selection-confirmed { align-items: center; color: var(--pl-good); display: inline-flex; font-size: 10.5px; font-weight: 750; gap: 5px; margin-top: 4px; }
+.planner-place-selection-confirmed > span { align-items: center; background: var(--pl-good-soft); border-radius: 50%; display: inline-flex; height: 17px; justify-content: center; width: 17px; }
+.planner-place-suggestion-panel { background: white; border: 1px solid var(--pl-line); border-radius: 12px; box-shadow: 0 12px 30px rgb(11 11 14 / 12%); display: grid; gap: 6px; margin-top: 8px; overflow: hidden; padding: 7px; position: relative; z-index: 15; }
+.planner-place-suggestion-heading { align-items: baseline; display: flex; flex-wrap: wrap; gap: 4px 8px; padding: 2px 4px 5px; }
+.planner-place-suggestion-heading > span { color: var(--pl-ink); font-size: 11px; font-weight: 800; }
+.planner-place-suggestion-heading > small { color: var(--pl-muted); font-size: 9.5px; }
+.planner-place-suggestion-option { align-items: center; border-radius: 9px; cursor: pointer; display: flex; gap: 8px; justify-content: space-between; min-height: 45px; padding: 6px 8px; }
+.planner-place-suggestion-option:hover,
+.planner-place-suggestion-option.is-active { background: var(--pl-tile); }
+.planner-place-suggestion-option.is-selected { box-shadow: inset 0 0 0 1px var(--pl-good); }
+.planner-place-suggestion-option > span { display: grid; gap: 2px; min-width: 0; }
+.planner-place-suggestion-option b { color: var(--pl-ink); font-size: 12px; overflow-wrap: anywhere; }
+.planner-place-suggestion-option small { color: var(--pl-muted); font-size: 10px; line-height: 1.35; overflow-wrap: anywhere; }
+.planner-place-suggestion-option i { background: var(--pl-good-soft); border-radius: 999px; color: var(--pl-good); flex: 0 0 auto; font-size: 9px; font-style: normal; font-weight: 800; padding: 4px 7px; }
+.planner-place-suggestion-status { color: var(--pl-muted); font-size: 10.5px; line-height: 1.45; margin: 0; padding: 9px 6px; }
+.planner-place-suggestion-attribution { display: block; height: 14px; margin: 5px 10px 2px auto; width: 120px; }
 .planner-composer-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .planner-composer button { align-items: center; background: white; border: 1px solid var(--pl-line); border-radius: 10px; box-shadow: 0 1px 2px rgb(11 11 14 / 5%); color: var(--pl-ink); display: inline-flex; font-size: 12px; font-weight: 700; gap: 6px; padding: 8px 13px; }
 .planner-composer button:hover { border-color: var(--pl-ink); }
@@ -557,6 +604,7 @@ body:has(.trip-planner-app) {
 .planner-parse-preview ul { display: grid; gap: 1px; list-style: none; margin: 0; max-height: 154px; overflow-y: auto; overscroll-behavior: contain; padding: 0 5px 0 0; scrollbar-color: #d3d3da transparent; scrollbar-width: thin; }
 .planner-parse-preview li { align-items: baseline; display: flex; flex-wrap: wrap; gap: 6px; padding: 3px 0; }
 .planner-parse-preview li > span:first-child { font-size: 12.5px; font-weight: 650; min-width: 0; overflow-wrap: anywhere; }
+.planner-parse-place-selected { color: var(--pl-good); display: inline-block; font-size: 9.5px; font-weight: 750; margin-left: 7px; white-space: nowrap; }
 .planner-parse-preview li.is-day { border-top: 1px solid var(--pl-line); margin-top: 5px; padding-top: 8px; }
 .planner-parse-preview li.is-day:first-child { border-top: 0; margin-top: 0; padding-top: 0; }
 .planner-parse-preview li.is-day b { color: var(--pl-ink); font-size: 11px; font-weight: 800; letter-spacing: 0.04em; }
@@ -983,7 +1031,6 @@ details.planner-excluded { display: block; }
 .planner-advanced-disclosure > summary { color: var(--pl-ink-2); cursor: pointer; font-size: 12px; font-weight: 750; list-style: none; min-height: 36px; padding: 6px 0; text-decoration: underline; text-underline-offset: 4px; }
 .planner-advanced-disclosure > summary::-webkit-details-marker { display: none; }
 .planner-advanced-disclosure .planner-place-country { margin-top: 0; }
-.planner-advanced-disclosure .planner-place-country small { color: var(--pl-muted); display: block; font-size: 10px; margin-top: 5px; }
 .planner-sample-link { align-items: baseline; background: transparent; border: 0; color: var(--pl-ink); display: inline-flex; flex-wrap: wrap; gap: 7px; margin-top: 16px; padding: 6px 0; }
 .planner-sample-link b { font-size: 12.5px; font-weight: 800; text-decoration: underline; text-underline-offset: 4px; }
 .planner-sample-link small { color: var(--pl-muted); font-size: 11px; }
@@ -1015,6 +1062,7 @@ details.planner-excluded { display: block; }
 
 .planner-place-country { background: white; border: 1px solid var(--pl-line); border-radius: 13px; margin-top: 12px; padding: 11px 13px; }
 .planner-place-country > label > span { color: var(--pl-muted); display: block; font-size: 10.5px; font-weight: 700; margin-bottom: 6px; }
+.planner-place-country > small { color: var(--pl-muted); display: block; font-size: 10px; line-height: 1.45; margin-top: 5px; }
 .planner-place-country .planner-combobox-input { background: transparent; border: 0; color: var(--pl-ink); font: inherit; font-weight: 650; min-height: 28px; outline: 0; padding: 0 24px 0 0; width: 100%; }
 .planner-inline-status { border-radius: 11px; color: var(--pl-ink-2); font-size: 11px; line-height: 1.5; margin: 10px 0 0; padding: 9px 11px; }
 .planner-inline-status.is-warning { background: var(--pl-warn-bg); border: 1px solid var(--pl-warn-border); color: var(--pl-warn-ink); }
@@ -1024,6 +1072,8 @@ details.planner-excluded { display: block; }
    the escape back to the raw input aligned with the list edge. */
 .planner-resolve-intro { display: flex; justify-content: flex-end; margin-bottom: 6px; }
 .planner-resolve-intro button { background: transparent; border: 0; color: var(--pl-ink-2); font-size: 10.5px; font-weight: 750; min-height: 28px; padding: 2px 4px; text-decoration: underline; text-underline-offset: 3px; }
+.planner-resolve-country { margin: 0 0 12px; }
+.planner-resolve-country-conflict { margin: 0 0 10px; }
 .planner-resolved-places { border: 1px solid var(--pl-line); border-radius: 16px; margin-bottom: 14px; overflow: hidden; }
 .planner-resolved-places ul { display: grid; list-style: none; margin: 0; max-height: min(52dvh, 560px); overflow-y: auto; padding: 4px 12px; }
 .planner-resolved-places li { align-items: center; border-bottom: 1px solid var(--pl-line); display: grid; gap: 9px; grid-template-columns: 25px minmax(0, 1fr) auto auto; min-height: 54px; padding: 7px 0; }
@@ -1046,6 +1096,7 @@ details.planner-excluded { display: block; }
 .planner-candidate-options { display: grid; gap: 5px; }
 .planner-candidate-options button { background: white; border: 1px solid var(--pl-control-border); border-radius: 9px; color: var(--pl-ink-2); font-size: 10.5px; line-height: 1.35; min-height: 34px; overflow-wrap: anywhere; padding: 6px 9px; text-align: left; }
 .planner-candidate-options button:hover { border-color: var(--pl-ink); color: var(--pl-ink); }
+.planner-candidate-options button.is-none { background: var(--pl-bg); border-style: dashed; }
 .planner-resolve-deferred { color: var(--pl-muted); display: block; font-size: 10.5px; line-height: 1.4; margin-top: 2px; }
 .planner-notfound-block { display: grid; gap: 5px; margin-top: 4px; }
 .planner-notfound-note { color: #9b3524; font-size: 11.5px; font-weight: 750; margin: 0; }
@@ -1752,6 +1803,15 @@ div.planner-route-ideas-empty { display: grid; gap: 8px; }
     height: 85dvh;
     inset: 15dvh 0 0;
   }
+  /* In a 15dvh strip only the headline and the way back fit. The explanatory
+     sentence is dropped rather than allowed to push the panel over the
+     floating header. */
+  .trip-planner-app.is-result.is-mobile-timeline .planner-map-provider-unavailable {
+    gap: 6px;
+    padding: 6px 12px;
+  }
+  .trip-planner-app.is-result.is-mobile-timeline .planner-map-provider-unavailable span { display: none; }
+  .trip-planner-app.is-result.is-mobile-timeline .planner-map-provider-unavailable b { font-size: 13px; }
   .trip-planner-app.is-result.is-mobile-compact .planner-map-canvas,
   .trip-planner-app.is-result.is-mobile-compact .planner-map-bottom { display: none; }
   .trip-planner-app.is-result.is-mobile-compact .planner-sheet {

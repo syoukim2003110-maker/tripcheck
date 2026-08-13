@@ -98,6 +98,22 @@ export async function newPage(browser, { width = 1440, height = 900, fixtures = 
       }).catch(() => {});
       return;
     }
+    // Autocomplete is a paid Google call on every accepted keystroke pause.
+    // The harness always answers it locally so a QA run can never spend the
+    // trip's provider budget, and so suggestion counts stay assertable.
+    if (fixtures.placeSuggestions && url.startsWith(`${BASE_URL}/api/place-suggestions`) && request.method() === "POST") {
+      let payload = {};
+      try { payload = JSON.parse(request.postData() ?? "{}"); } catch { /* keep {} */ }
+      const body = typeof fixtures.placeSuggestions === "function"
+        ? fixtures.placeSuggestions(payload)
+        : fixtures.placeSuggestions;
+      request.respond({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(body),
+      }).catch(() => {});
+      return;
+    }
     if (fixtures.foodRecommendations && url === `${BASE_URL}/api/food-recommendations` && request.method() === "POST") {
       let payload = {};
       try { payload = JSON.parse(request.postData() ?? "{}"); } catch { /* keep {} */ }
