@@ -317,7 +317,7 @@ export default function HotelInspector({
                 : text.hotelReasonPicked}
       </p>
       <a className="planner-hotel-hero" href={selectedHotel.googleMapsUrl} key={selectedHotel.id} rel="noreferrer" target="_blank">
-        {selectedHotel.photo ? <>
+        {selectedHotel.photo && placePhotoSrc(selectedHotel.photo.name, selectedHotel.photo.signature) ? <>
           {/* Google place photos are proxied at request time and are not stored. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img alt={selectedHotel.name} onError={onPhotoError} src={placePhotoSrc(selectedHotel.photo.name, selectedHotel.photo.signature)} />

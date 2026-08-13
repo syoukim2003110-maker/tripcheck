@@ -44,7 +44,7 @@ export default function HotelRecommendationCard({
     <article className={`planner-hotel-card${isSelected ? " is-selected" : ""}`}>
       <button aria-pressed={isSelected} onClick={onSelect} title={text.useThisHotel} type="button">
         <span className="planner-hotel-card-image">
-          {candidate.photo ? <>
+          {candidate.photo && placePhotoSrc(candidate.photo.name, candidate.photo.signature) ? <>
             {/* Google photo names are fetched at request time and never persisted. */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img alt={candidate.name} loading="lazy" onError={onPhotoError} src={placePhotoSrc(candidate.photo.name, candidate.photo.signature)} />

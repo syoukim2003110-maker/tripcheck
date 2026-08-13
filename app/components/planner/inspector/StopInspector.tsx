@@ -207,8 +207,11 @@ export default function StopInspector({
               <h3>{text.fieldEvidence}</h3>
               <small>{intel.analyzedBy === "anthropic" ? text.aiAudited : text.rulesAudited}</small>
             </header>
-            {!P0_CORE_ONLY && intel.place.photoName ? (
-              <a className="planner-intel-hero" href={intel.place.googleMapsUrl} key={intel.place.photoName} rel="noreferrer" target="_blank">
+            {/* The hero links to the listing. Its accessible name comes from the
+                label, never from the image: any provider hiccup removes the
+                image and would otherwise leave a link with no name at all. */}
+            {!P0_CORE_ONLY && placePhotoSrc(intel.place.photoName, intel.place.photoSignature) ? (
+              <a aria-label={`${intel.place.name} · Google Maps`} className="planner-intel-hero" href={intel.place.googleMapsUrl} key={intel.place.photoName} rel="noreferrer" target="_blank">
                 {/* Google place photos are proxied at request time and are not stored. */}
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img alt={intel.place.name} loading="lazy" onError={onPhotoError} src={placePhotoSrc(intel.place.photoName, intel.place.photoSignature)} />

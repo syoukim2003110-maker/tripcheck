@@ -56,7 +56,7 @@ export default function GapRecommendationCard({
         type="button"
       >
         <span className="planner-route-idea-image">
-          {candidate.photoName ? (
+          {placePhotoSrc(candidate.photoName, candidate.photoSignature) ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img alt={candidate.name} loading="lazy" onError={onPhotoError} src={placePhotoSrc(candidate.photoName, candidate.photoSignature)} />
           ) : <span aria-hidden="true"><Icon name="pin" size={20} /></span>}

@@ -1626,7 +1626,10 @@ div.planner-route-ideas-empty { display: grid; gap: 8px; }
 .planner-food-results small { color: var(--pl-accent-deep); font-size: 10.5px; font-weight: 750; }
 .planner-food-results h3 { font-size: 13.5px; font-weight: 800; margin: 3px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .planner-food-results p { color: var(--pl-muted); display: -webkit-box; font-size: 11.5px; line-height: 1.5; margin: 0; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-.planner-photo-credit { color: var(--pl-muted); display: block; font-size: 10px; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A credit line is still a link, so it has to be big enough to hit. At 10px
+   type it was a 16px-tall target; the padding brings it to the 24px floor
+   without changing where the text sits. */
+.planner-photo-credit { align-items: center; color: var(--pl-muted); display: flex; font-size: 10px; margin-top: 4px; min-height: 24px; overflow: hidden; padding: 4px 0; text-overflow: ellipsis; white-space: nowrap; }
 .planner-food-map { align-items: center; border-left: 1px solid var(--pl-line); color: var(--pl-ink); display: flex; flex-direction: column; font-size: 10.5px; font-weight: 700; gap: 5px; justify-content: center; padding: 8px 10px; text-decoration: none; }
 .planner-food-map:hover { color: var(--pl-accent-deep); }
 .planner-food-map span { font-size: 15px; }
@@ -1790,6 +1793,21 @@ div.planner-route-ideas-empty { display: grid; gap: 8px; }
   .trip-planner-app.is-result .planner-map-canvas { left: 0; }
   .trip-planner-app.is-conditions .planner-sheet { height: 48dvh; }
   .trip-planner-app.is-conditions .planner-map-bottom { bottom: calc(48dvh + 12px); }
+  /* A map that cannot load is not worth half a phone screen at the step whose
+     only job is confirming which place you meant. It used to hold 52% of a
+     390×844 viewport and push the first thing to confirm to y≈880 — below the
+     fold, on the screen that exists to be read. The confirmation list takes
+     the space instead; the map, and its reload, return on the result screen's
+     Map tab. Same reasoning as the timeline strip below. */
+  .trip-planner-app.is-conditions .planner-map-canvas:has(.planner-map-provider-unavailable),
+  .trip-planner-app.is-conditions:has(.planner-map-provider-unavailable) .planner-map-bottom {
+    display: none;
+  }
+  .trip-planner-app.is-conditions:has(.planner-map-provider-unavailable) .planner-sheet {
+    border-radius: 0;
+    height: 100dvh;
+    inset: 0;
+  }
   /* §11.2 "画面下にMap preview bar" + DoD-PLAN-1: the timeline view keeps the
      map as a preview strip, not a half screen. 12dvh (≈101px at 390×844) still
      carries the route status, the legend toggle and the map chips, and it is
@@ -1869,7 +1887,11 @@ div.planner-route-ideas-empty { display: grid; gap: 8px; }
   .planner-form-view,
   .planner-result-view,
   .planner-building-view { padding: 24px 16px 28px; }
-  .trip-planner-app.is-places .planner-form-view { padding-top: 78px; }
+  .trip-planner-app.is-places .planner-form-view,
+  /* Once the collapsed map lets the sheet start at the top of the screen, the
+     step indicator would otherwise be read through the floating header. Same
+     clearance the first step already uses. */
+  .trip-planner-app.is-conditions:has(.planner-map-provider-unavailable) .planner-form-view { padding-top: 78px; }
   .planner-result-view { padding-top: 6px; }
   .planner-building-steps { margin-top: 16px; }
   .planner-building-steps li { min-height: 48px; }

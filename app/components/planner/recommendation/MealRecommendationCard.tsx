@@ -55,7 +55,7 @@ export default function MealRecommendationCard({
       data-food-candidate={candidate.id}
     >
       <a className="planner-food-image" href={candidate.googleMapsUrl} rel="noreferrer" target="_blank">
-        {candidate.photoName ? <>
+        {placePhotoSrc(candidate.photoName, candidate.photoSignature) ? <>
           {/* Google place photos are short-lived, server-proxied URLs and cannot use a static Next image allowlist. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img alt={candidate.name} loading="lazy" onError={onPhotoError} src={placePhotoSrc(candidate.photoName, candidate.photoSignature)} />

@@ -698,10 +698,19 @@ try {
     })());
 
     await expect("QA-042 keyboard accepts a meal recommendation (toast)", (async () => {
-      await pressTabUntil(page, () => {
+      // The tab path to this button runs through every recommendation card, and
+      // a card grows two more focusable links (photo hero, photo credit) when
+      // the provider happens to return a photo for that place. The old budget
+      // of 200 was measured on a run where none did, so this check failed
+      // roughly one run in three for a reason that had nothing to do with the
+      // keyboard. The claim is unchanged — the button is reachable by keyboard
+      // alone — and the reached count is reported so a real regression in the
+      // tab path still shows up as a number that keeps climbing.
+      const presses = await pressTabUntil(page, () => {
         const active = document.activeElement;
         return !!active && (active.textContent ?? "") === "ここにする" && !!active.closest(".planner-filler-actions");
-      }, { max: 200, label: "meal accept button (ここにする)" });
+      }, { max: 320, label: "meal accept button (ここにする)" });
+      if (presses > 300) throw new Error(`meal accept button needed ${presses} Tab presses; the tab path has grown`);
       await assertVisibleFocus(page, "meal accept button");
       await page.keyboard.press("Enter");
       await page.waitForSelector(".planner-edit-toast", { timeout: 6_000 });
@@ -930,6 +939,80 @@ try {
       }
     })());
     await zoomed.close();
+  }
+
+  // P1-08. The pixel baselines cannot say where anything sits, so the
+  // information hierarchy is measured here as boxes.
+  //
+  // These record two different kinds of claim. The Resolve check is a fixed
+  // contract that now holds: an unavailable map no longer eats half the
+  // screen. The plan check is a ratchet, and it is honest about that — the
+  // product contract wants the first stop starting by y=300 and it currently
+  // starts at y≈664, which is an information-hierarchy change to the result
+  // header, not a spacing fix. The assertion stops it sinking further while
+  // that work is outstanding, and the numbers it prints are the ones to beat.
+  {
+    const boxes = async (page, selectors) => page.evaluate((list) => Object.fromEntries(list.map((selector) => {
+      const node = document.querySelector(selector);
+      if (!node) return [selector, null];
+      const rect = node.getBoundingClientRect();
+      if (rect.height < 1) return [selector, null];
+      return [selector, { top: Math.round(rect.top), bottom: Math.round(rect.bottom) }];
+    })), selectors);
+
+    const resolvePage = await newPage(browser, {
+      width: 390,
+      height: 844,
+      fixtures: { placeResolution: ambiguityFixture("ja") },
+      offlineProviders: true,
+    });
+    await expect("P1-08 an unavailable map does not bury the confirmation list (390×844)", (async () => {
+      await gotoStart(resolvePage, "ja");
+      await setWishlist(resolvePage, ambiguityInput("ja"));
+      await clickStartCtaUntil(resolvePage, ".planner-candidate-options");
+      await settle(resolvePage, 500);
+      const unavailable = await resolvePage.evaluate(() => Boolean(document.querySelector(".planner-map-provider-unavailable")));
+      if (!unavailable) throw new Error("resolve-390: expected the offline map panel in this fixture");
+      const measured = await boxes(resolvePage, [".planner-map-canvas", ".planner-resolved-places", ".planner-candidate-question"]);
+      if (measured[".planner-map-canvas"] && measured[".planner-map-canvas"].bottom > 200) {
+        throw new Error(`resolve-390: the unavailable map still occupies ${measured[".planner-map-canvas"].bottom}px`);
+      }
+      const list = measured[".planner-resolved-places"];
+      if (!list || list.top > 400) {
+        throw new Error(`resolve-390: the confirmation list starts at ${list ? list.top : "nowhere"}, past the fold`);
+      }
+      const question = measured[".planner-candidate-question"];
+      if (!question || question.top > 844) {
+        throw new Error(`resolve-390: the first question to answer starts at ${question ? question.top : "nowhere"}`);
+      }
+    })());
+    await resolvePage.close();
+
+    const hierarchyPage = await newPage(browser, { width: 390, height: 844, offlineProviders: true });
+    await expect("P1-08 the plan's itinerary does not sink further down the screen (390×844)", (async () => {
+      await buildSamplePlan(hierarchyPage, "ja");
+      await settle(hierarchyPage, 500);
+      const measured = await boxes(hierarchyPage, [".planner-stop-row", ".planner-timeline"]);
+      const firstStop = measured[".planner-stop-row"];
+      if (!firstStop) throw new Error("plan-390: no stop row rendered");
+      // 680 is today's 664 plus a little tolerance. The contract is 300.
+      if (firstStop.top > 680) {
+        throw new Error(`plan-390: the first stop starts at ${firstStop.top}; the report above it has grown (contract: 300)`);
+      }
+      const summaries = await hierarchyPage.evaluate(() => {
+        const label = document.querySelector(".planner-issue-chip")?.textContent?.trim();
+        if (!label) return 0;
+        return [...document.querySelectorAll(".planner-result-view *")]
+          .filter((node) => node.children.length === 0 && node.textContent.trim() === label)
+          .length;
+      });
+      // The contract is one visible warning summary. Two are shown today: the
+      // headline chip and the issue card's own heading.
+      if (summaries > 2) {
+        throw new Error(`plan-390: the same warning summary is repeated ${summaries} times above the timeline`);
+      }
+    })());
+    await hierarchyPage.close();
   }
 } finally {
   await browser.close();
