@@ -1,7 +1,7 @@
 # The start input becomes a search field — 2026-08-13
 
 Branch `claude/architecture-v2`, commits `9587a67`, `09ae142`, `c1ff31d`,
-`<baselines>`, on top of Codex's uncommitted work at `eaab211`.
+`984512a`, on top of Codex's work through `eaab211`.
 
 ## Why this exists
 
