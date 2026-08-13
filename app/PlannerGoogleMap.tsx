@@ -22,7 +22,7 @@ import {
 } from "../lib/planner-map-model";
 import type { PlannerMapHoverChannel, PlannerMapHoverTarget } from "../lib/planner-map-hover";
 import { routeLegKey } from "../lib/trip-builder";
-import { tripRequestHeaders } from "../lib/trip-request-identity";
+import { requestMapRouteGeometry } from "../lib/map-route-geometry-client";
 
 type MapLocale = "en" | "ja";
 type RouteState = "idle" | "paused_date" | "loading" | "live" | "partial" | "unavailable";
@@ -504,6 +504,7 @@ export default function PlannerGoogleMap({
   const legCacheRef = useRef<Map<string, { path: any[]; minutes: number | null; fetchedAt: string | null }>>(new Map());
   const routeBudgetRef = useRef({ key: routeBudgetKey, used: routeBudgetUsed });
   const renderSeqRef = useRef(0);
+  const routeGeometryAbortRef = useRef<AbortController | null>(null);
   const departureTimesRef = useRef(departureTimes);
   const inspectorOpenRef = useRef(inspectorOpen);
   const onSelectFoodRef = useRef(onSelectFood);
@@ -863,36 +864,25 @@ export default function PlannerGoogleMap({
       // Failed requests still consume the trip budget so a provider outage
       // cannot cause a render/retry loop to exceed the hard ceiling.
       routeBudgetRef.current.used += modeGroups.reduce((total, group) => total + group.specs.length, 0);
+      // Switching days quickly used to leave the previous pass's requests
+      // running: their answers were discarded by the sequence guard, but they
+      // were already billed. A newer pass now cancels the older one.
+      routeGeometryAbortRef.current?.abort();
+      const geometryAbort = new AbortController();
+      routeGeometryAbortRef.current = geometryAbort;
       await Promise.all(modeGroups.map(async ({ mode, specs: pending }) => {
-        try {
-          const response = await fetch("/api/live-routes", {
-            method: "POST",
-            headers: tripRequestHeaders({ "Content-Type": "application/json" }),
-            body: JSON.stringify({
-              legs: pending.map((spec) => ({
-                id: spec.id,
-                origin: { latitude: spec.from.latitude, longitude: spec.from.longitude },
-                destination: { latitude: spec.to.latitude, longitude: spec.to.longitude },
-                departureTime: spec.departureTime,
-              })),
-              languageCode: locale,
-              travelMode: mode === "walk" ? "WALK" : mode === "taxi" ? "DRIVE" : "TRANSIT",
-            }),
-          });
-          const payload = await response.json().catch(() => null) as { fetchedAt?: unknown; legs?: Array<{ id?: unknown; durationMinutes?: unknown; encodedPolyline?: unknown; status?: unknown }> } | null;
-          if (!response.ok || !Array.isArray(payload?.legs)) return;
-          for (const leg of payload.legs) {
-            if (typeof leg.id !== "string") continue;
-            requested.set(leg.id, {
-              durationMinutes: typeof leg.durationMinutes === "number" && Number.isFinite(leg.durationMinutes) ? leg.durationMinutes : null,
-              encodedPolyline: typeof leg.encodedPolyline === "string" ? leg.encodedPolyline : null,
-              status: typeof leg.status === "string" ? leg.status : "unavailable",
-              fetchedAt: typeof payload.fetchedAt === "string" ? payload.fetchedAt : null,
-            });
-          }
-        } catch {
-          // Pins and the map stay usable; no invented line is substituted.
-        }
+        const legs = await requestMapRouteGeometry({
+          legs: pending.map((spec) => ({
+            id: spec.id,
+            origin: { latitude: spec.from.latitude, longitude: spec.from.longitude },
+            destination: { latitude: spec.to.latitude, longitude: spec.to.longitude },
+            departureTime: spec.departureTime,
+          })),
+          languageCode: locale,
+          mode,
+          signal: geometryAbort.signal,
+        });
+        for (const [id, leg] of legs) requested.set(id, leg);
       }));
 
       const results = specs.map((spec) => {

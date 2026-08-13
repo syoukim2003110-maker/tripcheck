@@ -223,10 +223,17 @@ test("trip lifecycle rotation and provisional live-route preservation stay wired
   assert.doesNotMatch(finalCommitSource, /setLive(?:Transit|Walking|Driving)\(measured/);
   assert.doesNotMatch(finalCommitSource, /attemptedLegKeysRef\.current\s*=/);
 
+  // The contract is that the map's live-route request carries the trip
+  // identity header. That request moved out of the component and into
+  // lib/map-route-geometry-client.ts (P1-05), so the assertion follows it:
+  // the map must delegate, and the transport must send the header.
+  const mapClientSource = readFileSync(new URL("../lib/map-route-geometry-client.ts", import.meta.url), "utf8");
   assert.match(
-    mapSource,
+    mapClientSource,
     /fetch\("\/api\/live-routes", \{[^]*?headers: tripRequestHeaders\(\{ "Content-Type": "application\/json" \}\)/,
   );
+  assert.match(mapSource, /requestMapRouteGeometry\(\{/);
+  assert.doesNotMatch(mapSource, /fetch\(/, "the map component must not make the request itself");
   assert.match(mapSource, /gm_authFailure/);
   assert.match(mapSource, /engineState === "unavailable"/);
   assert.doesNotMatch(mapSource, /<iframe[^]*?\/api\/map-embed/);

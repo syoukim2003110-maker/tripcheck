@@ -62,18 +62,59 @@ export type HotelRankingResponse = {
   ranked: Array<{ id: string; reason: string; tag: string }>;
 };
 
+export type HotelRankingInput = {
+  destination: string;
+  area: string;
+  tripDays: number;
+  purpose: string;
+  candidates: HotelRankingCandidatePayload[];
+};
+
+export type HotelRankingPayload = {
+  destination: string;
+  area: string;
+  tripDays: number;
+  purpose: string;
+  languageCode: "ja" | "en";
+  candidates: HotelRankingCandidatePayload[];
+};
+
+/**
+ * Exactly what leaves the browser for the hotel ranking, and nothing else.
+ *
+ * The search payload has had a builder and a deep-equality test for a while;
+ * this one was assembled inline at the call site, so adding a trip start date
+ * or an itinerary excerpt to the body passed every test in the repository. The
+ * server would have stripped them before Anthropic saw them, but they would
+ * still have crossed the network and reached request logs. Building the body
+ * here means one deep-equality assertion pins its whole shape.
+ */
+export function buildHotelRankingPayload(input: HotelRankingInput, locale: Locale): HotelRankingPayload {
+  return {
+    destination: input.destination,
+    area: input.area,
+    tripDays: input.tripDays,
+    purpose: input.purpose,
+    languageCode: locale === "ja" ? "ja" : "en",
+    candidates: input.candidates.map((candidate) => ({
+      id: candidate.id,
+      name: candidate.name,
+      area: candidate.area,
+      rating: candidate.rating,
+      reviewCount: candidate.reviewCount,
+      totalTravelMinutes: candidate.totalTravelMinutes,
+      styles: [...candidate.styles],
+      priceHint: candidate.priceHint,
+    })),
+  };
+}
+
 /**
  * Asks the AI selector to research the shortlisted hotels and pick the base.
  * Facts stay Google-owned: the model can only reorder the supplied ids.
  */
 export async function requestHotelRanking(
-  input: {
-    destination: string;
-    area: string;
-    tripDays: number;
-    purpose: string;
-    candidates: HotelRankingCandidatePayload[];
-  },
+  input: HotelRankingInput,
   locale: Locale,
   signal?: AbortSignal,
 ): Promise<HotelRankingResponse> {
@@ -82,14 +123,7 @@ export async function requestHotelRanking(
     response = await fetch("/api/hotel-recommendations/ai", {
       method: "POST",
       headers: tripRequestHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify({
-        destination: input.destination,
-        area: input.area,
-        tripDays: input.tripDays,
-        purpose: input.purpose,
-        languageCode: locale === "ja" ? "ja" as const : "en" as const,
-        candidates: input.candidates,
-      }),
+      body: JSON.stringify(buildHotelRankingPayload(input, locale)),
       signal,
     });
   } catch {

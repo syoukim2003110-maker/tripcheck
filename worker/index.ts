@@ -149,12 +149,29 @@ function cookieValue(request: Request, name: string) {
   return null;
 }
 
+/**
+ * Who this paid request is charged to.
+ *
+ * The session used to be read from `X-TripCheck-Session` first, falling back
+ * to the HttpOnly cookie. A header is entirely under the caller's control, so
+ * a non-browser client could send a fresh one on every request and walk past
+ * every per-session and per-trip ceiling, leaving only the deployment-wide day
+ * and month rows in its way. Only the cookie this edge issued counts now; the
+ * public header is ignored at ingress and overwritten before the request
+ * reaches the origin.
+ *
+ * The trip token stays client-supplied on purpose — one person really does
+ * plan several trips in a session, and the token is what keeps their budgets
+ * apart. It is namespaced under the session so it cannot be aimed at anyone
+ * else's counter, and rotating it can only escape the per-trip row: the
+ * session-day ceiling above it is the real per-actor bound.
+ */
 function quotaIdentity(request: Request) {
-  const existingSession = boundedOpaqueId(request.headers.get("X-TripCheck-Session"))
-    ?? boundedOpaqueId(cookieValue(request, SESSION_COOKIE));
+  const existingSession = boundedOpaqueId(cookieValue(request, SESSION_COOKIE));
   const sessionId = existingSession ?? globalThis.crypto.randomUUID().replaceAll("-", "");
-  const tripId = boundedOpaqueId(request.headers.get("X-TripCheck-Trip"))
-    ?? `time_bucket_${Math.floor(Date.now() / (4 * 60 * 60 * 1000))}`;
+  const suppliedTrip = boundedOpaqueId(request.headers.get("X-TripCheck-Trip"));
+  const tripScope = suppliedTrip ?? `time_bucket_${Math.floor(Date.now() / (4 * 60 * 60 * 1000))}`;
+  const tripId = `${sessionId.slice(0, 16)}_${tripScope}`.slice(0, 128);
   if (existingSession) return { sessionId, tripId, setCookie: null };
   const secure = new URL(request.url).protocol === "https:" ? "; Secure" : "";
   return {

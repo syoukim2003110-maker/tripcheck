@@ -17,9 +17,21 @@ confirmed, traveller-provided, estimated, unknown or failed. Worldwide inputs
 remain available as an explicitly graded preview; they do not inherit Tokyo's
 quality claim.
 
-Food discovery, hotel comparison, trip-idea generation and other non-core
-experiments are outside the P0 flow and their server routes fail closed unless
-an operator explicitly enables them.
+Two different switches guard the paid surfaces, and they behave differently.
+
+Contextual hotel, meal and along-route suggestions became core in v0.3. Their
+routes run by default and each carries an individual emergency kill:
+`HOTEL_RECOMMENDATIONS_ENABLED`, `FOOD_RECOMMENDATIONS_ENABLED` and
+`ROUTE_RECOMMENDATIONS_ENABLED` stop that one route when set to exactly
+`false`. Leaving a flag unset leaves the route on.
+
+Broad experiments such as trip-idea generation stay opt-in and fail closed
+until `TRIPCHECK_NON_CORE_APIS_ENABLED=true`. Anthropic is paused everywhere
+unless `ANTHROPIC_REQUESTS_ENABLED=true` is set exactly; storing a key alone
+enables nothing.
+
+Every paid route, core or not, still fails closed when D1, the request origin,
+the durable quota or a provider kill switch says no.
 
 ## Run locally
 
