@@ -1,5 +1,6 @@
 import type { BuiltTripPlan } from "./trip-builder.ts";
 import type { MinimumDaysAssumptions, TripCounterfactualAlternative, TripFitAssessment } from "./trip-scenarios.ts";
+import { placeRequiresOpeningHours } from "./place-hours.ts";
 
 export const ENGINE_VERSION = "tripcheck-feasibility-v0.1";
 
@@ -323,15 +324,28 @@ export function createPlannerEvidenceSnapshot(
       // evidence exists yet — that is a live-informed estimate, not an
       // untouched unknown.
       const provisionallyMeasured = planSource === "live" && !routeEvidence;
+      // An undated itinerary cannot be bound to one provider departure. The
+      // solver still consumes a deterministic planning duration, which the UI
+      // already labels as an estimate. Counting that same value as an
+      // "unconfirmed critical fact" made an impossible to-do out of the
+      // traveller's deliberate choice to plan without dates. A real provider
+      // failure remains failed; once a date is supplied, missing exact-route
+      // evidence remains unknown.
+      const undatedEstimate = !options.dateWasProvided
+        && routeEvidence?.status !== "failed"
+        && minutes !== null;
+      const hasPlanningEstimate = provisionallyMeasured || undatedEstimate;
       facts.push(fact(
         id,
         "route_leg",
         label,
-        provisionallyMeasured ? minutes : null,
-        provisionallyMeasured ? "estimated" : routeEvidence?.status ?? "unknown",
-        provisionallyMeasured || routeEvidence?.providerRef ? "google" : "other",
+        hasPlanningEstimate ? minutes : null,
+        hasPlanningEstimate ? "estimated" : routeEvidence?.status ?? "unknown",
+        provisionallyMeasured || routeEvidence?.providerRef ? "google" : hasPlanningEstimate ? "derived" : "other",
         provisionallyMeasured
-          ? { explanation: "Measured live for the provisional date; confirming the trip date binds it to an exact departure." }
+          ? { explanation: "Measured live for a provisional departure; adding the trip date binds it to an exact departure." }
+          : undatedEstimate
+            ? { explanation: "This is an undated planning estimate; adding the trip date enables an exact departure lookup." }
           : metadata,
       ));
       return;
@@ -398,6 +412,7 @@ export function createPlannerEvidenceSnapshot(
   for (const [dayIndex, day] of plan.days.entries()) {
     for (const built of day.stops) {
       if (built.kind !== "place" || !addStopCoreFacts(built.stop)) continue;
+      if (!placeRequiresOpeningHours(built.stop)) continue;
       const hoursKnown = built.openingStatus !== "unknown";
       const hoursEvidence = options.openingEvidenceByStop?.[built.stop.id];
       const isDateSpecific = Boolean(
@@ -600,7 +615,18 @@ export function createPlannerEvidenceSnapshot(
   }
 
   if (!options.dateWasProvided) {
-    facts.push(fact("assumption:date", "opening_hours", "trip date", null, "unknown", "derived"));
+    // "No date yet" is a declared planning mode, not a missing provider fact.
+    // Keep it visible in assumptions while excluding it from the actionable
+    // unknown count. No operating hours or exact departure is invented.
+    facts.push(fact(
+      "assumption:date",
+      "opening_hours",
+      "trip date",
+      "undated",
+      "estimated",
+      "derived",
+      { explanation: "The itinerary is an undated visit-order and duration estimate." },
+    ));
   }
   if (options.transferBufferMinutes !== undefined) {
     facts.push(fact(

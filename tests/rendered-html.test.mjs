@@ -30,9 +30,10 @@ test("server-renders the input-first TripCheck itinerary builder", async () => {
 
   const html = await response.text();
   assert.match(html, /<title>TripCheck — build a realistic itinerary from saved places<\/title>/i);
-  // v1.1 TC-012: the country never greets the traveller. Detection is
-  // automatic; the picker only exists behind the advanced disclosure.
-  assert.doesNotMatch(html, /id="planner-destination"/);
+  // A visible optional country bias prevents localized same-name businesses
+  // from being silently chosen before auto-detection has enough evidence.
+  assert.match(html, /id="planner-destination"/);
+  assert.match(html, /choose it first to disambiguate same-named cities and venues/i);
   assert.match(html, /class="trip-planner-app is-places"/);
   // v1.1 Start: two decisions (places + days), automatic mode by default.
   assert.match(html, /Just choose the places\./);
@@ -41,7 +42,7 @@ test("server-renders the input-first TripCheck itinerary builder", async () => {
   assert.match(html, /Not decided/);
   assert.match(html, /Set hotel, airport or pace/);
   assert.doesNotMatch(html, /Build it for me|Fine-tune it/);
-  assert.match(html, /One place per line\. Any order is fine\./);
+  assert.match(html, /One place per line\. Pause to see matches, then choose one to avoid same-name mix-ups\./);
   assert.match(html, /Places &amp; days/);
   assert.match(html, />Itinerary</);
   assert.doesNotMatch(html, />Conditions</);

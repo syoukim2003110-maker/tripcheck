@@ -9,6 +9,7 @@ export type DurableQuotaProvider = "google" | "anthropic";
 export type DurableQuotaOperation =
   | "live_routes"
   | "place_resolution"
+  | "place_suggestions"
   | "place_intelligence"
   | "fresh_voices"
   | "hotel_recommendations"
@@ -55,6 +56,18 @@ export const DURABLE_PROVIDER_QUOTA_POLICIES: DurableQuotaPolicies = Object.free
     maxPerSessionDay: 108,
     maxPerDay: 1_200,
     maxPerMonth: 12_000,
+  }),
+  // Kept in step with PAID_OPERATION_POLICIES. Autocomplete is charged one
+  // event per accepted pause and must never draw down place_resolution: an
+  // exhausted resolution budget breaks the build, an exhausted suggestion
+  // budget only falls back to the Resolve step.
+  place_suggestions: Object.freeze({
+    provider: "google",
+    maxPerRequest: 1,
+    maxPerTrip: 60,
+    maxPerSessionDay: 180,
+    maxPerDay: 3_000,
+    maxPerMonth: 30_000,
   }),
   place_intelligence: Object.freeze({
     provider: "google",

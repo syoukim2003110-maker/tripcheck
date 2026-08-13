@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { areaFromAddress, fetchGooglePlaceResolutions, fetchGoogleResolvedPlace, parsePlaceResolutionRequest } from "../lib/google-place-resolver.ts";
 import { destinationById } from "../lib/destinations.ts";
-import { buildPlaceResolutionPayload, placeResolutionQueryCount, placeReviewInputSignature, placeReviewStatus } from "../lib/place-resolution-client.ts";
+import { buildPlaceResolutionPayload, hasMixedResolvedPlaceCountries, placeResolutionQueryCount, placeReviewInputSignature, placeReviewStatus } from "../lib/place-resolution-client.ts";
 import { buildTripFromWishlist } from "../lib/trip-builder.ts";
 
 test("the automatic build preserves its place-review identity for Review details", () => {
@@ -15,7 +15,7 @@ test("the automatic build preserves its place-review identity for Review details
   assert.ok(buildStart >= 0 && resetStart > buildStart);
   const buildSource = buildHookSource.slice(buildStart, resetStart);
 
-  assert.match(buildSource, /const inputSignatureAtBuildStart = currentInputSignature;/);
+  assert.match(buildSource, /const inputSignatureAtBuildStart = placeReviewInputSignature\(itinerary, locale, buildDestination\);/);
   assert.match(
     buildSource,
     /setHotelSearchSignature\(hotelPlanSignature\(draft\)\);\s*setReviewedInputSignature\(inputSignatureAtBuildStart\);\s*setActiveDay\(0\);\s*setHasPlan\(true\);/,
@@ -51,6 +51,21 @@ test("a retained reviewed plan moves its identity with the selected language", (
     buildHookSource.slice(localeStart, demoStart),
     /setReviewedInputSignature\(placeReviewInputSignature\(itinerary, next, destinationChoice\)\);/,
   );
+});
+
+test("a new trip clears the previous trip's country bias", () => {
+  const buildHookSource = readFileSync(new URL("../app/components/planner/hooks/usePlanBuild.tsx", import.meta.url), "utf8");
+  const resetStart = buildHookSource.indexOf("function resetTrip()");
+  assert.ok(resetStart >= 0);
+  assert.match(buildHookSource.slice(resetStart), /setDestinationChoice\("auto"\);/);
+});
+
+test("an ambiguous shortlist has an occurrence-level address escape", () => {
+  const buildHookSource = readFileSync(new URL("../app/components/planner/hooks/usePlanBuild.tsx", import.meta.url), "utf8");
+  const resolveSource = readFileSync(new URL("../app/components/planner/start/ResolveScreen.tsx", import.meta.url), "utf8");
+  assert.match(buildHookSource, /function rejectAmbiguousCandidates\(placeIndex: number, inputName: string\)/);
+  assert.match(resolveSource, /候補にない（住所で指定）/);
+  assert.match(resolveSource, /onRejectCandidates\(row\.placeIndex, row\.place\.name\)/);
 });
 
 test("sends only unresolved place names, not day headings or timing notes", () => {
@@ -361,6 +376,106 @@ test("a lone non-visit result with no textual overlap goes back to the traveller
   assert.deepEqual(result.places, [], "a university must never be silently planned for an old-town query");
   assert.equal(result.ambiguous.length, 1);
   assert.equal(result.ambiguous[0].candidates[0].name, "ベルン大学");
+});
+
+test("a same-named insurance company is never auto-confirmed as a destination", async () => {
+  const result = await fetchGooglePlaceResolutions({
+    queries: ["チューリッヒ"],
+    providerOverrides: [],
+    hotelQuery: null,
+    languageCode: "ja",
+    destination: "auto",
+  }, "test-key", async () => Response.json({ places: [{
+    id: "zurich-insurance-jp",
+    displayName: { text: "チューリッヒ保険会社" },
+    formattedAddress: "東京都中野区",
+    addressComponents: [{ types: ["country"], shortText: "JP" }],
+    location: { latitude: 35.707, longitude: 139.665 },
+    googleMapsUri: "https://maps.google.com/zurich-insurance-jp",
+    primaryType: "service",
+    types: ["service", "point_of_interest", "establishment"],
+  }] }));
+
+  assert.deepEqual(result.places, []);
+  assert.equal(result.ambiguous[0]?.candidates[0]?.providerRef, "zurich-insurance-jp");
+});
+
+test("an explicitly entered office remains a valid destination", async () => {
+  const result = await fetchGooglePlaceResolutions({
+    queries: ["チューリッヒ生命 (中野オフィス)"],
+    providerOverrides: [],
+    hotelQuery: null,
+    languageCode: "ja",
+    destination: "auto",
+  }, "test-key", async () => Response.json({ places: [{
+    id: "zurich-life-office",
+    displayName: { text: "チューリッヒ生命 (中野オフィス)" },
+    formattedAddress: "東京都中野区",
+    addressComponents: [{ types: ["country"], shortText: "JP" }],
+    location: { latitude: 35.707, longitude: 139.665 },
+    googleMapsUri: "https://maps.google.com/zurich-life-office",
+    primaryType: "insurance_agency",
+    types: ["insurance_agency", "point_of_interest", "establishment"],
+  }] }));
+
+  assert.equal(result.ambiguous.length, 0);
+  assert.equal(result.places[0]?.providerRef, "zurich-life-office");
+});
+
+test("a visit-capable city outranks a same-named office", async () => {
+  const result = await fetchGooglePlaceResolutions({
+    queries: ["チューリッヒ"],
+    providerOverrides: [],
+    hotelQuery: null,
+    languageCode: "ja",
+    destination: "auto",
+  }, "test-key", async () => Response.json({ places: [
+    {
+      id: "zurich-insurance-jp",
+      displayName: { text: "チューリッヒ保険会社" },
+      formattedAddress: "東京都中野区",
+      addressComponents: [{ types: ["country"], shortText: "JP" }],
+      location: { latitude: 35.707, longitude: 139.665 },
+      googleMapsUri: "https://maps.google.com/zurich-insurance-jp",
+      types: ["insurance_agency"],
+    },
+    {
+      id: "zurich-city-ch",
+      displayName: { text: "チューリッヒ" },
+      formattedAddress: "Zürich, Switzerland",
+      addressComponents: [{ types: ["country"], shortText: "CH" }],
+      location: { latitude: 47.3769, longitude: 8.5417 },
+      googleMapsUri: "https://maps.google.com/zurich-city-ch",
+      types: ["locality", "political"],
+    },
+  ] }));
+
+  assert.equal(result.ambiguous.length, 0);
+  assert.equal(result.places[0]?.providerRef, "zurich-city-ch");
+});
+
+test("detects mixed-country resolved results before itinerary construction", () => {
+  const base = {
+    input: "place",
+    name: "place",
+    area: "area",
+    address: "address",
+    latitude: 0,
+    longitude: 0,
+    sourceUrl: "https://maps.google.com/place",
+    verifiedAt: "now",
+    confidence: "medium" as const,
+    planningDurationMinutes: 60,
+    isAnchor: false,
+  };
+  assert.equal(hasMixedResolvedPlaceCountries([
+    { ...base, id: "ch-1", countryCode: "CH" },
+    { ...base, id: "ch-2", countryCode: "CH" },
+  ]), false);
+  assert.equal(hasMixedResolvedPlaceCountries([
+    { ...base, id: "ch", countryCode: "CH" },
+    { ...base, id: "jp", countryCode: "JP" },
+  ]), true);
 });
 
 test("ja queries carry the localized country suffix to Google", async () => {

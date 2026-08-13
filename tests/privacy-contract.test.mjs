@@ -56,8 +56,8 @@ test("keeps the completed itinerary out of direct client network calls", async (
 
   assert.match(domainSource, /buildTripFromWishlist\(itinerary, tripDays, pace, locale, activePlannerContext\)/);
   assert.match(domainSource, /assessTripFit\(itinerary, tripDays, pace, locale, activePlannerContext, plan\)/);
-  assert.match(buildSource, /requestPlaceResolution\(\s*rawAtStart,\s*"",\s*locale,\s*destinationChoice,\s*controller\.signal,\s*resolutionOverrides,\s*\)/);
-  assert.match(buildSource, /requestPlaceResolution\(\s*canReusePlaceReview \? "" : itinerary,\s*hotelQuery,\s*locale,\s*buildDestination,\s*controller\.signal,\s*canReusePlaceReview \? \[\] : resolutionOverrides,\s*\)/);
+  assert.match(buildSource, /requestPlaceResolution\(\s*rawAtStart,\s*"",\s*locale,\s*resolutionDestination,\s*controller\.signal,\s*resolutionOverridesForReview,\s*\)/);
+  assert.match(buildSource, /requestPlaceResolution\(\s*canReusePlaceReview \? "" : itinerary,\s*hotelQuery,\s*locale,\s*buildDestination,\s*controller\.signal,\s*canReusePlaceReview \? \[\] : resolutionOverridesForBuild,\s*\)/);
   const surface = await plannerSurfaceFiles();
   assert.ok(surface.length > 30, `planner surface enumeration looks too small: ${surface.length} files`);
   for (const { path, text } of surface) {
@@ -222,4 +222,3 @@ test("discloses automatic core recommendations and their paid-provider controls"
   assert.match(gateSource, /route_recommendations: "ROUTE_RECOMMENDATIONS_ENABLED"/);
   assert.doesNotMatch(routeSource, /ROUTE_RECOMMENDATIONS_DAILY_LIMIT/);
 });
-

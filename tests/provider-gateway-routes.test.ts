@@ -16,6 +16,7 @@ const routeHooks = registerHooks({
 
 type PostHandler = (request: Request) => Promise<Response>;
 const { POST: postLiveRoutes } = await import(new URL("../app/api/live-routes/route.ts", import.meta.url).href) as { POST: PostHandler };
+const { POST: postPlaceSuggestions } = await import(new URL("../app/api/place-suggestions/route.ts", import.meta.url).href) as { POST: PostHandler };
 const { POST: postPlaceResolution } = await import(new URL("../app/api/place-resolution/route.ts", import.meta.url).href) as { POST: PostHandler };
 const { POST: postPlaceIntelligence } = await import(new URL("../app/api/place-intelligence/route.ts", import.meta.url).href) as { POST: PostHandler };
 const { POST: postFreshVoices } = await import(new URL("../app/api/place-intelligence/fresh/route.ts", import.meta.url).href) as { POST: PostHandler };
@@ -27,6 +28,7 @@ routeHooks.deregister();
 
 const googleHandlers = [
   postLiveRoutes,
+  postPlaceSuggestions,
   postPlaceResolution,
   postPlaceIntelligence,
   postHotelRecommendations,
@@ -141,6 +143,46 @@ test("place resolution counts the optional hotel inside the twelve-event request
     assert.equal(body.reason, "request_cap");
     assert.equal(body.quota.globallyDurable, false);
     assert.equal(providerCalls, 0);
+  } finally {
+    restore("GOOGLE_PLACES_API_KEY", originalKey);
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("place suggestions stay behind the server key and reserve one place-resolution event", async () => {
+  const originalKey = process.env.GOOGLE_PLACES_API_KEY;
+  const originalFetch = globalThis.fetch;
+  process.env.GOOGLE_PLACES_API_KEY = "server-only-key";
+  let providerCalls = 0;
+  globalThis.fetch = (async (input, init) => {
+    providerCalls += 1;
+    assert.equal(String(input), "https://places.googleapis.com/v1/places:autocomplete");
+    assert.equal(new Headers(init?.headers).get("X-Goog-Api-Key"), "server-only-key");
+    return Response.json({
+      suggestions: [{
+        placePrediction: {
+          placeId: "ChIJ_Linz_Austria",
+          text: { text: "Linz, Austria" },
+          structuredFormat: {
+            mainText: { text: "Linz" },
+            secondaryText: { text: "Austria" },
+          },
+        },
+      }],
+    });
+  }) as typeof fetch;
+  try {
+    const response = await postPlaceSuggestions(post("/api/place-suggestions", {
+      query: "Linz",
+      languageCode: "en",
+      destination: "auto",
+    }));
+    const body = await response.json() as { suggestions: Array<Record<string, unknown>> };
+    assert.equal(response.status, 200);
+    assert.equal(providerCalls, 1);
+    assert.equal(body.suggestions[0]?.providerRef, "ChIJ_Linz_Austria");
+    assert.equal(JSON.stringify(body).includes("server-only-key"), false);
+    assert.equal(response.headers.get("Cache-Control"), "private, no-store, max-age=0");
   } finally {
     restore("GOOGLE_PLACES_API_KEY", originalKey);
     globalThis.fetch = originalFetch;

@@ -27,6 +27,15 @@ export function placeReviewInputSignature(
   return JSON.stringify([raw.trim(), locale, destination]);
 }
 
+export function resolvedPlaceCountryCodes(places: readonly ResolvedInputStop[]) {
+  return [...new Set(places.flatMap((place) => place.countryCode ? [place.countryCode] : []))];
+}
+
+/** Auto mode must never turn a cross-country shortlist into one itinerary. */
+export function hasMixedResolvedPlaceCountries(places: readonly ResolvedInputStop[]) {
+  return resolvedPlaceCountryCodes(places).length > 1;
+}
+
 /**
  * Keeps presentation state separate from lookup transport. A completed direct
  * build is a review just like the explicit review step: provider/catalog hits

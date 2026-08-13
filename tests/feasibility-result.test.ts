@@ -118,7 +118,8 @@ test("builds a fact-level snapshot without treating a resolved pin as verified h
   });
 
   assert.equal(evidence.facts.filter((entry) => entry.kind === "place_identity" && entry.evidence.status === "verified").length, 2);
-  assert.equal(evidence.facts.filter((entry) => entry.kind === "opening_hours" && entry.evidence.status === "unknown").length, 3, "two place-hour facts plus the provisional trip date");
+  assert.equal(evidence.facts.filter((entry) => entry.kind === "opening_hours" && entry.evidence.status === "unknown").length, 2, "only the two unfetched place-hour facts are actionable unknowns");
+  assert.equal(evidence.facts.find((entry) => entry.id === "assumption:date")?.evidence.status, "estimated", "undated planning stays explicit without becoming an impossible provider to-do");
   assert.ok(evidence.facts.some((entry) => entry.kind === "stay_duration" && entry.evidence.status === "estimated"));
   assert.ok(evidence.facts.some((entry) => entry.id === "base" && entry.evidence.status === "unknown"));
 });
@@ -333,6 +334,81 @@ test("route provenance verifies only the exact duration consumed by the solver",
 
   assert.equal(mismatched.facts.find((entry) => entry.id.includes(`:${baselineLeg.from.id}:${baselineLeg.to.id}`))?.evidence.status, "estimated");
   assert.equal(matched.facts.find((entry) => entry.id.includes(`:${baselineLeg.from.id}:${baselineLeg.to.id}`))?.evidence.status, "verified");
+});
+
+test("undated transit durations stay honest estimates instead of impossible unknown tasks", () => {
+  const raw = "Senso-ji\nTokyo Skytree";
+  const seed = buildTripFromWishlist(raw, 1, "balanced", "en");
+  const seedLeg = seed.days[0].legs[0];
+  const legId = `${seedLeg.from.id}::${seedLeg.to.id}`;
+  const plan = buildTripFromWishlist(raw, 1, "balanced", "en", {
+    legModeOverrides: { [legId]: "transit" },
+  });
+  const evidence = createPlannerEvidenceSnapshot(plan, {
+    dateWasProvided: false,
+    baseWasProvided: false,
+    dayEndWasProvided: false,
+  });
+  const routeFact = evidence.facts.find((entry) => entry.id === `route:${plan.days[0].label}:${seedLeg.from.id}:${seedLeg.to.id}`);
+  const dateFact = evidence.facts.find((entry) => entry.id === "assumption:date");
+
+  assert.equal(routeFact?.evidence.status, "estimated");
+  assert.equal(routeFact?.evidence.value, plan.days[0].legs[0].comparison.recommended.minutes);
+  assert.match(routeFact?.evidence.explanation ?? "", /undated planning estimate/);
+  assert.equal(dateFact?.evidence.status, "estimated");
+  assert.equal(dateFact?.evidence.value, "undated");
+});
+
+test("the reviewed undated geographic-place flow has zero unconfirmed critical facts", () => {
+  const names = ["Zurich", "Interlaken", "Matterhorn", "Mont Blanc", "Linz"];
+  const coordinates = [
+    [47.3769, 8.5417],
+    [46.6863, 7.8632],
+    [45.9763, 7.6586],
+    [45.8326, 6.8652],
+    [48.3069, 14.286],
+  ] as const;
+  const resolvedStops = names.map((name, inputIndex) => ({
+    id: `google-reviewed-${inputIndex}`,
+    providerRef: `ChIJ_reviewed_${inputIndex}`,
+    input: name,
+    inputIndex,
+    name,
+    area: name,
+    address: name,
+    latitude: coordinates[inputIndex][0],
+    longitude: coordinates[inputIndex][1],
+    sourceUrl: `https://maps.google.com/?cid=${inputIndex + 1}`,
+    verifiedAt: "2026-08-13T00:00:00.000Z",
+    confidence: "medium" as const,
+    planningDurationMinutes: 90,
+    isAnchor: false,
+    placeTypes: name === "Matterhorn" || name === "Mont Blanc" ? ["natural_feature"] : ["locality"],
+  }));
+  const resolvedBase = {
+    ...resolvedStops[1],
+    id: "google-reviewed-base",
+    providerRef: "ChIJ_reviewed_base",
+    input: "Interlaken hotel",
+    name: "Reviewed Interlaken hotel",
+    placeTypes: ["lodging"],
+  };
+  const raw = names.join("\n");
+  const context = { resolvedStops, resolvedBase, transferBufferMinutes: 10 as const };
+  const plan = buildTripFromWishlist(raw, 3, "balanced", "en", context);
+  const fit = assessTripFit(raw, 3, "balanced", "en", context, plan);
+  const evidence = createPlannerEvidenceSnapshot(plan, {
+    dateWasProvided: false,
+    baseWasProvided: true,
+    dayEndWasProvided: false,
+    transferBufferMinutes: 10,
+  });
+  const result = deriveFeasibilityResult(plan, fit, evidence);
+
+  assert.equal(result.criticalFacts.unknown, 0);
+  assert.equal(result.primaryAttention?.code === "UNVERIFIED_FACTS", false);
+  assert.ok(evidence.facts.filter((entry) => entry.kind === "opening_hours").every((entry) => entry.id === "assumption:date"));
+  assert.ok(evidence.facts.filter((entry) => entry.kind === "route_leg" && entry.id.startsWith("route:")).every((entry) => entry.evidence.status === "estimated"));
 });
 
 test("failed transit evidence stays failed and non-convergence is an explicit condition", () => {

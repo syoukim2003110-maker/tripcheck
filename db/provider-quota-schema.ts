@@ -17,6 +17,7 @@
 export const PROVIDER_QUOTA_OPERATIONS = [
   "live_routes",
   "place_resolution",
+  "place_suggestions",
   "place_intelligence",
   "fresh_voices",
   "hotel_recommendations",

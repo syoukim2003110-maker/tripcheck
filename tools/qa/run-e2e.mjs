@@ -246,6 +246,71 @@ try {
     await page.close();
   }
 
+  // --- The start input as a search field: type, see real places, pick the
+  // one you meant. Every suggestion call is billed, so the counts here are
+  // part of the contract, not incidental. ---
+  {
+    let suggestionCalls = 0;
+    const page = await newPage(browser, {
+      fixtures: {
+        placeSuggestions: (payload) => {
+          suggestionCalls += 1;
+          return {
+            provider: "google_maps",
+            suggestions: payload.query.startsWith("Linz")
+              ? [
+                { providerRef: "ChIJ_linz_at", primaryText: "Linz", secondaryText: "Upper Austria, Austria", fullText: "Linz, Upper Austria, Austria" },
+                { providerRef: "ChIJ_linz_shop", primaryText: "Lindt & Sprüngli", secondaryText: "Tokyo, Japan", fullText: "Lindt & Sprüngli, Tokyo" },
+              ]
+              : [],
+          };
+        },
+      },
+    });
+    await gotoStart(page, "en");
+
+    await expect("Search input offers real place matches for the typed line", (async () => {
+      await page.click("#trip-input");
+      await page.type("#trip-input", "Linz", { delay: 25 });
+      await page.waitForSelector(".planner-place-suggestion-option", { timeout: 8_000 });
+      const options = await page.$$eval(".planner-place-suggestion-option b", (nodes) => nodes.map((node) => node.textContent));
+      if (options.length !== 2) throw new Error(`expected 2 matches, saw ${options.length}`);
+      if (!options[0].includes("Linz")) throw new Error(`unexpected first match: ${options[0]}`);
+      const expanded = await page.$eval("#trip-input", (node) => node.getAttribute("aria-expanded"));
+      if (expanded !== "true") throw new Error("combobox did not report itself expanded");
+    })());
+
+    await expect("An unchanged query is not re-billed while the caret moves", (async () => {
+      const before = suggestionCalls;
+      if (before !== 1) throw new Error(`typing one place cost ${before} provider call(s), expected 1`);
+      for (const key of ["ArrowLeft", "ArrowRight", "Home", "End"]) {
+        await page.keyboard.press(key);
+        await settle(page, 700);
+      }
+      if (suggestionCalls !== before) {
+        throw new Error(`caret movement cost ${suggestionCalls - before} extra provider call(s)`);
+      }
+    })());
+
+    await expect("Choosing a match pins that exact place to the line", (async () => {
+      await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("Enter");
+      await page.waitForFunction(
+        () => document.querySelector(".planner-place-selection-confirmed") !== null,
+        { timeout: 5_000 },
+      );
+      const preview = await page.$eval(".planner-parse-preview", (node) => node.textContent ?? "");
+      if (!preview.includes("Place selected")) throw new Error("the parsed row does not show the pinned choice");
+    })());
+
+    await expect("A second place costs exactly one more lookup", (async () => {
+      await page.type("#trip-input", "\nBern", { delay: 25 });
+      await settle(page, 1_200);
+      if (suggestionCalls !== 2) throw new Error(`expected 2 provider calls in total, saw ${suggestionCalls}`);
+    })());
+    await page.close();
+  }
+
   // --- §5.2: continuing past an unconfirmed Must asks for a decision. ---
   {
     const page = await newPage(browser, { fixtures: { placeResolution: unresolvedMustFixture("ja") } });

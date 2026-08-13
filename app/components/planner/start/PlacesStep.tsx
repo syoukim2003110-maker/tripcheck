@@ -8,12 +8,15 @@
 import type { RefObject } from "react";
 import Icon from "../../../PlannerIcons";
 import SearchableCombobox, { type SearchableOption } from "../../../SearchableCombobox";
+import PlaceInputAutocomplete from "./PlaceInputAutocomplete";
 import StartPreviewAside from "./StartPreviewAside";
 import type { Pace } from "../../../../lib/trip-builder.ts";
 import type { TravelPreference } from "../../../../lib/time-feasibility.ts";
 import type { DestinationChoice } from "../../../../lib/destinations.ts";
 import type { WishlistPlaceConstraintPatch } from "../../../../lib/wishlist-parser.ts";
 import type { ParsePreviewRow, PlannerBuildMode } from "../../../../lib/planner-app-state.ts";
+import type { ShareableResolutionOverride } from "../../../../lib/share-link.ts";
+import type { PlaceSuggestionsState } from "../hooks/usePlaceSuggestions";
 import { ui, type PlannerLocale } from "../../../../lib/presentation/planner-copy.ts";
 
 type PlacesStepProps = {
@@ -38,6 +41,8 @@ type PlacesStepProps = {
   dayStartDefault: string;
   destinationChoice: DestinationChoice;
   destinationComboOptions: ReadonlyArray<SearchableOption>;
+  resolutionOverrides: readonly ShareableResolutionOverride[];
+  placeSuggestions: PlaceSuggestionsState;
   canReviewPlaces: boolean;
   onItineraryChange: (value: string) => void;
   onRequestBuild: () => void;
@@ -53,6 +58,8 @@ type PlacesStepProps = {
   onSelectTravelPreference: (value: TravelPreference) => void;
   onSelectDayStart: (value: string) => void;
   onDestinationChange: (value: string) => void;
+  onSelectPlaceCandidate: (inputIndex: number, providerRef: string) => void;
+  onActivePlaceChange: (target: { inputIndex: number; query: string } | null) => void;
   onReviewPlaces: () => void;
   onLoadSample: () => void;
 };
@@ -79,6 +86,8 @@ export default function PlacesStep({
   dayStartDefault,
   destinationChoice,
   destinationComboOptions,
+  resolutionOverrides,
+  placeSuggestions,
   canReviewPlaces,
   onItineraryChange,
   onRequestBuild,
@@ -94,6 +103,8 @@ export default function PlacesStep({
   onSelectTravelPreference,
   onSelectDayStart,
   onDestinationChange,
+  onSelectPlaceCandidate,
+  onActivePlaceChange,
   onReviewPlaces,
   onLoadSample,
 }: PlacesStepProps) {
@@ -101,26 +112,24 @@ export default function PlacesStep({
   return (
     <div className="planner-place-step">
       <div className="planner-place-main">
-      <label className="planner-composer">
-        <span>{text.inputLabel}</span>
-        <textarea
-          aria-describedby={startInputError ? "planner-start-error" : undefined}
-          aria-invalid={startInputError ? true : undefined}
-          autoFocus
-          id="trip-input"
-          onChange={(event) => onItineraryChange(event.target.value)}
-          onKeyDown={(event) => {
-            if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
-              event.preventDefault();
-              onRequestBuild();
-            }
-          }}
-          placeholder={locale === "ja" ? "例：\nラウターブルンネン\nユングフラウヨッホ 必須\nツェルマット" : "e.g.\nLauterbrunnen\nJungfraujoch must\nZermatt"}
-          ref={placesInputRef}
-          value={itinerary}
-        />
-      </label>
-      <p className="planner-parse-hint">{locale === "ja" ? "1行に1か所。順番は適当で大丈夫です。" : "One place per line. Any order is fine."}</p>
+      <PlaceInputAutocomplete
+        describedBy={startInputError ? "planner-start-error" : undefined}
+        inputRef={placesInputRef}
+        invalid={Boolean(startInputError)}
+        label={text.inputLabel}
+        locale={locale}
+        onActivePlaceChange={onActivePlaceChange}
+        onChange={onItineraryChange}
+        onRequestBuild={onRequestBuild}
+        onSelectCandidate={onSelectPlaceCandidate}
+        placeholder={locale === "ja" ? "例：\nラウターブルンネン\nユングフラウヨッホ 必須\nツェルマット" : "e.g.\nLauterbrunnen\nJungfraujoch must\nZermatt"}
+        resolutionOverrides={resolutionOverrides}
+        suggestions={placeSuggestions}
+        value={itinerary}
+      />
+      <p className="planner-parse-hint">{locale === "ja"
+        ? "1行に1か所。入力を止めると候補が出ます。選ぶと同名の都市・店を取り違えません。"
+        : "One place per line. Pause to see matches, then choose one to avoid same-name mix-ups."}</p>
       <details className="planner-input-examples">
         <summary>{locale === "ja" ? "入力例を見る" : "See input examples"}</summary>
         <p>{locale === "ja"
@@ -151,7 +160,9 @@ export default function PlacesStep({
               <li className="is-warn" key={`row-${index}`}><span>{row.raw}</span><small>{text.previewUnparsed}</small></li>
             ) : (
               <li key={`row-${index}`}>
-                <span>{row.place.name}</span>
+                <span>{row.place.name}{resolutionOverrides.some((override) => override.inputIndex === row.placeIndex && "providerRef" in override)
+                  ? <small className="planner-parse-place-selected">✓ {locale === "ja" ? "候補選択済み" : "Place selected"}</small>
+                  : null}</span>
                 <span className="planner-parse-chips">
                   {row.showDay && row.place.day !== null ? <i>{text.previewDay(row.place.day)}</i> : null}
                   {row.place.time ? <i className="is-time">{row.place.time}{row.place.isReservation ? ` ${text.reservation}` : ""}</i> : row.place.isReservation ? <i className="is-time">{text.reservation}</i> : null}
@@ -268,6 +279,23 @@ export default function PlacesStep({
         </details>
       </section>
 
+      <div className="planner-destination-field planner-field planner-place-country">
+        <label htmlFor="planner-destination"><span>{text.destination}</span></label>
+        <SearchableCombobox
+          ariaLabel={text.destination}
+          id="planner-destination"
+          noResultsLabel={text.noMatchingOption}
+          onChange={onDestinationChange}
+          options={destinationComboOptions}
+          placeholder={text.destinationSearch}
+          resultCountLabel={text.optionCount}
+          value={destinationChoice}
+        />
+        <small>{locale === "ja"
+          ? "同名の都市・店があるため、国が分かる場合は先に選ぶと検索が正確になります。"
+          : "If you know the country, choose it first to disambiguate same-named cities and venues."}</small>
+      </div>
+
       {placeWarning ? <p className="planner-inline-status is-warning" role="status">{placeWarning === "quota_exhausted"
         ? locale === "ja" ? "本日の場所検索の上限に達しました。分かっている場所だけで続け、残りは未解決として表示します（上限は毎日リセットされます）。" : "Today's place-search allowance is used up. Known places continue; the rest stay unresolved (the allowance resets daily)."
         : locale === "ja" ? "位置情報サービスに接続できませんでした。分かる場所だけで続け、残りは未解決として表示します。" : "Place lookup is unavailable. Known places will continue and the rest will stay unresolved."}</p> : null}
@@ -290,20 +318,6 @@ export default function PlacesStep({
             <div className="planner-choice"><span>{text.pace}</span><div className="planner-choice-chips" role="group" aria-label={text.pace}>{(["relaxed", "balanced", "fast"] as const).map((value) => <button aria-pressed={pace === value} className={pace === value ? "is-active" : ""} key={value} onClick={() => onSelectPace(value)} type="button">{text[value]}</button>)}</div></div>
             <div className="planner-choice"><span>{text.travelHeading}</span><div className="planner-choice-chips" role="group" aria-label={text.travelHeading}>{([["auto", text.travelAuto], ["car", text.travelCar]] as const).map(([value, label]) => <button aria-pressed={travelPreference === value} className={travelPreference === value ? "is-active" : ""} key={value} onClick={() => onSelectTravelPreference(value)} type="button">{label}</button>)}</div></div>
             <div className="planner-choice"><span>{text.timebandHeading}</span><div className="planner-choice-chips" role="group" aria-label={text.timebandHeading}>{([["08:00", text.timebandEarly], ["09:00", text.timebandNormal], ["10:30", text.timebandLate]] as const).map(([value, label]) => <button aria-pressed={dayStartDefault === value} className={dayStartDefault === value ? "is-active" : ""} key={value} onClick={() => onSelectDayStart(value)} type="button">{label}</button>)}</div></div>
-          </div>
-          <div className="planner-destination-field planner-field planner-place-country">
-            <label htmlFor="planner-destination"><span>{text.destination}</span></label>
-            <SearchableCombobox
-              ariaLabel={text.destination}
-              id="planner-destination"
-              noResultsLabel={text.noMatchingOption}
-              onChange={onDestinationChange}
-              options={destinationComboOptions}
-              placeholder={text.destinationSearch}
-              resultCountLabel={text.optionCount}
-              value={destinationChoice}
-            />
-            <small>{locale === "ja" ? "通常は場所から自動判定します。" : "Usually detected automatically from your places."}</small>
           </div>
           <button className="planner-secondary-review" disabled={!canReviewPlaces} onClick={onReviewPlaces} type="button">
             {locale === "ja" ? "空港・予約・地点ごとの条件も設定" : "Set airports, bookings and per-place details"}

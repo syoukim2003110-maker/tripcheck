@@ -37,6 +37,7 @@ import { type SearchableOption } from "../../../SearchableCombobox";
 import { foodRecommendationRequestKey } from "../../../../lib/food-recommendations-client";
 import { defaultFoodDiscoveryQuery, type FoodCandidate } from "../../../../lib/google-food";
 import { googleCurrentOpeningWindowsForDate } from "../../../../lib/google-opening-hours";
+import { placeHasOpeningHoursEvidence, placeRequiresOpeningHours } from "../../../../lib/place-hours";
 import {
   buildSelectedTransitLegRequests,
   type PlanningTransitLegRequest,
@@ -516,7 +517,7 @@ export function useTripDomainModel({
       eventCount: currentTransitConvergence.eventCount,
     } } : {}),
     openingEvidenceByStop: Object.fromEntries(Object.entries(intelligence).flatMap(([stopId, state]) => (
-      state.status === "ready" && state.result
+      state.status === "ready" && state.result && placeHasOpeningHoursEvidence(state.result.place)
         ? [[stopId, {
           fetchedAt: state.result.checkedAt,
           providerRef: plan.days.flatMap((day) => day.stops.map((entry) => entry.stop)).find((stop) => stop.id === stopId)?.providerRef,
@@ -1243,12 +1244,15 @@ export function usePlannerViewModel({
     for (const planDay of plan.days) {
       for (const built of planDay.stops) {
         if (built.openingStatus !== "unknown" || seen.has(built.stop.id)) continue;
+        if (!placeRequiresOpeningHours(built.stop)) continue;
+        const state = intelligence[built.stop.id];
+        if (state?.status === "ready" && state.result && placeHasOpeningHoursEvidence(state.result.place)) continue;
         seen.add(built.stop.id);
         result.push({ id: built.stop.id, name: built.stop.name });
       }
     }
     return result;
-  }, [plan]);
+  }, [intelligence, plan]);
   // v1.1 TC-012 / QA-010: the country is auto-detected; only a genuine
   // multi-country paste asks for one explicit choice.
   const conflictingDestinations = useMemo(() => {

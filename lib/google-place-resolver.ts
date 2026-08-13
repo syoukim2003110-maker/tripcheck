@@ -302,6 +302,40 @@ const nonVisitPrimaryTypes = new Set([
   "lawyer",
 ]);
 
+const corporateQualifierPattern = /(?:保険(?:会社|代理店)?|生命(?:保険)?|株式会社|合同会社|本社|オフィス|insurance|corporat(?:e|ion)|headquarters|\boffice\b|\binc\.?\b|\bltd\.?\b)/i;
+
+function isPlainlyNonVisitCandidate(input: string, candidate: ResolvedInputStop) {
+  const types = candidate.placeTypes ?? [];
+  const normalizedInput = normalizePlaceName(input);
+  const normalizedName = normalizePlaceName(candidate.name);
+  const textualMatch = normalizedName.includes(normalizedInput) || normalizedInput.includes(normalizedName);
+  const providerAddedCorporateQualifier = corporateQualifierPattern.test(candidate.name)
+    && !corporateQualifierPattern.test(input);
+  // Preserve intentional university, hospital, office, etc. searches. These
+  // types are suspicious only when the returned name does not match what the
+  // traveller wrote, or when Google expanded a bare place name into a company.
+  if (types.some((type) => nonVisitPrimaryTypes.has(type))) {
+    return !textualMatch || providerAddedCorporateQualifier;
+  }
+  // The current Places taxonomy can flatten insurers and other offices to the
+  // generic `service` type. Treat a corporate qualifier that Google added to
+  // a bare city query as a mismatch, while still allowing a traveller who
+  // explicitly typed that company/office name to select it.
+  return types.includes("service") && providerAddedCorporateQualifier;
+}
+
+/**
+ * Google can rank a same-named office above the city or attraction the
+ * traveller typed (for example, a local insurance company above Zürich).
+ * A visit-capable result always outranks those administrative/business
+ * matches. If Google returned only non-visit matches, keep the shortlist for
+ * the traveller instead of silently treating an office as a destination.
+ */
+function autoPickCandidates(input: string, candidates: ResolvedInputStop[]) {
+  const visitCandidates = candidates.filter((candidate) => !isPlainlyNonVisitCandidate(input, candidate));
+  return visitCandidates.length > 0 ? visitCandidates : candidates;
+}
+
 function exactNameCandidate(input: string, candidates: ResolvedInputStop[]) {
   const normalized = normalizePlaceName(input);
   const matches = candidates.filter((candidate) => normalizePlaceName(candidate.name) === normalized);
@@ -315,11 +349,10 @@ function needsTravellerChoice(
 ) {
   const normalized = normalizePlaceName(input);
   if (candidates.length === 0) return false;
+  if (candidates.every((candidate) => isPlainlyNonVisitCandidate(input, candidate))) return true;
   if (candidates.length === 1) {
     const only = candidates[0];
-    const name = normalizePlaceName(only.name);
-    const textualMatch = name.includes(normalized) || normalized.includes(name);
-    return !textualMatch && (only.placeTypes ?? []).some((type) => nonVisitPrimaryTypes.has(type));
+    return isPlainlyNonVisitCandidate(input, only);
   }
   if (candidates.filter((candidate) => normalizePlaceName(candidate.name) === normalized).length > 1) return true;
 
@@ -365,13 +398,14 @@ export async function fetchGooglePlaceResolutions(
   const ambiguous: AmbiguousPlaceResolution[] = [];
   const places = placeResults.flatMap((candidates, index) => {
     const input = request.queries[index];
-    if (needsTravellerChoice(input, candidates, request.destination)) {
-      ambiguous.push({ input, candidates: candidates.slice(0, 3) });
+    const eligibleCandidates = autoPickCandidates(input, candidates);
+    if (needsTravellerChoice(input, eligibleCandidates, request.destination)) {
+      ambiguous.push({ input, candidates: eligibleCandidates.slice(0, 3) });
       return [];
     }
     // The auto-pick prefers the candidate whose name IS the query over a
     // merely-first derivative ("ゴルナーグラート" over "ゴルネルグラート").
-    const preferred = exactNameCandidate(input, candidates) ?? candidates[0];
+    const preferred = exactNameCandidate(input, eligibleCandidates) ?? eligibleCandidates[0];
     return preferred ? [preferred] : [];
   });
   const hotel = request.hotelQuery ? results.at(-1)?.[0] ?? null : null;

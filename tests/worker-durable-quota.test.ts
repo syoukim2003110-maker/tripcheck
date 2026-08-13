@@ -182,6 +182,9 @@ test("all core paid paths reserve the expected provider operation and conservati
   testGlobal.__tripCheckAppFetch = async () => Response.json({ delegated: true });
   const cases = [
     ["/api/live-routes", { legs: [{ private: "A" }, { private: "B" }] }, "google", "live_routes", 2],
+    // Typing must never draw down the budget the build depends on, so
+    // autocomplete is charged to its own operation.
+    ["/api/place-suggestions", { query: "Private place text", languageCode: "en", destination: "auto" }, "google", "place_suggestions", 1],
     ["/api/place-resolution", { queries: ["Private place A", "Private place B"], hotelQuery: "Private hotel" }, "google", "place_resolution", 3],
     ["/api/place-intelligence", { name: "Private place" }, "google", "place_intelligence", 1],
     ["/api/place-intelligence/fresh", { name: "Private place", depth: "deep" }, "anthropic", "fresh_voices", 2],

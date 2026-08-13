@@ -55,6 +55,7 @@ type PaidApiRoute = Readonly<{
 
 const PAID_API_ROUTES: Readonly<Record<string, PaidApiRoute>> = Object.freeze({
   "/api/live-routes": Object.freeze({ provider: "google", operation: "live_routes" }),
+  "/api/place-suggestions": Object.freeze({ provider: "google", operation: "place_suggestions" }),
   "/api/place-resolution": Object.freeze({ provider: "google", operation: "place_resolution" }),
   "/api/place-intelligence": Object.freeze({ provider: "google", operation: "place_intelligence" }),
   "/api/place-intelligence/fresh": Object.freeze({ provider: "anthropic", operation: "fresh_voices" }),
@@ -194,6 +195,14 @@ async function paidRequestUnits(request: Request, operation: DurableQuotaOperati
   const input = body as Record<string, unknown>;
   if (operation === "live_routes") {
     return Array.isArray(input.legs) ? input.legs.length : null;
+  }
+  if (operation === "place_suggestions") {
+    return validPlaceResolutionText(input.query, 120)
+      && (input.languageCode === "en" || input.languageCode === "ja")
+      && typeof input.destination === "string"
+      && input.destination.length <= 32
+      ? 1
+      : null;
   }
   if (operation === "place_resolution") {
     if (!Array.isArray(input.queries)) return null;

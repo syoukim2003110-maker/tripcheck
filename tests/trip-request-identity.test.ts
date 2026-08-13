@@ -227,7 +227,8 @@ test("trip lifecycle rotation and provisional live-route preservation stay wired
     mapSource,
     /fetch\("\/api\/live-routes", \{[^]*?headers: tripRequestHeaders\(\{ "Content-Type": "application\/json" \}\)/,
   );
-  assert.match(mapSource, /const embedViewPoints = routeRequestsPaused && embedPoints\.length > 1/);
-  assert.match(mapSource, /pathStops\.length === 0 \|\| routeRequestsPaused/);
+  assert.match(mapSource, /gm_authFailure/);
+  assert.match(mapSource, /engineState === "unavailable"/);
+  assert.doesNotMatch(mapSource, /<iframe[^]*?\/api\/map-embed/);
   assert.match(mapSource, /paused_date: "Date not set · visit order only"/);
 });

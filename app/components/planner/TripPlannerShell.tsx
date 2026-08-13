@@ -95,6 +95,7 @@ import {
   upsertResolutionOverride,
 } from "../../../lib/planner-app-state";
 import { mealSlotsAfterStop } from "../../../lib/presentation/timeline-presentation";
+import { usePlaceSuggestions } from "./hooks/usePlaceSuggestions";
 
 export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = "" }: { initialLocale?: PlannerLocale; mapsApiKey?: string }) {
   const [locale, setLocale] = useState<PlannerLocale>(initialLocale);
@@ -1613,6 +1614,10 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
     userStayMinutes,
   });
 
+  // Autocomplete for the start input. The panel is a leaf component, so the
+  // paid lookup is owned here with the rest of the provider calls.
+  const { placeSuggestions, requestSuggestionsFor } = usePlaceSuggestions({ locale, destination: destinationChoice });
+
   return (
     <main className={`trip-planner-app ${isBuilding ? "is-building" : hasPlan ? `is-result is-mobile-${mobileResultView}` : inputStep === "conditions" ? "is-conditions" : "is-places"}`}>
       {printMode && plan ? (
@@ -1919,6 +1924,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
                 onLoadSample={() => loadDemo(destinationById("switzerland"))}
                 onRequestBuild={requestBuildFromStart}
                 onReviewPlaces={() => void reviewWishlistPlaces()}
+                onActivePlaceChange={requestSuggestionsFor}
                 onSelectPlaceCandidate={(inputIndex, providerRef) => {
                   setResolutionOverrides((current) => upsertResolutionOverride(current, { inputIndex, providerRef }));
                   setReviewedInputSignature("");
@@ -1940,6 +1946,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
                 parsedPlaceCount={parsedPlaceCount}
                 placeWarning={placeWarning}
                 placesInputRef={placesInputRef}
+                placeSuggestions={placeSuggestions}
                 resolutionOverrides={resolutionOverrides}
                 startInputError={startInputError}
                 travelPreference={travelPreference}

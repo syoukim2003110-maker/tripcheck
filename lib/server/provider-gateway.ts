@@ -4,6 +4,7 @@ export type PaidProvider = "google" | "anthropic";
 export type PaidOperation =
   | "live_routes"
   | "place_resolution"
+  | "place_suggestions"
   | "place_intelligence"
   | "fresh_voices"
   | "hotel_recommendations"
@@ -34,6 +35,11 @@ export const PAID_OPERATION_POLICIES: PaidOperationPolicies = Object.freeze({
   // live-route events), while the process-day rows remain the cost guard.
   live_routes: Object.freeze({ provider: "google", maxPerRequest: 20, maxPerTrip: 120, maxPerSession: 360, maxPerProcessDay: 2_000 }),
   place_resolution: Object.freeze({ provider: "google", maxPerRequest: 12, maxPerTrip: 36, maxPerSession: 108, maxPerProcessDay: 1_200 }),
+  // Typing spends one event per accepted pause, so autocomplete needs its own
+  // ceiling. Sharing place_resolution's budget let the input starve the
+  // resolution the plan actually depends on, and then told the traveller the
+  // review screen still worked when it no longer did.
+  place_suggestions: Object.freeze({ provider: "google", maxPerRequest: 1, maxPerTrip: 60, maxPerSession: 180, maxPerProcessDay: 3_000 }),
   place_intelligence: Object.freeze({ provider: "google", maxPerRequest: 1, maxPerTrip: 30, maxPerSession: 90, maxPerProcessDay: 1_000 }),
   fresh_voices: Object.freeze({ provider: "anthropic", maxPerRequest: 2, maxPerTrip: 24, maxPerSession: 48, maxPerProcessDay: 192 }),
   hotel_recommendations: Object.freeze({ provider: "google", maxPerRequest: 4, maxPerTrip: 60, maxPerSession: 180, maxPerProcessDay: 600 }),

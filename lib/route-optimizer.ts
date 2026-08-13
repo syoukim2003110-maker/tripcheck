@@ -13,6 +13,10 @@ export type RouteStop = {
   confidence: "low" | "medium";
   planningDurationMinutes: number;
   isAnchor: boolean;
+  /** Google place types, when available, also tell the hours UI what is not a business. */
+  placeTypes?: string[];
+  /** Deterministic catalog/demo override for public areas that have no business schedule. */
+  openingHoursApplicable?: boolean;
   isUserEntered?: boolean;
   /** Coordinates explicitly confirmed by the traveller, not provider-verified. */
   userProvidedCoordinates?: boolean;
@@ -23,8 +27,6 @@ export type ResolvedInputStop = RouteStop & {
   /** Stable within the currently reviewed paste; lets duplicate names be corrected independently. */
   inputIndex?: number;
   address: string;
-  /** Google place types retained so a hotel-field result can be classified as lodging or an area anchor. */
-  placeTypes?: string[];
   /** ISO 3166-1 alpha-2 from Google's address components; drives destination auto-detection. */
   countryCode?: string;
 };

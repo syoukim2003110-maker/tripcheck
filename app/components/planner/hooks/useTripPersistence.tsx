@@ -13,7 +13,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createTripStore, type StoredTripRecord, type TripStore } from "../../../../lib/trip-store";
 import { decodeTripShare, type ShareableTripInput } from "../../../../lib/share-link";
-import type { ResolvedInputStop } from "../../../../lib/route-optimizer";
+import type { BuildPlanOptions } from "./usePlanBuild";
 import {
   newDeviceTripId,
   storedTripShareCode,
@@ -35,7 +35,7 @@ export function useTripPersistence({
   localTripCode: string;
   localTripTitle: string;
   applySharedTripInput: (shared: ShareableTripInput) => void;
-  buildPlan: (options?: { preserveEdits?: boolean; prefetchedReview?: { places: ResolvedInputStop[] } }) => Promise<void>;
+  buildPlan: (options?: BuildPlanOptions) => Promise<void>;
 }) {
   const [pendingSharedBuild, setPendingSharedBuild] = useState(false);
   const [recentTrips, setRecentTrips] = useState<StoredTripRecord[]>([]);
