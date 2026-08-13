@@ -25,6 +25,7 @@ import {
   paymentLabel,
 } from "../../../../lib/presentation/trip-presentation.ts";
 import { ui, type PlannerLocale } from "../../../../lib/presentation/planner-copy.ts";
+import { placePhotoSrc } from "../../../../lib/presentation/place-photo";
 
 type BuiltPlanStop = BuiltTripPlan["days"][number]["stops"][number];
 
@@ -210,7 +211,7 @@ export default function StopInspector({
               <a className="planner-intel-hero" href={intel.place.googleMapsUrl} key={intel.place.photoName} rel="noreferrer" target="_blank">
                 {/* Google place photos are proxied at request time and are not stored. */}
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img alt={intel.place.name} loading="lazy" onError={onPhotoError} src={`/api/place-photo?name=${encodeURIComponent(intel.place.photoName)}`} />
+                <img alt={intel.place.name} loading="lazy" onError={onPhotoError} src={placePhotoSrc(intel.place.photoName, intel.place.photoSignature)} />
               </a>
             ) : null}
             {!P0_CORE_ONLY && intel.place.photoAttribution ? (

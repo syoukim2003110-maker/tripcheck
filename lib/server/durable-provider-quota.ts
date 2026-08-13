@@ -4,19 +4,15 @@ import {
   PROVIDER_QUOTA_SCHEMA_SQL,
   PROVIDER_QUOTA_TABLE_INFO_SQL,
 } from "../../db/provider-quota-schema.ts";
+import {
+  PROVIDER_COST_OPERATIONS,
+  PROVIDER_COST_POLICIES,
+  type ProviderCostOperation,
+  type ProviderCostProvider,
+} from "./provider-cost-policy.ts";
 
-export type DurableQuotaProvider = "google" | "anthropic";
-export type DurableQuotaOperation =
-  | "live_routes"
-  | "place_resolution"
-  | "place_suggestions"
-  | "place_intelligence"
-  | "fresh_voices"
-  | "hotel_recommendations"
-  | "food_recommendations"
-  | "food_ranking"
-  | "hotel_ranking"
-  | "route_recommendations";
+export type DurableQuotaProvider = ProviderCostProvider;
+export type DurableQuotaOperation = ProviderCostOperation;
 export type DurableQuotaScope = "trip" | "session" | "day" | "month";
 
 export type DurableQuotaPolicy = Readonly<{
@@ -31,108 +27,24 @@ export type DurableQuotaPolicy = Readonly<{
 
 export type DurableQuotaPolicies = Readonly<Record<DurableQuotaOperation, DurableQuotaPolicy>>;
 
-/*
- * Sizing note (2026-08-10): one plan build alone can issue ~20 live-route
- * events and a handful of recommendation searches, and every edit rebuilds.
- * The original per-trip ceilings equalled ONE build, so a normal planning
- * session ended in 429 budget_exhausted and every downstream surface (meal
- * slots, transit evidence, hotel shortlists) looked broken. Per-trip and
- * per-session-day ceilings now cover a real planning session; the global
- * per-day/per-month rows remain the actual cost guard.
+/**
+ * The durable view of `PROVIDER_COST_POLICIES`. Nothing is redefined here —
+ * a limit change is a change to that one file, and the D1 ledger and the
+ * process-local fail-safe move together by construction.
  */
-export const DURABLE_PROVIDER_QUOTA_POLICIES: DurableQuotaPolicies = Object.freeze({
-  live_routes: Object.freeze({
-    provider: "google",
-    maxPerRequest: 20,
-    maxPerTrip: 120,
-    maxPerSessionDay: 360,
-    maxPerDay: 2_000,
-    maxPerMonth: 20_000,
-  }),
-  place_resolution: Object.freeze({
-    provider: "google",
-    maxPerRequest: 12,
-    maxPerTrip: 36,
-    maxPerSessionDay: 108,
-    maxPerDay: 1_200,
-    maxPerMonth: 12_000,
-  }),
-  // Kept in step with PAID_OPERATION_POLICIES. Autocomplete is charged one
-  // event per accepted pause and must never draw down place_resolution: an
-  // exhausted resolution budget breaks the build, an exhausted suggestion
-  // budget only falls back to the Resolve step.
-  place_suggestions: Object.freeze({
-    provider: "google",
-    maxPerRequest: 1,
-    maxPerTrip: 60,
-    maxPerSessionDay: 180,
-    maxPerDay: 3_000,
-    maxPerMonth: 30_000,
-  }),
-  place_intelligence: Object.freeze({
-    provider: "google",
-    maxPerRequest: 1,
-    maxPerTrip: 30,
-    maxPerSessionDay: 90,
-    maxPerDay: 1_000,
-    maxPerMonth: 10_000,
-  }),
-  fresh_voices: Object.freeze({
-    provider: "anthropic",
-    maxPerRequest: 2,
-    maxPerTrip: 24,
-    maxPerSessionDay: 48,
-    maxPerDay: 192,
-    maxPerMonth: 1_920,
-  }),
-  // A route-wide hotel recommendation can issue three Google searches and a
-  // fourth fallback when the nearby search fails. Reserve that worst case so
-  // an internal fallback can never escape the durable ceiling.
-  hotel_recommendations: Object.freeze({
-    provider: "google",
-    maxPerRequest: 4,
-    maxPerTrip: 60,
-    maxPerSessionDay: 180,
-    maxPerDay: 600,
-    maxPerMonth: 6_000,
-  }),
-  // Nearby food discovery may make one bounded radius expansion; the ceiling
-  // covers a fourteen-day trip's lunch+dinner slots with headroom for retries.
-  food_recommendations: Object.freeze({
-    provider: "google",
-    maxPerRequest: 2,
-    maxPerTrip: 112,
-    maxPerSessionDay: 336,
-    maxPerDay: 2_000,
-    maxPerMonth: 20_000,
-  }),
-  food_ranking: Object.freeze({
-    provider: "anthropic",
-    maxPerRequest: 1,
-    maxPerTrip: 28,
-    maxPerSessionDay: 56,
-    maxPerDay: 192,
-    maxPerMonth: 1_920,
-  }),
-  hotel_ranking: Object.freeze({
-    provider: "anthropic",
-    maxPerRequest: 1,
-    maxPerTrip: 12,
-    maxPerSessionDay: 24,
-    maxPerDay: 96,
-    maxPerMonth: 960,
-  }),
-  // Search Along Route can fall back to the two route endpoints. Reserve all
-  // three searches even when the first one is sufficient.
-  route_recommendations: Object.freeze({
-    provider: "google",
-    maxPerRequest: 3,
-    maxPerTrip: 84,
-    maxPerSessionDay: 168,
-    maxPerDay: 300,
-    maxPerMonth: 9_000,
-  }),
-});
+export const DURABLE_PROVIDER_QUOTA_POLICIES: DurableQuotaPolicies = Object.freeze(
+  Object.fromEntries(PROVIDER_COST_OPERATIONS.map((operation) => {
+    const policy = PROVIDER_COST_POLICIES[operation];
+    return [operation, Object.freeze({
+      provider: policy.provider,
+      maxPerRequest: policy.maxPerRequest,
+      maxPerTrip: policy.maxPerTrip,
+      maxPerSessionDay: policy.maxPerSessionDay,
+      maxPerDay: policy.maxPerDay,
+      maxPerMonth: policy.maxPerMonth,
+    })];
+  })),
+) as DurableQuotaPolicies;
 
 export const DURABLE_QUOTA_KILL_SWITCHES = Object.freeze({
   global: "TRIPCHECK_PAID_API_DISABLED",

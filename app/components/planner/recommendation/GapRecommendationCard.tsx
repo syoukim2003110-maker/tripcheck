@@ -13,6 +13,7 @@ import { detourWalkingMinutes } from "../../../../lib/recommendation-evaluator.t
 import { gapEnhancement } from "../../../../lib/presentation/recommendation-presentation.ts";
 import type { PlanImpactMetrics } from "../../../../lib/recommendation-impact.ts";
 import { bufferDeltaLine, travelDeltaLine, ui, type PlannerLocale } from "../../../../lib/presentation/planner-copy.ts";
+import { placePhotoSrc } from "../../../../lib/presentation/place-photo";
 
 type GapRecommendationCardProps = {
   candidate: RouteRecommendation;
@@ -57,7 +58,7 @@ export default function GapRecommendationCard({
         <span className="planner-route-idea-image">
           {candidate.photoName ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img alt={candidate.name} loading="lazy" onError={onPhotoError} src={`/api/place-photo?name=${encodeURIComponent(candidate.photoName)}`} />
+            <img alt={candidate.name} loading="lazy" onError={onPhotoError} src={placePhotoSrc(candidate.photoName, candidate.photoSignature)} />
           ) : <span aria-hidden="true"><Icon name="pin" size={20} /></span>}
           <i>{index + 1}</i>
         </span>

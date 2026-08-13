@@ -57,6 +57,8 @@ export type FoodCandidate = {
   reviewSnippets: FoodReviewSnippet[];
   websiteUrl: string | null;
   photoName?: string;
+  /** Server signature over `photoName`, minted at the route boundary. */
+  photoSignature?: string | null;
   photoAttribution?: { name: string; uri: string };
   photoGoogleMapsUrl?: string;
 };

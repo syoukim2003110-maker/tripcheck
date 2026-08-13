@@ -65,6 +65,8 @@ export type PlaceIntelligenceResult = {
     currentSpecialDays?: unknown[] | null;
     regularOpeningPeriods?: unknown[] | null;
     photoName?: string | null;
+    /** Server signature over `photoName`, minted at the route boundary. */
+    photoSignature?: string | null;
     photoAttribution?: { name: string; uri: string } | null;
     payment: {
       cashOnly: boolean | null;

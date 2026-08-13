@@ -1,3 +1,5 @@
+import { PROVIDER_COST_OPERATIONS } from "../lib/server/provider-cost-policy.ts";
+
 /**
  * Durable paid-provider quota counters.
  *
@@ -14,18 +16,7 @@
  * "check constraint failed" — which the enforcer would misread as a
  * permanently exhausted budget.
  */
-export const PROVIDER_QUOTA_OPERATIONS = [
-  "live_routes",
-  "place_resolution",
-  "place_suggestions",
-  "place_intelligence",
-  "fresh_voices",
-  "hotel_recommendations",
-  "food_recommendations",
-  "food_ranking",
-  "hotel_ranking",
-  "route_recommendations",
-] as const;
+export const PROVIDER_QUOTA_OPERATIONS = PROVIDER_COST_OPERATIONS;
 
 const operationCheckList = PROVIDER_QUOTA_OPERATIONS.map((operation) => `'${operation}'`).join(", ");
 

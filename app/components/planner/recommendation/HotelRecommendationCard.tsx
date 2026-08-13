@@ -10,6 +10,7 @@ import type { SyntheticEvent } from "react";
 import Icon from "../../../PlannerIcons";
 import type { HotelCandidate } from "../../../../lib/google-hotels.ts";
 import { ui, type PlannerLocale } from "../../../../lib/presentation/planner-copy.ts";
+import { placePhotoSrc } from "../../../../lib/presentation/place-photo";
 
 type HotelRecommendationCardProps = {
   candidate: HotelCandidate;
@@ -46,7 +47,7 @@ export default function HotelRecommendationCard({
           {candidate.photo ? <>
             {/* Google photo names are fetched at request time and never persisted. */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img alt={candidate.name} loading="lazy" onError={onPhotoError} src={`/api/place-photo?name=${encodeURIComponent(candidate.photo.name)}`} />
+            <img alt={candidate.name} loading="lazy" onError={onPhotoError} src={placePhotoSrc(candidate.photo.name, candidate.photo.signature)} />
           </> : <span aria-hidden="true"><Icon name="bed" size={22} /></span>}
           <em>{priceLabel}</em>
         </span>

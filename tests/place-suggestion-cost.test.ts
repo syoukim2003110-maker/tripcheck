@@ -36,8 +36,10 @@ test("place suggestions are charged to their own budget, never place resolution"
   // looser of the two, or the split achieves nothing.
   assert.ok(durable.maxPerTrip > DURABLE_PROVIDER_QUOTA_POLICIES.place_resolution.maxPerTrip);
 
-  const workerSource = await readFile(new URL("../worker/index.ts", import.meta.url), "utf8");
-  assert.match(workerSource, /"\/api\/place-suggestions": Object\.freeze\(\{ provider: "google", operation: "place_suggestions" \}\)/);
+  // The Worker no longer keeps its own route table; the single manifest it
+  // dispatches from is the authority, and it covers every method, not just POST.
+  const policySource = await readFile(new URL("../lib/server/api-route-policy.ts", import.meta.url), "utf8");
+  assert.match(policySource, /path: "\/api\/place-suggestions", class: "paid", provider: "google", operation: "place_suggestions"/);
   const routeSource = await readFile(new URL("../app/api/place-suggestions/route.ts", import.meta.url), "utf8");
   assert.match(routeSource, /reserve\(preflight, "place_suggestions", 1\)/);
   assert.doesNotMatch(routeSource, /place_resolution/);

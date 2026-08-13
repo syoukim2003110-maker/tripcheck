@@ -4,6 +4,7 @@ import { fetchRakutenHotelFacts, matchRakutenFact } from "../../../lib/rakuten-h
 import { coreRecommendationApiGate } from "../../../lib/server/non-core-api-gate";
 import { paidApiDenialResponse, paidProviderGateway } from "../../../lib/server/provider-gateway";
 import { providerFetchWithParentSignal } from "../../../lib/server/provider-resilience";
+import { signPlacePhotoNames } from "../../../lib/server/sign-place-photos";
 
 const noStoreHeaders = { "Cache-Control": "no-store, max-age=0" };
 
@@ -67,12 +68,12 @@ export async function POST(request: Request) {
       }
     }
     access.complete();
-    return Response.json({
+    return Response.json(await signPlacePhotoNames({
       provider: "google_maps",
       fetchedAt: new Date().toISOString(),
       evidenceProviders: { rakuten: rakutenAvailable },
       candidates,
-    }, { headers: { ...noStoreHeaders, ...access.headers } });
+    }), { headers: { ...noStoreHeaders, ...access.headers } });
   } catch {
     access.complete({ failedUnits: providerUnits });
     return Response.json({ code: "unavailable" }, {

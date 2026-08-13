@@ -1,6 +1,7 @@
 import { fetchPlaceIntelligence, parsePlaceIntelligenceRequest } from "../../../lib/place-intelligence";
 import { paidApiDenialResponse, paidProviderGateway } from "../../../lib/server/provider-gateway";
 import { providerFetchWithParentSignal } from "../../../lib/server/provider-resilience";
+import { signPlacePhotoNames } from "../../../lib/server/sign-place-photos";
 
 const noStoreHeaders = { "Cache-Control": "no-store, max-age=0" };
 
@@ -30,7 +31,7 @@ export async function POST(request: Request) {
       providerFetchWithParentSignal(request.signal),
     );
     access.complete();
-    return Response.json(result, { headers: { ...noStoreHeaders, ...access.headers } });
+    return Response.json(await signPlacePhotoNames(result), { headers: { ...noStoreHeaders, ...access.headers } });
   } catch {
     access.complete({ failedUnits: 1 });
     return Response.json({ code: "unavailable" }, { status: 502, headers: { ...noStoreHeaders, ...access.headers } });

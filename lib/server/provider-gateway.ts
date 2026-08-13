@@ -1,17 +1,14 @@
 import { createHash, randomUUID } from "node:crypto";
 
-export type PaidProvider = "google" | "anthropic";
-export type PaidOperation =
-  | "live_routes"
-  | "place_resolution"
-  | "place_suggestions"
-  | "place_intelligence"
-  | "fresh_voices"
-  | "hotel_recommendations"
-  | "food_recommendations"
-  | "food_ranking"
-  | "hotel_ranking"
-  | "route_recommendations";
+import {
+  PROVIDER_COST_OPERATIONS,
+  PROVIDER_COST_POLICIES,
+  type ProviderCostOperation,
+  type ProviderCostProvider,
+} from "./provider-cost-policy.ts";
+
+export type PaidProvider = ProviderCostProvider;
+export type PaidOperation = ProviderCostOperation;
 export type QuotaScope = "trip" | "session" | "process_day";
 
 export type PaidOperationPolicy = Readonly<{
@@ -25,29 +22,24 @@ export type PaidOperationPolicy = Readonly<{
 export type PaidOperationPolicies = Readonly<Record<PaidOperation, PaidOperationPolicy>>;
 
 /**
- * Cost fail-safes, expressed in provider request-events rather than currency.
- * These are intentionally conservative and are independent of client-side
- * truncation. A malformed or modified client cannot raise them.
+ * The process-local view of `PROVIDER_COST_POLICIES`. Cost fail-safes are
+ * expressed in provider request-events rather than currency, are intentionally
+ * conservative, and are independent of client-side truncation: a malformed or
+ * modified client cannot raise them. Both this table and the durable D1 ledger
+ * are derived, so they can no longer drift apart.
  */
-export const PAID_OPERATION_POLICIES: PaidOperationPolicies = Object.freeze({
-  // Kept in step with DURABLE_PROVIDER_QUOTA_POLICIES: the per-trip/session
-  // rows must cover a real planning session (one build alone can spend ~20
-  // live-route events), while the process-day rows remain the cost guard.
-  live_routes: Object.freeze({ provider: "google", maxPerRequest: 20, maxPerTrip: 120, maxPerSession: 360, maxPerProcessDay: 2_000 }),
-  place_resolution: Object.freeze({ provider: "google", maxPerRequest: 12, maxPerTrip: 36, maxPerSession: 108, maxPerProcessDay: 1_200 }),
-  // Typing spends one event per accepted pause, so autocomplete needs its own
-  // ceiling. Sharing place_resolution's budget let the input starve the
-  // resolution the plan actually depends on, and then told the traveller the
-  // review screen still worked when it no longer did.
-  place_suggestions: Object.freeze({ provider: "google", maxPerRequest: 1, maxPerTrip: 60, maxPerSession: 180, maxPerProcessDay: 3_000 }),
-  place_intelligence: Object.freeze({ provider: "google", maxPerRequest: 1, maxPerTrip: 30, maxPerSession: 90, maxPerProcessDay: 1_000 }),
-  fresh_voices: Object.freeze({ provider: "anthropic", maxPerRequest: 2, maxPerTrip: 24, maxPerSession: 48, maxPerProcessDay: 192 }),
-  hotel_recommendations: Object.freeze({ provider: "google", maxPerRequest: 4, maxPerTrip: 60, maxPerSession: 180, maxPerProcessDay: 600 }),
-  food_recommendations: Object.freeze({ provider: "google", maxPerRequest: 2, maxPerTrip: 112, maxPerSession: 336, maxPerProcessDay: 2_000 }),
-  food_ranking: Object.freeze({ provider: "anthropic", maxPerRequest: 1, maxPerTrip: 28, maxPerSession: 56, maxPerProcessDay: 192 }),
-  hotel_ranking: Object.freeze({ provider: "anthropic", maxPerRequest: 1, maxPerTrip: 12, maxPerSession: 24, maxPerProcessDay: 96 }),
-  route_recommendations: Object.freeze({ provider: "google", maxPerRequest: 3, maxPerTrip: 84, maxPerSession: 168, maxPerProcessDay: 300 }),
-});
+export const PAID_OPERATION_POLICIES: PaidOperationPolicies = Object.freeze(
+  Object.fromEntries(PROVIDER_COST_OPERATIONS.map((operation) => {
+    const policy = PROVIDER_COST_POLICIES[operation];
+    return [operation, Object.freeze({
+      provider: policy.provider,
+      maxPerRequest: policy.maxPerRequest,
+      maxPerTrip: policy.maxPerTrip,
+      maxPerSession: policy.maxPerSessionDay,
+      maxPerProcessDay: policy.maxPerDay,
+    })];
+  })),
+) as PaidOperationPolicies;
 
 export const PROCESS_LOCAL_QUOTA_METADATA = Object.freeze({
   enforcement: "process_local_fail_safe" as const,

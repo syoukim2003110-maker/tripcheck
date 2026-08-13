@@ -40,6 +40,8 @@ export type HotelReviewExcerpt = {
 
 export type HotelPhoto = {
   name: string;
+  /** Server signature over `name`, minted at the route boundary. */
+  signature?: string | null;
   attribution: { name: string; uri: string } | null;
 };
 

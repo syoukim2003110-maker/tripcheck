@@ -39,6 +39,8 @@ export type RouteRecommendation = {
   userRatingCount: number | null;
   routeDistanceMeters: number;
   photoName: string | null;
+  /** Server signature over `photoName`, minted at the route boundary. */
+  photoSignature?: string | null;
   photoAttribution: { name: string; uri: string } | null;
 };
 

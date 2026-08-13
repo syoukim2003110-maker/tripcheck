@@ -17,6 +17,8 @@ import {
   ProviderCircuitOpenError,
   runResilientProviderCall,
 } from "../lib/server/provider-resilience.ts";
+import { apiRoutePolicy, type ApiRoutePolicy } from "../lib/server/api-route-policy.ts";
+import { placePhotoTokenSecret, verifyPlacePhotoToken } from "../lib/server/place-photo-token.ts";
 
 interface Fetcher {
   fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
@@ -44,53 +46,16 @@ interface ExecutionContext {
   passThroughOnException(): void;
 }
 
-type PaidApiRoute = Readonly<{
+type PaidApiRoute = ApiRoutePolicy & Readonly<{
   provider: DurableQuotaProvider;
   operation: DurableQuotaOperation;
-  featureFlags?: readonly Readonly<{
-    name: "HOTEL_RECOMMENDATIONS_ENABLED" | "FOOD_RECOMMENDATIONS_ENABLED" | "ROUTE_RECOMMENDATIONS_ENABLED" | "ANTHROPIC_REQUESTS_ENABLED";
-    mode: "default-on" | "explicit-on";
-  }>[];
 }>;
 
-const PAID_API_ROUTES: Readonly<Record<string, PaidApiRoute>> = Object.freeze({
-  "/api/live-routes": Object.freeze({ provider: "google", operation: "live_routes" }),
-  "/api/place-suggestions": Object.freeze({ provider: "google", operation: "place_suggestions" }),
-  "/api/place-resolution": Object.freeze({ provider: "google", operation: "place_resolution" }),
-  "/api/place-intelligence": Object.freeze({ provider: "google", operation: "place_intelligence" }),
-  "/api/place-intelligence/fresh": Object.freeze({ provider: "anthropic", operation: "fresh_voices" }),
-  "/api/hotel-recommendations": Object.freeze({
-    provider: "google",
-    operation: "hotel_recommendations",
-    featureFlags: Object.freeze([{ name: "HOTEL_RECOMMENDATIONS_ENABLED", mode: "default-on" }] as const),
-  }),
-  "/api/food-recommendations": Object.freeze({
-    provider: "google",
-    operation: "food_recommendations",
-    featureFlags: Object.freeze([{ name: "FOOD_RECOMMENDATIONS_ENABLED", mode: "default-on" }] as const),
-  }),
-  "/api/food-recommendations/ai": Object.freeze({
-    provider: "anthropic",
-    operation: "food_ranking",
-    featureFlags: Object.freeze([
-      { name: "FOOD_RECOMMENDATIONS_ENABLED", mode: "default-on" },
-      { name: "ANTHROPIC_REQUESTS_ENABLED", mode: "explicit-on" },
-    ] as const),
-  }),
-  "/api/hotel-recommendations/ai": Object.freeze({
-    provider: "anthropic",
-    operation: "hotel_ranking",
-    featureFlags: Object.freeze([
-      { name: "HOTEL_RECOMMENDATIONS_ENABLED", mode: "default-on" },
-      { name: "ANTHROPIC_REQUESTS_ENABLED", mode: "explicit-on" },
-    ] as const),
-  }),
-  "/api/route-recommendations": Object.freeze({
-    provider: "google",
-    operation: "route_recommendations",
-    featureFlags: Object.freeze([{ name: "ROUTE_RECOMMENDATIONS_ENABLED", mode: "default-on" }] as const),
-  }),
-});
+function paidRoutePolicy(request: Request, url: URL): PaidApiRoute | undefined {
+  const policy = apiRoutePolicy(request.method, url.pathname);
+  if (!policy || policy.class !== "paid" || !policy.provider || !policy.operation) return undefined;
+  return policy as PaidApiRoute;
+}
 
 const SESSION_COOKIE = "tc_paid_session";
 const MAX_QUOTA_BODY_BYTES = 256 * 1024;
@@ -145,6 +110,24 @@ function paidRequestIsSameOrigin(request: Request, env: Env) {
   }
 }
 
+/**
+ * An `<img>` sends no Origin and no custom header, so `signed_resource` routes
+ * prove themselves with the signature the server minted for that exact photo
+ * name. `Sec-Fetch-Site` is still required to be same-origin — it is trivially
+ * forged by a non-browser client, which is precisely why it is not the gate.
+ */
+async function signedResourceIsAuthorized(request: Request, url: URL, env: Env) {
+  if (request.headers.get("Sec-Fetch-Site")?.toLocaleLowerCase("en-US") !== "same-origin") return false;
+  const secret = placePhotoTokenSecret(env as unknown as Record<string, string | undefined>);
+  if (!secret) return false;
+  return verifyPlacePhotoToken({
+    photoName: url.searchParams.get("name")?.trim() ?? "",
+    token: url.searchParams.get("sig")?.trim() ?? "",
+    secret,
+    nowSeconds: Math.floor(Date.now() / 1000),
+  });
+}
+
 function paidFeatureEnabled(route: PaidApiRoute, env: Env) {
   return (route.featureFlags ?? []).every((flag) => (
     flag.mode === "explicit-on"
@@ -181,18 +164,12 @@ function quotaIdentity(request: Request) {
   };
 }
 
-async function paidRequestUnits(request: Request, operation: DurableQuotaOperation) {
+function paidRequestUnits(operation: DurableQuotaOperation, input: Record<string, unknown> | null) {
   if (operation === "place_intelligence") return 1;
-  const declaredLength = Number(request.headers.get("Content-Length"));
-  if (Number.isFinite(declaredLength) && declaredLength > MAX_QUOTA_BODY_BYTES) return null;
-  let body: unknown;
-  try {
-    body = await request.clone().json();
-  } catch {
-    return null;
-  }
-  if (!body || typeof body !== "object") return null;
-  const input = body as Record<string, unknown>;
+  // One signed photo name, one Places Photo media event. The signature and the
+  // name itself were already validated before this point.
+  if (operation === "place_photo") return 1;
+  if (!input) return null;
   if (operation === "live_routes") {
     return Array.isArray(input.legs) ? input.legs.length : null;
   }
@@ -243,6 +220,49 @@ async function paidRequestUnits(request: Request, operation: DurableQuotaOperati
   return input.depth === "quick" ? 1 : null;
 }
 
+type PaidRequestEnvelope = Readonly<{
+  rawBody: Uint8Array | null;
+  units: number;
+}>;
+
+/**
+ * Reads the paid request body exactly once, into bytes this Worker owns.
+ *
+ * A retry has to deliver byte-identical content, and a streaming Request
+ * cannot be replayed: keeping one as a retry template made each attempt tee
+ * the same stream, which races the previous attempt's reader and intermittently
+ * throws `TypeError: unusable`. When that happened the retry never reached the
+ * origin at all and a recoverable provider blip was returned to the traveller
+ * as a 502. Materialising the body removes the race and lets the unit count and
+ * every attempt read from the same immutable source.
+ */
+async function readPaidRequestEnvelope(request: Request, operation: DurableQuotaOperation): Promise<PaidRequestEnvelope | null> {
+  if (request.method !== "POST") {
+    const units = paidRequestUnits(operation, {});
+    return units === null ? null : { rawBody: null, units };
+  }
+  const declaredLength = Number(request.headers.get("Content-Length"));
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_QUOTA_BODY_BYTES) return null;
+  let rawBody: Uint8Array;
+  try {
+    rawBody = new Uint8Array(await request.arrayBuffer());
+  } catch {
+    return null;
+  }
+  // Chunked uploads carry no Content-Length, so the real byte count is the
+  // only limit that holds. Oversized bodies stop here — before D1 is touched.
+  if (rawBody.byteLength > MAX_QUOTA_BODY_BYTES) return null;
+  let parsed: Record<string, unknown> | null = null;
+  try {
+    const decoded = JSON.parse(new TextDecoder().decode(rawBody)) as unknown;
+    if (decoded && typeof decoded === "object" && !Array.isArray(decoded)) parsed = decoded as Record<string, unknown>;
+  } catch {
+    parsed = null;
+  }
+  const units = paidRequestUnits(operation, parsed);
+  return units === null ? null : { rawBody, units };
+}
+
 function withHeaders(response: Response, extra: Record<string, string>, setCookie: string | null = null) {
   const headers = new Headers(response.headers);
   for (const [name, value] of Object.entries(extra)) headers.set(name, value);
@@ -253,6 +273,20 @@ function withHeaders(response: Response, extra: Record<string, string>, setCooki
     statusText: response.statusText,
     headers,
   });
+}
+
+/**
+ * The quota layer marks every paid response `no-store`, which is right for a
+ * JSON answer and wrong for a photo: an image that scrolls out of view and
+ * back used to buy itself again. A signed photo redirect may be reused inside
+ * the browser that asked for it, and by nobody else.
+ */
+function applyRouteCachePolicy(response: Response, route: PaidApiRoute) {
+  if (route.cache !== "private_short" || response.status >= 400) return response;
+  const headers = new Headers(response.headers);
+  headers.set("Cache-Control", "private, max-age=900");
+  headers.set("Cross-Origin-Resource-Policy", "same-origin");
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
 function edgeJson(code: string, status: number, headers: Record<string, string> = {}) {
@@ -269,7 +303,10 @@ async function handlePaidApi(
   ctx: ExecutionContext,
   route: PaidApiRoute,
 ) {
-  if (!paidRequestIsSameOrigin(request, env)) {
+  const authorized = route.origin === "signed_resource"
+    ? await signedResourceIsAuthorized(request, url, env)
+    : paidRequestIsSameOrigin(request, env);
+  if (!authorized) {
     return secureResponse(edgeJson("forbidden", 403), url);
   }
   if (!paidFeatureEnabled(route, env)) {
@@ -277,8 +314,9 @@ async function handlePaidApi(
       "X-TripCheck-Feature-Scope": "core-recommendation",
     }), url);
   }
-  const units = await paidRequestUnits(request, route.operation);
-  if (units === null) return secureResponse(edgeJson("invalid_request", 400), url);
+  const envelope = await readPaidRequestEnvelope(request, route.operation);
+  if (envelope === null) return secureResponse(edgeJson("invalid_request", 400), url);
+  const units = envelope.units;
 
   let identity: ReturnType<typeof quotaIdentity>;
   try {
@@ -289,7 +327,14 @@ async function handlePaidApi(
   const forwardedHeaders = new Headers(request.headers);
   forwardedHeaders.set("X-TripCheck-Session", identity.sessionId);
   forwardedHeaders.set("X-TripCheck-Trip", identity.tripId);
-  const forwardedTemplate = new Request(request, { headers: forwardedHeaders });
+  // Each attempt gets its own Request built from the same bytes, so a retry
+  // never depends on a stream the previous attempt may still be draining.
+  const attemptRequest = (signal: AbortSignal) => new Request(request.url, {
+    method: request.method,
+    headers: forwardedHeaders,
+    ...(envelope.rawBody === null ? {} : { body: envelope.rawBody.slice() }),
+    signal,
+  });
   let lastQuotaHeaders: Record<string, string> = {};
 
   const attempt = async (_attemptIndex: number, deadlineSignal: AbortSignal) => {
@@ -312,7 +357,7 @@ async function handlePaidApi(
     lastQuotaHeaders = quota.headers;
 
     const combinedSignal = AbortSignal.any([request.signal, deadlineSignal]);
-    const forwardedRequest = new Request(forwardedTemplate.clone(), { signal: combinedSignal });
+    const forwardedRequest = attemptRequest(combinedSignal);
     let response: Response;
     try {
       response = await handler.fetch(forwardedRequest, env, ctx);
@@ -343,7 +388,7 @@ async function handlePaidApi(
         isRetryable: (candidate) => candidate.status === 502 || candidate.status === 504,
       })
       : await attempt(0, request.signal);
-    return secureResponse(response, url);
+    return secureResponse(applyRouteCachePolicy(response, route), url);
   } catch (error) {
     if (error instanceof ProviderAttemptNotAuthorizedError && error.response instanceof Response) {
       return secureResponse(error.response, url);
@@ -371,7 +416,7 @@ const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
-    const paidApiRoute = request.method === "POST" ? PAID_API_ROUTES[url.pathname] : undefined;
+    const paidApiRoute = paidRoutePolicy(request, url);
     if (paidApiRoute) return handlePaidApi(request, url, env, ctx, paidApiRoute);
 
     if (url.pathname === "/_vinext/image") {

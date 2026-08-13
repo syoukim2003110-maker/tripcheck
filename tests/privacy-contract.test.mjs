@@ -229,17 +229,16 @@ test("discloses automatic core recommendations and their paid-provider controls"
  * endpoint with no paragraph at all - would have gone unnoticed. This
  * enumerates the routes from disk instead of from a list someone maintains. */
 test("every paid client endpoint is disclosed on the privacy page", async () => {
-  // The authority for "paid endpoint" is the Worker's own gate table, not a
-  // list maintained inside this test. A new route added there without a
-  // privacy paragraph fails here.
-  const workerSource = await readFile(new URL("../worker/index.ts", import.meta.url), "utf8");
-  const gateTable = workerSource.slice(
-    workerSource.indexOf("const PAID_API_ROUTES"),
-    workerSource.indexOf("});", workerSource.indexOf("const PAID_API_ROUTES")),
-  );
-  assert.ok(gateTable.length > 0, "PAID_API_ROUTES table not found in the Worker");
-  const paidRoutes = [...gateTable.matchAll(/"\/api\/([^"]+)":/g)].map((match) => match[1]);
-  assert.ok(paidRoutes.length >= 8, `paid route enumeration looks too small: ${paidRoutes.join(", ")}`);
+  // The authority for "paid endpoint" is the single route-policy manifest the
+  // Worker itself dispatches from, not a list maintained inside this test. A
+  // new paid route added there without a privacy paragraph fails here.
+  //
+  // This used to read the Worker's own POST-only table and accept any count of
+  // eight or more, which meant a paid GET could exist outside it entirely and
+  // two registrations could be deleted unnoticed. The set is now exact.
+  const policySource = await readFile(new URL("../lib/server/api-route-policy.ts", import.meta.url), "utf8");
+  const paidRoutes = [...policySource.matchAll(/path: "\/api\/([^"]+)", class: "paid"/g)].map((match) => match[1]);
+  assert.ok(paidRoutes.length > 0, "no paid routes found in the route-policy manifest");
 
   const privacySource = await readFile(privacySourceUrl, "utf8");
   const disclosed = {
@@ -253,11 +252,15 @@ test("every paid client endpoint is disclosed on the privacy page", async () => 
     "food-recommendations/ai": /AI only writes short explanation labels/,
     "hotel-recommendations/ai": /AI only writes short explanation labels/,
     "route-recommendations": /one bounded along-route shortlist/,
+    "place-photo": /Photographs shown on hotel, meal and place cards/,
   };
+  assert.deepEqual(
+    [...paidRoutes].sort(),
+    Object.keys(disclosed).sort(),
+    "the paid routes and the disclosures pinned here must be the same set",
+  );
   for (const route of paidRoutes) {
-    const pattern = disclosed[route];
-    assert.ok(pattern, `/api/${route} is a paid endpoint with no privacy-page disclosure pinned here`);
-    assert.match(privacySource, pattern, `/api/${route} disclosure missing from the privacy page`);
+    assert.match(privacySource, disclosed[route], `/api/${route} disclosure missing from the privacy page`);
   }
 
   // The suggestion endpoint is the only one a keystroke can reach, and the

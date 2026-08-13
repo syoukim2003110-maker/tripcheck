@@ -25,6 +25,7 @@ import { formatDistanceMeters } from "../../../../lib/presentation/trip-presenta
 import { hotelAxisWinners, hotelShortlist, rakutenReviewLine, ratingFactLine } from "../../../../lib/presentation/recommendation-presentation.ts";
 import type { PlanImpactMetrics } from "../../../../lib/recommendation-impact.ts";
 import { bufferDeltaLine, travelDeltaLine, ui, type PlannerLocale } from "../../../../lib/presentation/planner-copy.ts";
+import { placePhotoSrc } from "../../../../lib/presentation/place-photo";
 
 type HotelInspectorProps = {
   locale: PlannerLocale;
@@ -319,7 +320,7 @@ export default function HotelInspector({
         {selectedHotel.photo ? <>
           {/* Google place photos are proxied at request time and are not stored. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img alt={selectedHotel.name} onError={onPhotoError} src={`/api/place-photo?name=${encodeURIComponent(selectedHotel.photo.name)}`} />
+          <img alt={selectedHotel.name} onError={onPhotoError} src={placePhotoSrc(selectedHotel.photo.name, selectedHotel.photo.signature)} />
         </> : <span aria-hidden="true"><Icon name="bed" size={26} /></span>}
         <i>{hotelPriceLabel(selectedHotel)}</i>
       </a>

@@ -13,6 +13,7 @@ import type { FreshVoicesResult } from "../../../../lib/fresh-voices.ts";
 import { bufferDeltaLine, travelDeltaLine, ui, type PlannerLocale } from "../../../../lib/presentation/planner-copy.ts";
 import { openStatusLabel, paymentEvidenceLabel, ratingFactLine } from "../../../../lib/presentation/recommendation-presentation.ts";
 import type { PlanImpactMetrics } from "../../../../lib/recommendation-impact.ts";
+import { placePhotoSrc } from "../../../../lib/presentation/place-photo";
 
 type MealRecommendationCardProps = {
   candidate: FoodCandidate;
@@ -57,7 +58,7 @@ export default function MealRecommendationCard({
         {candidate.photoName ? <>
           {/* Google place photos are short-lived, server-proxied URLs and cannot use a static Next image allowlist. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img alt={candidate.name} loading="lazy" onError={onPhotoError} src={`/api/place-photo?name=${encodeURIComponent(candidate.photoName)}`} />
+          <img alt={candidate.name} loading="lazy" onError={onPhotoError} src={placePhotoSrc(candidate.photoName, candidate.photoSignature)} />
         </> : <span aria-hidden="true"><Icon name="fork" size={20} /></span>}
         <i className="planner-food-badge">{index + 1}</i>
       </a>
