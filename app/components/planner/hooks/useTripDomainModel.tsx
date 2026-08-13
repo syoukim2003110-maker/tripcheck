@@ -70,7 +70,7 @@ import {
   type PlannerEvidenceSnapshot,
   type RouteFactEvidence,
 } from "../../../../lib/feasibility-result";
-import { detectGapsFromBuiltDay } from "../../../../lib/gap-detection";
+import { detectGapsFromBuiltDay, primaryItineraryGap } from "../../../../lib/gap-detection";
 import {
   RECOMMENDATION_DETOUR_CAP_MINUTES,
   detourWalkingMinutes,
@@ -901,8 +901,9 @@ export function usePlannerViewModel({
   const activeDayGaps = useMemo(() => day && activeFitDay
     ? detectGapsFromBuiltDay(day, activeFitDay, { dayIndex: activeDay, transferBufferMinutes })
     : [], [activeDay, activeFitDay, day, transferBufferMinutes]);
-  // At most ONE gap is auto-surfaced per day: the first gap in visit order.
-  const primaryRecommendationGap = activeDayGaps[0] ?? null;
+  // At most ONE gap is auto-surfaced per day (spec cap): the one worth
+  // filling, not the first one in visit order. See `primaryItineraryGap`.
+  const primaryRecommendationGap = primaryItineraryGap(activeDayGaps);
   // TC-047: the gap search follows the real route geometry of the gap's leg
   // when Google geometry exists (transit evidence first, then the prefetch
   // measurements), sampled within the 12-point request budget. Only when no
@@ -1290,6 +1291,9 @@ export function usePlannerViewModel({
       placeCount: plan.scheduledStopCount,
       travelMinutes: builtPlanTravelMinutes(plan),
       bufferMinutes: tripFit.days.reduce((sum, fitDay) => sum + Math.max(0, fitDay.slackMinutes), 0),
+      // The assessment's own number, already withheld by the assessment
+      // whenever a place is unresolved or the trip does not fit.
+      spareDays: tripFit.spareDays,
     }
     : null, [plan, tripFit]);
   // Copy Deck plan.state.conditional: the headline's check count is the same

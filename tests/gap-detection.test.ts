@@ -4,6 +4,7 @@ import {
   classifyGapMinutes,
   detectGapsFromBuiltDay,
   detectItineraryGaps,
+  primaryItineraryGap,
   type GapDetectionDay,
 } from "../lib/gap-detection.ts";
 import type { BuiltPlanDay } from "../lib/trip-builder.ts";
@@ -145,4 +146,40 @@ test("adapts BuiltPlanDay and TripFitDay without owning planner logic", () => {
   const fit = { dayIndex: 0, usableUntil: "12:00", availableMinutes: 180 } as TripFitDay;
   const gaps = detectGapsFromBuiltDay(day, fit, { transferBufferMinutes: 10 });
   assert.deepEqual(gaps.map((gap) => [gap.kind, gap.availableMinutes]), [["BETWEEN_ANCHORS", 30]]);
+});
+
+test("the day surfaces the gap worth filling, not the first one in visit order", () => {
+  // A 35-minute wait before the first stop and a six-hour hole after the last
+  // one. Picking by position offered a cafe for the 35 minutes and said
+  // nothing about the afternoon.
+  const gaps = detectItineraryGaps({
+    dayIndex: 0,
+    startAt: "09:00",
+    usableUntil: "21:30",
+    availableMinutes: 750,
+    startCoordinate: { latitude: 35.68, longitude: 139.7 },
+    endCoordinate: { latitude: 35.68, longitude: 139.7 },
+    returnTravelMinutes: 20,
+    anchors: [
+      { id: "a", startAt: "09:35", endAt: "11:00", coordinate: { latitude: 35.7, longitude: 139.8 }, travelFromPreviousMinutes: 0 },
+      { id: "b", startAt: "11:30", endAt: "14:40", coordinate: { latitude: 35.71, longitude: 139.81 }, travelFromPreviousMinutes: 20 },
+    ],
+  });
+
+  assert.deepEqual(
+    gaps.map((gap) => [gap.kind, gap.availableMinutes]),
+    [["BEFORE_FIRST_ANCHOR", 35], ["BEFORE_HOTEL_RETURN", 390]],
+  );
+  assert.equal(gaps[0].availableMinutes, 35, "the first gap in visit order is the small one");
+  assert.equal(primaryItineraryGap(gaps)?.availableMinutes, 390);
+  assert.equal(primaryItineraryGap(gaps)?.kind, "BEFORE_HOTEL_RETURN");
+});
+
+test("the primary gap is stable: equal sizes keep visit order, no gaps means none", () => {
+  const gap = (id: string, availableMinutes: number) => ({ id, availableMinutes }) as ReturnType<typeof detectItineraryGaps>[number];
+  assert.equal(primaryItineraryGap([]), null);
+  // A tie must not depend on iteration accidents: the earlier gap wins, so a
+  // rebuild of the same day surfaces the same gap.
+  assert.equal(primaryItineraryGap([gap("early", 60), gap("late", 60)])?.id, "early");
+  assert.equal(primaryItineraryGap([gap("only", 45)])?.id, "only");
 });

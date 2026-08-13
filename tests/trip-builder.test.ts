@@ -1024,3 +1024,54 @@ test("a hotel-based multi-day trip uses every requested day instead of cramming 
     assert.equal(plan.scheduleConflictCount, 0, `${pace}: balancing days must not invent conflicts`);
   }
 });
+
+test("a day that is still running at dinner time keeps its dinner slot", () => {
+  // Three Tokyo places under the default 22:00 curfew: sightseeing ends at
+  // 15:00 and the traveller has seven hours of day left. The old rule asked
+  // when SIGHTSEEING ends, so this day — the one with the most room for a
+  // dinner — lost its slot by thirty minutes.
+  const plan = buildTripFromWishlist(`Tsukiji Outer Market
+Tokyo Tower
+Meiji Jingu`, 1, "balanced", "en", { mealPlan: "all", tripStartDate: "2026-09-12" });
+
+  const day = plan.days[0];
+  assert.equal(day.deadline, "22:00");
+  assert.equal(day.deadlineKind, "curfew");
+  assert.ok(day.stops.at(-1)!.departure < "17:30", "the route ends before the dinner window opens");
+  assert.deepEqual(plan.foodRecommendationSlots.map((slot) => slot.kind), ["lunch", "dinner"]);
+  // The slot is a recommendation, not a schedule change: the day's arithmetic
+  // is identical to the same trip with meals switched off.
+  const baseline = buildTripFromWishlist(`Tsukiji Outer Market
+Tokyo Tower
+Meiji Jingu`, 1, "balanced", "en", { mealPlan: "none", tripStartDate: "2026-09-12" });
+  assert.equal(day.totalMinutes, baseline.days[0].totalMinutes);
+  assert.equal(day.finishTime, baseline.days[0].finishTime);
+});
+
+test("a route that brackets the whole dinner window gets no dinner slot", () => {
+  // A booked 16:00 anchor pushes the day to 16:00–21:55, which covers Japan's
+  // whole 17:30–21:00 dinner window. A slot here could only be proposed for a
+  // time the traveller is inside a scheduled visit, so there is none.
+  const plan = buildTripFromWishlist(`teamLab Planets — Day 1 16:00 booked
+Tokyo Tower
+Tsukiji Outer Market`, 1, "balanced", "en", { mealPlan: "all", tripStartDate: "2026-09-12" });
+
+  const day = plan.days[0];
+  assert.ok(day.stops[0].arrival <= "17:30", "the route is under way when dinner opens");
+  assert.ok(day.stops.at(-1)!.departure >= "21:00", "and is still running when it closes");
+  assert.deepEqual(plan.foodRecommendationSlots.filter((slot) => slot.kind === "dinner"), []);
+});
+
+test("an airport day that ends before dinner still gets no dinner slot", () => {
+  // The pre-existing deadline rule must survive the change above: a day whose
+  // known end lands before the dinner window is not a day with room for one.
+  const plan = buildTripFromWishlist(`Senso-ji
+Tokyo Skytree`, 1, "balanced", "en", {
+    mealPlan: "all",
+    tripStartDate: "2026-09-12",
+    dayEndTarget: "16:00",
+  });
+
+  assert.equal(plan.days[0].deadline, "16:00");
+  assert.deepEqual(plan.foodRecommendationSlots.filter((slot) => slot.kind === "dinner"), []);
+});

@@ -534,6 +534,18 @@ try {
       ".planner-meal-row .planner-filler-actions button:first-child",
     ]));
     await expect("QA-045 mobile sheet targets ≥24px", (async () => {
+      // `auditPrimaryTargets` centres every node it measures, so the checks
+      // above leave the timeline scrolled wherever the last meal row was.
+      // A stop row can then sit *under* the sticky day rail — still "in the
+      // viewport", so a click is not scrolled first and lands on a day tab
+      // instead. Reset the scroller so this check starts where a traveller
+      // opening a stop starts, rather than inheriting the previous check's
+      // side effect.
+      await mobilePlan.evaluate(() => {
+        for (const node of document.querySelectorAll(".planner-result-view, .planner-sheet")) node.scrollTop = 0;
+        window.scrollTo(0, 0);
+      });
+      await settle(mobilePlan, 200);
       await mobilePlan.click(".planner-stop-row");
       await mobilePlan.waitForSelector(".planner-inspector", { timeout: 10_000 });
       await settle(mobilePlan, 400);

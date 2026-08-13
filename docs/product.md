@@ -93,12 +93,26 @@ one cafe/micro Filler per day; the UI shows one default and at most two
 alternatives. Removing an accepted Filler is one action and recalculates the
 plan.
 
+A day gets a lunch and a dinner slot whenever the day itself is still running
+at that meal's hour — the day's own end decides, not the hour its last visit
+finishes. A route that already brackets the whole meal window gets no slot for
+it, because every minute in that window is already spent. Meal slots never
+change a day's arithmetic.
+
 Gap suggestions are bounded: gaps below 30 minutes receive no suggestion;
 30–59 minutes may receive a cafe, bakery or convenience stop; 60–120 minutes
 may receive a small attraction or meal; longer open periods are outside the
 P0 auto-fill contract. Unknown opening hours produce a conditional proposal,
 never a verified claim. Confirmed closure or a failed re-solve rejects the
-candidate.
+candidate. A day surfaces at most one gap, and it is the largest one, not the
+first in visit order — a 35-minute wait before the first stop must not be
+answered while a six-hour hole after the last one goes unmentioned.
+
+When the fit assessment is confident the wishlist needs fewer days than the
+traveller asked for, the trip totals line states the spare days in place of
+the total buffer. Both are the same spare time; whole days are the resolution
+that reads as *unplanned* rather than as *comfortable*. It stays silent
+whenever the assessment withholds a conclusion.
 
 Hotel recommendations are ranked against full-trip travel, not only straight
 line proximity. Changing an existing base is suggested only if it resolves a

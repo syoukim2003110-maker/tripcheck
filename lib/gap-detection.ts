@@ -183,6 +183,24 @@ export function detectItineraryGaps(day: GapDetectionDay): ItineraryGap[] {
   return gaps;
 }
 
+/**
+ * The one gap a day is allowed to surface (the spec's per-day cap).
+ *
+ * This used to be `gaps[0]` — the first hole in visit order. That picks by
+ * position rather than by what the traveller would notice: a day with a
+ * 35-minute wait before its first stop and a 6-hour hole after its last one
+ * offered a cafe for the 35 minutes and said nothing about the afternoon.
+ * The biggest hole wins instead, and visit order only breaks ties, so the
+ * choice stays deterministic and stable across rebuilds.
+ */
+export function primaryItineraryGap(gaps: readonly ItineraryGap[]): ItineraryGap | null {
+  let best: ItineraryGap | null = null;
+  for (const gap of gaps) {
+    if (!best || gap.availableMinutes > best.availableMinutes) best = gap;
+  }
+  return best;
+}
+
 /** Thin adapter over the existing deterministic BuiltPlanDay/TripFitDay output. */
 export function detectGapsFromBuiltDay(
   day: BuiltPlanDay,

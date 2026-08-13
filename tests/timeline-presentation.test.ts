@@ -175,3 +175,35 @@ test("transitBoardingText counts extra connections instead of stop counts", () =
   const ja = transitBoardingText(boarding, "ja");
   assert.ok(ja?.includes("乗継ぎ1本"));
 });
+
+test("tripStatsLine states whole spare days in place of the buffer figure", () => {
+  // A four-day trip whose places fit in two reported 「余裕26時間40分」 and
+  // nothing else. It is the same spare time either way; when it amounts to
+  // whole days the day count is the honest resolution, and swapping rather
+  // than appending is what keeps this one line.
+  const totals = { placeCount: 10, travelMinutes: 520, bufferMinutes: 1600 };
+  assert.equal(tripStatsLine({ ...totals, spareDays: 2 }, "ja"), "10か所・移動8時間40分・2日分の空き");
+  assert.equal(tripStatsLine({ ...totals, spareDays: 2 }, "en"), "10 places · 8h 40m travel · 2 days spare");
+  assert.equal(tripStatsLine({ ...totals, spareDays: 1 }, "en"), "10 places · 8h 40m travel · 1 day spare");
+  // The swapped line is never longer than the buffer form it replaces, which
+  // is the property the first-viewport contract depends on.
+  for (const locale of ["ja", "en"] as const) {
+    assert.ok(
+      tripStatsLine({ ...totals, spareDays: 2 }, locale).length <= tripStatsLine(totals, locale).length,
+      `${locale}: the spare-days line grew the stats line`,
+    );
+  }
+});
+
+test("tripStatsLine claims no spare days when the assessment withheld a conclusion", () => {
+  // `spareDays` is null while a place is unresolved or the trip does not fit,
+  // and 0 when the trip needs every day it has. Neither may become a
+  // confident emptiness claim, and the three-clause deck form must be
+  // byte-identical to the line without the field at all.
+  const totals = { placeCount: 8, travelMinutes: 520, bufferMinutes: 250 };
+  const deckForm = { ja: "8か所・移動8時間40分・余裕4時間10分", en: "8 places · 8h 40m travel · 4h 10m buffer" };
+  for (const spareDays of [null, undefined, 0] as const) {
+    assert.equal(tripStatsLine({ ...totals, spareDays }, "ja"), deckForm.ja, `ja leaked a clause for ${spareDays}`);
+    assert.equal(tripStatsLine({ ...totals, spareDays }, "en"), deckForm.en, `en leaked a clause for ${spareDays}`);
+  }
+});

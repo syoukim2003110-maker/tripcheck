@@ -17,8 +17,15 @@ type ResultHeaderProps = {
   feasibilityResult: FeasibilityResult | null;
   resultStateCopy: { label: string; headline: string } | null;
   dayTheme: string;
-  /** Copy Deck plan.stats totals — the same numbers the verdict details use. */
-  tripStats: { placeCount: number; travelMinutes: number; bufferMinutes: number } | null;
+  /** Copy Deck plan.stats totals — the same numbers the verdict details use.
+   * `spareDays` is the fit assessment's own figure and is null whenever that
+   * assessment withholds a conclusion. */
+  tripStats: {
+    placeCount: number;
+    travelMinutes: number;
+    bufferMinutes: number;
+    spareDays?: number | null;
+  } | null;
   scheduledStopCount: number | null;
   deferredAnchorCount: number;
   canUndo: boolean;

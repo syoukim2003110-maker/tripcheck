@@ -108,15 +108,39 @@ export function formatDuration(minutes: number, locale: PlannerLocale) {
  * 余裕4時間10分」 / en "8 places · 8h 40m travel · 4h 10m buffer"). TC-029:
  * this is a single line, never an audit block — verification counts stay in
  * the verdict details. Callers pass the plan's existing totals (the same
- * numbers the collapsed details use), never a fresh computation. */
+ * numbers the collapsed details use), never a fresh computation.
+ *
+ * `spareDays` REPLACES the buffer clause rather than joining it. The engine
+ * has always computed that number and nothing ever read it, so a four-day
+ * trip whose places fit in three reported 「余裕22時間」 and left the reader
+ * to conclude "comfortable" from a figure that actually means "a whole day of
+ * this trip has nothing in it". Both are the same spare time at different
+ * resolutions, and when it amounts to whole days the day count is the honest
+ * one — so the line swaps clauses instead of growing a fourth, which is what
+ * keeps it one line inside the first-viewport contract.
+ *
+ * It stays silent whenever the assessment withholds a conclusion
+ * (`spareDays === null`, which is what an unresolved place or a trip that
+ * does not fit produces), so emptiness is never claimed on thin evidence. */
 export function tripStatsLine(
-  totals: { placeCount: number; travelMinutes: number; bufferMinutes: number },
+  totals: {
+    placeCount: number;
+    travelMinutes: number;
+    bufferMinutes: number;
+    spareDays?: number | null;
+  },
   locale: PlannerLocale,
 ) {
   const travel = formatDuration(totals.travelMinutes, locale);
-  const buffer = formatDuration(totals.bufferMinutes, locale);
-  if (locale === "ja") return `${totals.placeCount}か所・移動${travel}・余裕${buffer}`;
-  return `${totals.placeCount} place${totals.placeCount === 1 ? "" : "s"} · ${travel} travel · ${buffer} buffer`;
+  const hasSpareDays = typeof totals.spareDays === "number" && totals.spareDays > 0;
+  if (locale === "ja") {
+    const spare = hasSpareDays ? `${totals.spareDays}日分の空き` : `余裕${formatDuration(totals.bufferMinutes, locale)}`;
+    return `${totals.placeCount}か所・移動${travel}・${spare}`;
+  }
+  const spare = hasSpareDays
+    ? `${totals.spareDays} day${totals.spareDays === 1 ? "" : "s"} spare`
+    : `${formatDuration(totals.bufferMinutes, locale)} buffer`;
+  return `${totals.placeCount} place${totals.placeCount === 1 ? "" : "s"} · ${travel} travel · ${spare}`;
 }
 
 export function formatWindowClock(minutes: number) {

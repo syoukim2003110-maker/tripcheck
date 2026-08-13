@@ -492,7 +492,17 @@ function buildFoodRecommendationSlots(
       // cannot grow an 18:00 「帰路の夕食」 row below its 10:42 finish.
       if (kind === "lunch" && (firstArrival > lunch.end || lastDeparture < lunch.start)) continue;
       if (kind === "dinner" && deadlineMinutes !== null && deadlineMinutes < dinner.start) continue;
-      if (kind === "dinner" && lastDeparture < dinner.start - 120) continue;
+      // The traveller eats dinner on any day that is still running at dinner
+      // time. The rule below used to ask when SIGHTSEEING ends, so an ordinary
+      // 09:00–15:00 Tokyo day under a 22:00 curfew lost its dinner slot by
+      // thirty minutes — exactly the day with the most room for one. The day's
+      // own end decides; this heuristic only stands in when no end is known.
+      if (kind === "dinner" && deadlineMinutes === null && lastDeparture < dinner.start - 120) continue;
+      // The opposite case: a route that brackets the whole dinner window
+      // leaves no moment to eat in it. Proposing 21:00 to someone who is
+      // inside a museum from 20:40 to 21:55 breaks the 動線 the slot claims to
+      // follow, so the day gets no dinner slot rather than an impossible one.
+      if (kind === "dinner" && firstArrival <= dinner.start && lastDeparture >= dinner.end) continue;
       // Lunch anchors on the stop the traveller is at (or has most recently
       // reached) inside lunch hours — never a stop the route only reaches
       // after the window, which would put the meal row after a later visit.
