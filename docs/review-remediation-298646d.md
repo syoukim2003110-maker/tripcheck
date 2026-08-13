@@ -153,6 +153,11 @@ Four VR baselines moved and are archived at
 `tests/vr/archive/2026-08-13-pre-resolve-map-collapse/`; the desktop Resolve
 shots and all 20 others are untouched.
 
+**Closed since.** The plan half is done, in the P2 design pass the gate scopes
+it to: `docs/gate-e-first-viewport-2026-08-13.md`. First stop 664 → 297 at
+390×844 and 453 → 352 at 1440, warning summary printed once. The paragraph
+below is what was true when this was written.
+
 The plan half is **not** fixed, deliberately. Getting the first stop from y=664
 to y=300 means removing about 364px of report from above the itinerary: the
 headline facts, the issue chip, the verdict card, the one-line warning and the
@@ -234,3 +239,4 @@ makes is unchanged.
   edge-signed is P1-06's remaining half and was not required to close the
   rotation hole.
 - **The plan screen's information hierarchy is unchanged**, as set out above.
+  Closed afterwards in `docs/gate-e-first-viewport-2026-08-13.md`.

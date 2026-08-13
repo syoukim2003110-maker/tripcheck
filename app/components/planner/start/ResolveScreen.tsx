@@ -164,17 +164,16 @@ export default function ResolveScreen({
   onContinue,
 }: ResolveScreenProps) {
   const text = ui[locale];
-  return (
-    <div className="planner-conditions-step">
-      {/* v1.1 §5.2 Resolve: the step heading above carries the ask;
-          this bar keeps the escape back to the raw input. */}
+  // Automatic detection stops rather than merge two countries into one trip.
+  // The reason has to be on screen: the traveller is standing here because the
+  // build refused, not because they navigated back.
+  const countryChoiceLeadsHere = mixedCountryCodes.length > 1;
+  const resolveEscapeControls = (
+    <>
       <div className="planner-resolve-intro">
         <button onClick={onEditInput} type="button">{locale === "ja" ? "入力を直す" : "Edit input"}</button>
       </div>
-      {/* Automatic detection stops rather than merge two countries into one
-          trip. The reason has to be on screen: the traveller is standing here
-          because the build refused, not because they navigated back. */}
-      {mixedCountryCodes.length > 1 ? (
+      {countryChoiceLeadsHere ? (
         <p className="planner-inline-status is-warning planner-resolve-country-conflict" role="status">
           {locale === "ja"
             ? `場所が${mixedCountryCodes.length}か国（${mixedCountryCodes.join("・")}）に分かれています。下で国を選ぶとその範囲で検索し直します。1か国に収まらない旅程は「世界中」を選んでください。`
@@ -197,6 +196,22 @@ export default function ResolveScreen({
           ? "国を選ぶと、現在の入力をその国の範囲で検索し直します。"
           : "Choose a country to search the current input again inside that country."}</small>
       </div>
+    </>
+  );
+  return (
+    <div className="planner-conditions-step">
+      {/* v1.1 §5.2 Resolve: the escape hatches. Both of them start the search
+          over — one by re-opening the raw input, one by re-running it inside a
+          chosen country — so they follow the list of what was actually found
+          rather than standing between the traveller and it. Above the list
+          they cost 139px, which is why the first thing to confirm opened at
+          y=375 on a 390x844 screen. The country selector stays permanently
+          visible (2026-08-13 product decision); only its position moves.
+
+          A mixed-country result is the exception: automatic detection stopped
+          because the places span borders, so choosing the country IS the next
+          action and it keeps its place above the list. */}
+      {countryChoiceLeadsHere ? resolveEscapeControls : null}
       <section className="planner-resolved-places" aria-labelledby="planner-reviewed-title">
         <ul>
           {reviewedPlaceRows.map((row) => {
@@ -360,6 +375,7 @@ export default function ResolveScreen({
         {unresolvedReviewedCount > 0 ? <p className="planner-inline-status is-warning" role="status">{locale === "ja" ? `${unresolvedReviewedCount}件は未解決です。確認が終わるまで結論を出しません。` : `${unresolvedReviewedCount} place${unresolvedReviewedCount === 1 ? " is" : "s are"} unresolved. The result stays conditional until they are confirmed.`}</p> : null}
         {ambiguousReviewedCount > 0 ? <p className="planner-inline-status is-warning" role="status">{locale === "ja" ? `${ambiguousReviewedCount}件は同名候補があります。住所を見て選んでください。` : `${ambiguousReviewedCount} place${ambiguousReviewedCount === 1 ? " has" : "s have"} same-name matches. Choose by address.`}</p> : null}
       </section>
+      {countryChoiceLeadsHere ? null : resolveEscapeControls}
 
       {/* v1.1 §5.2: the Resolve step is about places. Trip conditions
           stay reachable but folded away, mirroring the Start screen. */}

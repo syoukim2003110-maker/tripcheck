@@ -71,9 +71,17 @@ The first result viewport must answer five questions in this order:
 
 Evidence counts, regional coverage, assumptions and counterfactuals remain
 available under **Verdict details**. They are not a dashboard placed before the
-itinerary. Desktop results reserve 48% for the timeline and 52% for the map.
-On mobile, the map remains above the timeline at no more than 35% of the
-viewport and can be collapsed; the timeline remains usable without the map.
+itinerary — nor is the things-to-check list; both sit under the itinerary they
+explain. On mobile the first stop begins by y=300 and the first two stops and
+one safe Filler finish inside a 390×844 viewport; on desktop the first stop
+begins by y=360. The plan states its one warning once.
+
+Desktop results reserve 48% for the timeline and 52% for the map. On mobile the
+result screen is either the itinerary or the map, switched by one control, and
+the itinerary carries no map band: at that width a band tall enough to be worth
+its space is tall enough to push the itinerary below the fold, and one short
+enough to fit shows a sliver behind the floating header. The timeline is fully
+usable without the map, and every map affordance has a timeline equivalent.
 
 Every place supplied by the traveller is an **Anchor**. A meal, cafe or
 micro-stop proposed by TripCheck is a **Filler** and must remain visibly

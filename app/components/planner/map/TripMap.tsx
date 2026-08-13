@@ -294,7 +294,11 @@ export default function TripMap({
         </div>
       ) : null}
 
-      {children}
+      {/* The inspectors live in the map layer but are not part of the map:
+          on a phone they are a fixed bottom sheet that has to survive the
+          itinerary view hiding the map surface underneath it. Grouping them
+          lets that view hide the map without hiding what sits on top of it. */}
+      <div className="planner-map-overlay-layer">{children}</div>
     </div>
   );
 }

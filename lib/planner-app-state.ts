@@ -32,7 +32,14 @@ export type TransitLegBoarding = {
 
 export type PlannerInputStep = "places" | "conditions";
 export type PlannerBuildMode = "automatic" | "custom";
-export type MobileResultView = "timeline" | "map" | "compact";
+/**
+ * The mobile result screen is either the itinerary or the map, never a third
+ * thing in between. A 12dvh map band above the timeline rendered a ~45px
+ * sliver behind the floating header and cost 101px of an 844px viewport to do
+ * it, which is what kept the first stop below y=300. "Hide map" and "Timeline"
+ * then described the same screen minus that sliver, so they are one state.
+ */
+export type MobileResultView = "timeline" | "map";
 /** TC-052 §9.3: the mobile inspector bottom sheet has three explicit sizes. */
 export type PlannerSheetState = "peek" | "half" | "full";
 export type PlannerMapScope = "all" | "day";

@@ -777,7 +777,7 @@ body:has(.trip-planner-app) {
 .planner-result-header { align-items: flex-start; display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr); }
 .planner-result-header > div > span { color: var(--pl-muted); display: block; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; margin-bottom: 5px; }
 .planner-result-header > div > .planner-verdict-label { align-items: center; display: flex; gap: 6px; }
-.planner-verdict-label > i { align-items: center; border: 1px solid currentColor; border-radius: 50%; display: inline-flex; height: 22px; justify-content: center; width: 22px; }
+.planner-verdict-label > i { align-items: center; border: 1px solid currentColor; border-radius: 50%; display: inline-flex; height: 18px; justify-content: center; width: 18px; }
 .planner-verdict-label.is-verified_feasible { color: var(--pl-good); }
 .planner-verdict-label.is-provisional_feasible { color: #315f9f; }
 .planner-verdict-label.is-feasible_if_assumptions { color: #815f16; }
@@ -804,16 +804,22 @@ body:has(.trip-planner-app) {
 .planner-result-decision > div { display: grid; gap: 2px; }
 .planner-result-decision span { color: var(--pl-muted); font-size: 9.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
 .planner-result-decision small { color: var(--pl-ink-2); font-size: 11.5px; line-height: 1.4; }
-.planner-result-decision > button { background: var(--pl-ink); border: 0; border-radius: 10px; color: white; font-size: 11.5px; font-weight: 800; min-height: 42px; padding: 0 13px; }
+.planner-result-decision > button { background: var(--pl-ink); border: 0; border-radius: 10px; color: white; font-size: 11.5px; font-weight: 800; min-height: 38px; padding: 0 13px; }
 .planner-one-warning { align-items: flex-start; background: var(--pl-warn-bg); border-radius: 10px; color: var(--pl-warn-ink); display: flex; font-size: 11px; gap: 7px; line-height: 1.45; margin: 0; padding: 9px 10px; }
 .planner-one-warning svg { margin-top: 1px; }
 /* Copy Deck scope.beta: small, always visible, deliberately non-alarming. */
 .planner-beta-region { background: var(--pl-tile); border-radius: 999px; color: var(--pl-ink-2); font-size: 10.5px; font-weight: 700; margin: 0; padding: 5px 11px; width: fit-content; }
 /* TC-062 scope warnings: the scope.beta badge family, squarer corners so a full-sentence line wraps cleanly. */
 .planner-scope-warning { background: var(--pl-tile); border-radius: 10px; color: var(--pl-ink-2); font-size: 10.5px; font-weight: 700; line-height: 1.5; margin: 0; padding: 6px 11px; width: fit-content; }
-.planner-verdict-details { border-top: 1px solid rgb(11 11 14 / 8%); }
+/* A report block under the itinerary, not a band above it: it carries its own
+   frame now that it no longer sits inside the verdict card. */
+.planner-verdict-details { background: #f7f7f8; border: 1px solid var(--pl-line); border-radius: 18px; margin: 10px 0 0; padding: 2px 16px 10px; }
 .planner-verdict-details > summary { color: var(--pl-ink-2); font-size: 10.5px; font-weight: 750; list-style-position: inside; min-height: 34px; padding: 9px 1px 0; }
 .planner-verdict-details-body { display: grid; gap: 10px; padding-top: 10px; }
+.planner-verdict-details .planner-trip-days { background: white; border-color: var(--pl-line); }
+.planner-verdict-details .planner-trip-days > span { color: var(--pl-muted); }
+.planner-verdict-details .planner-trip-days button { background: var(--pl-ink); color: white; }
+.planner-verdict-details .planner-trip-days output { color: var(--pl-ink); }
 .planner-plan-assumptions { border-bottom: 1px solid var(--pl-line); margin: 7px 0 0; padding: 0 2px 10px; }
 .planner-plan-assumptions summary { color: var(--pl-muted); font-size: 11px; font-weight: 750; list-style-position: inside; min-height: 32px; padding: 7px 0; }
 .planner-plan-assumptions ul { color: var(--pl-ink-2); display: grid; font-size: 11px; gap: 4px; line-height: 1.45; margin: 8px 0 0; padding-left: 17px; }
@@ -902,10 +908,17 @@ details.planner-excluded { display: block; }
 .planner-plan-notices a { color: inherit; font-weight: 750; }
 .planner-plan-notices .planner-excluded ul { margin: 5px 0 0; padding-left: 17px; }
 
+/* Gate E: how full the selected day is, on one line. The day's own label sits
+   on the active tab immediately above, so stacking it again over a 24px
+   display number and then the bar spent 75px restating the tab. Which day,
+   how many stops, how much slack, and where the day goes — one row. */
 .planner-day-summary { align-items: stretch; border-bottom: 1px solid var(--pl-line); display: grid; gap: 5px; grid-template-columns: minmax(0, 1fr); padding: 0 0 6px; }
-.planner-day-summary > div:first-child { display: grid; flex: 1 1 auto; min-width: 0; }
+.planner-day-summary > div:first-child { align-items: center; column-gap: 9px; display: flex; flex-wrap: wrap; min-width: 0; row-gap: 3px; }
 .planner-day-summary span { color: var(--pl-muted); font-size: 11px; font-weight: 650; }
-.planner-day-summary b { font-family: var(--pl-display); font-size: 24px; font-weight: 400; letter-spacing: 0.025em; line-height: 1.05; margin-top: 3px; white-space: nowrap; }
+.planner-day-summary b { font-family: var(--pl-display); font-size: 19px; font-weight: 400; letter-spacing: 0.025em; line-height: 1.05; margin-top: 0; white-space: nowrap; }
+.planner-day-summary .planner-day-time-bar { flex: 1 1 130px; margin-top: 0; }
+.planner-day-summary > div:first-child > small,
+.planner-day-summary > div:first-child > em { flex: 1 0 100%; }
 .planner-day-total { color: var(--pl-muted); font-size: 10.5px; font-weight: 650; margin-top: 3px; }
 .planner-day-time-controls { display: grid; gap: 6px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .planner-day-start { background: var(--pl-tile); border-radius: 12px; display: grid; min-width: 0; padding: 7px 9px; transition: background 150ms, box-shadow 150ms; }
@@ -1154,10 +1167,6 @@ details.planner-excluded { display: block; }
 .planner-feasibility-card > header > span { color: var(--pl-muted); font-size: 10.5px; font-weight: 850; letter-spacing: .08em; text-transform: uppercase; }
 .planner-feasibility-card > header > b { font-size: 18px; letter-spacing: -.018em; line-height: 1.3; }
 .planner-feasibility-card > header > small { color: var(--pl-muted); font-size: 11.5px; line-height: 1.55; }
-.planner-feasibility-card .planner-trip-days { background: white; border-color: var(--pl-line); }
-.planner-feasibility-card .planner-trip-days > span { color: var(--pl-muted); }
-.planner-feasibility-card .planner-trip-days button { background: var(--pl-ink); color: white; }
-.planner-feasibility-card .planner-trip-days output { color: var(--pl-ink); }
 
 .planner-critical-facts { display: grid; gap: 7px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .planner-critical-facts > span { align-items: center; background: white; border: 1px solid var(--pl-line); border-radius: 11px; display: grid; gap: 1px 6px; grid-template-columns: auto 1fr; min-width: 0; padding: 8px; }
@@ -1266,7 +1275,7 @@ details.planner-excluded { display: block; }
 .planner-share-dialog > footer button { background: white; border: 1px solid var(--pl-control-border); border-radius: 10px; font-weight: 800; min-height: 44px; padding: 8px 10px; }
 .planner-share-dialog > footer button.is-primary { background: var(--pl-ink); color: white; }
 .planner-share-dialog > footer button:disabled { opacity: .45; }
-.planner-feasibility-card .planner-plan-assumptions { border: 0; border-top: 1px solid var(--pl-line); margin: 0; padding: 5px 0 0; }
+.planner-verdict-details .planner-plan-assumptions { border: 0; border-top: 1px solid var(--pl-line); margin: 0; padding: 5px 0 0; }
 
 /* timeline */
 
@@ -1808,66 +1817,51 @@ div.planner-route-ideas-empty { display: grid; gap: 8px; }
     height: 100dvh;
     inset: 0;
   }
-  /* §11.2 "画面下にMap preview bar" + DoD-PLAN-1: the timeline view keeps the
-     map as a preview strip, not a half screen. 12dvh (≈101px at 390×844) still
-     carries the route status, the legend toggle and the map chips, and it is
-     what lets the first TWO stop rows finish above the fold. The strip used to
-     be 15dvh; the extra 3dvh was only affordable while the sheet opened
-     already scrolled past its own headline, which is no longer the case. */
-  .trip-planner-app.is-result.is-mobile-timeline .planner-map-canvas {
-    display: block;
-    height: 12dvh;
-    inset: 0 0 auto;
-  }
+  /* Gate E: the itinerary view is the itinerary. The map used to keep a 12dvh
+     band above it — 101px of an 844px viewport — and at that height the
+     floating header, the legend chip and the route-state chip cover all but a
+     ~45px sliver of it. That band is what held the first stop at y=664 against
+     a y<=300 contract, and it bought almost no map. The map is one tap away on
+     the Map tab, which is the only width at which a map is readable on a
+     phone; the product contract requires the timeline to stand without it. */
+  .trip-planner-app.is-result.is-mobile-timeline .planner-map-canvas > :not(.planner-map-overlay-layer) { display: none; }
   .trip-planner-app.is-result.is-mobile-timeline .planner-sheet {
-    border-radius: 18px 18px 0 0;
-    height: 88dvh;
-    inset: 12dvh 0 0;
-  }
-  /* The 15dvh strip is almost entirely covered by the floating header, the
-     legend chip and the route-state chip, so a message placed there is read
-     through them. Same treatment as .planner-map-empty below: the strip stays
-     a quiet preview, and the "Map" tab carries the explanation and the retry. */
-  .trip-planner-app.is-result.is-mobile-timeline .planner-map-provider-unavailable { display: none; }
-  .trip-planner-app.is-result.is-mobile-compact .planner-map-canvas,
-  .trip-planner-app.is-result.is-mobile-compact .planner-map-bottom { display: none; }
-  .trip-planner-app.is-result.is-mobile-compact .planner-sheet {
     border-radius: 0;
     height: 100dvh;
     inset: 0;
   }
-  .trip-planner-app.is-result.is-mobile-compact .planner-result-view { padding-top: 70px; }
-  .trip-planner-app.is-result.is-mobile-map .planner-sheet {
-    background: transparent;
-    border: 0;
-    border-radius: 0;
-    box-shadow: none;
-    height: auto;
-    inset: 66px 10px auto auto;
-    overflow: visible;
-    width: auto;
-  }
-  .trip-planner-app.is-result.is-mobile-map .planner-result-view { padding: 0; }
-  .trip-planner-app.is-result.is-mobile-map .planner-result-view > :not(.planner-mobile-result-toggle) { display: none; }
+  .trip-planner-app.is-result.is-mobile-timeline .planner-result-view { padding: 62px 16px 96px; }
+  /* The map tab is the map. The sheet has nothing to add over it, and the one
+     control that matters there — the switch back — is anchored to the
+     viewport, not to the sheet. */
+  .trip-planner-app.is-result.is-mobile-map .planner-sheet { display: none; }
+  /* Anchored to the bottom of the viewport rather than the top of the sheet:
+     as a sheet row it spent 52px of the first viewport, and as a sticky row it
+     sat directly on top of the sticky day rail. Down here it costs the
+     itinerary nothing and stays reachable at any scroll position. */
   .planner-mobile-result-toggle {
     backdrop-filter: blur(12px);
     background: rgb(255 255 255 / 92%);
     border: 1px solid rgb(11 11 14 / 8%);
     border-radius: 999px;
+    bottom: max(14px, env(safe-area-inset-bottom, 0px));
     box-shadow: var(--pl-shadow-soft);
     display: flex;
+    left: 50%;
     padding: 3px;
-    position: sticky;
-    top: 2px;
-    z-index: 50;
+    position: fixed;
+    transform: translateX(-50%);
+    z-index: 60;
   }
-  .trip-planner-app.is-result.is-mobile-map .planner-mobile-result-toggle { position: static; }
-  .planner-mobile-result-toggle button { background: transparent; border: 0; border-radius: 999px; color: var(--pl-muted); font-size: 11px; font-weight: 750; min-height: 44px; padding: 0 14px; }
+  /* An open inspector owns the bottom of the screen, and its own actions sit
+     there. Switching to the map is not what you came to that sheet for, so
+     the switch stands down until the sheet is closed. */
+  .trip-planner-app:has(.planner-inspector) .planner-mobile-result-toggle { display: none; }
+  .planner-mobile-result-toggle button { background: transparent; border: 0; border-radius: 999px; color: var(--pl-muted); font-size: 11px; font-weight: 750; min-height: 44px; padding: 0 18px; }
   .planner-mobile-result-toggle button.is-active { background: var(--pl-ink); color: white; }
-  /* TC-055: the sticky day rail sits below the sticky view toggle (top 2px +
-     3px padding ×2 + 44px buttons) and under its z-index 50, so the view
-     switch stays reachable while the rail stays on screen. */
-  .planner-day-tabs { top: 54px; }
+  /* TC-055: the day rail is the topmost sticky row now that the view switch
+     has left the sheet, so it parks directly under the floating header. */
+  .planner-day-tabs { top: 58px; }
   /* bottom-sheet grab handle */
   .planner-sheet::before {
     background: #d9d9e0;
@@ -1882,22 +1876,32 @@ div.planner-route-ideas-empty { display: grid; gap: 8px; }
     z-index: 5;
   }
   .trip-planner-app.is-places .planner-sheet::before,
+  /* A grab handle on a sheet that fills the screen and has nothing behind it
+     to drag back to is an affordance for something that cannot happen. */
+  .trip-planner-app.is-conditions:has(.planner-map-provider-unavailable) .planner-sheet::before,
   .trip-planner-app.is-result .planner-sheet::before { display: none; }
   .planner-sheet:has(.planner-building-view) { height: 64dvh; }
   .planner-form-view,
   .planner-result-view,
   .planner-building-view { padding: 24px 16px 28px; }
-  .trip-planner-app.is-places .planner-form-view,
+  .trip-planner-app.is-places .planner-form-view { padding-top: 78px; }
   /* Once the collapsed map lets the sheet start at the top of the screen, the
-     step indicator would otherwise be read through the floating header. Same
-     clearance the first step already uses. */
-  .trip-planner-app.is-conditions:has(.planner-map-provider-unavailable) .planner-form-view { padding-top: 78px; }
+     step indicator would otherwise be read through the floating header. The
+     brand pill spans roughly y=10–46, so this clears it and spends nothing
+     more: everything under it is what the traveller came here to confirm. */
+  .trip-planner-app.is-conditions:has(.planner-map-provider-unavailable) .planner-form-view { padding-top: 54px; }
+  .trip-planner-app.is-conditions:has(.planner-map-provider-unavailable) .planner-input-progress { margin-bottom: 12px; }
+  .trip-planner-app.is-conditions:has(.planner-map-provider-unavailable) .planner-intro { margin-bottom: 10px; }
+  /* A step heading, not a hero. The Start screen opens at 32px because it has
+     one thing to say; this screen's job is the checklist underneath it, and a
+     27px heading was pushing that checklist toward the fold. */
+  .trip-planner-app.is-conditions .planner-intro h1 { font-size: 22px; }
+  .trip-planner-app.is-conditions .planner-intro p { margin-top: 8px; }
   .planner-result-view { padding-top: 6px; }
   .planner-building-steps { margin-top: 16px; }
   .planner-building-steps li { min-height: 48px; }
   .planner-intro h1 { font-size: 27px; }
   .planner-composer textarea { height: 128px; }
-  .planner-day-summary b { font-size: 22px; }
   .planner-map-chip:not(.is-selected):not(:hover):not(:focus-visible) { padding-right: 4px; }
   .planner-map-chip:not(.is-selected):not(:hover):not(:focus-visible) span { display: none; }
 
@@ -1935,13 +1939,11 @@ div.planner-route-ideas-empty { display: grid; gap: 8px; }
   .planner-map-legend-body { display: none; }
   .planner-map-day-legend.is-expanded .planner-map-legend-body { display: flex; flex-wrap: wrap; padding: 0 4px 6px; }
   .planner-map-empty { bottom: auto; left: 50%; top: 68px; }
-  /* The chip row belongs to the map surface. In the timeline view the map is
-     a preview strip, and anchoring the row above the sheet parked it outside
-     the viewport — invisible, but still in the tab order. It is hidden here
-     the way it already is in the compact view; every chip has a timeline
-     equivalent (hotel row, meal/gap recommendation rows, per-stop Google
-     Maps link) and the 地図 view shows the row itself. */
-  .trip-planner-app.is-result.is-mobile-timeline .planner-map-bottom { display: none; }
+  /* The chip row and the empty-map notice belong to the map surface, which the
+     timeline view no longer shows; hidden rather than merely off-screen, so
+     they leave the tab order with it. Every chip has a timeline equivalent
+     (hotel row, meal/gap recommendation rows, per-stop Google Maps link) and
+     the 地図 view shows the row itself. */
   .trip-planner-app.is-result.is-mobile-timeline .planner-map-empty { display: none; }
   .planner-meal-chip { flex: 0 0 auto; }
   .planner-open-maps { font-size: 0; gap: 0; padding: 0 13px; }
@@ -2009,20 +2011,44 @@ div.planner-route-ideas-empty { display: grid; gap: 8px; }
   .planner-result-header h1 { font-size: 17px; line-height: 1.15; }
   .planner-result-actions { display: grid; grid-template-columns: 62px 44px; width: auto; }
   .planner-result-actions button { font-size: 10.5px; min-height: 44px; padding: 7px 6px; white-space: normal; }
-  .planner-feasibility-card { gap: 8px; margin: 8px 0; padding: 10px 11px; }
-  .planner-one-warning { font-size: 10.5px; padding: 7px 8px; }
+  /* Gate E: one verdict strip. The card used to be a tile of its own — its
+     own background, border, padding and margins — carrying a label that
+     repeated the headline above it and a button on a row of its own. On a
+     390px screen that is 100px spent restating the h1. Here the card is not a
+     tile at all: the warning and its one action share a single row directly
+     under the stats line, and the strip closes with a rule instead of a box. */
+  .planner-feasibility-card {
+    background: none;
+    border: 0;
+    border-bottom: 1px solid var(--pl-line);
+    border-radius: 0;
+    column-gap: 10px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    margin: 6px 0 0;
+    padding: 0 0 7px;
+    row-gap: 6px;
+  }
+  .planner-feasibility-card.is-infeasible_hard_conflict,
+  .planner-feasibility-card.is-unknown { background: none; }
+  .planner-result-decision { grid-column: 2; grid-row: 1; }
+  .planner-result-decision > div { display: none; }
+  .planner-result-decision > button { min-height: 38px; padding: 0 11px; }
+  .planner-one-warning { font-size: 10.5px; grid-column: 1; grid-row: 1; padding: 7px 8px; }
+  /* Anything after the first row spans the strip again. */
+  .planner-feasibility-card > :not(.planner-result-decision):not(.planner-one-warning) { grid-column: 1 / -1; }
   .planner-verdict-details > summary { min-height: 28px; padding-top: 6px; }
   .planner-mobile-verdict-action { display: block; }
-  .planner-verdict-details:not([open]) { display: none; }
   .planner-result-decision small { display: none; }
   /* DoD-PLAN-1 headroom: every row above the timeline is trimmed so the
      first two stops finish above the fold without the sheet needing to
-     be scrolled first. English wraps one line longer than Japanese in
-     the issue card, so the budget is set by the en layout. */
-  .planner-day-summary { gap: 3px; padding-bottom: 4px; padding-top: 0; }
-  .planner-issue-card { gap: 6px; margin-bottom: 6px; padding: 9px 11px; }
-  .planner-day-tabs { margin: 6px 0 4px; }
-  .planner-day-summary b { font-size: 19px; }
+     be scrolled first. English wraps one line longer than Japanese, so the
+     budget is set by the en layout. */
+  .planner-day-summary { gap: 3px; padding-bottom: 3px; padding-top: 0; }
+  .planner-issue-card { gap: 6px; margin: 10px 0 6px; padding: 9px 11px; }
+  .planner-day-tabs { margin: 5px 0 3px; }
+  .planner-day-summary > div:first-child { column-gap: 8px; }
+  .planner-day-summary b { font-size: 15px; }
+  .planner-day-summary .planner-day-time-bar { flex: 1 1 88px; }
   .planner-timeline { margin-top: 2px; }
   .planner-day-time-bar { margin-top: 4px; }
   .planner-day-window-facts { gap: 4px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -2098,10 +2124,10 @@ div.planner-route-ideas-empty { display: grid; gap: 8px; }
   .planner-result-actions { grid-template-columns: auto 44px; width: auto; }
   .planner-result-actions > button { min-width: 72px; }
   .planner-result-header h1 { font-size: 22px; }
-  .planner-feasibility-card { gap: 8px; margin: 8px 0; padding: 10px 11px; }
+  .planner-feasibility-card { gap: 8px; margin: 6px 0; padding: 9px 11px; }
   .planner-result-decision > div > span { display: none; }
   .planner-verdict-details > summary { min-height: 30px; padding-top: 6px; }
-  .planner-day-tabs { margin-top: 7px; }
+  .planner-day-tabs { margin-top: 6px; }
 }
 
 /* ── Print sheet: the plan, offline, on paper or PDF ───────────────────── */

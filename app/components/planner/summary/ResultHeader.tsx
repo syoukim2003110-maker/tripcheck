@@ -1,21 +1,19 @@
 "use client";
 
-// Result header (spec v2.1 summary/): mobile view toggle, verdict label,
-// headline, the Copy Deck plan.stats totals line, issue-count chip and the
-// actions menu (edit, verdict details, undo/redo, print, share). Emits
-// events; history and dialogs live above.
+// Result header (spec v2.1 summary/): verdict label, headline, the Copy Deck
+// plan.stats totals line and the actions menu (edit, verdict details,
+// undo/redo, print, share). Emits events; history and dialogs live above.
+// The mobile view toggle is a map control and lives beside the map; the
+// things-to-check list is named once, on the card that carries its actions.
 import type { RefObject } from "react";
 import Icon from "../../../PlannerIcons";
 import { feasibilityStateIcon } from "../icon-maps";
 import type { FeasibilityResult } from "../../../../lib/feasibility-result.ts";
-import type { MobileResultView } from "../../../../lib/planner-app-state.ts";
 import { ui, type PlannerLocale } from "../../../../lib/presentation/planner-copy.ts";
 import { tripStatsLine } from "../../../../lib/presentation/trip-presentation.ts";
 
 type ResultHeaderProps = {
   locale: PlannerLocale;
-  mobileResultView: MobileResultView;
-  onMobileResultView: (view: MobileResultView) => void;
   feasibilityResult: FeasibilityResult | null;
   resultStateCopy: { label: string; headline: string } | null;
   dayTheme: string;
@@ -23,7 +21,6 @@ type ResultHeaderProps = {
   tripStats: { placeCount: number; travelMinutes: number; bufferMinutes: number } | null;
   scheduledStopCount: number | null;
   deferredAnchorCount: number;
-  planIssueCount: number;
   canUndo: boolean;
   canRedo: boolean;
   shareCopied: boolean;
@@ -37,15 +34,12 @@ type ResultHeaderProps = {
 
 export default function ResultHeader({
   locale,
-  mobileResultView,
-  onMobileResultView,
   feasibilityResult,
   resultStateCopy,
   dayTheme,
   tripStats,
   scheduledStopCount,
   deferredAnchorCount,
-  planIssueCount,
   canUndo,
   canRedo,
   shareCopied,
@@ -59,12 +53,6 @@ export default function ResultHeader({
   const text = ui[locale];
   return (
     <>
-      <div className="planner-mobile-result-toggle" role="group" aria-label={locale === "ja" ? "結果の表示" : "Result view"}>
-        <button aria-pressed={mobileResultView === "timeline"} className={mobileResultView === "timeline" ? "is-active" : ""} onClick={() => onMobileResultView("timeline")} type="button">{locale === "ja" ? "旅程" : "Timeline"}</button>
-        <button aria-pressed={mobileResultView === "map"} className={mobileResultView === "map" ? "is-active" : ""} onClick={() => onMobileResultView("map")} type="button">{locale === "ja" ? "地図" : "Map"}</button>
-        <button aria-pressed={mobileResultView === "compact"} className={mobileResultView === "compact" ? "is-active" : ""} onClick={() => onMobileResultView("compact")} type="button">{locale === "ja" ? "地図を隠す" : "Hide map"}</button>
-      </div>
-
       <header className="planner-result-header">
         <div>
           <span className={`planner-verdict-label${feasibilityResult ? ` is-${feasibilityResult.state.toLowerCase()}` : ""}`}>
@@ -76,19 +64,15 @@ export default function ResultHeader({
               : resultStateCopy?.label ?? (locale === "ja" ? "旅程の結論" : "Plan result")}
           </span>
           <h1>{resultStateCopy?.headline ?? dayTheme}</h1>
-          {tripStats || planIssueCount > 0 ? (
-            // Copy Deck plan.stats: one compact totals line directly under
-            // the headline, the issue chip on its right (TC-029: no audit
-            // counts here — those stay inside the verdict details).
+          {tripStats ? (
+            // Copy Deck plan.stats: one compact totals line directly under the
+            // headline (TC-029: no audit counts here — those stay inside the
+            // verdict details). The things-to-check count used to be repeated
+            // here as a chip while the card below the itinerary carried the
+            // same sentence and the actions; the card is the one that can act,
+            // so the count is stated once, there.
             <div className="planner-headline-facts">
-              {tripStats ? <p className="planner-trip-stats">{tripStatsLine(tripStats, locale)}</p> : null}
-              {planIssueCount > 0 ? (
-                <button
-                  className="planner-issue-chip"
-                  onClick={() => document.getElementById("planner-issue-card")?.scrollIntoView({ behavior: "smooth", block: "center" })}
-                  type="button"
-                >{locale === "ja" ? `確認したいこと ${planIssueCount}` : `${planIssueCount} thing${planIssueCount === 1 ? "" : "s"} to check`}</button>
-              ) : null}
+              <p className="planner-trip-stats">{tripStatsLine(tripStats, locale)}</p>
             </div>
           ) : null}
         </div>

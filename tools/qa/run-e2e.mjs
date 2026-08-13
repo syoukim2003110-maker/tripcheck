@@ -484,7 +484,7 @@ try {
   // ≥44×44 *effective* target for the enumerated PRIMARY controls:
   //   .planner-review-button                                (start CTA 旅程をつくる)
   //   .planner-day-tabs [role="tab"]                        (plan-view day tabs)
-  //   .planner-mobile-result-toggle button                  (mobile 旅程/地図/地図を隠す toggle, ≤900px only)
+  //   .planner-mobile-result-toggle button                  (mobile 旅程/地図 toggle, ≤900px only)
   //   .planner-meal-row .planner-filler-actions button:first-child
   //                                                         (recommendation accept ここにする / meal + gap rows)
   {
@@ -941,16 +941,11 @@ try {
     await zoomed.close();
   }
 
-  // P1-08. The pixel baselines cannot say where anything sits, so the
-  // information hierarchy is measured here as boxes.
-  //
-  // These record two different kinds of claim. The Resolve check is a fixed
-  // contract that now holds: an unavailable map no longer eats half the
-  // screen. The plan check is a ratchet, and it is honest about that — the
-  // product contract wants the first stop starting by y=300 and it currently
-  // starts at y≈664, which is an information-hierarchy change to the result
-  // header, not a spacing fix. The assertion stops it sinking further while
-  // that work is outstanding, and the numbers it prints are the ones to beat.
+  // Gate E (P1-08). The pixel baselines cannot say where anything sits, so the
+  // information hierarchy is measured here as boxes, in both locales, against
+  // the numbers the product contract states rather than against today's
+  // layout. These were a ratchet while the work was outstanding; they are the
+  // contract now.
   {
     const boxes = async (page, selectors) => page.evaluate((list) => Object.fromEntries(list.map((selector) => {
       const node = document.querySelector(selector);
@@ -960,59 +955,93 @@ try {
       return [selector, { top: Math.round(rect.top), bottom: Math.round(rect.bottom) }];
     })), selectors);
 
-    const resolvePage = await newPage(browser, {
-      width: 390,
-      height: 844,
-      fixtures: { placeResolution: ambiguityFixture("ja") },
-      offlineProviders: true,
-    });
-    await expect("P1-08 an unavailable map does not bury the confirmation list (390×844)", (async () => {
-      await gotoStart(resolvePage, "ja");
-      await setWishlist(resolvePage, ambiguityInput("ja"));
-      await clickStartCtaUntil(resolvePage, ".planner-candidate-options");
-      await settle(resolvePage, 500);
-      const unavailable = await resolvePage.evaluate(() => Boolean(document.querySelector(".planner-map-provider-unavailable")));
-      if (!unavailable) throw new Error("resolve-390: expected the offline map panel in this fixture");
-      const measured = await boxes(resolvePage, [".planner-map-canvas", ".planner-resolved-places", ".planner-candidate-question"]);
-      if (measured[".planner-map-canvas"] && measured[".planner-map-canvas"].bottom > 200) {
-        throw new Error(`resolve-390: the unavailable map still occupies ${measured[".planner-map-canvas"].bottom}px`);
-      }
-      const list = measured[".planner-resolved-places"];
-      if (!list || list.top > 400) {
-        throw new Error(`resolve-390: the confirmation list starts at ${list ? list.top : "nowhere"}, past the fold`);
-      }
-      const question = measured[".planner-candidate-question"];
-      if (!question || question.top > 844) {
-        throw new Error(`resolve-390: the first question to answer starts at ${question ? question.top : "nowhere"}`);
-      }
-    })());
-    await resolvePage.close();
-
-    const hierarchyPage = await newPage(browser, { width: 390, height: 844, offlineProviders: true });
-    await expect("P1-08 the plan's itinerary does not sink further down the screen (390×844)", (async () => {
-      await buildSamplePlan(hierarchyPage, "ja");
-      await settle(hierarchyPage, 500);
-      const measured = await boxes(hierarchyPage, [".planner-stop-row", ".planner-timeline"]);
-      const firstStop = measured[".planner-stop-row"];
-      if (!firstStop) throw new Error("plan-390: no stop row rendered");
-      // 680 is today's 664 plus a little tolerance. The contract is 300.
-      if (firstStop.top > 680) {
-        throw new Error(`plan-390: the first stop starts at ${firstStop.top}; the report above it has grown (contract: 300)`);
-      }
-      const summaries = await hierarchyPage.evaluate(() => {
-        const label = document.querySelector(".planner-issue-chip")?.textContent?.trim();
-        if (!label) return 0;
-        return [...document.querySelectorAll(".planner-result-view *")]
-          .filter((node) => node.children.length === 0 && node.textContent.trim() === label)
-          .length;
+    for (const locale of ["ja", "en"]) {
+      const resolvePage = await newPage(browser, {
+        width: 390,
+        height: 844,
+        fixtures: { placeResolution: ambiguityFixture(locale) },
+        offlineProviders: true,
       });
-      // The contract is one visible warning summary. Two are shown today: the
-      // headline chip and the issue card's own heading.
-      if (summaries > 2) {
-        throw new Error(`plan-390: the same warning summary is repeated ${summaries} times above the timeline`);
+      await expect(`Gate E an unavailable map does not bury the confirmation list (390×844, ${locale})`, (async () => {
+        await gotoStart(resolvePage, locale);
+        await setWishlist(resolvePage, ambiguityInput(locale));
+        await clickStartCtaUntil(resolvePage, ".planner-candidate-options");
+        await settle(resolvePage, 500);
+        const unavailable = await resolvePage.evaluate(() => Boolean(document.querySelector(".planner-map-provider-unavailable")));
+        if (!unavailable) throw new Error("resolve-390: expected the offline map panel in this fixture");
+        const measured = await boxes(resolvePage, [".planner-map-canvas", ".planner-resolved-places", ".planner-candidate-question"]);
+        if (measured[".planner-map-canvas"]) {
+          throw new Error(`resolve-390: the unavailable map still occupies ${measured[".planner-map-canvas"].bottom}px`);
+        }
+        // UI/UX audit, Resolve: "review form top <= 180px".
+        const list = measured[".planner-resolved-places"];
+        if (!list || list.top > 180) {
+          throw new Error(`resolve-390 ${locale}: the confirmation list starts at ${list ? list.top : "nowhere"}, contract 180`);
+        }
+        const question = measured[".planner-candidate-question"];
+        if (!question || question.bottom > 844) {
+          throw new Error(`resolve-390 ${locale}: the first question to answer ends at ${question ? question.bottom : "nowhere"}, past the fold`);
+        }
+      })());
+      await resolvePage.close();
+    }
+
+    // The five questions docs/product.md wants the first result viewport to
+    // answer, measured as geometry: the verdict and its one warning are above
+    // the rail, the rail says which day, and the first two stops and one safe
+    // Filler are all reachable without scrolling.
+    const firstViewport = async (page, label, stopCeiling, viewportHeight) => {
+      const measured = await page.evaluate(() => {
+        const box = (node) => { if (!node) return null; const r = node.getBoundingClientRect(); if (r.height < 1) return null; return { top: Math.round(r.top), bottom: Math.round(r.bottom) }; };
+        const stops = [...document.querySelectorAll(".planner-stop-row")].map(box).filter(Boolean);
+        const filler = [...document.querySelectorAll(".planner-timeline li")]
+          .filter((node) => node.querySelector(".planner-filler-label"))
+          .map(box).filter(Boolean);
+        const title = document.querySelector("#planner-issues-title")?.textContent?.trim() ?? null;
+        const repeats = title
+          ? [...document.querySelectorAll(".planner-sheet *")]
+              .filter((node) => node.children.length === 0 && node.textContent.trim() === title)
+              .filter((node) => node.getBoundingClientRect().height >= 1).length
+          : 0;
+        return { stops: stops.slice(0, 2), filler: filler[0] ?? null, title, repeats };
+      });
+      if (measured.stops.length < 2) throw new Error(`${label}: fewer than two stop rows rendered`);
+      if (measured.stops[0].top > stopCeiling) {
+        throw new Error(`${label}: the first stop starts at ${measured.stops[0].top}; contract ${stopCeiling}`);
       }
+      if (measured.stops[1].bottom > viewportHeight) {
+        throw new Error(`${label}: the second stop ends at ${measured.stops[1].bottom}, past the first viewport`);
+      }
+      if (!measured.filler) throw new Error(`${label}: no safe addition offered in the first day`);
+      if (measured.filler.top > viewportHeight) {
+        throw new Error(`${label}: the safe addition starts at ${measured.filler.top}, past the first viewport`);
+      }
+      // UI/UX audit, Result: "visible warning summary 1つ". The count used to
+      // be printed twice — once as a headline chip, once as the card's own
+      // heading — for the same two things to check.
+      if (measured.repeats > 1) {
+        throw new Error(`${label}: “${measured.title}” is shown ${measured.repeats} times`);
+      }
+      return measured;
+    };
+
+    for (const locale of ["ja", "en"]) {
+      const hierarchyPage = await newPage(browser, { width: 390, height: 844, offlineProviders: true });
+      await expect(`Gate E the plan opens on the itinerary (390×844, ${locale})`, (async () => {
+        await buildSamplePlan(hierarchyPage, locale);
+        await settle(hierarchyPage, 500);
+        await firstViewport(hierarchyPage, `plan-390 ${locale}`, 300, 844);
+      })());
+      await hierarchyPage.close();
+    }
+
+    const wideHierarchy = await newPage(browser, { width: 1440, height: 900, offlineProviders: true });
+    await expect("Gate E the plan opens on the itinerary (1440×900)", (async () => {
+      await buildSamplePlan(wideHierarchy, "ja");
+      await settle(wideHierarchy, 500);
+      await firstViewport(wideHierarchy, "plan-1440", 360, 900);
     })());
-    await hierarchyPage.close();
+    await wideHierarchy.close();
   }
 } finally {
   await browser.close();

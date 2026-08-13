@@ -21,12 +21,14 @@ import RecentTrips from "./start/RecentTrips";
 import TripPrintSheet from "./summary/TripPrintSheet";
 import ResultHeader from "./summary/ResultHeader";
 import TripSummaryCard from "./summary/TripSummaryCard";
+import VerdictDetails from "./summary/VerdictDetails";
 import BeforeYouGoChecklist from "./summary/BeforeYouGoChecklist";
 import IssueCard from "./summary/IssueCard";
 import ShareDialog from "./dialogs/ShareDialog";
 import DayTimeline from "./timeline/DayTimeline";
 import ItineraryTimeline from "./timeline/ItineraryTimeline";
 import TripMap from "./map/TripMap";
+import MobileResultToggle from "./map/MobileResultToggle";
 import TripEnhancementPanel from "./recommendation/TripEnhancementPanel";
 import StopInspector from "./inspector/StopInspector";
 import HotelInspector from "./inspector/HotelInspector";
@@ -1855,6 +1857,12 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
         ) : null}
       </TripMap>
 
+      {/* Outside the sheet on purpose: the switch belongs to the map, and a
+          sheet row would spend the first viewport's height on a control. */}
+      {hasPlan && plan && day ? (
+        <MobileResultToggle locale={locale} onChange={setMobileResultView} view={mobileResultView} />
+      ) : null}
+
       <section className="planner-sheet">
         {isBuilding ? (
           <LoadingState
@@ -2063,14 +2071,11 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
               deferredAnchorCount={deferredAnchorStops.length}
               feasibilityResult={feasibilityResult}
               locale={locale}
-              mobileResultView={mobileResultView}
               onEdit={() => { setHasPlan(false); setInputStep("conditions"); setInspector(null); }}
-              onMobileResultView={setMobileResultView}
               onPrint={() => setPrintMode(true)}
               onRedo={redoPlannerEdit}
               onShare={() => setShareDialogOpen(true)}
               onUndo={undoPlannerEdit}
-              planIssueCount={planIssueCount}
               resultStateCopy={resultStateCopy}
               scheduledStopCount={plan.scheduledStopCount}
               shareCopied={shareCopied}
@@ -2092,28 +2097,13 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
 
             {feasibilityResult ? (
               <TripSummaryCard
-                activeDestination={activeDestination}
-                comparisonAlternative={comparisonAlternative}
-                confirmedRouteFactCount={confirmedRouteFactCount}
                 deferredAnchorStops={deferredAnchorStops}
                 feasibilityResult={feasibilityResult}
-                firstStopArea={mapStops[0]?.area}
-                hotelQuery={hotelQuery}
-                hotelStateStatus={hotelState.status}
                 locale={locale}
-                onApplyAlternative={applyTripAlternative}
-                onChangeTripDays={changeTripDays}
-                onCompare={setComparisonAlternative}
                 onReviewConditions={() => { setHasPlan(false); setInputStep("conditions"); setInspector(null); }}
-                openingVerificationCount={openingVerificationCount}
-                placeWarning={placeWarning}
-                plan={plan}
                 regionalCoverage={regionalCoverage}
                 resultStateCopy={resultStateCopy}
-                routeFactCount={routeFactCount}
                 scopeWarnings={scopeWarnings}
-                tripDays={tripDays}
-                tripFit={tripFit}
               />
             ) : null}
 
@@ -2128,33 +2118,6 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
                 passportCountry={passportCountry}
                 passportExpiry={passportExpiry}
                 preTripItems={preTripItems}
-              />
-            ) : null}
-
-            {planIssueCount > 0 ? (
-              <IssueCard
-                ambiguousIssuePlaces={ambiguousIssuePlaces}
-                computationLimited={feasibilityResult?.unknownCause === "COMPUTATION_LIMIT"}
-                conflictingDestinations={conflictingDestinations}
-                deferredAnchorStops={deferredAnchorStops}
-                hotelUnavailable={hotelState.status === "unavailable"}
-                locale={locale}
-                onChooseCountry={(destinationId) => {
-                  setDestinationChoice(destinationId);
-                  setDetectedDestinationId(null);
-                  setResolutionOverrides([]);
-                  trackProductEvent("issue_resolved", { issue_type: "country_conflict" });
-                  void buildPlan({ preserveEdits: true, destinationOverride: destinationId });
-                }}
-                onFixInput={() => { setHasPlan(false); setInputStep("places"); setInspector(null); }}
-                onOpenStop={handleSelectStop}
-                onPickAmbiguous={() => { setHasPlan(false); setInputStep("conditions"); setInspector(null); }}
-                onRetryBuild={() => void buildPlan({ preserveEdits: true })}
-                onRetryHotels={() => void refreshHotelRecommendations()}
-                placeWarning={placeWarning}
-                plan={plan}
-                planIssueCount={planIssueCount}
-                unknownHoursStops={unknownHoursStops}
               />
             ) : null}
 
@@ -2198,6 +2161,59 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
                 weekdayLabel={day.date ? weekdayInfo(day.date, locale)?.label ?? null : null}
               />
             </ItineraryTimeline>
+
+            {/* Planner first, report second: the things to check sit under the
+                itinerary they are about. Above it, the card was 123px of the
+                first viewport restating a count the headline already gives. */}
+            {planIssueCount > 0 ? (
+              <IssueCard
+                ambiguousIssuePlaces={ambiguousIssuePlaces}
+                computationLimited={feasibilityResult?.unknownCause === "COMPUTATION_LIMIT"}
+                conflictingDestinations={conflictingDestinations}
+                deferredAnchorStops={deferredAnchorStops}
+                hotelUnavailable={hotelState.status === "unavailable"}
+                locale={locale}
+                onChooseCountry={(destinationId) => {
+                  setDestinationChoice(destinationId);
+                  setDetectedDestinationId(null);
+                  setResolutionOverrides([]);
+                  trackProductEvent("issue_resolved", { issue_type: "country_conflict" });
+                  void buildPlan({ preserveEdits: true, destinationOverride: destinationId });
+                }}
+                onFixInput={() => { setHasPlan(false); setInputStep("places"); setInspector(null); }}
+                onOpenStop={handleSelectStop}
+                onPickAmbiguous={() => { setHasPlan(false); setInputStep("conditions"); setInspector(null); }}
+                onRetryBuild={() => void buildPlan({ preserveEdits: true })}
+                onRetryHotels={() => void refreshHotelRecommendations()}
+                placeWarning={placeWarning}
+                plan={plan}
+                planIssueCount={planIssueCount}
+                unknownHoursStops={unknownHoursStops}
+              />
+            ) : null}
+
+            {feasibilityResult ? (
+              <VerdictDetails
+                activeDestination={activeDestination}
+                comparisonAlternative={comparisonAlternative}
+                confirmedRouteFactCount={confirmedRouteFactCount}
+                feasibilityResult={feasibilityResult}
+                firstStopArea={mapStops[0]?.area}
+                hotelQuery={hotelQuery}
+                hotelStateStatus={hotelState.status}
+                locale={locale}
+                onApplyAlternative={applyTripAlternative}
+                onChangeTripDays={changeTripDays}
+                onCompare={setComparisonAlternative}
+                openingVerificationCount={openingVerificationCount}
+                placeWarning={placeWarning}
+                plan={plan}
+                regionalCoverage={regionalCoverage}
+                routeFactCount={routeFactCount}
+                tripDays={tripDays}
+                tripFit={tripFit}
+              />
+            ) : null}
 
             <details className="planner-day-settings planner-day-settings-after">
               <summary>{locale === "ja" ? "日程設定と移動データ" : "Day settings and route data"}</summary>
