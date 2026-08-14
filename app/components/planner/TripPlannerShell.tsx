@@ -9,7 +9,7 @@
 // This file is intentionally scanned by the planner-surface contract tests
 // (app/**/*.tsx), which pin the lifecycle rotation, hydration and storage
 // contracts to the code wherever it lives.
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
 import Icon from "../../PlannerIcons";
 import ErrorState from "./states/ErrorState";
 import LoadingState from "./states/LoadingState";
@@ -83,7 +83,7 @@ import {
   shouldUseRecommendedHotel,
   upsertResolutionOverride,
 } from "../../../lib/planner-app-state";
-import { mealSlotsAfterStop } from "../../../lib/presentation/timeline-presentation";
+import { fillerRowLabel, mealSlotsAfterStop } from "../../../lib/presentation/timeline-presentation";
 import { usePlaceSuggestions } from "./hooks/usePlaceSuggestions";
 import { usePlanEditState } from "./hooks/usePlanEditState";
 import { usePlannerViewState } from "./hooks/usePlannerViewState";
@@ -865,6 +865,8 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
     measuredRouteCount,
     openingVerificationCount,
     orderedGapCandidates,
+    activeDaySlackMinutes,
+    activeDayRemainingFillerAllowance,
     parsePreviewRows,
     parsedPlaceCount,
     placesHaveBeenReviewed,
@@ -1147,30 +1149,47 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
     return mealSlotsAfterStop(daySlots, day.stops, stopIndex)
       .flatMap((slot) => {
         const state = foodSearches[slot.id];
-        if (state?.status !== "ready") return [(
-          <li className={`planner-meal-row is-proposed${state?.status === "unavailable" ? "" : " is-pending"}`} key={`meal-${slot.id}`}>
-            <span className="planner-meal-stop">
-              <time>{slot.displayTime}</time>
-              <span className="planner-meal-dot" aria-hidden="true"><Icon name="fork" size={13} /></span>
-              <span className="planner-stop-main">
-                <small className="planner-filler-label"><Icon name="spark" size={10} />{locale === "ja" ? "おすすめ枠" : "Recommendation slot"}</small>
-                <b>{state?.status === "unavailable"
-                  ? slot.kind === "lunch" ? (locale === "ja" ? "昼食候補を取得できませんでした" : "Lunch suggestions did not load") : (locale === "ja" ? "夕食候補を取得できませんでした" : "Dinner suggestions did not load")
-                  : slot.kind === "lunch" ? (locale === "ja" ? "動線上の昼食を確認中" : "Checking lunch along the route") : (locale === "ja" ? "帰路の夕食を確認中" : "Checking dinner on the way back")}</b>
-                <small>{state?.status === "unavailable"
-                  ? state.reason === "quota"
-                    ? locale === "ja" ? "候補取得が本日の上限に達しました。旅程はそのまま使えます。時間をおいてお試しください。" : "The suggestion allowance is used up for now. The itinerary still works; try again later."
-                    : locale === "ja" ? "旅程はそのまま使えます。あとで再試行できます。" : "The itinerary still works without one. You can retry later."
-                  : locale === "ja" ? "営業時間と動線を確認してから候補を表示します。" : "A candidate appears only after its route and hours are checked."}</small>
+        // v3.1 §2.1 Tier C / §7.4: a slot with nothing in it is not an
+        // itinerary item. This used to render as a full proposal box — a
+        // dashed card the height of a real stop, holding an apology
+        // (「旅程はそのまま使えます。あとで再試行できます。」) and a lone
+        // button in an otherwise empty field. The slot itself is real
+        // information (the day does have a lunch window here), so the row
+        // stays; what goes is the box, the 「おすすめ枠」 eyebrow and the
+        // process narration. One line, with its one action beside it.
+        // The quota sentence survives, because a real limit and when it
+        // lifts is something the traveller can act on.
+        if (state?.status !== "ready") {
+          const unavailable = state?.status === "unavailable";
+          return [(
+            <li className={`planner-meal-row is-slot${unavailable ? " is-unavailable" : " is-pending"}`} key={`meal-${slot.id}`}>
+              <span className="planner-meal-stop">
+                <time>{slot.displayTime}</time>
+                <span className="planner-meal-dot" aria-hidden="true"><Icon name="fork" size={13} /></span>
+                <span className="planner-stop-main">
+                  {/* The Filler label stays (v3.1 §2.3 #1, and product.md's
+                      Anchor/Filler rule): a slot TripCheck opened must never
+                      look like a place the traveller asked for. What went is
+                      the box around it, not the marker — an earlier pass
+                      dropped both and took the first viewport's "one safe
+                      addition" with it. */}
+                  <small className="planner-filler-label"><Icon name="spark" size={10} />{fillerRowLabel(slot.kind, locale)}</small>
+                  <b>{unavailable
+                    ? locale === "ja" ? "候補を取得できませんでした" : "Suggestions did not load"
+                    : locale === "ja" ? "動線上のお店を探します" : "We can look along the route"}</b>
+                  {unavailable && state.reason === "quota" ? (
+                    <small>{locale === "ja" ? "候補取得が本日の上限に達しました。時間をおいてお試しください。" : "The suggestion allowance is used up for now. Try again later."}</small>
+                  ) : null}
+                </span>
               </span>
-            </span>
-            <span className="planner-filler-actions">
-              <button disabled={state?.status === "loading"} onClick={() => void findFood(slot, { reveal: true })} type="button">
-                {state?.status === "loading" ? (locale === "ja" ? "確認中" : "Checking") : state?.status === "unavailable" ? (locale === "ja" ? "再試行" : "Retry") : (locale === "ja" ? "候補を見る" : "Find options")}
-              </button>
-            </span>
-          </li>
-        )];
+              <span className="planner-filler-actions">
+                <button disabled={state?.status === "loading"} onClick={() => void findFood(slot, { reveal: true })} type="button">
+                  {state?.status === "loading" ? (locale === "ja" ? "確認中" : "Checking") : unavailable ? (locale === "ja" ? "再試行" : "Retry") : (locale === "ja" ? "候補を見る" : "Find options")}
+                </button>
+              </span>
+            </li>
+          )];
+        }
         const selectedId = mealSelections[slot.id];
         const eligibleCandidates = mealCandidatesBySlot[slot.id] ?? [];
         // TC-044: the auto-shown lead comes from the detour-capped shortlist
@@ -1220,19 +1239,27 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
   // (the primary gap only — the existing cap), Copy Deck strings, the two
   // TC-048 impact metrics, and the accept goes through the history-integrated
   // addRouteRecommendation (undoable toast).
-  function gapSuggestionRow() {
-    if (P0_CORE_ONLY || !day || !primaryRecommendationGap) return null;
-    if (activeRouteRecommendationState.status !== "ready") return null;
-    // TC-047: the lead is the detour-capped candidate (nearest fallback when
-    // everything is beyond the cap, labeled with its real detour).
-    const candidate = gapDetourPartition.autoDisplay[0];
-    if (!candidate) return null;
-    // An accepted suggestion is a real stop now; the proposal row retires.
-    if (plannedStopIds.has(recommendationStopId(candidate.id))) return null;
+  //
+  // A day offers as many proposals as it has room for, not one. The fit
+  // assessment has always been able to say "these places fit in three days,
+  // not four"; answering six free hours with a single cafe named the emptiness
+  // and did nothing about it. Each row is still its own decision, and each
+  // impact is measured against the plan as it stands — accepting one re-solves
+  // the day and the rest are re-measured against the result.
+  function gapSuggestionRows(): ReactNode[] {
+    if (P0_CORE_ONLY || !day || !primaryRecommendationGap) return [];
+    if (activeRouteRecommendationState.status !== "ready") return [];
+    // TC-047: within-cap candidates lead (nearest fallback when everything is
+    // beyond the cap, labeled with its real detour).
+    const proposals = gapDetourPartition.autoDisplay
+      // An accepted suggestion is a real stop now; its proposal row retires.
+      .filter((entry) => !plannedStopIds.has(recommendationStopId(entry.id)))
+      .slice(0, Math.max(1, activeDayRemainingFillerAllowance));
+    return proposals.map((candidate, proposalIndex) => {
     const impact = gapImpactById[candidate.id] ?? null;
     const detourMinutes = gapOverCapIds.has(candidate.id) ? detourWalkingMinutes(candidate.routeDistanceMeters) : null;
     return (
-      <li className="planner-meal-row is-proposed planner-gap-row" key={`gap-${primaryRecommendationGap.id}`}>
+      <li className="planner-meal-row is-proposed planner-gap-row" key={`gap-${primaryRecommendationGap.id}-${candidate.id}`}>
         <button
           className="planner-meal-stop"
           onClick={() => { setRouteAlternativesExpanded(false); setInspector({ kind: "recommendations", dayIndex: activeDay, candidateId: candidate.id }); }}
@@ -1241,7 +1268,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
           <time>{primaryRecommendationGap.startAt}</time>
           <span className="planner-meal-dot" aria-hidden="true"><Icon name="spark" size={13} /></span>
           <span className="planner-stop-main">
-            <small className="planner-filler-label"><Icon name="spark" size={10} />{text.gapRecoLabel(primaryRecommendationGap.availableMinutes)}</small>
+            <small className="planner-filler-label"><Icon name="spark" size={10} />{proposalIndex === 0 ? text.gapRecoLabel(primaryRecommendationGap.availableMinutes) : (locale === "ja" ? "ここも足せます" : "You could also add")}</small>
             <b>{candidate.name}</b>
             <small>{candidate.type}{detourMinutes !== null ? ` · ${text.detourLine(detourMinutes)}` : ""}{impact ? ` · ${travelDeltaLine(impact.travelDeltaMinutes, locale)} · ${bufferDeltaLine(impact.bufferDeltaMinutes, locale)}` : ""}</small>
           </span>
@@ -1256,6 +1283,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
         </span>
       </li>
     );
+    });
   }
 
   // The row renders between the stops around the gap: after the stop the gap
@@ -1264,8 +1292,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
     const rows = mealRowsAfter(stopIndex);
     const gap = primaryRecommendationGap;
     if (gap && gap.kind !== "BEFORE_FIRST_ANCHOR" && day?.stops[stopIndex]?.stop.id === gap.previousAnchorId) {
-      const row = gapSuggestionRow();
-      if (row) return [...rows, row];
+      return [...rows, ...gapSuggestionRows()];
     }
     return rows;
   }
@@ -1754,6 +1781,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
             activeDay={activeDay}
             aiEnabled={aiEnabled}
             day={day}
+            durationStatus={durationEvidenceByStopId[selectedBuiltStop.stop.id] ?? "estimated"}
             lastEntryTimes={lastEntryTimes}
             locale={locale}
             onCheckPlace={checkPlace}
@@ -1861,8 +1889,10 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
             overCapIds={gapOverCapIds}
             panelRef={inspectorPanelRef}
             plannedStopIds={plannedStopIds}
+            remainingAllowance={activeDayRemainingFillerAllowance}
             selectedCandidateId={inspector.candidateId}
             sheetState={inspectorSheetState}
+            slackMinutes={activeDaySlackMinutes}
             state={activeRouteRecommendationState}
           />
         ) : null}
@@ -1886,6 +1916,12 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
           />
         ) : !hasPlan ? (
           <div className="planner-form-view">
+            {/* v3.1 §6.1 asks the first screen to be understandable in five
+                seconds, and the handoff's own Start mock carries no step rail.
+                Hiding it here was tried and reverted: the mock also has no
+                place-resolution step, so it is weak evidence that the rail is
+                noise — and the rail is what tells a first-time visitor the flow
+                is short. `tests/rendered-html.test.mjs` pins it, correctly. */}
             <StartStepper buildMode={buildMode} inputStep={inputStep} locale={locale} onStepSelect={setInputStep} />
 
             <StartIntro
@@ -2147,7 +2183,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
                 fillerStopIds={fillerStopIds}
                 fitDay={activeFitDay}
                 holiday={tripDateTouched && day.date ? holidaysByDate[day.date] : undefined}
-                leadingRows={!P0_CORE_ONLY && primaryRecommendationGap?.kind === "BEFORE_FIRST_ANCHOR" ? gapSuggestionRow() : null}
+                leadingRows={!P0_CORE_ONLY && primaryRecommendationGap?.kind === "BEFORE_FIRST_ANCHOR" ? gapSuggestionRows() : null}
                 locale={locale}
                 mealRowsAfter={P0_CORE_ONLY ? undefined : timelineRowsAfter}
                 onHoverLeg={handleTimelineHoverLeg}

@@ -11,7 +11,7 @@ import type { ItineraryGap } from "../../../../lib/gap-detection.ts";
 import type { RouteRecommendation } from "../../../../lib/route-recommendations.ts";
 import type { PlannerSheetState, RouteRecommendationState } from "../../../../lib/planner-app-state.ts";
 import type { PlanImpactMetrics } from "../../../../lib/recommendation-impact.ts";
-import { recommendationStopId } from "../../../../lib/presentation/recommendation-presentation.ts";
+import { recommendationStopId, spareCapacityLine } from "../../../../lib/presentation/recommendation-presentation.ts";
 import { formatCheckedAt } from "../../../../lib/presentation/trip-presentation.ts";
 import { ui, type PlannerLocale } from "../../../../lib/presentation/planner-copy.ts";
 
@@ -25,6 +25,9 @@ type TripEnhancementPanelProps = {
   /** Candidates beyond the 15-minute walking cap — never lead, always labeled. */
   overCapIds: Set<string>;
   impactById: Record<string, PlanImpactMetrics>;
+  /** The day's own free time, and how many more stops it can take. */
+  slackMinutes: number;
+  remainingAllowance: number;
   notice: string;
   sheetState: PlannerSheetState;
   alternativesExpanded: boolean;
@@ -49,6 +52,8 @@ export default function TripEnhancementPanel({
   orderedCandidates,
   overCapIds,
   impactById,
+  slackMinutes,
+  remainingAllowance,
   notice,
   sheetState,
   alternativesExpanded,
@@ -82,6 +87,11 @@ export default function TripEnhancementPanel({
         </div>
       </header>
       <p className="planner-route-ideas-intro">{text.routeIdeasSubtitle}</p>
+      {/* The day says how much of it is free and how much of that it can still
+          take. Without this the panel answers a hole the traveller cannot see
+          the size of, which is how a four-day trip that fits in three ended up
+          being offered a single cafe. */}
+      <p className="planner-route-capacity">{spareCapacityLine(slackMinutes, remainingAllowance, locale)}</p>
       {gap ? (
         <p className="planner-route-gap-note">
           {locale === "ja"
@@ -110,7 +120,11 @@ export default function TripEnhancementPanel({
           {/* TC-047: unexpanded shows only the detour-capped lead; expanding
               is the explicit alternatives list, where beyond-cap candidates
               appear labeled with their real walking detour. */}
-          {orderedCandidates.slice(0, alternativesExpanded ? 3 : 1).map((candidate, index) => (
+          {/* A day with room for one stop still leads with one and keeps the
+              rest behind "see alternatives" — those are choices FOR a slot. A
+              day with room for three shows three, because those are stops the
+              traveller can have all of. */}
+          {orderedCandidates.slice(0, alternativesExpanded || remainingAllowance > 1 ? 3 : 1).map((candidate, index) => (
             <GapRecommendationCard
               added={plannedStopIds.has(recommendationStopId(candidate.id))}
               candidate={candidate}
@@ -125,7 +139,7 @@ export default function TripEnhancementPanel({
               selected={selectedCandidateId === candidate.id}
             />
           ))}
-          {!alternativesExpanded && orderedCandidates.length > 1 ? (
+          {!alternativesExpanded && remainingAllowance <= 1 && orderedCandidates.length > 1 ? (
             <button className="planner-route-alternatives" onClick={onExpandAlternatives} type="button">
               {(() => {
                 const extraCount = Math.min(2, orderedCandidates.length - 1);

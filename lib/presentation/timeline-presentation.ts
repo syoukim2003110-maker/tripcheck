@@ -61,10 +61,54 @@ export function dayDateLabel(
 
 export type DurationEvidenceStatus = EvidenceStatus;
 
+/** The compact confidence marker. UI/UX v3.1 §2.1 keeps this one control away
+ * — in the stop sheet's evidence disclosure — rather than on the timeline. */
 export function durationSourceLabel(status: DurationEvidenceStatus, locale: PlannerLocale) {
   if (status === "user_provided") return locale === "ja" ? "指定" : "set";
   if (status === "verified") return locale === "ja" ? "確認" : "confirmed";
   return locale === "ja" ? "推定" : "estimated";
+}
+
+/**
+ * How a stay length is stated on the timeline (UI/UX v3.1 §2.2).
+ *
+ * This replaces the 推定 / 確認 / 指定 badge that used to sit beside the
+ * number. The badge is a confidence code, which is exactly the class of
+ * internal signal the v3.1 handoff moves off the surface — but deleting it
+ * on its own would leave an estimate reading as a measurement. So the
+ * uncertainty moves into the noun: an estimate is 「滞在の目安」, and a length
+ * the traveller set or the provider confirmed is plain 「滞在」.
+ *
+ * The two halves of that rule ship together or not at all. Dropping the badge
+ * without the word turns every guess into a claim, which is the one thing this
+ * product must not do.
+ */
+export function stayLine(minutes: number, status: DurationEvidenceStatus, locale: PlannerLocale) {
+  const duration = formatDuration(minutes, locale);
+  if (status === "user_provided" || status === "verified") {
+    return locale === "ja" ? `滞在 ${duration}` : `Stay ${duration}`;
+  }
+  return locale === "ja" ? `滞在の目安 ${duration}` : `Stay about ${duration}`;
+}
+
+/** The sentence the evidence disclosure gives for where a stay length came
+ * from. The timeline says the number; this says who decided it. */
+export function stayBasisLine(status: DurationEvidenceStatus, locale: PlannerLocale) {
+  if (status === "user_provided") {
+    return locale === "ja" ? "滞在時間はあなたが指定した値です。" : "You set this stay length.";
+  }
+  if (status === "verified") {
+    return locale === "ja" ? "滞在時間は確認できた値です。" : "This stay length is confirmed.";
+  }
+  return locale === "ja"
+    ? "滞在時間はTripCheckの目安です。過ごし方に合わせて変えられます。"
+    : "This stay length is a TripCheck estimate. Change it to match how you will spend the visit.";
+}
+
+/** Label on the one control that reveals demoted evidence (v3.1 §2, and the
+ * handoff's own mobile reference: 「営業時間・根拠を見る ›」). */
+export function evidenceDisclosureLabel(locale: PlannerLocale) {
+  return locale === "ja" ? "営業時間・根拠を見る" : "Opening hours and evidence";
 }
 
 export type TimelineFillerKind = "lunch" | "dinner" | "micro" | undefined;

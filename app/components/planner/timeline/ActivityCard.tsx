@@ -6,11 +6,11 @@
 import Icon from "../../../PlannerIcons";
 import type { BuiltTripPlan } from "../../../../lib/trip-builder";
 import type { RouteStop } from "../../../../lib/route-optimizer";
-import { ui, type PlannerLocale } from "../../../../lib/presentation/planner-copy";
+import type { PlannerLocale } from "../../../../lib/presentation/planner-copy";
 import {
   activityFlags,
-  durationSourceLabel,
   fillerRowLabel,
+  stayLine,
   type DurationEvidenceStatus,
   type TimelineFillerKind,
 } from "../../../../lib/presentation/timeline-presentation";
@@ -45,7 +45,6 @@ export default function ActivityCard({
   onRemoveFiller,
   onHoverChange,
 }: ActivityCardProps) {
-  const text = ui[locale];
   const isMealFiller = fillerKind === "lunch" || fillerKind === "dinner";
   const flags = activityFlags(builtStop, locale);
   return (
@@ -65,7 +64,10 @@ export default function ActivityCard({
         <span className="planner-stop-main">
           {isFiller ? <small className="planner-filler-label"><Icon name={isMealFiller ? "fork" : "spark"} size={10} />{fillerRowLabel(fillerKind, locale)}</small> : null}
           <b>{builtStop.stop.name}</b>
-          <small>{builtStop.stop.area} · {text.previewStay(builtStop.stop.planningDurationMinutes)} <i className={`planner-duration-source is-${durationStatus}`}>{durationSourceLabel(durationStatus, locale)}</i></small>
+          {/* v3.1 §2.2: the 推定 / 確認 / 指定 badge moved into the stop
+              sheet's evidence disclosure, and the uncertainty it used to carry
+              moved into the word — an estimate now reads 「滞在の目安」. */}
+          <small>{builtStop.stop.area} · {stayLine(builtStop.stop.planningDurationMinutes, durationStatus, locale)}</small>
           {accessNote ? <small className="planner-access-note"><Icon name="train" size={10} />{accessNote}</small> : null}
         </span>
         <span className="planner-stop-flags">

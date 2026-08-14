@@ -725,9 +725,20 @@ export function attentionCopy(attention: Attention, locale: PlannerLocale) {
   if (attention.code === "LOW_BUFFER") return locale === "ja"
     ? `${attention.affectedItems[0]}の余白は${attention.minutes ?? 0}分です。遅れが出ると次の予定へ影響します。`
     : `${attention.affectedItems[0]} has ${attention.minutes ?? 0} minutes of buffer. A delay can affect the next stop.`;
+  // UI/UX v3.1 §2.1 Tier C: this used to be a tally — 「未確認の重要情報が10件」 —
+  // sitting above a things-to-check card that counted the same concern as 2,
+  // because one counts facts and the other counts actions. Two numbers for one
+  // worry, and neither is something a traveller can do. The warning names the
+  // first place instead; the card below still lists them all and can act.
+  // Naming the item is what makes the line actionable, and it also lets the
+  // sentence drop the 「営業時間・拠点など」 preamble: which kind of fact is
+  // unverified is in the things-to-check card, next to the button that opens
+  // it. What belongs here is the place and the fact that it wants a look.
+  const first = attention.affectedItems[0] ?? "";
+  const andOthers = attention.affectedItems.length > 1;
   return locale === "ja"
-    ? `営業時間・拠点など、未確認の重要情報が${attention.affectedItems.length}件あります。`
-    : `${attention.affectedItems.length} critical facts, such as hours or the base, are still unverified.`;
+    ? `${first}${andOthers ? "ほか" : ""}は出発前の確認が必要です。`
+    : `${first}${andOthers ? " and others" : ""} need a check before you go.`;
 }
 
 export function assumptionCopy(assumption: Assumption, locale: PlannerLocale) {

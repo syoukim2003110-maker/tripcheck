@@ -13,7 +13,6 @@ import { coveragePublicCopy, isDeepCoverageProfile } from "../../../../lib/cover
 import {
   attentionCopy,
   conflictCopy,
-  minimumDaysCopy,
   ui,
   type PlannerLocale,
 } from "../../../../lib/presentation/planner-copy.ts";
@@ -44,57 +43,66 @@ export default function TripSummaryCard({
         {resultStateCopy?.headline}. {feasibilityResult.criticalFacts.verified} of {feasibilityResult.criticalFacts.total} critical facts confirmed.
         {feasibilityResult.primaryConflict ? ` ${conflictCopy(feasibilityResult.primaryConflict, locale)}` : ""}
       </p>
-      <section className={`planner-feasibility-card is-${feasibilityResult.state.toLowerCase()}`} aria-labelledby="planner-feasibility-title">
-        <header className="planner-result-decision">
-          <div>
-            <span id="planner-feasibility-title">{locale === "ja" ? "旅程の結論" : "Plan result"}</span>
-            <small>{minimumDaysCopy(feasibilityResult, locale)}</small>
-          </div>
-          {/* TC-004: the card's one action follows the cause. A computation-cap
-              UNKNOWN cannot be answered by confirming places — its action is
-              the issue card's "remove optional places". */}
-          {(() => {
-            const computationLimited = feasibilityResult.state === "UNKNOWN"
-              && feasibilityResult.unknownCause === "COMPUTATION_LIMIT";
-            const reviewable = !computationLimited
-              && (feasibilityResult.state === "UNKNOWN" || feasibilityResult.state === "FEASIBLE_IF_ASSUMPTIONS");
-            return (
-              <button
-                onClick={() => {
-                  if (feasibilityResult.state === "INFEASIBLE_HARD_CONFLICT") {
-                    document.getElementById("planner-alternatives-title")?.scrollIntoView({ behavior: "smooth", block: "center" });
-                    return;
-                  }
-                  if (computationLimited) {
-                    document.getElementById("planner-issues-title")?.scrollIntoView({ behavior: "smooth", block: "center" });
-                    return;
-                  }
-                  if (reviewable) {
+      {/* v3.1 §6.2: what sits between the headline and the day rail is what
+          decides whether the traveller's own itinerary is the first thing they
+          see. This card used to open with the label 「旅程の結論」 — which the
+          headline above has already said — over two lines of arithmetic
+          (「09:00–22:00・拠点…・移動ごと10分の余白では、最短3日です」). That is
+          the basis for the verdict, not the verdict, and it belongs behind a
+          question. What stays on the surface is the one warning, and the one
+          action that answers it; the arithmetic moved under the itinerary it
+          explains, into 結論の詳細, where docs/product.md already puts the
+          evidence behind the verdict. */}
+      <section className={`planner-feasibility-card is-${feasibilityResult.state.toLowerCase()}`} aria-label={locale === "ja" ? "旅程の結論" : "Plan result"}>
+        {(() => {
+          // TC-004: the card's one action follows the cause. A computation-cap
+          // UNKNOWN cannot be answered by confirming places — its action is
+          // the issue card's "remove optional places".
+          const computationLimited = feasibilityResult.state === "UNKNOWN"
+            && feasibilityResult.unknownCause === "COMPUTATION_LIMIT";
+          const reviewable = !computationLimited
+            && (feasibilityResult.state === "UNKNOWN" || feasibilityResult.state === "FEASIBLE_IF_ASSUMPTIONS");
+          const warning = feasibilityResult.primaryConflict || deferredAnchorStops.length > 0 || feasibilityResult.primaryAttention;
+          // A plan with nothing to fix gets no button: the old fallback only
+          // scrolled to the day rail sitting directly below it.
+          const actionable = feasibilityResult.state === "INFEASIBLE_HARD_CONFLICT" || computationLimited || reviewable;
+          if (!warning && !actionable) return null;
+          return (
+            <header className="planner-result-decision">
+              {warning ? (
+                <p className="planner-one-warning">
+                  <Icon name="signal" size={14} />
+                  <span>{feasibilityResult.primaryConflict
+                    ? conflictCopy(feasibilityResult.primaryConflict, locale)
+                    : deferredAnchorStops.length > 0
+                      ? locale === "ja"
+                        ? `${deferredAnchorStops.slice(0, 2).map((stop) => stop.name).join("、")}${deferredAnchorStops.length > 2 ? `ほか${deferredAnchorStops.length - 2}件` : ""}は、現在の条件では日程に入りません。`
+                        : `${deferredAnchorStops.slice(0, 2).map((stop) => stop.name).join(", ")}${deferredAnchorStops.length > 2 ? ` and ${deferredAnchorStops.length - 2} more` : ""} do not fit the current plan.`
+                      : attentionCopy(feasibilityResult.primaryAttention!, locale)}</span>
+                </p>
+              ) : <span />}
+              {actionable ? (
+                <button
+                  onClick={() => {
+                    if (feasibilityResult.state === "INFEASIBLE_HARD_CONFLICT") {
+                      document.getElementById("planner-alternatives-title")?.scrollIntoView({ behavior: "smooth", block: "center" });
+                      return;
+                    }
+                    if (computationLimited) {
+                      document.getElementById("planner-issues-title")?.scrollIntoView({ behavior: "smooth", block: "center" });
+                      return;
+                    }
                     onReviewConditions();
-                    return;
-                  }
-                  document.querySelector(".planner-day-tabs")?.scrollIntoView({ behavior: "smooth", block: "start" });
-                }}
-                type="button"
-              >{locale === "ja"
-                ? feasibilityResult.state === "INFEASIBLE_HARD_CONFLICT" ? "直し方を見る" : computationLimited ? "減らし方を見る" : reviewable ? "確認する" : "このプランを見る"
-                : feasibilityResult.state === "INFEASIBLE_HARD_CONFLICT" ? "See how to fix it" : computationLimited ? "See what to remove" : reviewable ? "Review details" : "View this plan"}</button>
-            );
-          })()}
-        </header>
+                  }}
+                  type="button"
+                >{locale === "ja"
+                  ? feasibilityResult.state === "INFEASIBLE_HARD_CONFLICT" ? "直し方を見る" : computationLimited ? "減らし方を見る" : "確認する"
+                  : feasibilityResult.state === "INFEASIBLE_HARD_CONFLICT" ? "See how to fix it" : computationLimited ? "See what to remove" : "Review details"}</button>
+              ) : null}
+            </header>
+          );
+        })()}
 
-        {feasibilityResult.primaryConflict || deferredAnchorStops.length > 0 || feasibilityResult.primaryAttention ? (
-          <p className="planner-one-warning">
-            <Icon name="signal" size={14} />
-            <span>{feasibilityResult.primaryConflict
-              ? conflictCopy(feasibilityResult.primaryConflict, locale)
-              : deferredAnchorStops.length > 0
-                ? locale === "ja"
-                  ? `${deferredAnchorStops.slice(0, 2).map((stop) => stop.name).join("、")}${deferredAnchorStops.length > 2 ? `ほか${deferredAnchorStops.length - 2}件` : ""}は、現在の条件では日程に入りません。`
-                  : `${deferredAnchorStops.slice(0, 2).map((stop) => stop.name).join(", ")}${deferredAnchorStops.length > 2 ? ` and ${deferredAnchorStops.length - 2} more` : ""} do not fit the current plan.`
-              : attentionCopy(feasibilityResult.primaryAttention!, locale)}</span>
-          </p>
-        ) : null}
 
         {/* Copy Deck scope.beta: a small always-visible one-liner for
             non-deep coverage regions only; the per-capability detail stays

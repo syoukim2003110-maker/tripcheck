@@ -122,25 +122,43 @@ export function formatDuration(minutes: number, locale: PlannerLocale) {
  * It stays silent whenever the assessment withholds a conclusion
  * (`spareDays === null`, which is what an unresolved place or a trip that
  * does not fit produces), so emptiness is never claimed on thin evidence. */
-export function tripStatsLine(
-  totals: {
-    placeCount: number;
-    travelMinutes: number;
-    bufferMinutes: number;
-    spareDays?: number | null;
-  },
-  locale: PlannerLocale,
-) {
+export type TripStatsTotals = {
+  placeCount: number;
+  travelMinutes: number;
+  bufferMinutes: number;
+  spareDays?: number | null;
+};
+
+/** The line's three clauses and the separator between them.
+ *
+ * v3.1 §4.2 tints the spare clause green, which needs the clauses as elements
+ * rather than one string. `tripStatsLine` is this joined, so the rendered text
+ * is provably the same sentence it has always been — the colour is the only
+ * addition, and the deck-form assertions keep holding it to that. */
+export function tripStatsParts(totals: TripStatsTotals, locale: PlannerLocale) {
   const travel = formatDuration(totals.travelMinutes, locale);
   const hasSpareDays = typeof totals.spareDays === "number" && totals.spareDays > 0;
   if (locale === "ja") {
-    const spare = hasSpareDays ? `${totals.spareDays}日分の空き` : `余裕${formatDuration(totals.bufferMinutes, locale)}`;
-    return `${totals.placeCount}か所・移動${travel}・${spare}`;
+    return {
+      separator: "・",
+      places: `${totals.placeCount}か所`,
+      travel: `移動${travel}`,
+      spare: hasSpareDays ? `${totals.spareDays}日分の空き` : `余裕${formatDuration(totals.bufferMinutes, locale)}`,
+    };
   }
-  const spare = hasSpareDays
-    ? `${totals.spareDays} day${totals.spareDays === 1 ? "" : "s"} spare`
-    : `${formatDuration(totals.bufferMinutes, locale)} buffer`;
-  return `${totals.placeCount} place${totals.placeCount === 1 ? "" : "s"} · ${travel} travel · ${spare}`;
+  return {
+    separator: " · ",
+    places: `${totals.placeCount} place${totals.placeCount === 1 ? "" : "s"}`,
+    travel: `${travel} travel`,
+    spare: hasSpareDays
+      ? `${totals.spareDays} day${totals.spareDays === 1 ? "" : "s"} spare`
+      : `${formatDuration(totals.bufferMinutes, locale)} buffer`,
+  };
+}
+
+export function tripStatsLine(totals: TripStatsTotals, locale: PlannerLocale) {
+  const parts = tripStatsParts(totals, locale);
+  return [parts.places, parts.travel, parts.spare].join(parts.separator);
 }
 
 export function formatWindowClock(minutes: number) {

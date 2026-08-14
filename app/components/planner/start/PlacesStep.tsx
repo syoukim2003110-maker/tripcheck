@@ -233,21 +233,34 @@ export default function PlacesStep({
           <b id="planner-quick-conditions-title">{locale === "ja" ? "何日くらい？" : "How many days?"}</b>
         </header>
         <div className="planner-days-chips" role="group" aria-label={locale === "ja" ? "旅行日数" : "Trip length"}>
-          {[3, 4, 5].map((value) => (
-            <button
-              aria-pressed={!daysUndecided && tripDays === value}
-              className={!daysUndecided && tripDays === value ? "is-active" : ""}
-              key={value}
-              onClick={() => onSelectDays(value)}
-              type="button"
-            >{value}</button>
-          ))}
+          {/* v3.1 §6.1 / reference 01: named tiles with a check on the chosen
+              one, rather than bare numerals. The 「他の日数」 select stays —
+              the handoff mock offers four choices, TripCheck plans one to
+              fourteen days, and matching the mock would remove trips. */}
+          {[3, 4, 5].map((value) => {
+            const chosen = !daysUndecided && tripDays === value;
+            return (
+              <button
+                aria-pressed={chosen}
+                className={chosen ? "is-active" : ""}
+                key={value}
+                onClick={() => onSelectDays(value)}
+                type="button"
+              >
+                {locale === "ja" ? `${value}日` : `${value} days`}
+                {chosen ? <i aria-hidden="true" className="planner-days-check"><Icon name="check" size={11} /></i> : null}
+              </button>
+            );
+          })}
           <button
             aria-pressed={daysUndecided}
             className={daysUndecided ? "is-active" : ""}
             onClick={onDaysUndecided}
             type="button"
-          >{locale === "ja" ? "まだ決めていない" : "Not decided"}</button>
+          >
+            {locale === "ja" ? "未定" : "Not decided"}
+            {daysUndecided ? <i aria-hidden="true" className="planner-days-check"><Icon name="check" size={11} /></i> : null}
+          </button>
           <label className="planner-days-other">
             <span>{locale === "ja" ? "他の日数" : "Other"}</span>
             <select

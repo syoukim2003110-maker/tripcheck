@@ -1,11 +1,16 @@
 "use client";
 
 // The stop inspector aside (spec v2.1 inspector/): close/expand controls,
-// header and meta badges, the stay-minutes and last-entry edits and the day
-// move group, then the secondary detail sections (Google intel card, the
-// check-place actions row, the fresh public-voices card with its evidence
-// sources) and finally the remove button at the very bottom (TC-053 §9.2).
+// header and meta badges, the day move group, then two disclosures — the
+// evidence receptacle and the stop's own adjustments — followed by the
+// check-place actions row, the fresh public-voices card and finally the
+// remove button at the very bottom (TC-053 §9.2).
 // Emits events only — plan edits and AI checks stay with the parent.
+//
+// UI/UX v3.1 §6.4: this sheet is where demoted evidence lands. The standard
+// moves confidence markers off the timeline, so "opening hours and evidence"
+// has to exist here first — otherwise demoting is deleting. Everything the
+// itinerary stops saying is reachable from this one control.
 import type { RefObject, SyntheticEvent } from "react";
 import Icon from "../../../PlannerIcons";
 import type { BuiltTripPlan } from "../../../../lib/trip-builder.ts";
@@ -26,6 +31,12 @@ import {
 } from "../../../../lib/presentation/trip-presentation.ts";
 import { ui, type PlannerLocale } from "../../../../lib/presentation/planner-copy.ts";
 import { linkImageSrc, placePhotoSrc } from "../../../../lib/presentation/place-photo";
+import {
+  durationSourceLabel,
+  evidenceDisclosureLabel,
+  stayBasisLine,
+  type DurationEvidenceStatus,
+} from "../../../../lib/presentation/timeline-presentation.ts";
 
 type BuiltPlanStop = BuiltTripPlan["days"][number]["stops"][number];
 
@@ -33,6 +44,8 @@ type StopInspectorProps = {
   locale: PlannerLocale;
   selectedBuiltStop: BuiltPlanStop;
   selectedStopIndex: number;
+  /** Where the stay length came from. Stated here in words, not as a badge. */
+  durationStatus: DurationEvidenceStatus;
   day: BuiltTripPlan["days"][number] | null;
   plan: BuiltTripPlan | null;
   activeDay: number;
@@ -63,6 +76,7 @@ export default function StopInspector({
   locale,
   selectedBuiltStop,
   selectedStopIndex,
+  durationStatus,
   day,
   plan,
   activeDay,
@@ -122,40 +136,6 @@ export default function StopInspector({
           </span>
         ) : null}
       </div>
-      <label className="planner-stay-edit">
-        <span>{text.stayLabel}</span>
-        <select
-          onChange={(event) => {
-            const value = event.target.value;
-            const stopId = selectedBuiltStop.stop.id;
-            onCommitStayMinutes(stopId, value);
-          }}
-          value={String(userStayMinutes[selectedBuiltStop.stop.id] ?? "")}
-        >
-          <option value="">
-            {userStayMinutes[selectedBuiltStop.stop.id] == null
-              ? `${text.stayAuto} · ${text.minutes(selectedBuiltStop.stop.planningDurationMinutes)}`
-              : text.stayAuto}
-          </option>
-          {[30, 45, 60, 90, 120, 150, 180, 240].map((minutes) => (
-            <option key={minutes} value={minutes}>{text.minutes(minutes)}</option>
-          ))}
-        </select>
-      </label>
-      <label className="planner-stay-edit">
-        <span>{locale === "ja" ? "最終入場（分かる場合）" : "Last entry (if known)"}</span>
-        <input
-          aria-describedby="planner-last-entry-note"
-          onChange={(event) => {
-            const value = event.target.value;
-            const stopId = selectedBuiltStop.stop.id;
-            onCommitLastEntry(stopId, value);
-          }}
-          type="time"
-          value={lastEntryTimes[selectedBuiltStop.stop.id] ?? ""}
-        />
-        <small id="planner-last-entry-note">{locale === "ja" ? "閉館時刻とは別の入場締切です。入力した値はあなたが確認した条件として扱います。" : "This is the admission cutoff, not closing time. It is treated as a condition you supplied."}</small>
-      </label>
       {plan && plan.days.length > 1 ? (
         <div className="planner-day-move" role="group" aria-label={text.moveDay}>
           <span>{text.moveDay}</span>
@@ -175,14 +155,25 @@ export default function StopInspector({
           </div>
         </div>
       ) : null}
-      {selectedIntel?.status === "loading" ? (
-        <section className="planner-intel-card is-loading" aria-live="polite">
-          <header><h3>{text.fieldEvidence}</h3></header>
-          <p className="planner-fresh-status"><i aria-hidden="true" />{text.fieldChecking}</p>
-        </section>
-      ) : null}
-      {selectedIntel?.status === "unavailable" ? <p className="planner-intel-unavailable" role="status">{text.fieldUnavailable}</p> : null}
-      {selectedIntel?.status === "ready" && selectedIntel.result ? (() => {
+      {/* v3.1 §2: the receptacle. Everything the timeline stops saying about
+          confidence is reachable from this one control, and the photo inside
+          only loads once it is opened — a closed <details> issues no image
+          request, so an unopened sheet spends nothing at the photo endpoint. */}
+      <details className="planner-evidence-disclosure" key={`evidence-${selectedBuiltStop.stop.id}`}>
+        <summary>{evidenceDisclosureLabel(locale)}</summary>
+        <div className="planner-evidence-disclosure-body">
+          <p className="planner-stay-basis">
+            <b>{text.stayLabel} {text.minutes(selectedBuiltStop.stop.planningDurationMinutes)}（{durationSourceLabel(durationStatus, locale)}）</b>
+            <span>{stayBasisLine(durationStatus, locale)}</span>
+          </p>
+          {selectedIntel?.status === "loading" ? (
+            <section className="planner-intel-card is-loading" aria-live="polite">
+              <header><h3>{text.fieldEvidence}</h3></header>
+              <p className="planner-fresh-status"><i aria-hidden="true" />{text.fieldChecking}</p>
+            </section>
+          ) : null}
+          {selectedIntel?.status === "unavailable" ? <p className="planner-intel-unavailable" role="status">{text.fieldUnavailable}</p> : null}
+          {selectedIntel?.status === "ready" && selectedIntel.result ? (() => {
         const intel = selectedIntel.result;
         const listedPayment = P0_CORE_ONLY ? null : paymentLabel(intel, locale);
         const currentDayWindows = day?.date
@@ -273,8 +264,54 @@ export default function StopInspector({
               <a href={intel.place.googleMapsUrl} rel="noreferrer" target="_blank">Google Maps ↗</a>
             </div>
           </section>
-        );
-      })() : null}
+            );
+          })() : null}
+        </div>
+      </details>
+
+      {/* The stop's own conditions. Kept as a disclosure because the traveller
+          approves a finished day far more often than they retime one — but the
+          day move above stays on the surface, because moving a stop to another
+          day is the adjustment people actually reach for. */}
+      <details className="planner-adjust-disclosure" key={`adjust-${selectedBuiltStop.stop.id}`}>
+        <summary>{locale === "ja" ? "この場所の条件を変える" : "Change this stop's conditions"}</summary>
+        <div className="planner-adjust-disclosure-body">
+          <label className="planner-stay-edit">
+            <span>{text.stayLabel}</span>
+            <select
+              onChange={(event) => {
+                const value = event.target.value;
+                const stopId = selectedBuiltStop.stop.id;
+                onCommitStayMinutes(stopId, value);
+              }}
+              value={String(userStayMinutes[selectedBuiltStop.stop.id] ?? "")}
+            >
+              <option value="">
+                {userStayMinutes[selectedBuiltStop.stop.id] == null
+                  ? `${text.stayAuto} · ${text.minutes(selectedBuiltStop.stop.planningDurationMinutes)}`
+                  : text.stayAuto}
+              </option>
+              {[30, 45, 60, 90, 120, 150, 180, 240].map((minutes) => (
+                <option key={minutes} value={minutes}>{text.minutes(minutes)}</option>
+              ))}
+            </select>
+          </label>
+          <label className="planner-stay-edit">
+            <span>{locale === "ja" ? "最終入場（分かる場合）" : "Last entry (if known)"}</span>
+            <input
+              aria-describedby="planner-last-entry-note"
+              onChange={(event) => {
+                const value = event.target.value;
+                const stopId = selectedBuiltStop.stop.id;
+                onCommitLastEntry(stopId, value);
+              }}
+              type="time"
+              value={lastEntryTimes[selectedBuiltStop.stop.id] ?? ""}
+            />
+            <small id="planner-last-entry-note">{locale === "ja" ? "閉館時刻とは別の入場締切です。入力した値はあなたが確認した条件として扱います。" : "This is the admission cutoff, not closing time. It is treated as a condition you supplied."}</small>
+          </label>
+        </div>
+      </details>
 
       <div className="planner-inspector-actions">
         {aiEnabled ? (

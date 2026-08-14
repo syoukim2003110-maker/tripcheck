@@ -43,9 +43,26 @@ export default function MovementCard({ leg, travelPreference, locale, boarding, 
         onMouseEnter={() => onHoverChange?.(legKey, true)}
         onMouseLeave={() => onHoverChange?.(legKey, false)}
       >
+        {/* v3.1 §5.2: a movement is a card, not a caption. The row used to say
+            「電車 · 95分」 with a text link to change it, and kept the two things
+            a traveller actually wants — where this leg goes, and how many
+            changes it takes — inside the disclosure or in an aria-label. Both
+            come up to the surface; the link becomes a chevron, because a whole
+            row that opens does not need a word telling you so. */}
         <summary>
-          <span>{modeIcon(recommended.mode, travelPreference === "car")}<b>{modeLabel(recommended.mode)} · {text.minutes(recommended.minutes)}</b></span>
-          <small>{locale === "ja" ? "移動手段を変える" : "Change transport"}</small>
+          <span aria-hidden="true" className="planner-leg-mark">{modeIcon(recommended.mode, travelPreference === "car")}</span>
+          <span className="planner-leg-body">
+            <b>
+              {modeLabel(recommended.mode)} {text.minutes(recommended.minutes)}
+              {recommended.mode === "transit" && leg.transferCount !== null
+                ? locale === "ja"
+                  ? `・乗換${leg.transferCount}回`
+                  : ` · ${leg.transferCount} transfer${leg.transferCount === 1 ? "" : "s"}`
+                : ""}
+            </b>
+            <small>{leg.from.name} → {leg.to.name}</small>
+          </span>
+          <i aria-hidden="true" className="planner-leg-chevron">›</i>
         </summary>
         <div className="planner-leg-modes" role="group" aria-label={`${leg.from.name} → ${leg.to.name} · ${text.legModes}`}>
           {leg.comparison.options
@@ -66,9 +83,6 @@ export default function MovementCard({ leg, travelPreference, locale, boarding, 
         </div>
         <span className="planner-leg-evidence">
           {recommended.source === "live" ? <em>{text.legLive}</em> : null}
-          {recommended.mode === "transit" && leg.transferCount !== null ? (
-            <em>{locale === "ja" ? `乗換${leg.transferCount}回` : `${leg.transferCount} transfer${leg.transferCount === 1 ? "" : "s"}`}</em>
-          ) : null}
         </span>
       </details>
       {boardingLine ? (

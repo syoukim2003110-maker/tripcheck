@@ -70,11 +70,23 @@ The first result viewport must answer five questions in this order:
 5. Is there one useful, safe addition that fits an actual gap?
 
 Evidence counts, regional coverage, assumptions and counterfactuals remain
-available under **Verdict details**. They are not a dashboard placed before the
-itinerary — nor is the things-to-check list; both sit under the itinerary they
-explain. On mobile the first stop begins by y=300 and the first two stops and
-one safe Filler finish inside a 390×844 viewport; on desktop the first stop
-begins by y=360. The plan states its one warning once.
+available under **Verdict details**, and so does the arithmetic behind the
+verdict — the day window, the base, the stay count, the per-leg buffer and the
+minimum days that follow from them. None of it is a dashboard placed before the
+itinerary — nor is the things-to-check list; all of it sits under the itinerary
+it explains. On mobile the first stop begins by y=300 and the first two stops
+and one safe Filler finish inside a 390×844 viewport; on desktop the first stop
+begins by y=360. The plan states its one warning once, and that warning names
+the place it is about rather than counting how many facts are unverified: a
+tally is not something a traveller can act on, and the things-to-check list
+below already counts them next to the control that opens them.
+
+A number the product has not verified must not be phrased like one it has.
+Where an internal confidence marker is moved off the surface — the way the
+stay-duration badge moved into the stop sheet — the wording that replaces it
+carries the uncertainty instead: an estimated stay reads 「滞在の目安」, a
+confirmed or traveller-set one reads 「滞在」. The two halves of that exchange
+ship together; dropping the marker alone turns every default into a claim.
 
 Desktop results reserve 48% for the timeline and 52% for the map. On mobile the
 result screen is either the itinerary or the map, switched by one control, and
@@ -88,10 +100,21 @@ micro-stop proposed by TripCheck is a **Filler** and must remain visibly
 different in the timeline and on the map. A Filler is never silently added. It
 may be accepted only after the deterministic planner re-runs the whole day and
 confirms that it creates no new hard conflict, does not defer an Anchor and
-does not violate a reservation. There may be at most one lunch, one dinner and
-one cafe/micro Filler per day; the UI shows one default and at most two
-alternatives. Removing an accepted Filler is one action and recalculates the
-plan.
+does not violate a reservation. There may be at most one lunch and one dinner
+Filler per day. How many cafe/micro Fillers a day may hold comes from that
+day's own slack — one per two hours of it, never more than three — because a
+flat cap of one made the product answer six free hours with a single cafe on
+exactly the trips whose days were emptiest. A day with room for one still shows
+one default and at most two alternatives, which are choices for a slot; a day
+with room for more shows that many proposals, which are stops the traveller can
+have all of. Each is still accepted one at a time through the whole-day
+re-solve, and each states its own arithmetic against the plan as it stands.
+Removing an accepted Filler is one action and recalculates the plan.
+
+When a day has real slack, the recommendation surface says how much of the day
+is free and how many more stops it can take, and counts down as they are
+accepted. Spare capacity that the product can name but cannot act on is a
+diagnosis without a treatment.
 
 A day gets a lunch and a dinner slot whenever the day itself is still running
 at that meal's hour — the day's own end decides, not the hour its last visit
@@ -125,6 +148,14 @@ unselected route is 2px. Timeline selection and map selection must remain
 bidirectional. Missing provider geometry is left undrawn; a straight line is
 never presented as a measured route. Known mountain rail destinations use an
 access node and do not offer impossible direct walking, taxi or driving legs.
+
+How all of this looks — type scale, spacing, photography, and which internal
+signals belong on the surface rather than one control away — is settled in
+`docs/uiux/design-standard-v3.1.md`. That standard governs appearance and
+wording; this contract governs what may be claimed as true, and wins wherever
+the two disagree. In particular, a number whose confidence is not carried by
+the words around it is a verified claim, and the standard may not remove the
+uncertainty without replacing it.
 
 ## Current useful vertical slice
 

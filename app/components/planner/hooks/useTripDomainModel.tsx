@@ -70,7 +70,7 @@ import {
   type PlannerEvidenceSnapshot,
   type RouteFactEvidence,
 } from "../../../../lib/feasibility-result";
-import { detectGapsFromBuiltDay, primaryItineraryGap } from "../../../../lib/gap-detection";
+import { dayFillerAllowance, detectGapsFromBuiltDay, primaryItineraryGap } from "../../../../lib/gap-detection";
 import {
   RECOMMENDATION_DETOUR_CAP_MINUTES,
   detourWalkingMinutes,
@@ -904,6 +904,14 @@ export function usePlannerViewModel({
   // At most ONE gap is auto-surfaced per day (spec cap): the one worth
   // filling, not the first one in visit order. See `primaryItineraryGap`.
   const primaryRecommendationGap = primaryItineraryGap(activeDayGaps);
+  // How much of this day is free, and how many more suggestions it can take.
+  // The fit assessment could always say "this wishlist needs three days, not
+  // four"; this is what turns that into something the traveller can act on.
+  const activeDaySlackMinutes = Math.max(0, activeFitDay?.slackMinutes ?? 0);
+  const activeDayRemainingFillerAllowance = useMemo(() => {
+    const accepted = (day?.stops ?? []).filter(({ stop }) => fillerKindsByStopId.get(stop.id) === "micro").length;
+    return Math.max(0, dayFillerAllowance(activeDaySlackMinutes) - accepted);
+  }, [activeDaySlackMinutes, day, fillerKindsByStopId]);
   // TC-047: the gap search follows the real route geometry of the gap's leg
   // when Google geometry exists (transit evidence first, then the prefetch
   // measurements), sampled within the 12-point request budget. Only when no
@@ -1361,7 +1369,7 @@ export function usePlannerViewModel({
   // explicitly asked to see.
   const recommendationPins = useMemo<RecommendationPin[]>(() => (
     activeRouteRecommendationState.status === "ready"
-      ? orderedGapCandidates.slice(0, routeAlternativesExpanded ? 3 : 1).map((candidate, index) => ({
+      ? orderedGapCandidates.slice(0, routeAlternativesExpanded || activeDayRemainingFillerAllowance > 1 ? 3 : 1).map((candidate, index) => ({
         id: candidate.id,
         name: candidate.name,
         latitude: candidate.latitude,
@@ -1369,7 +1377,7 @@ export function usePlannerViewModel({
         index,
       }))
       : []
-  ), [activeRouteRecommendationState.status, orderedGapCandidates, routeAlternativesExpanded]);
+  ), [activeDayRemainingFillerAllowance, activeRouteRecommendationState.status, orderedGapCandidates, routeAlternativesExpanded]);
 
   // Alpha guarantees one bounded review for 5–12 POIs. Larger pastes must be
   // split explicitly; sending only the first twelve would make omitted places
@@ -1475,6 +1483,8 @@ export function usePlannerViewModel({
     measuredRouteCount,
     openingVerificationCount,
     orderedGapCandidates,
+    activeDaySlackMinutes,
+    activeDayRemainingFillerAllowance,
     parsePreviewRows,
     parsedPlaceCount,
     placesHaveBeenReviewed,

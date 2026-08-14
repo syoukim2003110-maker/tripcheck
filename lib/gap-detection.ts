@@ -183,6 +183,39 @@ export function detectItineraryGaps(day: GapDetectionDay): ItineraryGap[] {
   return gaps;
 }
 
+/** One added stop is budgeted at two hours: the visit plus getting there and
+ * back onto the route. Below that a day has room to be told about a hole, but
+ * not to be given a second thing to do inside it. */
+export const FILLER_ALLOWANCE_MINUTES_EACH = 120;
+
+/** No day becomes a list of TripCheck's ideas with the traveller's own places
+ * buried in it. Three is the most a half-empty day can absorb and still read
+ * as the trip the traveller asked for. */
+export const FILLER_ALLOWANCE_MAX = 3;
+
+/**
+ * How many TripCheck-proposed stops a day may hold, from the day's own slack.
+ *
+ * The cap used to be one, full stop. That was right when the product's job was
+ * to answer a hole — but it is wrong when the honest answer to a wishlist is
+ * "this fits in three days, not four". Telling a traveller they have a spare
+ * day and then offering them one cafe is a diagnosis without a treatment: the
+ * assessment names the emptiness and the product does nothing about it.
+ *
+ * The allowance is the day's own slack divided by what one stop really costs,
+ * so it is the schedule that decides, not a constant. A tight day still gets
+ * exactly one suggestion; a day with six hours free can be offered three. The
+ * ceiling keeps the traveller's own places the point of their trip.
+ *
+ * This raises what may be OFFERED. It changes nothing about what may be
+ * accepted: every addition still re-solves the whole day and is rejected if it
+ * creates a hard conflict, defers an Anchor or breaks a reservation.
+ */
+export function dayFillerAllowance(slackMinutes: number): number {
+  if (!Number.isFinite(slackMinutes) || slackMinutes < FILLER_ALLOWANCE_MINUTES_EACH) return 1;
+  return Math.min(FILLER_ALLOWANCE_MAX, Math.floor(slackMinutes / FILLER_ALLOWANCE_MINUTES_EACH));
+}
+
 /**
  * The one gap a day is allowed to surface (the spec's per-day cap).
  *

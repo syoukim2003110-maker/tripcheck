@@ -10,7 +10,7 @@ import Icon from "../../../PlannerIcons";
 import { feasibilityStateIcon } from "../icon-maps";
 import type { FeasibilityResult } from "../../../../lib/feasibility-result.ts";
 import { ui, type PlannerLocale } from "../../../../lib/presentation/planner-copy.ts";
-import { tripStatsLine } from "../../../../lib/presentation/trip-presentation.ts";
+import { tripStatsParts } from "../../../../lib/presentation/trip-presentation.ts";
 
 type ResultHeaderProps = {
   locale: PlannerLocale;
@@ -62,15 +62,29 @@ export default function ResultHeader({
     <>
       <header className="planner-result-header">
         <div>
-          <span className={`planner-verdict-label${feasibilityResult ? ` is-${feasibilityResult.state.toLowerCase()}` : ""}`}>
-            {feasibilityResult ? <i aria-hidden="true"><Icon name={feasibilityStateIcon(feasibilityResult.state)} size={12} /></i> : null}
-            {deferredAnchorCount > 0 && scheduledStopCount !== null
-              ? locale === "ja"
+          {/* v3.1 §2.1 Tier C: the verdict eyebrow used to repeat the headline
+              as a code — 「条件付き」 above 「4日で回れます。2か所だけ確認が必要です」.
+              Two encodings of one fact, and the code is the one a traveller has
+              to learn. The sentence keeps the meaning; the state survives as
+              colour on the mark beside it. The eyebrow now renders only for the
+              one thing the sentence does not say: that some of the traveller's
+              own places did not make it into the schedule. */}
+          {deferredAnchorCount > 0 && scheduledStopCount !== null ? (
+            <span className={`planner-verdict-label${feasibilityResult ? ` is-${feasibilityResult.state.toLowerCase()}` : ""}`}>
+              {feasibilityResult ? <i aria-hidden="true"><Icon name={feasibilityStateIcon(feasibilityResult.state)} size={12} /></i> : null}
+              {locale === "ja"
                 ? `${scheduledStopCount}/${scheduledStopCount + deferredAnchorCount}か所を日程化`
-                : `${scheduledStopCount} of ${scheduledStopCount + deferredAnchorCount} places planned`
-              : resultStateCopy?.label ?? (locale === "ja" ? "旅程の結論" : "Plan result")}
-          </span>
-          <h1>{resultStateCopy?.headline ?? dayTheme}</h1>
+                : `${scheduledStopCount} of ${scheduledStopCount + deferredAnchorCount} places planned`}
+            </span>
+          ) : null}
+          <h1>
+            {resultStateCopy?.headline ?? dayTheme}
+            {feasibilityResult && deferredAnchorCount === 0 ? (
+              <i aria-hidden="true" className={`planner-verdict-mark is-${feasibilityResult.state.toLowerCase()}`}>
+                <Icon name={feasibilityStateIcon(feasibilityResult.state)} size={15} />
+              </i>
+            ) : null}
+          </h1>
           {tripStats ? (
             // Copy Deck plan.stats: one compact totals line directly under the
             // headline (TC-029: no audit counts here — those stay inside the
@@ -79,7 +93,19 @@ export default function ResultHeader({
             // same sentence and the actions; the card is the one that can act,
             // so the count is stated once, there.
             <div className="planner-headline-facts">
-              <p className="planner-trip-stats">{tripStatsLine(tripStats, locale)}</p>
+              {/* v3.1 §4.2: the spare clause is the one a traveller acts on —
+                  it is the difference between a full trip and an empty
+                  afternoon — so it carries the good colour. The sentence is
+                  byte-identical to the one `tripStatsLine` builds. */}
+              {(() => {
+                const parts = tripStatsParts(tripStats, locale);
+                return (
+                  <p className="planner-trip-stats">
+                    {parts.places}{parts.separator}{parts.travel}{parts.separator}
+                    <span className="planner-trip-spare">{parts.spare}</span>
+                  </p>
+                );
+              })()}
             </div>
           ) : null}
         </div>

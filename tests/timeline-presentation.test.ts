@@ -8,12 +8,16 @@ import {
   dayTabDensityLabel,
   dayTabTitle,
   durationSourceLabel,
+  evidenceDisclosureLabel,
   fillerRowLabel,
   mealSlotsAfterStop,
+  stayBasisLine,
+  stayLine,
   transitBoardingText,
   transportModeLabel,
 } from "../lib/presentation/timeline-presentation.ts";
 import { tripStatsLine } from "../lib/presentation/trip-presentation.ts";
+import { spareCapacityLine } from "../lib/presentation/recommendation-presentation.ts";
 import { ui } from "../lib/presentation/planner-copy.ts";
 
 test("transportModeLabel honors the car preference and falls back on null", () => {
@@ -81,6 +85,57 @@ test("durationSourceLabel treats unknown and failed evidence as estimates", () =
   assert.equal(durationSourceLabel("unknown", "ja"), "推定");
   assert.equal(durationSourceLabel("failed", "en"), "estimated");
   assert.equal(durationSourceLabel("verified", "en"), "confirmed");
+});
+
+test("an estimated stay says so in the words, not in a badge", () => {
+  // UI/UX v3.1 §2.2. The 推定 badge left the timeline; the uncertainty it
+  // carried had to stay, so it moved into the noun.
+  assert.equal(stayLine(90, "estimated", "ja"), "滞在の目安 1時間30分");
+  assert.equal(stayLine(90, "unknown", "ja"), "滞在の目安 1時間30分");
+  assert.equal(stayLine(90, "failed", "ja"), "滞在の目安 1時間30分");
+  assert.equal(stayLine(90, "verified", "ja"), "滞在 1時間30分");
+  assert.equal(stayLine(90, "user_provided", "ja"), "滞在 1時間30分");
+  assert.equal(stayLine(90, "estimated", "en"), "Stay about 1h 30m");
+  assert.equal(stayLine(90, "verified", "en"), "Stay 1h 30m");
+});
+
+test("a stay TripCheck guessed is never phrased like one it knows", () => {
+  // The rule this pins is the one that can rot silently: drop the hedge from
+  // `stayLine` and every default duration starts reading as a measurement,
+  // with nothing on the surface left to say otherwise. Compare the two
+  // renderings directly rather than asserting a literal, so the guard holds
+  // through any future rewording.
+  for (const locale of ["ja", "en"] as const) {
+    for (const guessed of ["estimated", "unknown", "failed"] as const) {
+      for (const known of ["verified", "user_provided"] as const) {
+        assert.notEqual(
+          stayLine(90, guessed, locale),
+          stayLine(90, known, locale),
+          `${locale}: a ${guessed} stay reads exactly like a ${known} one`,
+        );
+      }
+    }
+  }
+  assert.match(stayLine(90, "estimated", "ja"), /目安/);
+  assert.doesNotMatch(stayLine(90, "verified", "ja"), /目安/);
+  assert.match(stayLine(90, "estimated", "en"), /about/);
+  assert.doesNotMatch(stayLine(90, "verified", "en"), /about/);
+});
+
+test("the evidence disclosure says who decided the stay length", () => {
+  assert.match(stayBasisLine("user_provided", "ja"), /あなたが指定/);
+  assert.match(stayBasisLine("verified", "ja"), /確認できた/);
+  assert.match(stayBasisLine("estimated", "ja"), /目安/);
+  assert.match(stayBasisLine("unknown", "en"), /estimate/);
+  // Three distinct sentences: a shared fallback would make the disclosure
+  // useless as the place the timeline's confidence marker went.
+  const ja = new Set((["user_provided", "verified", "estimated"] as const).map((status) => stayBasisLine(status, "ja")));
+  assert.equal(ja.size, 3);
+});
+
+test("the evidence disclosure is labelled the way the handoff labels it", () => {
+  assert.equal(evidenceDisclosureLabel("ja"), "営業時間・根拠を見る");
+  assert.equal(evidenceDisclosureLabel("en"), "Opening hours and evidence");
 });
 
 test("fillerRowLabel names the slot kind", () => {
@@ -206,4 +261,27 @@ test("tripStatsLine claims no spare days when the assessment withheld a conclusi
     assert.equal(tripStatsLine({ ...totals, spareDays }, "ja"), deckForm.ja, `ja leaked a clause for ${spareDays}`);
     assert.equal(tripStatsLine({ ...totals, spareDays }, "en"), deckForm.en, `en leaked a clause for ${spareDays}`);
   }
+});
+
+test("the day states how much of it is free and how much more it can take", () => {
+  // The other half of the spare-day answer: the assessment could always say a
+  // wishlist needs fewer days than the trip has, and the product's reply was
+  // one suggestion. This line is what turns "you have a spare day" into
+  // "you can add these".
+  assert.equal(spareCapacityLine(385, 3, "ja"), "この日は6時間25分空いています。あと3か所まで足せます。");
+  assert.equal(spareCapacityLine(385, 1, "ja"), "この日は6時間25分空いています。あと1か所まで足せます。");
+  assert.equal(spareCapacityLine(385, 0, "ja"), "この日に足せるおすすめは埋まりました。");
+  assert.match(spareCapacityLine(385, 2, "en"), /6h 25m of this day is free — room for 2 more stops\./);
+  assert.match(spareCapacityLine(120, 1, "en"), /room for 1 more stop\./);
+  assert.match(spareCapacityLine(0, 0, "en"), /all the suggestions it has room for/);
+});
+
+test("a full day never invites another stop, whatever the arithmetic says", () => {
+  // A negative or overflowing remainder must read as full, not as an
+  // invitation with a strange number in it.
+  for (const remaining of [0, -1, -5]) {
+    assert.equal(spareCapacityLine(400, remaining, "ja"), spareCapacityLine(400, 0, "ja"));
+    assert.equal(spareCapacityLine(400, remaining, "en"), spareCapacityLine(400, 0, "en"));
+  }
+  assert.doesNotMatch(spareCapacityLine(400, 0, "ja"), /足せます。$/);
 });

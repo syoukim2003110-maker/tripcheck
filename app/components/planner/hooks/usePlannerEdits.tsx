@@ -43,7 +43,7 @@ import {
 import type { RouteRecommendation, RouteRecommendationPoint } from "../../../../lib/route-recommendations";
 import { trackProductEvent, type ProductEventFields, type ProductEventName } from "../../../../lib/product-analytics";
 import { assessTripFit, type TripFitAssessment } from "../../../../lib/trip-scenarios";
-import type { ItineraryGap } from "../../../../lib/gap-detection";
+import { dayFillerAllowance, type ItineraryGap } from "../../../../lib/gap-detection";
 import type { AlternativePlan } from "../../../../lib/feasibility-result";
 import type { ShareableResolutionOverride } from "../../../../lib/share-link";
 import { parsedWishlistPlaces } from "../../../../lib/wishlist-parser";
@@ -987,10 +987,15 @@ export function useRecommendationEdits({
     if (!checkedAt) return;
     const acceptedMicroFillers = day.stops.filter(({ stop }) => fillerKindsByStopId.get(stop.id) === "micro").length;
     const acceptedMeals = daySlots.filter((slot) => Boolean(mealSelections[slot.id])).length;
-    if (acceptedMicroFillers >= 1 || acceptedMicroFillers + acceptedMeals >= 3) {
+    // The day's own slack sets how many suggestions it can hold, rather than a
+    // flat one. A wishlist that fits in three days of a four-day trip leaves
+    // every day half empty; offering one cafe for six free hours names the
+    // emptiness without doing anything about it.
+    const fillerAllowance = dayFillerAllowance(tripFit.days[activeDay]?.slackMinutes ?? 0);
+    if (acceptedMicroFillers >= fillerAllowance || acceptedMicroFillers + acceptedMeals >= fillerAllowance + 2) {
       setRouteRecommendationNotice(locale === "ja"
-        ? "この日のおすすめ枠は埋まっています。追加済みのおすすめを外すと入れ替えられます。"
-        : "This day's recommendation slots are full. Remove an accepted suggestion to replace it.");
+        ? "この日に足せるおすすめは埋まりました。追加済みのおすすめを外すと入れ替えられます。"
+        : "This day has taken all the suggestions it has room for. Remove an accepted one to swap it.");
       return;
     }
     // The accept and the card metrics share one simulation (lib/recommendation-impact).

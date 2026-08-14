@@ -174,3 +174,44 @@ test("planner surface source (literals and JSX text) carries no banned technical
     }
   }
 });
+
+/*
+ * UI/UX v3.1 §2.1: the confidence marker is demoted, not deleted.
+ *
+ * `durationSourceLabel` renders 推定 / 確認 / 指定 — a code the traveller has
+ * to learn, and exactly the class of signal the v3.1 handoff moves off the
+ * itinerary. It is allowed to survive one control away, inside the stop
+ * sheet's evidence disclosure, and nowhere else on the planner surface.
+ *
+ * The pairing matters more than either half. A timeline that dropped the badge
+ * without adopting `stayLine`'s hedged wording would print every default
+ * duration as a measured fact; a sheet that lost the disclosure would leave the
+ * traveller no way to find out which numbers TripCheck actually checked. So
+ * this asserts both directions: the badge is gone from the rows, the hedge is
+ * present in them, and the receptacle still exists.
+ */
+test("the stay-confidence marker lives in the sheet, and the timeline hedges instead", async () => {
+  const surface = await bannedTermSurfaceFiles();
+  const byName = (suffix: string) => surface.find((file) => file.path.endsWith(suffix));
+
+  const callers = surface
+    .filter((file) => !file.path.endsWith("lib/presentation/timeline-presentation.ts"))
+    .filter((file) => /\bdurationSourceLabel\s*\(/.test(stripComments(file.text)))
+    .map((file) => file.path.replace(/^.*\/(app|lib)\//, "$1/"));
+  assert.deepEqual(
+    callers,
+    ["app/components/planner/inspector/StopInspector.tsx"],
+    `the 推定 / 確認 / 指定 marker may only render inside the stop sheet's evidence disclosure, but is called from: ${callers.join(", ")}`,
+  );
+
+  const activityCard = byName("planner/timeline/ActivityCard.tsx");
+  assert.ok(activityCard, "ActivityCard is part of the scanned planner surface");
+  const activitySource = stripComments(activityCard.text);
+  assert.match(activitySource, /\bstayLine\s*\(/, "the stop row must state its stay through the hedged builder");
+
+  const inspector = byName("planner/inspector/StopInspector.tsx");
+  assert.ok(inspector, "StopInspector is part of the scanned planner surface");
+  const inspectorSource = stripComments(inspector.text);
+  assert.match(inspectorSource, /evidenceDisclosureLabel\s*\(/, "the sheet must still carry the evidence disclosure the marker moved into");
+  assert.match(inspectorSource, /stayBasisLine\s*\(/, "the disclosure must say where the stay length came from");
+});

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   classifyGapMinutes,
+  dayFillerAllowance,
   detectGapsFromBuiltDay,
   detectItineraryGaps,
   primaryItineraryGap,
@@ -182,4 +183,34 @@ test("the primary gap is stable: equal sizes keep visit order, no gaps means non
   // rebuild of the same day surfaces the same gap.
   assert.equal(primaryItineraryGap([gap("early", 60), gap("late", 60)])?.id, "early");
   assert.equal(primaryItineraryGap([gap("only", 45)])?.id, "only");
+});
+
+test("a day's suggestion allowance comes from its own slack, not a constant", () => {
+  // The cap used to be one for every day. It stayed one on a day with six
+  // free hours, which is how a wishlist that fits in three days of a four-day
+  // trip got told it had a spare day and offered a single cafe.
+  assert.equal(dayFillerAllowance(0), 1);
+  assert.equal(dayFillerAllowance(45), 1);
+  assert.equal(dayFillerAllowance(119), 1);
+  assert.equal(dayFillerAllowance(120), 1);
+  assert.equal(dayFillerAllowance(239), 1);
+  assert.equal(dayFillerAllowance(240), 2);
+  assert.equal(dayFillerAllowance(385), 3);
+  // The ceiling holds however empty the day is: the traveller's own places
+  // stay the point of the trip.
+  assert.equal(dayFillerAllowance(600), 3);
+  assert.equal(dayFillerAllowance(24 * 60), 3);
+});
+
+test("the allowance never drops below one and never runs away on bad input", () => {
+  assert.equal(dayFillerAllowance(-120), 1);
+  assert.equal(dayFillerAllowance(Number.NaN), 1);
+  assert.equal(dayFillerAllowance(Number.POSITIVE_INFINITY), 1);
+  // Monotonic: more free time never offers fewer places.
+  let previous = 0;
+  for (let minutes = 0; minutes <= 900; minutes += 15) {
+    const allowance = dayFillerAllowance(minutes);
+    assert.ok(allowance >= previous || minutes === 0, `allowance fell at ${minutes} minutes`);
+    previous = allowance;
+  }
 });

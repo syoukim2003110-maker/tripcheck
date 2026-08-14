@@ -10,6 +10,7 @@ import type { FoodCandidate } from "../google-food.ts";
 import type { HotelCandidate } from "../google-hotels.ts";
 import type { HotelStyleChoice } from "../planner-app-state.ts";
 import { ui, type PlannerLocale } from "./planner-copy.ts";
+import { formatDuration } from "./trip-presentation.ts";
 
 /** One unified "make the trip better" proposal (spec v2.1 section 5). */
 export type EnhancementType = "HOTEL" | "MEAL" | "CAFE" | "MICRO_STOP";
@@ -238,4 +239,33 @@ export function hotelShortlist(candidates: HotelCandidate[], selectedId?: string
     if (!ordered.some((entry) => entry.id === candidate.id)) ordered.push(candidate);
   }
   return ordered.slice(0, 3);
+}
+
+/**
+ * What the day still has room for, in the traveller's terms.
+ *
+ * The fit assessment has always been able to say "this wishlist needs three
+ * days, not four". Until now that was the end of the sentence: the trip totals
+ * line reported the spare day and the product offered one cafe for it. This is
+ * the other half — the day states how much of it is free and how many more
+ * places it can take, so "you have a spare day" turns into "you can add these".
+ *
+ * `remaining` is the allowance minus what the traveller has already accepted,
+ * so the line counts down as the day fills and stops inviting when it is full.
+ */
+export function spareCapacityLine(
+  slackMinutes: number,
+  remaining: number,
+  locale: "ja" | "en",
+): string {
+  const free = formatDuration(Math.max(0, slackMinutes), locale);
+  if (remaining <= 0) {
+    return locale === "ja"
+      ? "この日に足せるおすすめは埋まりました。"
+      : "This day has taken all the suggestions it has room for.";
+  }
+  if (locale === "ja") {
+    return `この日は${free}空いています。あと${remaining}か所まで足せます。`;
+  }
+  return `${free} of this day is free — room for ${remaining} more ${remaining === 1 ? "stop" : "stops"}.`;
 }

@@ -21,6 +21,7 @@ import {
   alternativeCopy,
   alternativeLossCopy,
   assumptionCopy,
+  minimumDaysCopy,
   ui,
   type PlannerLocale,
 } from "../../../../lib/presentation/planner-copy.ts";
@@ -71,6 +72,13 @@ export default function VerdictDetails({
     <details className="planner-verdict-details" open={comparisonAlternative ? true : undefined}>
       <summary>{locale === "ja" ? "結論の詳細" : "Result details"}</summary>
       <div className="planner-verdict-details-body">
+
+        {/* v3.1 §6.2: the arithmetic behind the verdict — day window, base,
+            stay count, per-leg buffer, minimum days — used to sit above the
+            itinerary as two lines a traveller could not act on. It is evidence,
+            and docs/product.md puts evidence under the itinerary it explains,
+            so it opens this disclosure rather than the result screen. */}
+        <p className="planner-plan-basis">{minimumDaysCopy(feasibilityResult, locale)}</p>
 
         <div className="planner-trip-days" role="group" aria-label={text.fitSelectedDays}>
           <span>{text.fitSelectedDays}</span>

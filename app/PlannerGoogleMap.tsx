@@ -655,6 +655,10 @@ export default function PlannerGoogleMap({
           mapTypeControl: false,
           streetViewControl: false,
           zoomControl: true,
+          // UI/UX v3.1 §6.5 / reference 02: a scale bar. A route drawn without
+          // one leaves "is this a walk or an hour on a train" to the eye, and
+          // the eye is wrong at every zoom the traveller changes to.
+          scaleControl: true,
           styles: warmMapStyle,
           backgroundColor: "#f4f4f5",
         });
