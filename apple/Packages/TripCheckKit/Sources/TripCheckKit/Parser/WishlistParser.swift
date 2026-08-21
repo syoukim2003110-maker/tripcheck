@@ -5,8 +5,9 @@ public enum WishlistPriority: String, Equatable, Sendable {
   case must, optional, normal
 }
 
-/// lib/wishlist-parser.ts:12 — `WishlistTimeOfDay`
-public enum WishlistTimeOfDay: String, Equatable, Sendable {
+/// lib/wishlist-parser.ts:12 — `WishlistTimeOfDay`. `Codable` added for Task 9's
+/// `WishlistStopConstraint.timeOfDay` (`lib/trip-builder.ts:169`); no other consumer needed it yet.
+public enum WishlistTimeOfDay: String, Equatable, Sendable, Codable {
   case morning, evening, night
 }
 
