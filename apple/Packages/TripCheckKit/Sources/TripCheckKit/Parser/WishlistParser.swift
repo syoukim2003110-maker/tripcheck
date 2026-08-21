@@ -143,7 +143,9 @@ public enum WishlistParser {
       var stayMinutes: Int? = nil
       for pattern in WishlistPatterns.stayPatterns {
         if let m = pattern.firstMatch(in: text) {
-          let valueText = m.groups[0] ?? m.groups[1] ?? m.groups[2]
+          // Each entry in `stayPatterns` has exactly one capture group, so `groups` always
+          // has length 1 here — indexing past [0] would trap.
+          let valueText = m.groups[0]
           if let valueText, let value = Int(valueText) {
             stayMinutes = min(480, max(15, value))
           }
