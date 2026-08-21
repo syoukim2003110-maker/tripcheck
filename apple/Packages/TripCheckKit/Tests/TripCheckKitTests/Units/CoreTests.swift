@@ -18,6 +18,18 @@ import Testing
   #expect(CalendarDate("2026-03-08").map { $0.epochDay - CalendarDate("2026-03-07")!.epochDay } == 1)
 }
 
+@Test func clockTimeAndCalendarDateRejectNonDigitComponents() {
+  // TS の `\d` は ASCII 0–9 のみ。Swift の `Int(_:)` は先頭の "+" を受理してしまうため、
+  // 桁ごとに ASCII 数字だけであることを別途検証する必要がある。
+  #expect(ClockTime("+9:05") == nil)
+  #expect(ClockTime("09:+5") == nil)
+  #expect(ClockTime("9:5") == nil)                      // 分は \d{2} で 1 桁不可
+  #expect(ClockTime("09:05")?.minutes == 545)           // 通常入力は引き続き通る
+  #expect(CalendarDate("2026-+1-01") == nil)
+  #expect(CalendarDate("2026-1-01") == nil)             // 月は \d{2} で 1 桁不可
+  #expect(CalendarDate("2026-01-01") != nil)            // 通常入力は引き続き通る
+}
+
 @Test func haversineMatchesTypeScriptConstant() {
   let a = GeoPoint(latitude: 35.6655, longitude: 139.7708)   // 築地
   let b = GeoPoint(latitude: 35.7148, longitude: 139.7967)   // 浅草寺
