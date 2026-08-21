@@ -214,9 +214,38 @@ public enum PoiAccess {
   // lib/poi-access.ts:103-105 — NFKC + lowercase + strip whitespace/punctuation/symbol runs.
   private static let stripPattern = try! JSRegex("[\\s\\p{P}\\p{S}]+")
 
+  /// 正規化は NFKC 畳み込み + 正規表現置換で、この 2 つがアクセス方針の解決コストのほぼ全部。
+  /// 入力は「方針のラベル(固定の数語)」と「停留所の名前」しかなく、日内順序の探索は同じ数語を
+  /// 何千回も投げ直すので、純関数の答えをそのまま覚えておく。振る舞いは変わらない。
+  private final class NormalizedLabelMemo: @unchecked Sendable {
+    /// 1 プロセスで解決しうる地名の数は多くないが、無制限に伸ばさないための上限。
+    private static let capacity = 4096
+    private let lock = NSLock()
+    private var entries: [String: String] = [:]
+
+    func value(for key: String, compute: (String) -> String) -> String {
+      lock.lock()
+      if let cached = entries[key] {
+        lock.unlock()
+        return cached
+      }
+      lock.unlock()
+      let computed = compute(key)
+      lock.lock()
+      if entries.count >= Self.capacity { entries.removeAll(keepingCapacity: true) }
+      entries[key] = computed
+      lock.unlock()
+      return computed
+    }
+  }
+
+  private static let normalizedLabels = NormalizedLabelMemo()
+
   private static func normalizeAccessLabel(_ value: String) -> String {
-    let folded = value.precomposedStringWithCompatibilityMapping.lowercased()
-    return stripPattern.replacingAll(in: folded, with: "")
+    normalizedLabels.value(for: value) { raw in
+      let folded = raw.precomposedStringWithCompatibilityMapping.lowercased()
+      return stripPattern.replacingAll(in: folded, with: "")
+    }
   }
 
   /// TS `poiAccessPolicyForStop` (`lib/poi-access.ts:107-118`), narrowed to the `name` field —

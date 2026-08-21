@@ -8,10 +8,6 @@ import Foundation
  * :1126-1257 (`knownTransferCount` … `clusterDistanceKm`)。
  */
 
-/// JS の `Number.MAX_SAFE_INTEGER`。TS 側が「無限大の代わりに使う一番大きい安全な整数」として
-/// 使っている値で、比較のたびに現れるのでここに 1 つだけ置く。
-let jsMaxSafeInteger = 9_007_199_254_740_991
-
 /// TS `routeLegKey` (`lib/trip-builder.ts:363-365`) — ライブ経路・モード指定・乗換数を引く鍵。
 public func routeLegKey(_ fromId: String, _ toId: String) -> String {
   "\(fromId)::\(toId)"

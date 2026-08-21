@@ -217,6 +217,38 @@ public enum DayOrdering {
     return best
   }
 
+  /// TS `:1455-1472` — 有界探索の「緊急度順」の種。TS の比較関数と同じ順で同じだけのキーを見る:
+  /// 早め訪問の証拠 → 固定時刻 → 閉店/最終入場 → id。
+  ///
+  /// 固定時刻の節は TS `:1462-1464` では「どちらかに時刻指定があればその場で return」なので、
+  /// **両方が同じ時刻に予約されている組は同点(0)で止まり、閉店時刻も id も見ない**。
+  /// 安定ソートなのでその組は入力順のまま残る。ここを落とすと種が変わり、貪欲挿入と改善パスの
+  /// 出発点が TS とずれる。
+  static func urgencySeed(
+    stops: [RouteStop],
+    constraints: [String: WishlistStopConstraint],
+    earlyVisitStopIds: Set<String>,
+    openingWindows: [String: [VisitWindow]]
+  ) -> [RouteStop] {
+    func closingKey(_ stop: RouteStop) -> Int {
+      (openingWindows[stop.id] ?? []).reduce(jsMaxSafeInteger) { min($0, $1.lastEntryMinutes ?? $1.closeMinutes) }
+    }
+    return stableSorted(stops) { left, right in
+      let leftEarly = earlyVisitStopIds.contains(left.id)
+      let rightEarly = earlyVisitStopIds.contains(right.id)
+      if leftEarly != rightEarly { return leftEarly }
+      let leftTime = constraints[left.id]?.fixedTimeMinutes
+      let rightTime = constraints[right.id]?.fixedTimeMinutes
+      if leftTime != nil || rightTime != nil {
+        return (leftTime ?? jsMaxSafeInteger) < (rightTime ?? jsMaxSafeInteger)
+      }
+      let leftClose = closingKey(left)
+      let rightClose = closingKey(right)
+      if leftClose != rightClose { return leftClose < rightClose }
+      return jsStringLess(left.id, right.id)
+    }
+  }
+
   /// TS `:1409-1478` — 7 を超える日の有界ヒューリスティクス。3 つの種(地理順 / 緊急度順 /
   /// 貪欲挿入)から始め、`min(6, n)` パスの「1 つ抜いて入れ直す」で改善する。
   private static func boundedOrder(
@@ -227,23 +259,10 @@ public enum DayOrdering {
     openingWindows: [String: [VisitWindow]],
     scoreOf: ([RouteStop]) -> ScheduleOrderScore
   ) -> [RouteStop] {
-    func closingKey(_ stop: RouteStop) -> Int {
-      (openingWindows[stop.id] ?? []).reduce(jsMaxSafeInteger) { min($0, $1.lastEntryMinutes ?? $1.closeMinutes) }
-    }
-    let urgencyOrder = stableSorted(stops) { left, right in
-      let leftEarly = earlyVisitStopIds.contains(left.id)
-      let rightEarly = earlyVisitStopIds.contains(right.id)
-      if leftEarly != rightEarly { return leftEarly }
-      // TS `:1462-1464` は「どちらかに時刻指定があるとき」だけこの節を見るが、両方無いときは
-      // どちらも MAX_SAFE_INTEGER で同点になるので、無条件に比べても結果は同じ。
-      let leftTime = constraints[left.id]?.fixedTimeMinutes ?? jsMaxSafeInteger
-      let rightTime = constraints[right.id]?.fixedTimeMinutes ?? jsMaxSafeInteger
-      if leftTime != rightTime { return leftTime < rightTime }
-      let leftClose = closingKey(left)
-      let rightClose = closingKey(right)
-      if leftClose != rightClose { return leftClose < rightClose }
-      return jsStringLess(left.id, right.id)
-    }
+    let urgencyOrder = urgencySeed(
+      stops: stops, constraints: constraints,
+      earlyVisitStopIds: earlyVisitStopIds, openingWindows: openingWindows
+    )
 
     var inserted: [RouteStop] = []
     for stop in urgencyOrder {
@@ -262,10 +281,14 @@ public enum DayOrdering {
     }
 
     var best = geographic
-    for candidate in [urgencyOrder, inserted] where scoreOf(candidate) < scoreOf(best) {
-      best = candidate
+    var bestScore = scoreOf(geographic)
+    for candidate in [urgencyOrder, inserted] {
+      let candidateScore = scoreOf(candidate)
+      if candidateScore < bestScore {
+        best = candidate
+        bestScore = candidateScore
+      }
     }
-    var bestScore = scoreOf(best)
     let maxPasses = min(6, stops.count)
     for _ in 0..<maxPasses {
       var improved: [RouteStop]?
@@ -289,16 +312,4 @@ public enum DayOrdering {
     }
     return best
   }
-}
-
-/// `Array.prototype.sort` は安定(ES2019 以降)だが Swift の `sorted(by:)` はそうではない。
-/// 同点の要素は入力順のまま残す。
-func stableSorted<Element>(_ elements: [Element], by areInIncreasingOrder: (Element, Element) -> Bool) -> [Element] {
-  elements.enumerated()
-    .sorted { left, right in
-      if areInIncreasingOrder(left.element, right.element) { return true }
-      if areInIncreasingOrder(right.element, left.element) { return false }
-      return left.offset < right.offset
-    }
-    .map(\.element)
 }

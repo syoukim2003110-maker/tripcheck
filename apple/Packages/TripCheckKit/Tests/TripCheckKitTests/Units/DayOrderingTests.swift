@@ -254,3 +254,36 @@ import Testing
     lockedOrder: [])
   #expect(ordered.map(\.id) == RouteOrdering.optimizeFromBase(stops, base: base.routeStop).map(\.id))
 }
+
+@Test func twoStopsBookedAtTheSameTimeKeepTheirInputOrder() {
+  // lib/trip-builder.ts:1462-1464 — 固定時刻の節は「どちらかに時刻があれば」その場で返る。
+  // 同じ時刻に予約された 2 件は差 0 = 同点で止まり、閉店時刻も id も見ないまま安定ソートが
+  // 入力順を残す。閉店時刻と id はどちらも逆向きに並べてあるので、そこまで落ちたら順が反転する。
+  var stops = [
+    TestStops.point(id: "z-booked", lat: 35, lng: 139.0000, stayMinutes: 15),
+    TestStops.point(id: "a-booked", lat: 35, lng: 139.0001, stayMinutes: 15),
+  ]
+  stops += (2..<8).map { TestStops.point(id: "filler-\($0)", lat: 35, lng: 139 + Double($0) * 0.0001, stayMinutes: 15) }
+
+  let booked = WishlistStopConstraint(priority: .must, fixedTime: "10:00", fixedTimeMinutes: 600, isReservation: true)
+  let constraints = ["z-booked": booked, "a-booked": booked]
+  // z は遅くまで開いていて id も後ろ、a は先に閉まって id も前 — 両キーとも a を先にしたがる。
+  let windows: [String: [VisitWindow]] = [
+    "z-booked": [VisitWindow(openMinutes: 540, closeMinutes: 18 * 60)],
+    "a-booked": [VisitWindow(openMinutes: 540, closeMinutes: 12 * 60)],
+  ]
+
+  let seed = DayOrdering.urgencySeed(
+    stops: stops, constraints: constraints, earlyVisitStopIds: [], openingWindows: windows)
+  #expect(seed.prefix(2).map(\.id) == ["z-booked", "a-booked"])
+
+  // 時刻が違えば早い方が先。時刻が片方だけなら、持っている方が先。
+  let earlier = WishlistStopConstraint(priority: .must, fixedTime: "09:30", fixedTimeMinutes: 570, isReservation: true)
+  let ordered = DayOrdering.urgencySeed(
+    stops: stops, constraints: ["z-booked": booked, "a-booked": earlier],
+    earlyVisitStopIds: [], openingWindows: windows)
+  #expect(ordered.prefix(2).map(\.id) == ["a-booked", "z-booked"])
+  #expect(DayOrdering.urgencySeed(
+    stops: stops, constraints: ["z-booked": booked], earlyVisitStopIds: [], openingWindows: windows
+  ).first?.id == "z-booked")
+}
