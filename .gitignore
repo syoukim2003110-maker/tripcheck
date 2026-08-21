@@ -47,3 +47,7 @@ next-env.d.ts
 
 # QA harness output (baselines are tracked in tests/vr/baselines)
 /tools/qa/vr-out/
+
+# Claude Code worktrees and SDD scratch
+/.claude/worktrees/
+/.superpowers/
