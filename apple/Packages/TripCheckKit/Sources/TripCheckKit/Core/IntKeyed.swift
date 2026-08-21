@@ -26,35 +26,55 @@ extension IntKeyedDictionary: ExpressibleByDictionaryLiteral {
 }
 
 extension IntKeyedDictionary: Codable {
-  private struct IntCodingKey: CodingKey {
-    let intValue: Int?
+  /// Accepts *every* string as a key — unlike a `CodingKey` whose `init?(stringValue:)` returns
+  /// `nil` for non-integer input, which would make `allKeys` silently drop those keys rather than
+  /// report them. `init(from:)` below does the actual integer validation itself, so a malformed
+  /// key throws instead of vanishing.
+  private struct AnyStringKey: CodingKey {
     let stringValue: String
+    let intValue: Int?
 
-    init?(stringValue: String) {
-      guard let intValue = Int(stringValue) else { return nil }
-      self.intValue = intValue
+    init(stringValue: String) {
       self.stringValue = stringValue
+      self.intValue = Int(stringValue)
     }
 
     init?(intValue: Int) {
-      self.intValue = intValue
       self.stringValue = String(intValue)
+      self.intValue = intValue
     }
   }
 
+  private static func isAsciiDigit(_ c: Character) -> Bool { c.isASCII && c.isNumber }
+
+  /// TS `Record<number, X>` keys are always `String(someInteger)` — ASCII digits with an optional
+  /// leading `-`, nothing else. `Int(_:)` alone is too permissive (it also accepts a leading `+`
+  /// and other locale-ish forms), so validate digit-by-digit first, the same approach
+  /// `ClockTime`/`CalendarDate` already use for the same reason.
+  private static func strictInt(_ value: String) -> Int? {
+    let digits = value.hasPrefix("-") ? value.dropFirst() : Substring(value)
+    guard !digits.isEmpty, digits.allSatisfy(isAsciiDigit) else { return nil }
+    return Int(value)
+  }
+
   public init(from decoder: Decoder) throws {
-    let container = try decoder.container(keyedBy: IntCodingKey.self)
+    let container = try decoder.container(keyedBy: AnyStringKey.self)
     var result: [Int: Value] = [:]
     for key in container.allKeys {
-      result[key.intValue!] = try container.decode(Value.self, forKey: key)
+      guard let intKey = Self.strictInt(key.stringValue) else {
+        throw DecodingError.dataCorrupted(
+          .init(codingPath: container.codingPath + [key], debugDescription: "non-integer key \"\(key.stringValue)\"")
+        )
+      }
+      result[intKey] = try container.decode(Value.self, forKey: key)
     }
     self.values = result
   }
 
   public func encode(to encoder: Encoder) throws {
-    var container = encoder.container(keyedBy: IntCodingKey.self)
+    var container = encoder.container(keyedBy: AnyStringKey.self)
     for (key, value) in values {
-      try container.encode(value, forKey: IntCodingKey(intValue: key)!)
+      try container.encode(value, forKey: AnyStringKey(intValue: key)!)
     }
   }
 }
