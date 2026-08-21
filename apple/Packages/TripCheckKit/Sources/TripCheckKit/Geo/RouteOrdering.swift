@@ -44,7 +44,7 @@ public enum RouteOrdering {
     return total
   }
 
-  private static func distanceKm(_ a: RouteStop, _ b: RouteStop) -> Double {
+  static func distanceKm(_ a: RouteStop, _ b: RouteStop) -> Double {
     straightLineDistanceKm(
       GeoPoint(latitude: a.latitude, longitude: a.longitude),
       GeoPoint(latitude: b.latitude, longitude: b.longitude)
@@ -121,7 +121,9 @@ public enum RouteOrdering {
       let eligibleIndices = remaining.indices.filter {
         remaining[$0].isAnchor == false || remaining[$0].id == nextRequiredAnchor
       }
-      var nearestIndex = eligibleIndices[0]
+      // anchor id が重複していると、次に必要な anchor がどれとも一致せず候補が空になりうる。
+      // 順序を壊すより、入力順のまま返す方が安全。
+      guard var nearestIndex = eligibleIndices.first else { return stops }
       var nearestDistance = distanceKm(current, remaining[nearestIndex])
       for index in eligibleIndices.dropFirst() {
         let candidateDistance = distanceKm(current, remaining[index])
@@ -151,5 +153,66 @@ public enum RouteOrdering {
       }
     }
     return route
+  }
+
+  /// TS `optimizeFromBase` (`lib/trip-builder.ts:591-637`) — ホテル(base)を出発して base に帰る
+  /// 巡回として最短の訪問順を出す。`orderForReservations` (`:1413`) の地理順の種。どのタスクの
+  /// brief にも現れないが、そこが唯一の呼び出し元なので Task 10 で一緒に移植した。
+  public static func optimizeFromBase(_ stops: [RouteStop], base: RouteStop) -> [RouteStop] {
+    guard stops.count > 1 else { return stops }
+    if stops.count > EngineConstants.heldKarpLimit {
+      let ordered = Array(optimize([base] + stops, preserveFirst: true).stops.dropFirst())
+      return routeDistanceFromBase(ordered, base: base) <= routeDistanceFromBase(ordered.reversed(), base: base)
+        ? ordered
+        : ordered.reversed()
+    }
+
+    let count = stops.count
+    let fullMask = (1 << count) - 1
+    var distances = Array(repeating: Array(repeating: Double.infinity, count: count), count: 1 << count)
+    var previous = Array(repeating: Array(repeating: -1, count: count), count: 1 << count)
+    for index in 0..<count { distances[1 << index][index] = distanceKm(base, stops[index]) }
+
+    for mask in 1...fullMask {
+      for last in 0..<count {
+        if mask & (1 << last) == 0 || !distances[mask][last].isFinite { continue }
+        for next in 0..<count {
+          if mask & (1 << next) != 0 { continue }
+          let nextMask = mask | (1 << next)
+          let candidate = distances[mask][last] + distanceKm(stops[last], stops[next])
+          if candidate < distances[nextMask][next] {
+            distances[nextMask][next] = candidate
+            previous[nextMask][next] = last
+          }
+        }
+      }
+    }
+
+    var last = 0
+    var best = Double.infinity
+    for index in 0..<count {
+      let candidate = distances[fullMask][index] + distanceKm(stops[index], base)
+      if candidate < best {
+        best = candidate
+        last = index
+      }
+    }
+
+    var order: [Int] = []
+    var mask = fullMask
+    var cursor = last
+    while cursor >= 0 {
+      order.append(cursor)
+      let parent = previous[mask][cursor]
+      mask ^= 1 << cursor
+      cursor = parent
+    }
+    return order.reversed().map { stops[$0] }
+  }
+
+  /// TS `routeDistanceFromBase` (`lib/trip-builder.ts:585-589`) — base を出て base に帰る閉路の距離。
+  public static func routeDistanceFromBase(_ stops: [RouteStop], base: RouteStop) -> Double {
+    guard let first = stops.first, let last = stops.last else { return 0 }
+    return distanceKm(base, first) + openPathDistanceKm(stops) + distanceKm(last, base)
   }
 }

@@ -114,3 +114,45 @@ import Testing
   #expect(!url.contains("浅草寺"))
   #expect(!url.contains("明治神宮"))
 }
+
+// MARK: - optimizeFromBase (lib/trip-builder.ts:585-637), ported alongside Task 10's
+// `orderForReservations`, which is its only caller.
+
+@Test func optimizeFromBaseLeavesAndReturnsToTheHotelTheShortWay() {
+  // ばらばらに与えた一直線上の 4 点は、ホテルを出て帰る閉路として並べ直される。直線なので
+  // 東行きと西行きの閉路長は必ず同じ(base の位置によらない)ため、どちらの向きも正解。
+  let line = TestStops.line(ids: ["a", "b", "c", "d"])
+  let scrambled = [line[2], line[0], line[3], line[1]]
+  let base = TestStops.point(id: "hotel", lat: 35.681236, lng: 139.767125 - 0.02)
+  let ordered = RouteOrdering.optimizeFromBase(scrambled, base: base)
+  #expect(ordered.map(\.id) == ["a", "b", "c", "d"] || ordered.map(\.id) == ["d", "c", "b", "a"])
+  #expect(RouteOrdering.routeDistanceFromBase(ordered, base: base)
+    < RouteOrdering.routeDistanceFromBase(scrambled, base: base))
+  #expect(RouteOrdering.optimizeFromBase([], base: base).isEmpty)
+  #expect(RouteOrdering.optimizeFromBase([line[0]], base: base).map(\.id) == ["a"])
+}
+
+@Test func optimizeFromBaseFallsBackToTheHeuristicBeyondTheHeldKarpLimit() {
+  // 11 点(> heldKarpLimit)は近似解に落ち、往路/復路の向きだけ距離で選び直す。
+  let ids = (0..<11).map { "line-\($0)" }
+  let stops = TestStops.line(ids: ids)
+  let base = TestStops.point(id: "hotel", lat: 35.681236, lng: 139.767125 - 0.02)
+  let ordered = RouteOrdering.optimizeFromBase(stops, base: base)
+  #expect(ordered.count == 11)
+  #expect(Set(ordered.map(\.id)) == Set(ids))
+  #expect(RouteOrdering.routeDistanceFromBase(ordered, base: base)
+    <= RouteOrdering.routeDistanceFromBase(ordered.reversed(), base: base))
+}
+
+@Test func aDuplicatedAnchorIdKeepsTheHeuristicFromCrashing() {
+  // Task 7 の残: anchor id が重複すると次に必要な anchor がどれとも一致せず候補が空になる。
+  // 順序を壊すより入力順のまま返す。
+  var stops = TestStops.ring(count: 12)
+  for index in stops.indices where index < 3 {
+    stops[index].isAnchor = true
+    stops[index].id = "same-anchor"
+  }
+  let out = RouteOrdering.optimize(stops, preserveFirst: true)
+  #expect(out.stops.count == stops.count)
+  #expect(out.exact == false)
+}

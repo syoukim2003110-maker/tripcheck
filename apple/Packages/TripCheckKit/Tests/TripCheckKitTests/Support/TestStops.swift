@@ -39,6 +39,20 @@ enum TestStops {
     return shuffled
   }
 
+  /// 東京駅の緯度に沿って `ids` の順に西→東へ約 1km 間隔で点を置く。日内順序のテストは
+  /// 「どの並びが幾何学的に近いか」を手計算できる必要があるので、円ではなく直線を使う。
+  static func line(ids: [String], stayMinutes: Int = 90) -> [RouteStop] {
+    let latitude = 35.681236 // 東京駅
+    // `straightLineDistanceKm` と同じ地球半径 6371km 換算で、この緯度の経度 1 度 ≒ 90.3km。
+    let stepDegrees = 1 / (6371 * (Double.pi / 180) * cos(latitude * Double.pi / 180))
+    return ids.enumerated().map { index, id in
+      point(id: id, lat: latitude, lng: 139.767125 + Double(index) * stepDegrees, stayMinutes: stayMinutes)
+    }
+  }
+
+  /// 日本の食事窓(昼 11:00-14:30 / 夜 17:30-21:00)。食事停留所のドリフトを見るテスト用。
+  static let japanMeals = Destinations.byId(.japan).meals
+
   static func point(id: String, lat: Double, lng: Double, stayMinutes: Int = 90) -> RouteStop {
     RouteStop(
       id: id,
