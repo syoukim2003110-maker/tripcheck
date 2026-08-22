@@ -19,12 +19,10 @@ public struct CalendarDate: Hashable, Sendable, Comparable, CustomStringConverti
   public init?(_ text: String) {
     let p = text.split(separator: "-")
     guard p.count == 3, p[0].count == 4, p[1].count == 2, p[2].count == 2,
-          p[0].allSatisfy(Self.isAsciiDigit), p[1].allSatisfy(Self.isAsciiDigit), p[2].allSatisfy(Self.isAsciiDigit),
+          p[0].allSatisfy(JSText.isAsciiDigit), p[1].allSatisfy(JSText.isAsciiDigit), p[2].allSatisfy(JSText.isAsciiDigit),
           let y = Int(p[0]), let m = Int(p[1]), let d = Int(p[2]) else { return nil }
     self.init(year: y, month: m, day: d)
   }
-
-  private static func isAsciiDigit(_ c: Character) -> Bool { c.isASCII && c.isNumber }
 
   static func isLeap(_ y: Int) -> Bool { (y % 4 == 0 && y % 100 != 0) || y % 400 == 0 }
 

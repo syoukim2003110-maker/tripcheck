@@ -13,7 +13,8 @@ extension Feasibility {
   static func isTruthy(_ value: String?) -> Bool { !(value ?? "").isEmpty }
 
   /// TS `new Date().toISOString()` — UTC with milliseconds, e.g. `2026-08-09T00:00:00.000Z`.
-  static func nowISO8601(_ date: Date = Date()) -> String {
+  /// Public because the app layer stamps its own records with the same spelling (Plan 2).
+  public static func nowISO8601(_ date: Date = Date()) -> String {
     let formatter = ISO8601DateFormatter()
     formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     formatter.timeZone = TimeZone(secondsFromGMT: 0)

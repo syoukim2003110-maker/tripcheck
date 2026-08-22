@@ -12,6 +12,11 @@ import Foundation
 ///
 /// 硬い制約は自分だけのスロットを持つ。どれだけ大きな柔らかい点数でも、予約や営業時間の違反
 /// 1 件を数値的に上回れてはいけない。最後の id キーは完全同点を決定的にするためだけにある。
+///
+/// `Comparable` と `Hashable` は足並みが揃っていない —— `<` は `idKey` を ICU の照合順で較べる
+/// (TS の `localeCompare` と同じ)が `==` は Swift の文字列等価なので、照合では同順だが綴りが
+/// 違う 2 つの `idKey` は `<` でも `>` でも `==` でもない。使うのは `stableSorted` だけで、
+/// そこは入力順が最後のタイブレークになるため順は決まる。
 public struct ScheduleOrderScore: Comparable, Hashable, Sendable {
   public var hardViolationCount: Int
   public var hardViolationMinutes: Int

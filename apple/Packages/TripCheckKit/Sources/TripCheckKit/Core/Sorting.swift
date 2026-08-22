@@ -14,14 +14,18 @@ public func jsStringCompare(_ a: String, _ b: String) -> Int {
 ///
 /// 使い分けの規則は移植元をそのまま写す: **TS が `localeCompare` を呼んでいる箇所は
 /// `jsLocaleCompare`、TS が `<` や比較関数なしの `sort()` を使っている箇所は `jsStringLess`**。
-/// TS 側の `localeCompare` は 1 箇所ではなく 12 箇所ある(`lib/trip-builder.ts:1035, 1185, 1197,
-/// 1298, 1410, 1434, 1724, 1856, 1878, 1879, 1960, 1968`)。
+/// TS 側の `localeCompare` は 1 箇所ではない。移植した範囲だけで 24 箇所あり、うち 12 箇所が
+/// `lib/trip-builder.ts:1035, 1185, 1197, 1298, 1410, 1434, 1724, 1856, 1878, 1879, 1960, 1968`。
+/// 残りは `trip-scenarios.ts`(7)・`feasibility-result.ts`(2)・`destinations.ts`(1)・
+/// `trip-store.ts`(1)・`presentation/trip-presentation.ts`(1)で、24 箇所すべてに対応する Swift
+/// がある(最後の 2 つは TS がロケール引数を明示するので `jsLocaleCompare` ではなく
+/// `collationLocale` を渡す `String.compare`)。
 ///
 /// TS の `localeCompare` は既定ロケール依存 = 実行環境依存だが、移植先は端末をまたいで同じ順に
 /// ならなければならない。そこで既定ロケールではなく `en` 固定で比較する。
 ///
-/// TS 側の 12 箇所は全て突き合わせ済みで、対応する Swift 側は次の通り(Task 26 で最後の 5 件を
-/// 揃えた):
+/// `lib/trip-builder.ts` の 12 箇所の対応は次の通り(Task 26 で最後の 5 件を揃えた)。
+/// 他モジュールの 12 箇所は各ファイルの移植元コメントが同じ対応を持つ:
 ///
 /// | TS `lib/trip-builder.ts` | Swift |
 /// | --- | --- |

@@ -14,11 +14,11 @@ apple/tools/verify-kit.sh --filter Golden # そのほかの引数は swift test 
 
 並列を既定にしているのは、この suite が**並列で緑であること自体が検査対象**だから。実時計に触るテストが混ざると機械の忙しさで答えが変わる —— 照合系(G1/G3)は `Tests/TripCheckKitTests/Support/FrozenClock.swift` の止まった時計を使い、予算切れの側は `TestStops.timedOutTriple()` の刻む時計が受け持つ。
 
-## 検証値(2026-08-22、`apple/tools/verify-kit.sh` を 2 回連続)
+## 検証値(2026-08-23、`apple/tools/verify-kit.sh` を 3 回)
 
-**551 本すべて passed / `exit=0`**。内訳は Golden 11・不変条件 224・単体 315・smoke 1。
+**563 本すべて passed / `exit=0`**。内訳は Golden 11・不変条件 227・単体 324・smoke 1。
 
-以前 `--parallel` で照合が落ちたのは load average 7 台のときだったので、CPU を全コア埋めた状態(load average 16.8)でもう一度回した —— 同じく 551 本 passed / `exit=0`。
+3 回のうち 2 回は素の状態、1 回は 15 コアを全部埋めた状態(load average 26 → 29)で回した —— どれも 563 本 passed / `exit=0`。以前 `--parallel` で照合が落ちたのは load average 7 台のときだったので、その 4 倍の負荷でも動かないことを見ている。
 
 | | 母集団 | 結果 |
 | --- | --- | --- |
@@ -26,7 +26,7 @@ apple/tools/verify-kit.sh --filter Golden # そのほかの引数は swift test 
 | G2 パーサ | 合成コーパス 500 件(`Golden/ParserCorpusTests.swift`) | 候補分割 **F1 = 1.0**(閾値 0.97)。recall / precision / 明示マーカー / 見出し / 日割り当ても全て 1.0。1 件あたりの p95 は 200ms 未満 |
 | G3 TS 照合 | golden 500 + builder 23(`Golden/SnapshotParityTests.swift`) | `plan` / `fit` / `evidence` / `result` をフィールド単位で突き合わせて **差分 0**。除外は 61 行・4 種類だけで、その全行が実際に差分を飲み込んでいることを `everyIgnoredPathStillEarnsItsPlace` が検査する(付録 A) |
 | 共有リンク | `Fixtures/share-vectors.json`(`Units/ShareCodecTests.swift`) | ベクタ **17/17** が Web と**バイト同一**、スコープ付き墨消し **68/68** も同じ。復号だけのベクタ 29 件も Web と同じ値に着く |
-| JSMath | `Fixtures/js-math-vectors.v1.json`(`Units/JSMathTests.swift`) | V8 12.4.254.21(Node 22.18.0)と **86,510 標本がビット一致**(緯度の cos/sin 45,002、小引数 sin 20,001、asin 20,001、π/2 近傍 240、中規模還元 322、巨大引数 242、builder コーパスの全順序対 702 辺) |
+| JSMath | `Fixtures/js-math-vectors.v1.json`(`Units/JSMathTests.swift`) | V8 `12.4.254.21-node.27`(フィクスチャの `v8Version` そのまま。Node 22.18.0)と **86,510 標本がビット一致**(緯度の cos/sin 45,002、小引数 sin 20,001、asin 20,001、π/2 近傍 240、中規模還元 322、巨大引数 242、builder コーパスの全順序対 702 辺) |
 | Kit 境界 | `Invariants/ImportBoundaryTests.swift` | Kit のソースに `import Foundation` 以外が無い。`PlannerViewState` の名前も現れない(spec §5.1) |
 
 ## TS 側のフィクスチャを作り直す

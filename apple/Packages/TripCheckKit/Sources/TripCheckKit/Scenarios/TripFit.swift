@@ -25,7 +25,7 @@ public enum TripScenarios {
   /// 旅行者が実際に使える時計の窓だけ」——`availableMinutes` に件数が一切入らないのはそのため。
   static func dayWindow(_ day: BuiltPlanDay, dayIndex: Int, pace: Pace, dayEnd: String) -> TripFitDay {
     let start = ClockTime(day.startTime)?.minutes ?? 0
-    let ordinaryEnd = ClockTime(dayEnd)?.minutes ?? 22 * 60
+    let ordinaryEnd = ClockTime(dayEnd)?.minutes ?? EngineConstants.defaultDayEnd.minutes
     // TS `day.deadline ? clockMinutes(day.deadline) : null` — 空文字は falsy なので null 扱い。
     let deadline: Int? = {
       guard let text = day.deadline, !text.isEmpty else { return nil }

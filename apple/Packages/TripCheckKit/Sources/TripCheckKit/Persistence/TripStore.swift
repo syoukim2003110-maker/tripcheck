@@ -273,6 +273,11 @@ public actor TripStore {
 
   /// 前回の書き込みが途中で落ちたときの残り(`.<uuid>.tmp`)を片付ける。`list()` は `.json`
   /// しか見ないので害は無いが、置いたままにすると溜まる一方になる。
+  ///
+  /// **1 つのディレクトリを触るのは 1 つの `TripStore` だけ**、という前提の上に立っている:
+  /// 掃除は年齢を見ずに `.tmp` を消すので、同じディレクトリを別のインスタンス(別プロセス、
+  /// 別のアプリ拡張)が同時に書いていると、書きかけの一時ファイルを横から消してしまう。
+  /// 単一インスタンスで使う限り、消える `.tmp` は必ず死んだ書き込みの残骸。
   private func sweepTemporaryFiles() {
     guard let urls = try? FileManager.default.contentsOfDirectory(
       at: directory,

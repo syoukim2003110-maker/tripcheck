@@ -45,15 +45,13 @@ extension IntKeyedDictionary: Codable {
     }
   }
 
-  private static func isAsciiDigit(_ c: Character) -> Bool { c.isASCII && c.isNumber }
-
   /// TS `Record<number, X>` keys are always `String(someInteger)` — ASCII digits with an optional
   /// leading `-`, nothing else. `Int(_:)` alone is too permissive (it also accepts a leading `+`
   /// and other locale-ish forms), so validate digit-by-digit first, the same approach
   /// `ClockTime`/`CalendarDate` already use for the same reason.
   private static func strictInt(_ value: String) -> Int? {
     let digits = value.hasPrefix("-") ? value.dropFirst() : Substring(value)
-    guard !digits.isEmpty, digits.allSatisfy(isAsciiDigit) else { return nil }
+    guard !digits.isEmpty, digits.allSatisfy(JSText.isAsciiDigit) else { return nil }
     return Int(value)
   }
 

@@ -221,6 +221,7 @@ public enum PlaceResolution { case confirmed(ResolvedStop), review([PlaceCandida
 - `ResolutionPipeline`(Kit、純粋)が occurrence ベースの入力(`inputIndex`)・**完全一致の自動採用**・**非観光タイプは自動採用しない**・国の投票(明示 > 国コード投票 > 最小外接箱、未対応コードがあれば `worldwide`、同数は `worldwide`)・混在国の検出を担う。
 - 解決器は順に束ねる: `CatalogResolver`(東京 18 + スイス 8、Kit 内)→ `ApplePlaceResolver`(App 内、MapKit)→ (次 spec)`GooglePlaceResolver`(Worker)。先に `confirmed` を返した解決器で止まる。
 - `ResolvedStop.provider` と Evidence: `catalog → tripcheck_catalog / estimated(verifiedAt 付き)`、`user → user_provided`、`apple → other / estimated`(営業時間は `unknown`)、`google → google / verified`。**Apple 由来を `verified` にしない**(統合仕様 §3.5 の二値厳守)。
+- ただし**この制約は Kit の中では強制されない**。`EvidenceSnapshot` は `provider` を読まず、`sourceUrl` / `verifiedAt` / `providerRef` の有無から状態を導くので、Apple 解決器の側が守る: `providerRef` は nil、`verifiedAt` は空文字、id の接頭辞に `google-` / `hotel-` を使わない。これを破ると Apple の推定が `verified` として出る。
 
 ### 4.3 `ApplePlaceResolver`(App ターゲット)
 
@@ -355,6 +356,8 @@ TDD: 各モジュールは**まず golden/不変条件のテストを赤にし�
 | 10 | 共有は Web 互換の `#t=` に加えて `tripcheck://` スキーム | アプリ間で開ける |
 | 11 | 統合仕様 §13.2 の表に「Apple Maps 検索: 1 行の場所名と地域バイアス」を追加する(プライバシー開示の更新は配布 spec で) | 新しい送信先 |
 | 12 | golden オラクル(G1)に加えて **TS スナップショット照合(G3)** を追加 | オラクルは日割り・時刻の差を見ないため |
+| 13 | §3.1 の 6 つの自由関数は、名前空間付きの `static` として出荷した(`TripBuilder.build`、`TripScenarios.assessTripFit` / `.counterfactuals`、`Feasibility.snapshot` / `.derive`、`PlannerEdits.evaluate`) | 移植元のモジュール境界が呼び出し側にそのまま見える。トップレベルに 6 つの動詞を並べるより、どの TS ファイルの続きかが読める |
+| 14 | §4.2 の `resolve` は `[PlaceResolution]` ではなく **出現順で索く `[Int: PlaceResolution]`** を返す | 解決器は一部の問い合わせにしか答えないことがある。配列だと「答えなかった」を埋め草で表すことになり、`inputIndex` との対応が位置頼みになる |
 
 ---
 

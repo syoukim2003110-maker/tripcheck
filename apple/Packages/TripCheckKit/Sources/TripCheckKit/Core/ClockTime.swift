@@ -12,13 +12,11 @@ public struct ClockTime: Hashable, Sendable, Comparable, CustomStringConvertible
   public init?(_ text: String) {
     let parts = text.split(separator: ":", omittingEmptySubsequences: false)
     guard parts.count == 2, parts[0].count <= 2, parts[1].count == 2,
-          parts[0].allSatisfy(Self.isAsciiDigit), parts[1].allSatisfy(Self.isAsciiDigit),
+          parts[0].allSatisfy(JSText.isAsciiDigit), parts[1].allSatisfy(JSText.isAsciiDigit),
           let h = Int(parts[0]), let m = Int(parts[1]),
           (0...23).contains(h), (0...59).contains(m) else { return nil }
     minutes = h * 60 + m
   }
-
-  private static func isAsciiDigit(_ c: Character) -> Bool { c.isASCII && c.isNumber }
 
   public var description: String { String(format: "%02d:%02d", minutes / 60, minutes % 60) }
 

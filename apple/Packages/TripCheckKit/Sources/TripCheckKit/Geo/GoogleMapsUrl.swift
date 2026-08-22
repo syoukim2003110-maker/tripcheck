@@ -8,11 +8,11 @@ public enum GoogleTravelMode: String, Codable, Sendable {
 /// lib/route-optimizer.ts:436-452 — `buildGoogleMapsUrl`
 public enum GoogleMapsUrl {
   public static func build(_ stops: [RouteStop], travelMode: GoogleTravelMode = .transit) -> String {
-    // Google Maps URLs accept at most 10 points; drop middle waypoints but
-    // keep the real destination so the final leg never vanishes.
+    // Google Maps URLs accept at most `googleMapsWaypointLimit` points; drop middle
+    // waypoints but keep the real destination so the final leg never vanishes.
     let visibleStops: [RouteStop]
     if stops.count > EngineConstants.googleMapsWaypointLimit {
-      visibleStops = Array(stops.prefix(9)) + [stops[stops.count - 1]]
+      visibleStops = Array(stops.prefix(EngineConstants.googleMapsWaypointLimit - 1)) + [stops[stops.count - 1]]
     } else {
       visibleStops = stops
     }

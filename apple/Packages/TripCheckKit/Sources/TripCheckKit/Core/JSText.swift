@@ -101,6 +101,11 @@ public enum JSText {
   static let wordBoundary =
     "(?:(?<=[0-9A-Za-z_])(?![0-9A-Za-z_])|(?<![0-9A-Za-z_])(?=[0-9A-Za-z_]))"
 
+  /// JS の `\d` —— ASCII の `0`–`9` だけ。`Character.isNumber` は Unicode の数字全体(全角も
+  /// 漢数字も各種の桁も)を数え、`Int(_:)` は先頭の `+` まで受けるので、桁ごとにここで絞る。
+  /// `ClockTime` / `CalendarDate` / `IntKeyedDictionary` / `Gaps` が同じ規則で使う。
+  static func isAsciiDigit(_ character: Character) -> Bool { character.isASCII && character.isNumber }
+
   /// `String.prototype.normalize("NFKC")`。
   ///
   /// `precomposedStringWithCompatibilityMapping` だけでは足りない。互換分解で**新しく現れた**

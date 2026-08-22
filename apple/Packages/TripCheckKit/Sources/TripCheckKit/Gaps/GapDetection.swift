@@ -191,7 +191,7 @@ public enum GapDetection {
     let chars = Array(value)
     guard chars.count == 5, chars[2] == ":" else { return nil }
     let digits = [chars[0], chars[1], chars[3], chars[4]]
-    guard digits.allSatisfy({ $0.isASCII && $0.isNumber }),
+    guard digits.allSatisfy(JSText.isAsciiDigit),
           let h0 = chars[0].wholeNumberValue, let h1 = chars[1].wholeNumberValue,
           let m0 = chars[3].wholeNumberValue, let m1 = chars[4].wholeNumberValue
     else { return nil }
@@ -345,7 +345,7 @@ public enum GapDetection {
   /// TS `detectGapsFromBuiltDay` (`:238-266`) —— 既に決定的に組み上がった `BuiltPlanDay`/
   /// `TripFitDay` の出力を読むだけの薄い橋渡し。計画のロジックはここでは持たない。
   public static func detect(day: BuiltPlanDay, fitDay: TripFitDay, options: BuiltDayGapOptions = BuiltDayGapOptions()) -> [ItineraryGap] {
-    let transferBufferMinutes = boundedMinutes(options.transferBufferMinutes ?? 10)
+    let transferBufferMinutes = boundedMinutes(options.transferBufferMinutes ?? EngineConstants.defaultTransferBuffer)
     return detect(day: GapDetectionDay(
       dayIndex: options.dayIndex ?? fitDay.dayIndex,
       startAt: day.startTime,

@@ -12,7 +12,7 @@
 #
 # 出力: ログの末尾 40 行 + `exit=<code> log=<path>`。exit code は swift test のもの。
 set -u
-cd "$(dirname "$0")/../Packages/TripCheckKit"
+cd "$(dirname "$0")/../Packages/TripCheckKit" || exit 1
 
 typeset -a PARALLEL FORWARDED
 PARALLEL=(--parallel)
