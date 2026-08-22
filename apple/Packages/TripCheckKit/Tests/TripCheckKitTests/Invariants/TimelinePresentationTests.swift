@@ -435,3 +435,117 @@ import Testing
   let url = TripPresentation.googleMapsSearchUrl(stop)
   #expect(url == "https://www.google.com/maps/search/?api=1&query=sensoji%20Asakusa%20%26%20Tokyo")
 }
+
+// MARK: - `tests/day-presentation.test.ts` の移植
+
+private func presentationStop(arrival: String, departure: String) -> DayTimeBarInput.Stop {
+  DayTimeBarInput.Stop(arrival: arrival, departure: departure)
+}
+
+private func presentationDay(
+  startTime: String = "09:00",
+  finishTime: String = "17:30",
+  stops: [DayTimeBarInput.Stop] = [],
+  legMinutes: [Int] = []
+) -> DayTimeBarInput {
+  DayTimeBarInput(startTime: startTime, finishTime: finishTime, stops: stops, legMinutes: legMinutes)
+}
+
+/// TS `test("a coherent day is valid and reuses the shared time-bar numbers")`(`:51-71`)。
+@Test func aCoherentDayIsValidAndReusesTheSharedTimeBarNumbers() {
+  let presentation = DayPresentationBuilder.build(
+    presentationDay(
+      stops: [
+        presentationStop(arrival: "09:00", departure: "10:30"),
+        presentationStop(arrival: "11:00", departure: "12:30"),
+      ],
+      legMinutes: [30]
+    ),
+    fit: DayTimeBarFit(availableMinutes: 510, slackMinutes: 300),
+    dayIndex: 0
+  )
+  #expect(presentation.consistency == .valid)
+  #expect(presentation.diagnosticId == nil)
+  #expect(presentation.startClock == "09:00")
+  #expect(presentation.endClock == "17:30")
+  #expect(presentation.finalTimelineClock == "12:30")
+  #expect(presentation.visitMinutes == 180)
+  #expect(presentation.usedMinutes == presentation.visitMinutes + presentation.travelMinutes)
+  #expect(presentation.slackMinutes == 300)
+}
+
+/// TS `test("SHOT-P0-01: a 09:00–09:00 header over real visits is reported invalid")`(`:73-89`)。
+@Test func aZeroSpanHeaderOverRealVisitsIsReportedInvalid() {
+  let presentation = DayPresentationBuilder.build(
+    presentationDay(
+      startTime: "09:00",
+      finishTime: "09:00",
+      stops: [presentationStop(arrival: "09:00", departure: "10:30")]
+    ),
+    fit: DayTimeBarFit(availableMinutes: 690, slackMinutes: 0),
+    dayIndex: 1
+  )
+  #expect(presentation.consistency == .invalid)
+  #expect(presentation.issues.contains(.zero_span_with_stops))
+  #expect(presentation.diagnosticId?.hasPrefix("TC-TIME-D2-") == true)
+  let copy = DayPresentationBuilder.fallbackCopy(presentation, locale: .ja)
+  #expect(copy.body.contains("診断ID"))
+  #expect(copy.body.contains("TC-TIME-D2"))
+}
+
+/// TS `test("used minutes above the available window without overrun is invalid")`(`:91-101`)。
+@Test func usedMinutesAboveTheAvailableWindowWithoutOverrunIsInvalid() {
+  let presentation = DayPresentationBuilder.build(
+    presentationDay(stops: [presentationStop(arrival: "09:00", departure: "20:30")]),
+    // 6 時間の窓の中で 11.5 時間使いながら、超過は 0 だと言っている。
+    fit: DayTimeBarFit(availableMinutes: 360, slackMinutes: 0)
+  )
+  #expect(presentation.consistency == .invalid)
+  #expect(presentation.issues.contains(.used_exceeds_available_without_overrun))
+}
+
+/// TS `test("a timeline that keeps running after the advertised day end is invalid")`(`:103-116`)。
+@Test func aTimelineThatKeepsRunningAfterTheAdvertisedDayEndIsInvalid() {
+  let presentation = DayPresentationBuilder.build(
+    presentationDay(
+      finishTime: "17:30",
+      stops: [
+        presentationStop(arrival: "16:00", departure: "17:00"),
+        presentationStop(arrival: "17:30", departure: "19:45"),
+      ]
+    ),
+    fit: DayTimeBarFit(availableMinutes: 510, slackMinutes: 60)
+  )
+  #expect(presentation.consistency == .invalid)
+  #expect(presentation.issues.contains(.timeline_ends_after_header))
+}
+
+/// TS `test("an empty day and an overrun day both stay valid presentations")`(`:118-129`)。
+@Test func anEmptyDayAndAnOverrunDayBothStayValidPresentations() {
+  let empty = DayPresentationBuilder.build(presentationDay(startTime: "09:00", finishTime: "09:00"), fit: nil)
+  #expect(empty.consistency == .valid)
+  #expect(empty.isEmpty)
+
+  let overrun = DayPresentationBuilder.build(
+    presentationDay(stops: [presentationStop(arrival: "09:00", departure: "20:30")]),
+    fit: DayTimeBarFit(availableMinutes: 360, slackMinutes: -330)
+  )
+  #expect(overrun.consistency == .valid)
+  #expect(overrun.overrunMinutes > 0)
+}
+
+/// 日の見出しは `DayPresentation` の 2 つの数だけを読む(TS `dayHeaderSummary(presentation, locale)`)。
+@Test func theDayHeaderReadsTheDayPresentation() {
+  let presentation = DayPresentationBuilder.build(
+    presentationDay(
+      stops: [
+        presentationStop(arrival: "09:00", departure: "10:30"),
+        presentationStop(arrival: "11:00", departure: "12:30"),
+      ],
+      legMinutes: [30]
+    ),
+    fit: DayTimeBarFit(availableMinutes: 510, slackMinutes: 300)
+  )
+  #expect(TimelinePresentation.dayHeaderSummary(presentation, locale: .ja) == "2か所・余裕5時間")
+  #expect(TimelinePresentation.dayHeaderSummary(presentation, locale: .en) == "2 stops · 5h buffer")
+}

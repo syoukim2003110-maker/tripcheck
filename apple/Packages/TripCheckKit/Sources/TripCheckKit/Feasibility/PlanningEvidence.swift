@@ -120,10 +120,12 @@ public enum PlanningEvidence {
   /// TS `reasonOrder`(`:38`)。
   public static let reasonOrder: [SoftDurationReason] = [.crowd, .queue, .sold_out, .early_close, .detour]
 
-  /// TS `normalizeEvidenceText`(`:40-42`)。
+  static let whitespacePattern = try! JSRegex("\\s+")
+
+  /// TS `normalizeEvidenceText`(`:40-42`)—— NFKC で畳んでから空白を 1 つに詰める。
   static func normalize(_ value: String) -> String {
     let folded = value.precomposedStringWithCompatibilityMapping
-    return (try! JSRegex("\\s+"))
+    return whitespacePattern
       .replacingAll(in: folded, with: " ")
       .trimmingCharacters(in: .whitespacesAndNewlines)
   }

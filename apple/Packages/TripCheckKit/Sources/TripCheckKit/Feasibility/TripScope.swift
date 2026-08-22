@@ -62,6 +62,9 @@ public struct TripScopeWarning: Equatable, Sendable {
 
 public enum TripScope {
 
+  /// TS `/^[A-Z]{2}$/`(`lib/trip-scope.ts:33`)。
+  static let alpha2Pattern = try! JSRegex("^[A-Z]{2}$")
+
   /// TS `tripScopeWarnings`(`lib/trip-scope.ts:25-65`)。
   ///
   /// よくある場合 —— 1 か国(または 1 つの目的地プロファイル)、1 つの時計、フェリーの証拠なし
@@ -73,12 +76,11 @@ public enum TripScope {
     reference: Date = Date()
   ) -> [TripScopeWarning] {
     var warnings: [TripScopeWarning] = []
-    let pattern = try! JSRegex("^[A-Z]{2}$")
     var seenCodes = Set<String>()
     var codes: [String] = []
     for stop in stops {
       let code = (stop.countryCode ?? "").trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-      guard pattern.test(code), seenCodes.insert(code).inserted else { continue }
+      guard alpha2Pattern.test(code), seenCodes.insert(code).inserted else { continue }
       codes.append(code)
     }
     let countryCodes = codes.sorted(by: jsStringLess)

@@ -14,6 +14,11 @@ import Testing
   // `sed -n '20,316p' lib/presentation/planner-copy.ts | grep -cE '^    [a-zA-Z]+:'` = 267
   // (en ブロック `sed -n '318,616p' … | grep -cE …` も 267、キー列は diff で一致)。
   #expect(Copy.ja.keys.count == 267)
+  // 並びも TS の挿入順のまま(`Mirror` は宣言順を返す)。両端と入れ子の 4 つを留める。
+  #expect(Copy.ja.keys.first == "brandNote")
+  #expect(Copy.ja.keys.last == "close")
+  #expect(Copy.ja.keys.filter { ["buildSteps", "move", "freshSource", "crowd"].contains($0) }
+    == ["buildSteps", "move", "freshSource", "crowd"])
 }
 
 @Test func everyCopyStringPassesBannedTerms() {

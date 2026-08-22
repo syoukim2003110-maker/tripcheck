@@ -322,11 +322,15 @@ public enum TripPresentation {
     return "\(normalized / 60):\(String(format: "%02d", normalized % 60))"
   }
 
+  /// TS `/^(\d{1,2}):(\d{2})$/`(`:170`)。JS の `\d` は ASCII だけなので `[0-9]` と書く
+  /// —— ICU の `\d` は Unicode の数字全部を拾ってしまう。
+  static let plannerClockPattern = try! JSRegex("^([0-9]{1,2}):([0-9]{2})$")
+
   /// TS `shiftPlannerClock`(`:169-176`)—— 読めない値はそのまま返す。
   public static func shiftPlannerClock(_ value: String, minutes: Int) -> String {
-    guard let match = try? JSRegex("^(\\d{1,2}):(\\d{2})$").firstMatch(in: value),
-          let hours = match.groups.first.flatMap({ $0 }).flatMap({ Int($0) }),
-          let mins = match.groups.count > 1 ? match.groups[1].flatMap({ Int($0) }) : nil
+    guard let match = plannerClockPattern.firstMatch(in: value), match.groups.count >= 2,
+          let hours = match.groups[0].flatMap({ Int($0) }),
+          let mins = match.groups[1].flatMap({ Int($0) })
     else { return value }
     let total = hours * 60 + mins
     let shifted = max(0, min(23 * 60 + 59, total + minutes))

@@ -193,16 +193,19 @@ public enum CoverageProfile {
     "PL", "PT", "RO", "RS", "SE", "SI", "SK", "SM", "UA", "VA",
   ]
 
+  static let alpha2Pattern = try! JSRegex("^[A-Z]{2}$")
+  static let hintSeparatorPattern = try! JSRegex("[\\s_-]+")
+
   /// TS `normalizedCountryCode`(`:156-159`)。
   static func normalizedCountryCode(_ value: String?) -> String? {
     let normalized = (value ?? "").trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-    return (try! JSRegex("^[A-Z]{2}$")).test(normalized) ? normalized : nil
+    return alpha2Pattern.test(normalized) ? normalized : nil
   }
 
   /// TS `normalizedHint`(`:161-163`)。
   static func normalizedHint(_ value: String?) -> String {
     let trimmed = (value ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased(with: Locale(identifier: "en_US"))
-    return (try! JSRegex("[\\s_-]+")).replacingAll(in: trimmed, with: " ")
+    return hintSeparatorPattern.replacingAll(in: trimmed, with: " ")
   }
 
   /// TS `hasCoordinate`(`:165-174`)。
