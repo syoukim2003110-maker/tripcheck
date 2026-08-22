@@ -115,8 +115,8 @@ public enum TripBuilder {
       }
       unindexedResolvedStops[normalizedInput(candidate.input), default: []].append(candidate)
     }
-    // TS `:1968` も `localeCompare`。
-    for key in unindexedResolvedStops.keys {
+    // TS `:1968` も `localeCompare`。キーは先に配列へ写す(辞書を回しながら書き換えない)。
+    for key in Array(unindexedResolvedStops.keys) {
       unindexedResolvedStops[key] = stableSorted(unindexedResolvedStops[key] ?? []) { jsLocaleCompare($0.id, $1.id) < 0 }
     }
     var usedResolvedStopIds = Set<String>()
