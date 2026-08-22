@@ -131,3 +131,44 @@ import TripCheckKit
   #expect(fake.calls == AppleSuggestions.cacheLimit + 2)
   #expect(s.state == .ready)
 }
+
+/*
+ * 端末の地図そのもの(`MKLocalSearchCompleterAdapter`)の「もう一度尋ねるか」。
+ *
+ * `AppleSuggestions` の側は (文字列, 箱) を鍵にして正しく尋ね直すが、その先の一台は
+ * `MKLocalSearchCompleter` という delegate 式の道具で、**同じ文字列を入れ直しても鳴らない**。
+ * だから adapter にも同じ 2 つ組の記憶が要る —— 箱だけ変わったときに「文字列は同じだから」で
+ * 手元の答えを返すと、国を選んだのに前の国の候補がそのまま新しい鍵で覚えられる。
+ *
+ * 決めているのはここだけなので、判断を関数 1 つに抜いてその表を検査する。`FakeCompleter` は
+ * adapter の**手前**にいるので、この道はフェイクからは一度も見えない。
+ */
+@Test @MainActor func theAdapterAsksAgainWhenOnlyTheRegionChanged() {
+  typealias Adapter = MKLocalSearchCompleterAdapter
+  let swiss = Destinations.byId(.switzerland).bounds
+  let japan = Destinations.byId(.japan).bounds
+  #expect(swiss != nil && japan != nil && swiss != japan)
+
+  // まだ一度も尋ねていない = 尋ねる。
+  #expect(Adapter.nextStep(after: nil, asking: .init(query: "Bern", region: nil)) == .ask)
+
+  // 文字列も箱も前と同じ = delegate は鳴らないので、手元の答えをそのまま返す。
+  #expect(Adapter.nextStep(after: .init(query: "Bern", region: swiss),
+                           asking: .init(query: "Bern", region: swiss)) == .reuseLastAnswer)
+
+  // 文字列が変わった = 代入すれば鳴る。
+  #expect(Adapter.nextStep(after: .init(query: "Bern", region: swiss),
+                           asking: .init(query: "Berne", region: swiss)) == .ask)
+
+  // 箱が変わった = 一度畳んでから尋ね直す(この 4 行が直しの中身)。
+  #expect(Adapter.nextStep(after: .init(query: "Bern", region: nil),
+                           asking: .init(query: "Bern", region: swiss)) == .restartForNewRegion)
+  #expect(Adapter.nextStep(after: .init(query: "Bern", region: swiss),
+                           asking: .init(query: "Bern", region: nil)) == .restartForNewRegion)
+  #expect(Adapter.nextStep(after: .init(query: "Bern", region: swiss),
+                           asking: .init(query: "Bern", region: japan)) == .restartForNewRegion)
+  // 文字列も箱も変わったときも畳む —— 箱と文字列を続けて動かすと、箱だけ変わった時点の
+  // 答えが先に届いて、新しい文字列の答えとして混ざりうる。
+  #expect(Adapter.nextStep(after: .init(query: "Bern", region: nil),
+                           asking: .init(query: "Berne", region: swiss)) == .restartForNewRegion)
+}

@@ -88,6 +88,10 @@ struct StartScreen: View {
     }
     .background(Tokens.Color.bg)
     .scrollDismissesKeyboard(.interactively)
+    // 検索窓は画面と同い年(`@State`)なので、`RootView` が `.start` へ戻るたびに新品に
+    // なる —— 国が既に決まっている旅で戻ってきたときに世界中を探し直さないよう、
+    // 出てきた時点でも箱を渡す。国を選んだ瞬間に渡すのは `DestinationPicker` の側。
+    .task { suggestions.setRegion(store.destinationBounds) }
     .safeAreaInset(edge: .bottom) {
       Button {
         Task { await store.requestBuildFromStart() }

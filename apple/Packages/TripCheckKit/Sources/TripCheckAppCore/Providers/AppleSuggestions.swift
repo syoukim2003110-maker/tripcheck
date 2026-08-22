@@ -15,10 +15,13 @@ import TripCheckKit
  *      ので、続けて打っている間は 1 度も尋ねない。
  *   3. **同じ問いは覚えている。** 鍵は (文字列, 行き先の箱) の 2 つ組 —— 国を選べば同じ
  *      文字列でも探す範囲が変わるので、文字列だけを鍵にすると国を選んだ意味が消える。
+ *      **この 2 つ組は下の `MKLocalSearchCompleterAdapter` でも同じ**で、片方だけが覚えると
+ *      前の国の答えが新しい鍵で保存される。
  *
  * `MKLocalSearchCompleter` そのものは `SuggestionCompleting` の後ろに隠す。`swift test` は
- * macOS で走り、テストはフェイクだけを使う —— 実物の適合(`MKLocalSearchCompleterAdapter`)は
- * 組まれるが、テストからは一度も呼ばれない。
+ * macOS で走り、端末の地図に触る道はテストから一度も呼ばれない —— 実物の適合
+ * (`MKLocalSearchCompleterAdapter`)で検査できるのは、尋ね直すかどうかを決める純関数
+ * (`nextStep(after:asking:)`)だけである。
  */
 
 /// `MKLocalSearchCompletion` を持ち歩くための包み。あの型は `Sendable` を名乗らないが、
@@ -62,46 +65,101 @@ public protocol SuggestionCompleting: Sendable {
 @MainActor
 public final class MKLocalSearchCompleterAdapter: NSObject, SuggestionCompleting, MKLocalSearchCompleterDelegate {
 
-  private let completer = MKLocalSearchCompleter()
+  /// いま鳴らしている一台。箱が変わったときは畳んで取り替えるので `var`。
+  private var completer = MKLocalSearchCompleter()
   /// 答えを待っている 1 件。次の問い合わせが来たら畳む(2 つは待たない)。
   private var waiting: CheckedContinuation<[PlaceSuggestion], any Error>?
+  /// 手元の一台にいま入っている問い。まだ何も入れていなければ `nil`。
+  private var applied: Ask?
+
+  /// 端末の地図へ投げた 1 つの問い。**文字列と箱の 2 つ組で 1 つの問い** —— 国を選べば
+  /// 同じ文字列でも別の問いであり、答えも別物になる。
+  struct Ask: Equatable, Sendable {
+    var query: String
+    var region: GeoBounds?
+  }
+
+  /// 次にすること。`MKLocalSearchCompleter` は「入れ直しても同じ値なら鳴らない」ので、
+  /// 尋ね直したいときに何をすれば delegate が鳴るかまで含めて、ここで決める。
+  enum NextStep: Equatable, Sendable {
+    /// 文字列も箱も前と同じ。もう鳴らないので、手元の答えをそのまま返す。
+    case reuseLastAnswer
+    /// 文字列が変わった。`queryFragment` に入れれば鳴る。
+    case ask
+    /// 箱が変わった。文字列が同じなら代入では鳴かず、違っていても箱と文字列の 2 つを
+    /// 続けて動かすと途中の答えが混ざる。どちらも一台を畳んで取り替えてから入れる。
+    case restartForNewRegion
+  }
+
+  /// 「もう一度尋ねるか」を決める全部。純関数なので、端末の地図に触らずに検査できる。
+  nonisolated static func nextStep(after last: Ask?, asking: Ask) -> NextStep {
+    guard let last else { return .ask }
+    if last == asking { return .reuseLastAnswer }
+    return last.region == asking.region ? .ask : .restartForNewRegion
+  }
 
   public override init() {
     super.init()
-    completer.delegate = self
-    completer.resultTypes = [.pointOfInterest, .address]
+    adopt(completer)
   }
 
   public func complete(_ query: String, region: GeoBounds?) async throws -> [PlaceSuggestion] {
     // 前の問い合わせを畳む。捨てる側は既に `Task` が取り消されているので、空で返しても
     // 画面には出ない。
     finish(.success([]))
-    completer.region = region.map(Self.coordinateRegion) ?? MKCoordinateRegion(.world)
-    // 同じ文字列を入れ直しても delegate は鳴らない —— その場合は手元の答えをそのまま返す
-    // (待ち続けると、その 1 回だけ候補が永久に出ない)。
-    guard completer.queryFragment != query else {
+    let asking = Ask(query: query, region: region)
+    switch Self.nextStep(after: applied, asking: asking) {
+    case .reuseLastAnswer:
+      // 同じ問いを入れ直しても delegate は鳴らない —— 手元の答えをそのまま返す
+      // (待ち続けると、その 1 回だけ候補が永久に出ない)。
       return completer.results.map(PlaceSuggestion.init)
+    case .restartForNewRegion:
+      // 国を選んだ直後。同じ文字列を入れ直しても delegate は鳴かないので、そのまま待つと
+      // その 1 回の答えが来ない。空の一台に取り替えれば、同じ文字列がもう一度「変化」になる。
+      let fresh = MKLocalSearchCompleter()
+      completer.delegate = nil
+      completer.cancel()
+      completer = fresh
+      adopt(fresh)
+    case .ask:
+      break
     }
+    completer.region = region.map(Self.coordinateRegion) ?? MKCoordinateRegion(.world)
+    applied = asking
     return try await withCheckedThrowingContinuation { continuation in
       waiting = continuation
       completer.queryFragment = query
     }
   }
 
+  private func adopt(_ searchCompleter: MKLocalSearchCompleter) {
+    searchCompleter.delegate = self
+    searchCompleter.resultTypes = [.pointOfInterest, .address]
+  }
+
   /*
    * delegate の 2 つは `nonisolated` にして中で本線へ入り直す。MapKit がこれを本線から呼ぶのは
    * 確かだが、protocol 側の隔離注釈は SDK の版で変わるので、こちらの約束を SDK に預けない。
-   * 引数の completer は手元のものと同じ 1 台なので受け取らず(型が `Sendable` ではないため
-   * 閉包へ持ち込めない)、失敗も文だけ持ち出す。
+   * 引数の completer は型が `Sendable` ではないので閉包へ持ち込めない —— 持ち出すのは
+   * 見分けのための同一性(`ObjectIdentifier`)と、失敗の文だけ。畳んだ一台の答えが遅れて
+   * 届くことがあるので、いま鳴らしている一台からの声かどうかを毎回見る。
    */
 
   nonisolated public func completerDidUpdateResults(_ searchCompleter: MKLocalSearchCompleter) {
-    MainActor.assumeIsolated { finish(.success(self.completer.results.map(PlaceSuggestion.init))) }
+    let source = ObjectIdentifier(searchCompleter)
+    MainActor.assumeIsolated {
+      guard source == ObjectIdentifier(self.completer) else { return }
+      finish(.success(self.completer.results.map(PlaceSuggestion.init)))
+    }
   }
 
   nonisolated public func completer(_ searchCompleter: MKLocalSearchCompleter, didFailWithError error: any Error) {
+    let source = ObjectIdentifier(searchCompleter)
     let reason = error.localizedDescription
-    MainActor.assumeIsolated { finish(.failure(SuggestionsUnavailable(reason: reason))) }
+    MainActor.assumeIsolated {
+      guard source == ObjectIdentifier(self.completer) else { return }
+      finish(.failure(SuggestionsUnavailable(reason: reason)))
+    }
   }
 
   /// 端末の地図が答えられなかった。`AppleSuggestions` はこれを `.unavailable` に畳む。
