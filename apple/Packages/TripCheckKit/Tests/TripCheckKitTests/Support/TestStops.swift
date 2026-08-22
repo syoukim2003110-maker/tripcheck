@@ -263,3 +263,104 @@ enum TestStops {
     )
   }
 }
+
+// MARK: - Task 16(実現可能性の判定)
+
+extension TestStops {
+  /// TS のテストが `buildTripFromWishlist(raw, days, "balanced", "en", context)` を直に呼ぶところの
+  /// Swift 版。東京の 3 件はカタログ(`Geo/Catalog.swift`)が解決するので `resolvedStops` は渡さない。
+  static func tokyoRequest(
+    _ raw: String,
+    days: Int,
+    context: PlannerContext = PlannerContext(),
+    pace: Pace = .balanced,
+    locale: PlannerLocale = .en
+  ) -> TripRequest {
+    TripRequest(raw: raw, days: days, pace: pace, locale: locale, context: context)
+  }
+
+  /// **Task 17 が来るまでの仮置き**。`TripScenarios.assessTripFit`(`lib/trip-scenarios.ts:325`)は
+  /// まだ無いので、`Feasibility.derive` が読む 5 フィールド — `days`(最小余裕 = LOW_BUFFER の材料)、
+  /// `minimumDays`、`partialMinimumDays`、`searchedThroughDays`、`minimumDaysAssumptions` — だけを
+  /// 組み立てた `TripFitAssessment` を返す。日ごとの数値は素朴な「窓 − 予定」であって
+  /// Task 17 の `evaluateCapacity`(`:202`)ではない。**Task 17 が本物に差し替えること。**
+  static func fitStub(for plan: BuiltTripPlan, requestedDays: Int, slackMinutes: Int? = nil) -> TripFitAssessment {
+    let capacity = EngineConstants.paceStopsPerDay[.balanced] ?? 4
+    let days = plan.days.enumerated().map { dayIndex, day -> TripFitDay in
+      let start = ClockTime(day.startTime)?.minutes ?? EngineConstants.defaultDayStart.minutes
+      let usableUntil = day.deadline ?? EngineConstants.defaultDayEnd.description
+      let end = ClockTime(usableUntil)?.minutes ?? EngineConstants.defaultDayEnd.minutes
+      let available = max(0, end - start)
+      let placeCount = day.stops.filter { $0.kind == .place }.count
+      return TripFitDay(
+        dayIndex: dayIndex,
+        label: day.label,
+        startTime: day.startTime,
+        usableUntil: usableUntil,
+        availableMinutes: available,
+        plannedMinutes: day.totalMinutes,
+        slackMinutes: slackMinutes ?? (available - day.totalMinutes),
+        overrunMinutes: day.deadlineOverrunMinutes,
+        placeCount: placeCount,
+        placeCapacity: capacity,
+        excessPlaceCount: max(0, placeCount - capacity),
+        hasScheduleConflict: day.reservationConflictCount + day.openingConflictCount > 0,
+        limitedBy: day.deadlineKind == .airport ? .airport : .curfew
+      )
+    }
+    return TripFitAssessment(
+      status: .fits,
+      requestedDays: requestedDays,
+      minimumDays: requestedDays,
+      partialMinimumDays: nil,
+      additionalDaysNeeded: 0,
+      spareDays: 0,
+      searchedThroughDays: requestedDays,
+      dayEndAssumption: EngineConstants.defaultDayEnd.description,
+      solverTimedOut: false,
+      minimumDaysAssumptions: MinimumDaysAssumptions(
+        dates: plan.days.map(\.date),
+        dayWindows: days.map { .init(dayIndex: $0.dayIndex, start: $0.startTime, end: $0.usableUntil) },
+        base: .init(id: plan.selectedBase?.id, name: plan.selectedBase?.name),
+        stayDurations: [],
+        lockedModes: [],
+        airportBoundaries: plan.airportConstraints.map {
+          .init(direction: $0.direction, airport: $0.airport, flightTime: $0.flightTime, cityTime: $0.cityTime)
+        },
+        fixedBookings: [],
+        openingStatuses: [],
+        transferBufferMinutes: EngineConstants.defaultTransferBuffer,
+        mobilityPolicy: plan.mobilityPolicy
+      ),
+      days: days,
+      overloadedDayCount: days.filter { $0.excessPlaceCount > 0 }.count,
+      scheduleConflictCount: plan.scheduleConflictCount,
+      deferredOptionalCount: plan.deferredOptionalStops.count,
+      unavailableCount: plan.deferredUnavailableStops.count,
+      unresolvedCount: plan.unknownEntries.count,
+      cutCandidates: [],
+      suggestedCutCount: 0
+    )
+  }
+
+  /// 浅草寺を「Day 1」に固定したうえで、その日の営業窓を空にした 1 日旅程。
+  /// `tests/feasibility-result.test.ts:236-249`(週次パターンだけでは hard にならない例)と同じ
+  /// 組み合わせに、旅行開始日 `2026-10-13` を足したもの(日付特定の証拠を当てられるように)。
+  static func tokyoClosedOnFixedDay() -> (plan: BuiltTripPlan, fit: TripFitAssessment) {
+    var context = PlannerContext()
+    context.tripStartDate = "2026-10-13"
+    context.openingWindowsByDay = ["sensoji": [0: []]]
+    let request = tokyoRequest("Senso-ji — Day 1", days: 1, context: context)
+    let plan = TripBuilder.build(request)
+    return (plan, fitStub(for: plan, requestedDays: 1))
+  }
+
+  /// 衝突の無い 1 日旅程 + 余裕 30 分の仮 fit。注意(attention)の排他順を見るためのもの。
+  static func tokyoLowBuffer() -> (plan: BuiltTripPlan, fit: TripFitAssessment) {
+    var context = PlannerContext()
+    context.tripStartDate = "2026-10-13"
+    let request = tokyoRequest("Senso-ji\nTokyo Skytree", days: 1, context: context)
+    let plan = TripBuilder.build(request)
+    return (plan, fitStub(for: plan, requestedDays: 1, slackMinutes: 30))
+  }
+}

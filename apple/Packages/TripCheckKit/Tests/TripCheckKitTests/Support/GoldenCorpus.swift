@@ -5,10 +5,10 @@ import Foundation
 /// `GoldenScenario`/`GoldenCorpus` types over `Tests/TripCheckKitTests/Fixtures/golden-feasibility.v1.json`
 /// (500 scenarios, copied byte-for-byte from `tests/fixtures/golden-feasibility.v1.json`).
 ///
-/// `evidence` stays a raw `JSONValue` until Task 16 ports `EvidenceSnapshotOptions` and its
-/// `deriveFeasibilityResult` consumers; `oracle`'s conflict-code fields stay `String` until that
-/// same task has a ported `ConflictCode`/`FeasibilityState`/`CriticalFactKind` enum to check them
-/// against.
+/// Task 16 ported `EvidenceSnapshotOptions` and the verdict enums, so `evidence` and the oracle's
+/// code lists now decode into those types rather than into `JSONValue`/`String` — a scenario whose
+/// fixture carries a status, conflict code or fact kind this engine does not know now fails to
+/// decode instead of passing unread.
 struct GoldenCorpus: Decodable {
   var schemaVersion: Int
   var corpusId: String
@@ -46,7 +46,7 @@ struct GoldenScenario: Decodable {
   var realWorldAccuracyClaim: Bool
   var providerCallsAllowed: Bool
   var trip: GoldenTrip
-  var evidence: JSONValue
+  var evidence: EvidenceSnapshotOptions
   var oracle: GoldenOracle
   var provenance: GoldenProvenance
 }
@@ -63,11 +63,11 @@ struct GoldenTrip: Decodable {
 /// tests/golden-feasibility.test.ts:15-23 — `GoldenOracle`
 struct GoldenOracle: Decodable {
   var hardConflictExpected: Bool
-  var expectedStateOneOf: [String]
-  var requiredConflictCodes: [String]
-  var forbiddenConflictCodes: [String]
+  var expectedStateOneOf: [FeasibilityState]
+  var requiredConflictCodes: [ConflictCode]
+  var forbiddenConflictCodes: [ConflictCode]
   var mustScheduledIds: [String]
-  var expectedUnknownKinds: [String]?
+  var expectedUnknownKinds: [CriticalFactKind]?
   var solverTimedOut: Bool?
 }
 

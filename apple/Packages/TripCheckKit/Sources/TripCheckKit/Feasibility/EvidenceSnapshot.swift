@@ -257,6 +257,10 @@ extension Feasibility {
             : isDateSpecific
               ? .verified
               : .estimated
+        // TS spreads the whole `hoursEvidence` object into the evidence (`:441`), which carries
+        // `dateSpecific`/`dateSpecificDates` along as untyped extras — `Evidence<T>` declares
+        // neither. Both are already spent above deciding `hoursStatus`, and nothing downstream
+        // reads them off a fact, so only the two declared keys are copied here.
         facts.append(fact(
           "hours:\(built.stop.id):\(day.date ?? day.label)",
           .opening_hours,
@@ -374,6 +378,8 @@ extension Feasibility {
       let plannedDates = plan.days.compactMap(\.date)
       let allDatesSpecific = (hoursEvidence?.dateSpecific ?? false)
         || (!plannedDates.isEmpty && plannedDates.allSatisfy { hoursEvidence?.dateSpecificDates?.contains($0) ?? false })
+      // Same `{ ...hoursEvidence }` spread as the scheduled-day fact above (`:556`), and the same
+      // two declared keys survive it.
       facts.append(fact(
         "hours:\(stop.id):unavailable",
         .opening_hours,
