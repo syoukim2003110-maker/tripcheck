@@ -324,7 +324,11 @@ public func resolveUserFoodReservation(
 
 /// JS の `encodeURIComponent`(`A-Za-z0-9` と `-_.!~*'()` 以外を UTF-8 の大文字 `%XX` に)。
 /// `Geo/GoogleMapsUrl.swift` の form エンコード(空白が `+`)とは別物なので共有しない。
-private func encodeURIComponent(_ value: String) -> String {
+///
+/// `Presentation/TripPresentation.swift` の `googleMapsSearchUrl`(TS
+/// `lib/presentation/trip-presentation.ts:178-180`)も同じ 1 行を組むので、ここから使う
+/// —— Task 24 で `private` を外した。
+func encodeURIComponent(_ value: String) -> String {
   var result = ""
   for byte in value.utf8 {
     switch byte {

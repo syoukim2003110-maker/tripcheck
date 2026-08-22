@@ -391,30 +391,7 @@ public struct PlannerCopy: Sendable {
 
   /// JS `Number.prototype.toFixed(1)`。`routeIdeasDistance` と `rakutenTag` が使う。
   ///
-  /// ECMA-262 は「n/10 − x が 0 に最も近い整数 n。2 つあるなら **大きいほう**」と言う。
-  /// 大事なのは x が **二進の値そのもの** だということ:
-  ///
-  ///   - `1450/1000` は二進では 1.45 に届かない(1.4499999999999999556)ので `"1.4"`。
-  ///     10 倍してから丸めると、積が丸められて 14.5 ちょうどになり `"1.5"` に化ける。
-  ///   - `4.25` は二進でちょうど表せるので同点。JS は大きいほうを採って `"4.3"`、
-  ///     `%.1f`(偶数側に丸める)は `"4.2"` にしてしまう。
-  ///
-  /// そこで、同点でないときは `%.1f`(二進値そのものから正しく丸める)に任せ、同点
-  /// —— x が 4 分の奇数、つまり `x * 4` が奇数の整数のとき —— だけ切り上げる。
-  static func fixed1(_ value: Double) -> String {
-    guard value.isFinite else { return value.isNaN ? "NaN" : (value > 0 ? "Infinity" : "-Infinity") }
-    let negative = value < 0
-    let magnitude = abs(value)
-    let quarters = magnitude * 4 // 2 の冪倍なので誤差なし
-    let text: String
-    if quarters == quarters.rounded(), quarters.truncatingRemainder(dividingBy: 2) == 1 {
-      let scaled = Int((magnitude * 10).rounded(.up))
-      text = "\(scaled / 10).\(scaled % 10)"
-    } else {
-      text = String(format: "%.1f", magnitude)
-    }
-    return negative ? "-\(text)" : text
-  }
+  static func fixed1(_ value: Double) -> String { jsToFixed(value, 1) }
 
   /// JS `Number.prototype.toLocaleString("ja-JP" | "en-US")` —— 整数はどちらのロケールでも
   /// 3 桁ごとのカンマ区切りになる(`rakutenTag` の口コミ件数だけが使う)。
@@ -440,6 +417,38 @@ public enum Copy {
 /// TS `legModeLabel`(`lib/presentation/planner-copy.ts:619-621`)。
 public func legModeLabel(_ mode: TransportMode, _ locale: PlannerLocale) -> String {
   Copy.for(locale).move[mode]
+}
+
+/// JS `Number.prototype.toFixed(digits)`。
+///
+/// ECMA-262 は「n/10^f − x が 0 に最も近い整数 n。2 つあるなら **大きいほう**」と言う。
+/// 大事なのは x が **二進の値そのもの** だということ:
+///
+///   - `1450/1000` は二進では 1.45 に届かない(1.4499999999999999556)ので `"1.4"`。
+///     10 倍してから丸めると、積のほうが丸められて 14.5 ちょうどになり `"1.5"` に化ける。
+///   - `4.25` は二進でちょうど表せるので同点。JS は大きいほうを採って `"4.3"`、
+///     `%.1f`(偶数側に丸める)は `"4.2"` にしてしまう。
+///
+/// そこで、同点でないときは `printf`(二進値そのものから正しく丸める)に任せ、同点だけ
+/// 切り上げる。x が f 桁で同点になるのは `x = k / 2^(f+1)`(k は奇数)のときに限られる
+/// ——「`x * 2^(f+1)` が奇数の整数」で判定でき、2 の冪倍なので誤差が入らない。
+func jsToFixed(_ value: Double, _ digits: Int) -> String {
+  guard value.isFinite else { return value.isNaN ? "NaN" : (value > 0 ? "Infinity" : "-Infinity") }
+  let negative = value < 0
+  let magnitude = abs(value)
+  let plain = String(format: "%.\(max(0, digits))f", magnitude)
+  guard digits >= 0, magnitude < 1e15 else { return negative ? "-\(plain)" : plain }
+
+  let halves = magnitude * pow(2, Double(digits + 1))
+  guard halves == halves.rounded(), halves.truncatingRemainder(dividingBy: 2) == 1 else {
+    return negative ? "-\(plain)" : plain
+  }
+  let scaled = Int((magnitude * pow(10, Double(digits))).rounded(.up))
+  if digits == 0 { return negative ? "-\(scaled)" : "\(scaled)" }
+  let unit = Int(pow(10, Double(digits)))
+  let fraction = String(format: "%0\(digits)d", scaled % unit)
+  let text = "\(scaled / unit).\(fraction)"
+  return negative ? "-\(text)" : text
 }
 
 // MARK: - 判定文(`lib/presentation/planner-copy.ts:619-1006`)

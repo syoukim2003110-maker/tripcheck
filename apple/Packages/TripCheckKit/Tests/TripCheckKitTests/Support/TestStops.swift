@@ -777,3 +777,43 @@ extension TestStops {
     return (plan, fit, Feasibility.derive(plan: plan, fit: fit, evidence: evidence))
   }
 }
+
+extension TestStops {
+  /// 表示だけを見るための最小の食事枠。`mealSlotsAfterStop` は id / kind / displayTime しか
+  /// 読まないので、残りは決定的な埋め草。
+  static func foodSlot(id: String, kind: MealKind, displayTime: String) -> FoodRecommendationSlot {
+    FoodRecommendationSlot(
+      id: id,
+      dayIndex: 0,
+      dayLabel: "Day 1",
+      kind: kind,
+      area: "",
+      anchorStopId: "",
+      latitude: 35.681236,
+      longitude: 139.767125,
+      window: "",
+      displayTime: displayTime,
+      rationale: "",
+      queryIdeas: []
+    )
+  }
+
+  /// 中身が 1 日足りない旅 —— `spareDays == 1`。`tripStatsLine` が余裕の節を日数へ入れ替える
+  /// のを見るためのもの。
+  static func planWithSpareDay() -> (plan: BuiltTripPlan, fit: TripFitAssessment) {
+    let request = tokyoRequest("Senso-ji\nTokyo Skytree\nteamLab Planets\nMeiji Jingu", days: 2)
+    let plan = TripBuilder.build(request)
+    return (plan, TripScenarios.assessTripFit(request, plan: plan))
+  }
+
+  /// パリとローマ —— 国境はまたぐが時計は同じ。TS
+  /// `tests/trip-scope.test.ts:42-44`(「Paris and Rome are distinct IANA zones on the same
+  /// clock: border only」)と同じ組み合わせ。
+  ///
+  /// ブリーフは `parisRomePlan()` という名だが、`BuiltTripPlan` の停留所(`RouteStop`)は国コードを
+  /// 持たない —— TS の `tripScopeWarnings` も解決済み停留所(`ResolvedInputStop`)を受け取る
+  /// (`app/components/planner/TripPlannerShell.tsx:962-964`)ので、こちらもそれに合わせる。
+  static func parisRomeStops() -> [TripScopeStop] {
+    [TripScopeStop(countryCode: "FR"), TripScopeStop(countryCode: "IT")]
+  }
+}
