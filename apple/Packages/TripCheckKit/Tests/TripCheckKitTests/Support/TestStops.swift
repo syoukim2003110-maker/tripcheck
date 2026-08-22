@@ -120,6 +120,127 @@ enum TestStops {
     )
   }
 
+  // MARK: - Task 15(`TripBuilder.build` の入口)
+
+  /// スイスのサンプル旅程まるごと 1 件のリクエスト。生テキストは
+  /// `Destinations.byId(.switzerland).sample`(`lib/destinations.ts` のサンプル 8 行)、
+  /// 解決済み停留所は `SwissSample.resolvedStops(locale:)`(id は `sample-0`…`sample-7`、
+  /// `inputIndex` は 0…7)、行き先は明示 `switzerland`。
+  ///
+  /// `extraUnresolvedLines` はサンプルの後ろに足す「解決できない行」で、`unknownEntries` を
+  /// 観測したいテストが使う。
+  static func swissRequest(
+    days: Int,
+    startDate: String? = nil,
+    locale: PlannerLocale = .en,
+    pace: Pace = .balanced,
+    extraUnresolvedLines: [String] = []
+  ) -> TripRequest {
+    let sample = Destinations.byId(.switzerland).sample?[locale] ?? ""
+    var context = PlannerContext()
+    context.destination = .destination(.switzerland)
+    context.resolvedStops = SwissSample.resolvedStops(locale: locale)
+    context.tripStartDate = startDate
+    let raw = ([sample] + extraUnresolvedLines).joined(separator: "\n")
+    return TripRequest(raw: raw, days: days, pace: pace, locale: locale, context: context)
+  }
+
+  /// 東京の実在座標に紐づく解決済み停留所。名前がそのまま `input` になるので、生テキストの
+  /// 各行と 1 対 1 で対応する(`inputIndex` は 0 起点で配列順)。
+  static func tokyoResolved(_ names: [String]) -> [ResolvedStop] {
+    let known: [String: (Double, Double)] = [
+      "Ueno Park": (35.7148, 139.7737),
+      "Senso-ji": (35.7148, 139.7967),
+      "Tokyo Skytree": (35.7101, 139.8107),
+      "Shibuya Sky": (35.6580, 139.7016),
+      "Meiji Jingu": (35.6764, 139.6993),
+      "Akihabara": (35.6984, 139.7731),
+    ]
+    return names.enumerated().map { index, name in
+      let point = known[name] ?? (35.681236, 139.767125)
+      return ResolvedStop(
+        id: "tokyo-\(index)-\(name.lowercased().replacingOccurrences(of: " ", with: "-"))",
+        name: name,
+        area: "Tokyo",
+        latitude: point.0,
+        longitude: point.1,
+        sourceUrl: "https://example.com/\(index)",
+        verifiedAt: "2026-08-09T00:00:00Z",
+        confidence: .medium,
+        planningDurationMinutes: 60,
+        isAnchor: false,
+        input: name,
+        inputIndex: index,
+        address: "\(name), Tokyo",
+        countryCode: "JP"
+      )
+    }
+  }
+
+  /// 国コードだけを指定した解決済み停留所の列。`DestinationVote` の投票規則を測るための
+  /// フィクスチャなので、座標はその国コードの箱の中(= 座標フォールバックでも同じ答え)に置く。
+  static func mixed(_ countryCodes: [String]) -> [ResolvedStop] {
+    let centers: [String: (Double, Double)] = [
+      "JP": (35.681236, 139.767125),   // 東京駅
+      "CH": (46.9480, 7.4474),         // ベルン
+      "FR": (48.8566, 2.3522),         // パリ
+      "XX": (-9.0, -60.0),             // どの国の箱にも入らない座標(ブラジル奥地)
+    ]
+    return countryCodes.enumerated().map { index, code in
+      let center = centers[code] ?? (0, 0)
+      // 同じ国を 2 件以上置いても座標が重ならないよう、わずかにずらす。
+      let name = "\(code) place \(index)"
+      return ResolvedStop(
+        id: "vote-\(index)",
+        name: name,
+        area: code,
+        latitude: center.0 + Double(index) * 0.01,
+        longitude: center.1 + Double(index) * 0.01,
+        sourceUrl: "https://example.com/vote-\(index)",
+        verifiedAt: "2026-08-09T00:00:00Z",
+        confidence: .medium,
+        planningDurationMinutes: 60,
+        isAnchor: false,
+        input: name,
+        inputIndex: index,
+        address: name,
+        countryCode: code == "XX" ? "XX" : code
+      )
+    }
+  }
+
+  /// 文脈の解決済み停留所から生テキストを組み立てる(1 行 1 件、`input` そのまま)。
+  static func rawFor(_ context: PlannerContext) -> String {
+    (context.resolvedStops ?? []).map(\.input).joined(separator: "\n")
+  }
+
+  /// `ring(count:)` をそのまま解決済み停留所として渡すリクエスト。件数と日数だけを動かして
+  /// ビルダの上限まわりを測るためのもの。
+  static func ringRequest(
+    count: Int,
+    days: Int,
+    pace: Pace = .balanced,
+    stayMinutes: Int = 90
+  ) -> TripRequest {
+    let stops = ring(count: count).map { stop -> RouteStop in
+      var copy = stop
+      copy.planningDurationMinutes = stayMinutes
+      return copy
+    }
+    let resolved = stops.enumerated().map { index, stop in
+      ResolvedStop(routeStop: stop, input: stop.name, inputIndex: index, address: stop.name, countryCode: "JP")
+    }
+    var context = PlannerContext()
+    context.resolvedStops = resolved
+    return TripRequest(
+      raw: resolved.map(\.input).joined(separator: "\n"),
+      days: days,
+      pace: pace,
+      locale: .en,
+      context: context
+    )
+  }
+
   static func point(
     id: String,
     lat: Double,
