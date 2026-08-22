@@ -92,6 +92,16 @@ struct StartScreen: View {
     // なる —— 国が既に決まっている旅で戻ってきたときに世界中を探し直さないよう、
     // 出てきた時点でも箱を渡す。国を選んだ瞬間に渡すのは `DestinationPicker` の側。
     .task { suggestions.setRegion(store.destinationBounds) }
+    .sheet(isPresented: $store.view.pasteOpen) { PasteImportSheet() }
+    // 開いている行は id で覚える。行そのものを覚えると、シートの中で条件を変えた瞬間に
+    // 「持っている行」と「リストの行」がずれる —— シートは id から毎回引き直す。外された
+    // 行は `get` が nil を返し、シートはひとりでに閉じる。
+    .sheet(item: Binding(
+      get: { store.request.entries.first { $0.id == store.view.editingEntry } },
+      set: { store.view.editingEntry = $0?.id }
+    )) { entry in
+      EntryEditSheet(entryID: entry.id)
+    }
     .safeAreaInset(edge: .bottom) {
       Button {
         Task { await store.requestBuildFromStart() }

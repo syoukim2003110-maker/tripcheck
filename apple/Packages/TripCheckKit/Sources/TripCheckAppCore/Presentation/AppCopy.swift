@@ -29,8 +29,18 @@ public struct AppCopy: Sendable {
   public let placeLimitToast: String
   /// 優先度の「通常」。「必須」「任意」は Kit の `must` / `optional`。
   public let priorityNormal: String
-  /// まとめて貼り付けるシートを開くボタン。
+  /// まとめて貼り付けるシートを開くボタン。シートの見出しも兼ねる。
   public let pasteText: String
+  /// 貼り付け欄に薄く出る書きかけの例。Web の入力例(`PlacesStep.tsx:139-140`)そのまま。
+  public let pastePlaceholder: String
+  /// 貼った文字列を場所として読み取らせるボタンと、読み取れたものをリストへ足すボタン。
+  public let pasteRead: String
+  public let pasteAdd: String
+  /// 行をタップすると開く編集シートの、読み上げ用の名前。
+  public let editEntryAction: String
+  /// 行編集シートの「行く日」と、日を決めないという選択肢。
+  public let entryDayLabel: String
+  public let entryDayAny: String
   /// 日数の見出しと、その選択肢。
   public let daysQuestion: String
   public let daysUndecided: String
@@ -62,6 +72,7 @@ public struct AppCopy: Sendable {
   /// 訪問数と日数を 1 行に詰めるが、iPhone の幅では 1 欄 1 行のほうが読める。
   public let diffLabels: [String]
 
+  private let pasteLimitToastText: @Sendable (Int) -> String
   private let daysValueText: @Sendable (Int) -> String
   private let priorityLabelText: @Sendable (String) -> String
   private let removeStopQuestionText: @Sendable (String) -> String
@@ -78,6 +89,12 @@ public struct AppCopy: Sendable {
     placeLimitToast: String,
     priorityNormal: String,
     pasteText: String,
+    pastePlaceholder: String,
+    pasteRead: String,
+    pasteAdd: String,
+    editEntryAction: String,
+    entryDayLabel: String,
+    entryDayAny: String,
     daysQuestion: String,
     daysUndecided: String,
     daysOther: String,
@@ -95,6 +112,7 @@ public struct AppCopy: Sendable {
     mapScopeAll: String,
     mapScopeDay: String,
     diffLabels: [String],
+    pasteLimitToast: @escaping @Sendable (Int) -> String,
     daysValue: @escaping @Sendable (Int) -> String,
     priorityLabel: @escaping @Sendable (String) -> String,
     removeStopQuestion: @escaping @Sendable (String) -> String,
@@ -110,6 +128,12 @@ public struct AppCopy: Sendable {
     self.placeLimitToast = placeLimitToast
     self.priorityNormal = priorityNormal
     self.pasteText = pasteText
+    self.pastePlaceholder = pastePlaceholder
+    self.pasteRead = pasteRead
+    self.pasteAdd = pasteAdd
+    self.editEntryAction = editEntryAction
+    self.entryDayLabel = entryDayLabel
+    self.entryDayAny = entryDayAny
     self.daysQuestion = daysQuestion
     self.daysUndecided = daysUndecided
     self.daysOther = daysOther
@@ -127,6 +151,7 @@ public struct AppCopy: Sendable {
     self.mapScopeAll = mapScopeAll
     self.mapScopeDay = mapScopeDay
     self.diffLabels = diffLabels
+    self.pasteLimitToastText = pasteLimitToast
     self.daysValueText = daysValue
     self.priorityLabelText = priorityLabel
     self.removeStopQuestionText = removeStopQuestion
@@ -134,6 +159,10 @@ public struct AppCopy: Sendable {
     self.reservationRemovalNoteText = reservationRemovalNote
     self.removedStopToastText = removedStopToast
   }
+
+  /// 貼り付けが上限に当たったときのトースト。**件数を名指しする** —— 12 までですとだけ
+  /// 言われても、旅行者は何件書いたのかを数え直すことになる(Web `PlacesStep.tsx:146`)。
+  public func pasteLimitToast(count: Int) -> String { pasteLimitToastText(count) }
 
   /// 日数のタイル 1 枚ぶんの文字(「4日」/ "4 days")。
   public func daysValue(_ days: Int) -> String { daysValueText(days) }
@@ -173,6 +202,12 @@ public struct AppCopy: Sendable {
     placeLimitToast: "1回に確認できるのは12か所までです。残りは別の旅として分けてください。",
     priorityNormal: "通常",
     pasteText: "まとめて貼り付ける",
+    pastePlaceholder: "1日目\n浅草寺\nチームラボプラネッツ 15:30 予約\n三鷹の森ジブリ美術館 必須\n渋谷スカイ 時間があれば",
+    pasteRead: "読み取る",
+    pasteAdd: "リストに追加",
+    editEntryAction: "時刻・予約・滞在を編集",
+    entryDayLabel: "行く日",
+    entryDayAny: "どの日でも",
     daysQuestion: "何日くらい？",
     daysUndecided: "未定",
     daysOther: "他の日数",
@@ -190,6 +225,7 @@ public struct AppCopy: Sendable {
     mapScopeAll: "全日程",
     mapScopeDay: "この日",
     diffLabels: ["重大な衝突", "超過", "移動", "最小余白", "訪問数", "日数"],
+    pasteLimitToast: { "\($0)件あります。1回に確認できるのは12か所までです。残りは別の旅として分けてください。" },
     daysValue: { "\($0)日" },
     priorityLabel: { "\($0)の優先度" },
     removeStopQuestion: { "「\($0)」を予定から外しますか？" },
@@ -207,6 +243,12 @@ public struct AppCopy: Sendable {
     placeLimitToast: "Up to 12 places at a time. Keep the rest for a second trip.",
     priorityNormal: "Normal",
     pasteText: "Paste a list",
+    pastePlaceholder: "Day 1\nSenso-ji\nteamLab Planets 15:30 booked\nGhibli Museum must\nShibuya Sky optional",
+    pasteRead: "Read this",
+    pasteAdd: "Add to my list",
+    editEntryAction: "Edit time, booking and stay",
+    entryDayLabel: "Day to visit",
+    entryDayAny: "Any day",
     daysQuestion: "How many days?",
     daysUndecided: "Not decided",
     daysOther: "Other",
@@ -224,6 +266,7 @@ public struct AppCopy: Sendable {
     mapScopeAll: "All days",
     mapScopeDay: "This day",
     diffLabels: ["Hard conflicts", "Overrun", "Travel", "Minimum slack", "Visits", "Days"],
+    pasteLimitToast: { "\($0) places found. Up to 12 places at a time. Keep the rest for a second trip." },
     daysValue: { "\($0) day\($0 == 1 ? "" : "s")" },
     priorityLabel: { "\($0) priority" },
     removeStopQuestion: { "Remove “\($0)” from the plan?" },

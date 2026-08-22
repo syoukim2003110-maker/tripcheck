@@ -23,10 +23,18 @@ struct WishlistRow: View {
         if entry.pinned != nil {
           IconView(.check, size: 14, color: Tokens.Color.good)
         }
-        Text(entry.text)
-          .tcFont(.stopName)
-          .foregroundStyle(Tokens.Color.ink)
-          .frame(maxWidth: .infinity, alignment: .leading)
+        // 名前そのものを押せるボタンにする。カード全体のタップでも同じシートが開くが、
+        // 手のひらで撫でて回る VoiceOver には「押せるもの」しか見えないので、行編集へ
+        // 届く的をここに 1 つ置く。
+        Button(action: onEdit) {
+          Text(entry.text)
+            .tcFont(.stopName)
+            .foregroundStyle(Tokens.Color.ink)
+            .frame(maxWidth: .infinity, minHeight: Tokens.Hit.primary, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint(app.editEntryAction)
         Button(action: onRemove) {
           IconView(.close, size: 16, color: Tokens.Color.muted)
             .frame(width: Tokens.Hit.primary, height: Tokens.Hit.primary)

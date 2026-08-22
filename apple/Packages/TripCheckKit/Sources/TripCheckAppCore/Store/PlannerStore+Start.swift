@@ -47,11 +47,94 @@ extension PlannerStore {
   public func removeEntry(id: UUID) {
     request.entries.removeAll { $0.id == id }
     request.resolutions[id] = nil
+    // 日の付いた最後の 1 行を外したら、もう「既にある旅程」ではない。
+    refreshInputMode()
   }
 
   public func setPriority(id: UUID, _ priority: WishlistPriority) {
     guard let index = request.entries.firstIndex(where: { $0.id == id }) else { return }
     request.entries[index].priority = priority
+  }
+
+  /// 行 1 つぶんの条件を書き換える。**「触っていない」と「空にした」を型で分ける** ——
+  /// 素の `nil` はその欄を触らない、`.some(nil)` はその欄を空にする。1 段の
+  /// オプショナルに畳むと、シートが時刻だけを消したのか、優先度だけを変えたのかが
+  /// 区別できず、片方を触るたびにもう片方が消える。
+  ///
+  /// 値はここで**エンジンが読める形に丸める**。`WishlistSerialization.raw` が吐く行は Kit の
+  /// パーサが読み戻せなければならない(貼り付け → 編集 → 共有の往復で綴りが変わらない、が
+  /// この型の存在理由)ので、時計として読めない時刻は空に、滞在は
+  /// `EngineConstants.stayMinutesRange` の中に、日は 1 日目以降に畳む。
+  public func updateEntry(
+    id: UUID,
+    priority: WishlistPriority? = nil,
+    fixedTime: String?? = nil,
+    isReservation: Bool? = nil,
+    stayMinutes: Int?? = nil,
+    fixedDay: Int?? = nil
+  ) {
+    guard let index = request.entries.firstIndex(where: { $0.id == id }) else { return }
+    if let priority { request.entries[index].priority = priority }
+    if let fixedTime { request.entries[index].fixedTime = fixedTime.flatMap { ClockTime($0)?.description } }
+    if let isReservation { request.entries[index].isReservation = isReservation }
+    if let stayMinutes { request.entries[index].stayMinutes = stayMinutes.map(Self.clampedStayMinutes) }
+    if let fixedDay {
+      request.entries[index].fixedDay = fixedDay.map { max(EngineConstants.tripDaysRange.lowerBound, $0) }
+      refreshInputMode()
+    }
+  }
+
+  /// まとめて貼られた文字列を、行きたい場所リストへ**足す**。入れ替えない —— 1 件ずつ
+  /// 入れた場所が貼り付けで消えたら、旅行者は打ち直すことになる。
+  ///
+  /// 12 件を超えた分は入れずにトーストで報せ(黙って切り捨てない)、場所名として読み取れ
+  /// なかった行は `request.unparsedLines` に残す。戻り値は「足せた数」と「読めなかった行数」。
+  ///
+  /// **`edit.lockedOrderByDay` には書かない。** 停留所 id は場所が決まった後にしか存在せず、
+  /// `TripBuilder` は `knownStopIds` に無い id を黙って落としたうえで、日が非 nil ならパーサが
+  /// 読んだ順(`parsedOrderByDay`)を上書きする —— 貼った順序がむしろ失われる。日を
+  /// `fixedDay` に載せておけば `WishlistSerialization.raw` が `Day N` 見出しを出し、ビルダー
+  /// 自身が `.existing_itinerary` を選ぶ。
+  @discardableResult
+  public func importPasted(_ raw: String) -> (added: Int, unparsed: Int) {
+    let parsed = WishlistSerialization.entries(fromPasted: raw)
+    let already = request.entries.count
+    let room = max(0, Self.placeLimit - already)
+    let added = parsed.entries.prefix(room)
+
+    request.entries.append(contentsOf: added)
+    request.unparsedLines.append(contentsOf: parsed.unparsed)
+    refreshInputMode()
+    if parsed.entries.count > room {
+      view.toast = Toast(
+        text: AppCopy.for(request.locale).pasteLimitToast(count: already + parsed.entries.count),
+        kind: .limit
+      )
+    }
+    return (added.count, parsed.unparsed.count)
+  }
+
+  /// 表示用のモードを、いま手元にある行から出し直す。`WishlistSerialization.raw` が `Day N`
+  /// 見出しを出す条件と、`TripBuilder` が `.existing_itinerary` を選ぶ条件は同じ 1 つの問い
+  /// (日の付いた場所が 1 つでもあるか)なので、ここも同じ問いで決める —— 表示が手元の行と
+  /// 食い違わない。正はあくまで `bundle.plan.inputMode`。
+  private func refreshInputMode() {
+    request.inputMode = request.entries.contains { $0.fixedDay != nil } ? .existing_itinerary : .wishlist
+  }
+
+  private static func clampedStayMinutes(_ minutes: Int) -> Int {
+    min(EngineConstants.stayMinutesRange.upperBound, max(EngineConstants.stayMinutesRange.lowerBound, minutes))
+  }
+
+  /// 滞在時間の刻み。幅は Kit の `EngineConstants.stayMinutesRange`(15〜480 分)で、Web の
+  /// 数値入力には無い「段」を、指で押す `Stepper` のためにここで決める。
+  public static let stayMinutesStep = 15
+
+  /// 行編集シートが「何日目まで選べるか」を出すときの日数。`tripRequest()` が使う式と同じ
+  /// —— 旅行者が名乗った日数が勝ち、名乗っていなければ直近の組み立てが落ち着いた日数 ——
+  /// に、1 日目の下限だけを足す(0 日の旅に「行く日」の選択肢は作れない)。
+  public var plannedDays: Int {
+    max(EngineConstants.tripDaysRange.lowerBound, request.tripDays ?? edit.tripDays)
   }
 
   // MARK: - 行き先の国
