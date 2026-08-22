@@ -358,13 +358,16 @@ public enum GapDetection {
     ))
   }
 
-  /// Swift 専用の簡便版(TS に対応物なし)——ブリーフの Interfaces 節が求める
-  /// `GapDetection.detect(day: BuiltPlanDay, dayIndex:)` そのもの。`detectGapsFromBuiltDay` は常に
-  /// 外部から渡された `TripFitDay`(= その日に本当に残っている時間の窓)を読むが、こちらは
-  /// `day.finishTime` をそのまま窓の終わりとして使う —— まだ一度も日程探索を通していない
-  /// `BuiltPlanDay`(テストの `TestStops.dayWithGap`/`dayWithGaps` が組むような)に「日の終わりまで
-  /// 何時間も残っている」という作り話のホテル復路ギャップを持ち込まないため。
-  public static func detect(day: BuiltPlanDay, dayIndex: Int) -> [ItineraryGap] {
+  /// フィクスチャ専用の簡便版(TS に対応物なし、本番の入口ではない)——ブリーフの Interfaces 節が
+  /// 求める「`BuiltPlanDay` と `dayIndex` だけからギャップを出す」形そのもの。本番の入口は常に
+  /// **`detect(day:fitDay:options:)` を使うこと**——`detectGapsFromBuiltDay` は常に外部から渡された
+  /// `TripFitDay`(= その日に本当に残っている時間の窓)を読むが、こちらは `day.finishTime` を
+  /// そのまま窓の終わりとして使う —— まだ一度も日程探索を通していない `BuiltPlanDay`(テストの
+  /// `TestStops.dayWithGap`/`dayWithGaps` が組むような)に「日の終わりまで何時間も残っている」と
+  /// いう作り話のホテル復路ギャップを持ち込まないため。名前と `internal` 可視性のどちらも、本番の
+  /// `detect(day:fitDay:options:)` と取り違えられないようにするためのもの
+  /// (`@testable import` 経由でテストからは見える)。
+  static func detectForFixture(day: BuiltPlanDay, dayIndex: Int) -> [ItineraryGap] {
     let transferBufferMinutes = 10
     return detect(day: GapDetectionDay(
       dayIndex: dayIndex,
@@ -384,16 +387,21 @@ public enum GapDetection {
   /// ほう(=訪問順で早いほう)が勝つ。日をまたいで組み直しても同じ答えになるための決定性。
   public static func primaryGap(_ gaps: [ItineraryGap]) -> ItineraryGap? {
     var best: ItineraryGap?
-    for gap in gaps where best == nil || gap.availableMinutes > best!.availableMinutes {
-      best = gap
+    for gap in gaps {
+      if let current = best {
+        if gap.availableMinutes > current.availableMinutes { best = gap }
+      } else {
+        best = gap
+      }
     }
     return best
   }
 
-  /// Swift 専用の簡便版(TS に対応物なし)——ブリーフの Interfaces 節が求める
-  /// `GapDetection.primaryGap(day:dayIndex:)`。
-  public static func primaryGap(day: BuiltPlanDay, dayIndex: Int) -> ItineraryGap? {
-    primaryGap(detect(day: day, dayIndex: dayIndex))
+  /// フィクスチャ専用の簡便版(TS に対応物なし、本番の入口ではない)。`detectForFixture(day:dayIndex:)`
+  /// の上に乗るだけの `primaryGap(_:)` 呼び出しで、本番の入口は変わらず `primaryGap(_:)`
+  /// (`detect(day:fitDay:options:)` の結果を渡す)である。
+  static func primaryGapForFixture(day: BuiltPlanDay, dayIndex: Int) -> ItineraryGap? {
+    primaryGap(detectForFixture(day: day, dayIndex: dayIndex))
   }
 
   // MARK: - 日の余裕から決まる Filler 上限(`:196-217`)

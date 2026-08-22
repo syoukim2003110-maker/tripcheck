@@ -642,7 +642,7 @@ extension TestStops {
   /// `minutes.count + 1` 件の停留所を東西に並べ、隣接する停留所の間に `minutes[i]` 分ちょうどの
   /// BETWEEN_ANCHORS ギャップができる 1 日を組む。開始前(BEFORE_FIRST_ANCHOR)とホテル復路
   /// (BEFORE_HOTEL_RETURN)のギャップは、`startBase`/`endBase` を持たせず・先頭停留所に制約を
-  /// 置かないことでどちらもゼロに畳んである —— `GapDetection.detect(day:dayIndex:)` が
+  /// 置かないことでどちらもゼロに畳んである —— `GapDetection.detectForFixture(day:dayIndex:)` が
   /// `day.finishTime` を窓の終わりとして読むので、最後の停留所の出発がそのまま日の終わりになり、
   /// 復路の余りが生まれない。返る唯一の非ゼロなギャップは狙った BETWEEN_ANCHORS だけ。
   ///

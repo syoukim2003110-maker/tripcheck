@@ -17,8 +17,8 @@ import Testing
 
 @Test func onlyLongGapsOpenAttractions() {
   let day = TestStops.dayWithGap(minutes: 120)
-  #expect(GapDetection.primaryGap(day: day, dayIndex: 0)?.suggestionKinds.contains(.ATTRACTION) == true)
-  #expect(GapDetection.primaryGap(day: TestStops.dayWithGap(minutes: 119), dayIndex: 0)?.suggestionKinds.contains(.ATTRACTION) == false)
+  #expect(GapDetection.primaryGapForFixture(day: day, dayIndex: 0)?.suggestionKinds.contains(.ATTRACTION) == true)
+  #expect(GapDetection.primaryGapForFixture(day: TestStops.dayWithGap(minutes: 119), dayIndex: 0)?.suggestionKinds.contains(.ATTRACTION) == false)
 }
 
 @Test func fillerAllowanceGrowsEveryTwoHoursUpToThree() {
@@ -31,8 +31,8 @@ import Testing
 
 @Test func primaryGapIsTheLargestTiesGoToVisitOrder() {
   let day = TestStops.dayWithGaps(minutes: [60, 90, 90])
-  #expect(GapDetection.primaryGap(day: day, dayIndex: 0)?.availableMinutes == 90)
-  #expect(GapDetection.primaryGap(day: day, dayIndex: 0)?.kind == .BETWEEN_ANCHORS)
+  #expect(GapDetection.primaryGapForFixture(day: day, dayIndex: 0)?.availableMinutes == 90)
+  #expect(GapDetection.primaryGapForFixture(day: day, dayIndex: 0)?.kind == .BETWEEN_ANCHORS)
 }
 
 // MARK: - `tests/gap-detection.test.ts` の残り(10 本)
