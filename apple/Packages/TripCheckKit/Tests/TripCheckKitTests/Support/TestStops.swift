@@ -636,6 +636,67 @@ extension TestStops {
   }
 }
 
+// MARK: - Task 22(gap 検出と Filler 上限)
+
+extension TestStops {
+  /// `minutes.count + 1` 件の停留所を東西に並べ、隣接する停留所の間に `minutes[i]` 分ちょうどの
+  /// BETWEEN_ANCHORS ギャップができる 1 日を組む。開始前(BEFORE_FIRST_ANCHOR)とホテル復路
+  /// (BEFORE_HOTEL_RETURN)のギャップは、`startBase`/`endBase` を持たせず・先頭停留所に制約を
+  /// 置かないことでどちらもゼロに畳んである —— `GapDetection.detect(day:dayIndex:)` が
+  /// `day.finishTime` を窓の終わりとして読むので、最後の停留所の出発がそのまま日の終わりになり、
+  /// 復路の余りが生まれない。返る唯一の非ゼロなギャップは狙った BETWEEN_ANCHORS だけ。
+  ///
+  /// `DayClock.buildDay` の区間移動分はジオメトリだけで決まり(`WishlistStopConstraint` の影響を
+  /// 受けない)、`GapDetection` が読む「最早到着」も同じ区間移動分から組み立て直される。だから
+  /// 「制約なしで一度組んだときの自然な到着」に `minutes[i]` を足した時刻を次の停留所の
+  /// `fixedTimeMinutes` に立てるだけで、その差(= GapDetection が数えるギャップ幅)が狙った値に
+  /// ぴったり揃う。後続の停留所ほど前の停留所の(遅らせた)実際の出発に依存するので、1 本ずつ
+  /// 「今までの制約で組み直して自然な到着を読み、次の制約を立てる」を繰り返す。
+  static func dayWithGaps(minutes: [Int]) -> BuiltPlanDay {
+    precondition(!minutes.isEmpty)
+    let ids = (0...minutes.count).map { "gap-\($0)" }
+    let stops = TestStops.line(ids: ids, stayMinutes: 30)
+    var constraints: [String: WishlistStopConstraint] = [:]
+    for (index, gapMinutes) in minutes.enumerated() {
+      let probe = gapDetectionDay(stops: stops, constraints: constraints)
+      let naturalArrival = ClockTime(probe.stops[index + 1].arrival)!.minutes
+      constraints[ids[index + 1]] = WishlistStopConstraint(
+        priority: .normal,
+        fixedTimeMinutes: naturalArrival + gapMinutes,
+        isReservation: false
+      )
+    }
+    return gapDetectionDay(stops: stops, constraints: constraints)
+  }
+
+  /// `dayWithGaps(minutes: [minutes])` の 1 ギャップ版。
+  static func dayWithGap(minutes: Int) -> BuiltPlanDay {
+    dayWithGaps(minutes: [minutes])
+  }
+
+  private static func gapDetectionDay(stops: [RouteStop], constraints: [String: WishlistStopConstraint]) -> BuiltPlanDay {
+    DayClock.buildDay(
+      stops: stops,
+      index: 0,
+      dayCount: 1,
+      locale: .ja,
+      startBase: nil,
+      endBase: nil,
+      airportConstraints: [],
+      constraints: constraints,
+      earlyVisitStopIds: [],
+      foodStopIds: [],
+      openingWindows: [:],
+      destination: Destinations.byId(.japan),
+      requestedStart: nil,
+      startDate: nil,
+      travel: .default,
+      dayEndTarget: nil,
+      lockedOrder: []
+    )
+  }
+}
+
 /// 門限 17:00・18:00 発の便(= 最終日の空港締切 15:30)。食事は入れない —— 測っているのは締切で
 /// あって、食事枠が日の算術に触れないことは Task 14 が既に固定している。
 private func guardedDeadlineContext(_ overrides: [String: Int]) -> PlannerContext {
