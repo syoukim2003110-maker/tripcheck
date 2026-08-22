@@ -296,3 +296,79 @@ private func probe(_ tripDays: Int) -> HistoryProbe {
   #expect(PlannerEdits.clampTripDays(14) == 14)
   #expect(PlannerEdits.clampTripDays(15) == 14)
 }
+
+// MARK: - 時間帯の中の訪問(`lib/planner-app-state.ts:421-441`)
+
+/*
+ * 期待値は TS 本体を Node 22.18 で回して取ったもの(`clockRangeContainsVisit` を同じ 17 組に
+ * 通した結果)。日を跨ぐ窓と、読めない窓の扱いがこの述語の全部。
+ */
+
+/// 窓の中の訪問は中にある。両端はどちらも含む(`:440` は `>=` と `<=`)。
+@Test func aVisitInsideTheRangeIsInsideIt() {
+  #expect(PlannerEdits.clockRangeContainsVisit(range: "11:00–14:30", arrival: "12:00", departure: "13:00"))
+  #expect(PlannerEdits.clockRangeContainsVisit(range: "11:00–14:30", arrival: "11:00", departure: "14:30"))
+}
+
+/// 窓より前の訪問は「翌日の同じ窓」へ繰り上がるので、終わりが窓を越えて `false`(`:438-439`)。
+@Test func aVisitBeforeOrAfterTheRangeIsOutsideIt() {
+  #expect(!PlannerEdits.clockRangeContainsVisit(range: "11:00–14:30", arrival: "09:00", departure: "10:00"))
+  #expect(!PlannerEdits.clockRangeContainsVisit(range: "11:00–14:30", arrival: "15:00", departure: "16:00"))
+  // 始まりは中でも、終わりがはみ出せば入っていない。
+  #expect(!PlannerEdits.clockRangeContainsVisit(range: "11:00–14:30", arrival: "13:00", departure: "15:00"))
+}
+
+/// 日を跨ぐ窓(`:437` の `end += 1440`)。深夜 01:00 の訪問は 22:00–02:00 の中にある。
+@Test func aRangeThatCrossesMidnightStillContainsALateVisit() {
+  #expect(PlannerEdits.clockRangeContainsVisit(range: "22:00–02:00", arrival: "01:00", departure: "01:30"))
+  #expect(PlannerEdits.clockRangeContainsVisit(range: "22:00–02:00", arrival: "22:30", departure: "23:30"))
+  // 日付を跨ぐ訪問そのもの(23:00 着 → 00:30 発)も中にある。
+  #expect(PlannerEdits.clockRangeContainsVisit(range: "22:00–02:00", arrival: "23:00", departure: "00:30"))
+  #expect(!PlannerEdits.clockRangeContainsVisit(range: "22:00–02:00", arrival: "03:00", departure: "04:00"))
+}
+
+/// 読めない窓・読めない時刻は `false`(`:436`)。区切りはエンダッシュだけで、内側の時刻は
+/// 時も 2 桁必須 —— `clockToMinutes` より厳しいことが**この関数の中でだけ**効く。
+@Test func anUnreadableRangeOrClockIsNeverContained() {
+  #expect(!PlannerEdits.clockRangeContainsVisit(range: "11:00-14:30", arrival: "12:00", departure: "13:00"))   // ASCII ハイフン
+  #expect(!PlannerEdits.clockRangeContainsVisit(range: "9:00–14:30", arrival: "12:00", departure: "13:00"))    // 時が 1 桁
+  #expect(!PlannerEdits.clockRangeContainsVisit(range: "11:00–14:30", arrival: "9:00", departure: "13:00"))
+  #expect(!PlannerEdits.clockRangeContainsVisit(range: "11:00–14:30", arrival: "12:00", departure: "1:00"))
+  #expect(!PlannerEdits.clockRangeContainsVisit(range: "11:00–", arrival: "12:00", departure: "13:00"))
+  #expect(!PlannerEdits.clockRangeContainsVisit(range: "", arrival: "12:00", departure: "13:00"))
+  #expect(!PlannerEdits.clockRangeContainsVisit(range: "24:00–25:00", arrival: "12:00", departure: "13:00"))
+  // TS の分割代入は 3 つ目以降を捨てるので、これは "11:00"–"14:30" として読まれる(= true)。
+  #expect(PlannerEdits.clockRangeContainsVisit(range: "11:00–14:30–17:00", arrival: "12:00", departure: "13:00"))
+}
+
+/// TS `clockToMinutes`(`:421-424`)を移植しない根拠:`ClockTime(_:)` が同じ集合を受ける。
+@Test func clockToMinutesIsTheClockTimeParser() {
+  #expect(ClockTime("9:00")?.minutes == 540)     // 時 1 桁は通る(`[01]?\d`)
+  #expect(ClockTime("09:00")?.minutes == 540)
+  #expect(ClockTime("0:00")?.minutes == 0)
+  #expect(ClockTime("23:59")?.minutes == 1439)
+  #expect(ClockTime("24:00") == nil)
+  #expect(ClockTime("9:5") == nil)               // 分は 2 桁必須(`[0-5]\d`)
+  #expect(ClockTime("1:0") == nil)
+  #expect(ClockTime("+9:00") == nil)             // ASCII 数字のみ
+}
+
+// MARK: - ホテルの陳腐化(`lib/planner-app-state.ts:445-450`)
+
+/// 署名は日ごとの停留所の**集合**。順番は最適化で動くので、id を UTF-16 順に並べ替えてから畳む
+/// (TS の比較関数なしの `.sort()`)—— 大文字が小文字より先に来ることまで同じ。
+@Test func theHotelSignatureIsTheSetOfStopsPerDayNotTheirOrder() {
+  #expect(PlannerEdits.hotelPlanSignature(nil).isEmpty)
+
+  let (before, after, _) = TestStops.airportWorseCurfewBetter()
+  #expect(PlannerEdits.hotelPlanSignature(before) == "0:sensoji,tokyo-skytree|1:akihabara,ueno-park")
+  // 滞在時間だけを動かした候補は同じ集合 = ホテルは古くならない。
+  #expect(PlannerEdits.hotelPlanSignature(after) == PlannerEdits.hotelPlanSignature(before))
+  // 停留所が 1 件消えれば署名は変わる。
+  let (_, dropped, _) = TestStops.mustStopDropped()
+  #expect(PlannerEdits.hotelPlanSignature(dropped) != PlannerEdits.hotelPlanSignature(before))
+
+  // 空の日は空のまま、大文字の id は小文字より前(TS の既定 sort と同じ UTF-16 順)。
+  let mixed = TestStops.planWithStopIds([["tokyo-skytree", "sensoji"], ["ueno-park", "Akihabara"], []])
+  #expect(PlannerEdits.hotelPlanSignature(mixed) == "0:sensoji,tokyo-skytree|1:Akihabara,ueno-park|2:")
+}

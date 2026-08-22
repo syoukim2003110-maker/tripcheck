@@ -310,6 +310,11 @@ extension PlannerEdits {
   /// TS `evaluatePlannerHardEdit` の題の規則(`lib/planner-app-state.ts:411-417`)。新しい損傷が
   /// ちょうど 1 件の予約遅れのときだけ、ダイアログの題は Copy Deck の遅れの文になる。他の衝突が
   /// 1 つでも(呼び出し側が足した `extraConflicts` を含めて)あれば、呼び出し側の疑問形が残る。
+  ///
+  /// TS は `hardConflicts`(**重複排除前**)を数えるので、`hardEditConflicts` の戻りをそのまま
+  /// 渡すのが TS と同じ入力。`evaluate` の `.confirm` は文の重複を除いた列を運ぶため、そちらを
+  /// 渡すと「同じ文の 2 件」が 1 件に見える —— 予約遅れの文は分数を含んで一意なので実際に差は
+  /// 出ないが、TS と厳密に同じ数を数えたい呼び出し側は `hardEditConflicts` の戻りを使うこと。
   public static func confirmTitle(
     conflicts: [PlannerHardEditConflict],
     extraConflicts: [String] = [],

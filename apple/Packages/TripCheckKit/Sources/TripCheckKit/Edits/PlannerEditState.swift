@@ -88,6 +88,12 @@ public enum ResolutionOverride: Equatable, Hashable, Sendable, Codable {
 /// している)。v1.1 TC-048/TC-050 の推薦採用は wishlist の本文・解決済み停留所・プロバイダの
 /// ピン・食事の選択を**同時に**変える 1 つの操作なので、それらが同じ追跡状態に居ることが
 /// 「Undo 1 回で直前の計画がそのまま戻る」の根拠になる(TS `:472-480` の但し書き)。TS を採る。
+///
+/// **この `Codable` は Web の JSON とバイト互換ではない。** 合成された `encode(to:)` は `nil` の
+/// オプショナル欄(`resolvedBase` など)を**書かない**が、TS は `resolvedBase: null` を書く。
+/// 端末内保存(Task 25)と `PlannerHistory` は Swift 同士の往復なので問題にならない。Web と
+/// 同じバイトが要るのは共有コードだけで、そこは Task 23 の `ShareCodec` が
+/// `ShareableTripInput` 用の直列化を自前で持つ(この型を流用しないこと)。
 public struct PlannerEditState: Equatable, Sendable, Codable {
   public var tripDays: Int
   public var pace: Pace
@@ -187,6 +193,20 @@ public enum PlannerEdits {
         + (planDay.hotelInboundMinutes ?? 0)
         + planDay.legs.reduce(0) { $0 + $1.comparison.recommended.minutes }
     }
+  }
+
+  /// TS `hotelPlanSignature`(`lib/planner-app-state.ts:445-450`)。ブリーフの名前リストには
+  /// 無いが、指定された移植範囲 `:247-456` の中にあるので併せて移す。
+  ///
+  /// 経路が最適化されると停留所の**順**は変わる。ホテルが古くなるのは、その日が回る先の
+  /// **集合**が変わったときだけ —— だから id を並べ替えてから畳む。TS の `.sort()` は比較関数
+  /// なしの既定、すなわち UTF-16 コード単位の辞書順なので `jsStringLess` を使う(Global
+  /// Constraints の照合規則)。
+  public static func hotelPlanSignature(_ plan: BuiltTripPlan?) -> String {
+    guard let plan else { return "" }
+    return plan.days.enumerated().map { dayIndex, day in
+      "\(dayIndex):" + stableSorted(day.stops.map(\.stop.id), by: jsStringLess).joined(separator: ",")
+    }.joined(separator: "|")
   }
 
   /// TS `upsertResolutionOverride`(`lib/planner-app-state.ts:64-71`)。1 つの出現には 1 つの

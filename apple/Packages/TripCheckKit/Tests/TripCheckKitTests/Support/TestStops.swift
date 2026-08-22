@@ -500,6 +500,27 @@ extension TestStops {
     )
   }
 
+  /// 日ごとの停留所 id だけを述べた計画。`hotelPlanSignature` は id の集合しか読まないので、
+  /// 大文字混じりや空の日といった並べ替えの端を、実ビルドでは作れない形で直接置ける。
+  static func planWithStopIds(_ dayStopIds: [[String]]) -> BuiltTripPlan {
+    var plan = deadlinePlan(dayStopIds.map { _ in (kind: DeadlineKind?.none, overrun: 0) })
+    for (index, ids) in dayStopIds.enumerated() {
+      plan.days[index].stops = ids.map { id in
+        BuiltPlanStop(
+          stop: point(id: id, lat: 35.681236, lng: 139.767125),
+          arrival: "09:00",
+          departure: "10:00",
+          kind: .place,
+          priority: .normal,
+          isReservation: false,
+          reservationLateMinutes: 0,
+          openingStatus: .unknown
+        )
+      }
+    }
+    return plan
+  }
+
   /// TS `deadlinePlan`(`tests/planner-guarded-edits.test.ts:208-239`)。締切だけを述べた計画。
   /// `plannerHardEditConflicts` はこれらの欄に対する純粋な比較なので、これが検出器の見る入力の全部。
   static func deadlinePlan(_ days: [(kind: DeadlineKind?, overrun: Int)]) -> BuiltTripPlan {
