@@ -6214,6 +6214,167 @@
       "decodedCode": null
     },
     {
+      "name": "non-finite-numbers",
+      "code": "eyJ2IjoxLCJpdGluZXJhcnkiOiJTZW5zby1qaSIsInRyaXBEYXlzIjpudWxsLCJtYXhXYWxraW5nTWludXRlc1BlckxlZyI6bnVsbCwibWF4VHJhbnNmZXJzUGVyTGVnIjpudWxsLCJ1c2VyU3RheU1pbnV0ZXMiOnsiYSI6bnVsbH0sImRheU92ZXJyaWRlcyI6eyJiIjpudWxsfSwidHJhbnNmZXJCdWZmZXJNaW51dGVzIjpudWxsLCJyZXNvbHV0aW9uT3ZlcnJpZGVzIjpbeyJpbnB1dEluZGV4IjpudWxsLCJwcm92aWRlclJlZiI6IkNoSUpfaW5maW5pdGUifSx7ImlucHV0SW5kZXgiOjAsIm5hbWUiOiJJbmZpbml0ZSBwaW4iLCJhZGRyZXNzIjoiTm93aGVyZSIsImxhdGl0dWRlIjpudWxsLCJsb25naXR1ZGUiOm51bGx9XX0",
+      "decoded": {
+        "destination": "auto",
+        "itinerary": "Senso-ji",
+        "tripDays": 3,
+        "tripStartDate": "",
+        "dateWasProvided": false,
+        "hotelQuery": "",
+        "pace": "balanced",
+        "mealPlan": "all",
+        "travelPreference": "auto",
+        "arrivalAirport": "none",
+        "arrivalTime": "",
+        "departureAirport": "none",
+        "departureTime": "",
+        "flightKind": "international",
+        "dayStartDefault": "09:00",
+        "dayEndTarget": "",
+        "transferBufferMinutes": 10,
+        "userStayMinutes": {},
+        "lastEntryTimes": {},
+        "dayStartTimes": {},
+        "dayEndTimes": {},
+        "legModeOverrides": {},
+        "dayOverrides": {},
+        "removedStops": []
+      },
+      "decodedCode": "eyJ2IjoxLCJkZXN0aW5hdGlvbiI6ImF1dG8iLCJpdGluZXJhcnkiOiJTZW5zby1qaSIsInRyaXBEYXlzIjozLCJ0cmlwU3RhcnREYXRlIjoiIiwiZGF0ZVdhc1Byb3ZpZGVkIjpmYWxzZSwiaG90ZWxRdWVyeSI6IiIsInBhY2UiOiJiYWxhbmNlZCIsIm1lYWxQbGFuIjoiYWxsIiwidHJhdmVsUHJlZmVyZW5jZSI6ImF1dG8iLCJhcnJpdmFsQWlycG9ydCI6Im5vbmUiLCJhcnJpdmFsVGltZSI6IiIsImRlcGFydHVyZUFpcnBvcnQiOiJub25lIiwiZGVwYXJ0dXJlVGltZSI6IiIsImZsaWdodEtpbmQiOiJpbnRlcm5hdGlvbmFsIiwiZGF5U3RhcnREZWZhdWx0IjoiMDk6MDAiLCJkYXlFbmRUYXJnZXQiOiIiLCJ0cmFuc2ZlckJ1ZmZlck1pbnV0ZXMiOjEwLCJ1c2VyU3RheU1pbnV0ZXMiOnt9LCJsYXN0RW50cnlUaW1lcyI6e30sImRheVN0YXJ0VGltZXMiOnt9LCJkYXlFbmRUaW1lcyI6e30sImxlZ01vZGVPdmVycmlkZXMiOnt9LCJkYXlPdmVycmlkZXMiOnt9LCJyZW1vdmVkU3RvcHMiOltdfQ"
+    },
+    {
+      "name": "crlf-in-code",
+      "code": "eyJ2IjoxLC\r\n\r\nJkZXN0aW5hdGlvbiI6ImphcGFuIiwiaXRpbmVyYXJ5IjoiMeaXpeebrlxu5rWF6I2J5a-6XG7jg4Hjg7zjg6Djg6njg5zjg5fjg6njg43jg4Pjg4QgMTU6MzAg5LqI57SEIiwidHJpcERheXMiOjMsInRyaXBTdGFydERhdGUiOiIyMDI2LTA5LTE0IiwiZGF0ZVdhc1Byb3ZpZGVkIjp0cnVlLCJob3RlbFF1ZXJ5Ijoi5paw5a6_6aeF6L-R44GPIiwicGFjZSI6ImJhbGFuY2VkIiwibWVhbFBsYW4iOiJhbGwiLCJ0cmF2ZWxQcmVmZXJlbmNlIjoiY2FyIiwiYXJyaXZhbEFpcnBvcnQiOiJITkQiLCJhcnJpdmFsVGltZSI6IjEwOjMwIiwiZGVwYXJ0dXJlQWlycG9ydCI6Im5vbmUiLCJkZXBhcnR1cmVUaW1lIjoiIiwiZmxpZ2h0S2luZCI6ImRvbWVzdGljIiwiZGF5U3RhcnREZWZhdWx0IjoiMDg6MDAiLCJkYXlFbmRUYXJnZXQiOiIyMTozMCIsInRyYW5zZmVyQnVmZmVyTWludXRlcyI6MjAsInVzZXJTdGF5TWludXRlcyI6eyJnb29nbGUtc2Vuc29qaSI6MTIwfSwibGFzdEVudHJ5VGltZXMiOnsiZ29vZ2xlLXNlbnNvamkiOiIxNjozMCJ9LCJkYXlTdGFydFRpbWVzIjp7IjAiOiIwODozMCJ9LCJkYXlFbmRUaW1lcyI6eyIwIjoiMTk6NDUiLCIxIjoiMjE6MTUifSwibGVnTW9kZU92ZXJyaWRlcyI6eyJnb29nbGUtc2Vuc29qaTo6Z29vZ2xlLXNreXRyZWUiOiJ3YWxrIn0sImRheU92ZXJyaWRlcyI6eyJnb29nbGUtc2t5dHJlZSI6Mn0sInJlbW92ZWRTdG9wcyI6W3siaWQiOiJnb29nbGUtYWtpaGFiYXJhIiwibmFtZSI6IkFraWhhYmFyYSJ9XSwicmVzb2x1dGlvbk92ZXJyaWRlcyI6W3siaW5wdXRJbmRleCI6MCwicHJvdmlkZXJSZWYiOiJDaElKX3NlbnNvamktMTIzIn0seyJpbnB1dEluZGV4IjoxLCJuYW1lIjoiVHJhdmVsbGVyJ3MgcXVpZXQgZW50cmFuY2UiLCJhZGRyZXNzIjoiRWFzdCBzaWRlIG9mIHRoZSBzdGF0aW9uIiwibGF0aXR1ZGUiOjM1LjY0OTEsImxvbmdpdHVkZSI6MTM5Ljc4OTh9XX0",
+      "decoded": {
+        "destination": "japan",
+        "itinerary": "1日目\n浅草寺\nチームラボプラネッツ 15:30 予約",
+        "tripDays": 3,
+        "tripStartDate": "2026-09-14",
+        "dateWasProvided": true,
+        "hotelQuery": "新宿駅近く",
+        "pace": "balanced",
+        "mealPlan": "all",
+        "travelPreference": "car",
+        "arrivalAirport": "HND",
+        "arrivalTime": "10:30",
+        "departureAirport": "none",
+        "departureTime": "",
+        "flightKind": "domestic",
+        "dayStartDefault": "08:00",
+        "dayEndTarget": "21:30",
+        "transferBufferMinutes": 20,
+        "userStayMinutes": {
+          "google-sensoji": 120
+        },
+        "lastEntryTimes": {
+          "google-sensoji": "16:30"
+        },
+        "dayStartTimes": {
+          "0": "08:30"
+        },
+        "dayEndTimes": {
+          "0": "19:45",
+          "1": "21:15"
+        },
+        "legModeOverrides": {
+          "google-sensoji::google-skytree": "walk"
+        },
+        "dayOverrides": {
+          "google-skytree": 2
+        },
+        "removedStops": [
+          {
+            "id": "google-akihabara",
+            "name": "Akihabara"
+          }
+        ],
+        "resolutionOverrides": [
+          {
+            "inputIndex": 0,
+            "providerRef": "ChIJ_sensoji-123"
+          },
+          {
+            "inputIndex": 1,
+            "name": "Traveller's quiet entrance",
+            "address": "East side of the station",
+            "latitude": 35.6491,
+            "longitude": 139.7898
+          }
+        ]
+      },
+      "decodedCode": "eyJ2IjoxLCJkZXN0aW5hdGlvbiI6ImphcGFuIiwiaXRpbmVyYXJ5IjoiMeaXpeebrlxu5rWF6I2J5a-6XG7jg4Hjg7zjg6Djg6njg5zjg5fjg6njg43jg4Pjg4QgMTU6MzAg5LqI57SEIiwidHJpcERheXMiOjMsInRyaXBTdGFydERhdGUiOiIyMDI2LTA5LTE0IiwiZGF0ZVdhc1Byb3ZpZGVkIjp0cnVlLCJob3RlbFF1ZXJ5Ijoi5paw5a6_6aeF6L-R44GPIiwicGFjZSI6ImJhbGFuY2VkIiwibWVhbFBsYW4iOiJhbGwiLCJ0cmF2ZWxQcmVmZXJlbmNlIjoiY2FyIiwiYXJyaXZhbEFpcnBvcnQiOiJITkQiLCJhcnJpdmFsVGltZSI6IjEwOjMwIiwiZGVwYXJ0dXJlQWlycG9ydCI6Im5vbmUiLCJkZXBhcnR1cmVUaW1lIjoiIiwiZmxpZ2h0S2luZCI6ImRvbWVzdGljIiwiZGF5U3RhcnREZWZhdWx0IjoiMDg6MDAiLCJkYXlFbmRUYXJnZXQiOiIyMTozMCIsInRyYW5zZmVyQnVmZmVyTWludXRlcyI6MjAsInVzZXJTdGF5TWludXRlcyI6eyJnb29nbGUtc2Vuc29qaSI6MTIwfSwibGFzdEVudHJ5VGltZXMiOnsiZ29vZ2xlLXNlbnNvamkiOiIxNjozMCJ9LCJkYXlTdGFydFRpbWVzIjp7IjAiOiIwODozMCJ9LCJkYXlFbmRUaW1lcyI6eyIwIjoiMTk6NDUiLCIxIjoiMjE6MTUifSwibGVnTW9kZU92ZXJyaWRlcyI6eyJnb29nbGUtc2Vuc29qaTo6Z29vZ2xlLXNreXRyZWUiOiJ3YWxrIn0sImRheU92ZXJyaWRlcyI6eyJnb29nbGUtc2t5dHJlZSI6Mn0sInJlbW92ZWRTdG9wcyI6W3siaWQiOiJnb29nbGUtYWtpaGFiYXJhIiwibmFtZSI6IkFraWhhYmFyYSJ9XSwicmVzb2x1dGlvbk92ZXJyaWRlcyI6W3siaW5wdXRJbmRleCI6MCwicHJvdmlkZXJSZWYiOiJDaElKX3NlbnNvamktMTIzIn0seyJpbnB1dEluZGV4IjoxLCJuYW1lIjoiVHJhdmVsbGVyJ3MgcXVpZXQgZW50cmFuY2UiLCJhZGRyZXNzIjoiRWFzdCBzaWRlIG9mIHRoZSBzdGF0aW9uIiwibGF0aXR1ZGUiOjM1LjY0OTEsImxvbmdpdHVkZSI6MTM5Ljc4OTh9XX0"
+    },
+    {
+      "name": "mixed-whitespace-in-code",
+      "code": "eyJ2IjoxLC\r\n \tJkZXN0aW5hdGlvbiI6ImphcGFuIiwiaXRpbmVyYXJ5IjoiMeaXpeebrlxu5rWF6I2J5a-6XG7jg4Hjg7zjg6Djg6njg5zjg5fjg6njg43jg4Pjg4QgMTU6MzAg5LqI57SEIiwidHJpcERheXMiOjMsInRyaXBTdGFydERhdGUiOiIyMDI2LTA5LTE0IiwiZGF0ZVdhc1Byb3ZpZGVkIjp0cnVlLCJob3RlbFF1ZXJ5Ijoi5paw5a6_6aeF6L-R44GPIiwicGFjZSI6ImJhbGFuY2VkIiwibWVhbFBsYW4iOiJhbGwiLCJ0cmF2ZWxQcmVmZXJlbmNlIjoiY2FyIiwiYXJyaXZhbEFpcnBvcnQiOiJITkQiLCJhcnJpdmFsVGltZSI6IjEwOjMwIiwiZGVwYXJ0dXJlQWlycG9ydCI6Im5vbmUiLCJkZXBhcnR1cmVUaW1lIjoiIiwiZmxpZ2h0S2luZCI6ImRvbWVzdGljIiwiZGF5U3RhcnREZWZhdWx0IjoiMDg6MDAiLCJkYXlFbmRUYXJnZXQiOiIyMTozMCIsInRyYW5zZmVyQnVmZmVyTWludXRlcyI6MjAsInVzZXJTdGF5TWludXRlcyI6eyJnb29nbGUtc2Vuc29qaSI6MTIwfSwibGFzdEVudHJ5VGltZXMiOnsiZ29vZ2xlLXNlbnNvamkiOiIxNjozMCJ9LCJkYXlTdGFydFRpbWVzIjp7IjAiOiIwODozMCJ9LCJkYXlFbmRUaW1lcyI6eyIwIjoiMTk6NDUiLCIxIjoiMjE6MTUifSwibGVnTW9kZU92ZXJyaWRlcyI6eyJnb29nbGUtc2Vuc29qaTo6Z29vZ2xlLXNreXRyZWUiOiJ3YWxrIn0sImRheU92ZXJyaWRlcyI6eyJnb29nbGUtc2t5dHJlZSI6Mn0sInJlbW92ZWRTdG9wcyI6W3siaWQiOiJnb29nbGUtYWtpaGFiYXJhIiwibmFtZSI6IkFraWhhYmFyYSJ9XSwicmVzb2x1dGlvbk92ZXJyaWRlcyI6W3siaW5wdXRJbmRleCI6MCwicHJvdmlkZXJSZWYiOiJDaElKX3NlbnNvamktMTIzIn0seyJpbnB1dEluZGV4IjoxLCJuYW1lIjoiVHJhdmVsbGVyJ3MgcXVpZXQgZW50cmFuY2UiLCJhZGRyZXNzIjoiRWFzdCBzaWRlIG9mIHRoZSBzdGF0aW9uIiwibGF0aXR1ZGUiOjM1LjY0OTEsImxvbmdpdHVkZSI6MTM5Ljc4OTh9XX0",
+      "decoded": {
+        "destination": "japan",
+        "itinerary": "1日目\n浅草寺\nチームラボプラネッツ 15:30 予約",
+        "tripDays": 3,
+        "tripStartDate": "2026-09-14",
+        "dateWasProvided": true,
+        "hotelQuery": "新宿駅近く",
+        "pace": "balanced",
+        "mealPlan": "all",
+        "travelPreference": "car",
+        "arrivalAirport": "HND",
+        "arrivalTime": "10:30",
+        "departureAirport": "none",
+        "departureTime": "",
+        "flightKind": "domestic",
+        "dayStartDefault": "08:00",
+        "dayEndTarget": "21:30",
+        "transferBufferMinutes": 20,
+        "userStayMinutes": {
+          "google-sensoji": 120
+        },
+        "lastEntryTimes": {
+          "google-sensoji": "16:30"
+        },
+        "dayStartTimes": {
+          "0": "08:30"
+        },
+        "dayEndTimes": {
+          "0": "19:45",
+          "1": "21:15"
+        },
+        "legModeOverrides": {
+          "google-sensoji::google-skytree": "walk"
+        },
+        "dayOverrides": {
+          "google-skytree": 2
+        },
+        "removedStops": [
+          {
+            "id": "google-akihabara",
+            "name": "Akihabara"
+          }
+        ],
+        "resolutionOverrides": [
+          {
+            "inputIndex": 0,
+            "providerRef": "ChIJ_sensoji-123"
+          },
+          {
+            "inputIndex": 1,
+            "name": "Traveller's quiet entrance",
+            "address": "East side of the station",
+            "latitude": 35.6491,
+            "longitude": 139.7898
+          }
+        ]
+      },
+      "decodedCode": "eyJ2IjoxLCJkZXN0aW5hdGlvbiI6ImphcGFuIiwiaXRpbmVyYXJ5IjoiMeaXpeebrlxu5rWF6I2J5a-6XG7jg4Hjg7zjg6Djg6njg5zjg5fjg6njg43jg4Pjg4QgMTU6MzAg5LqI57SEIiwidHJpcERheXMiOjMsInRyaXBTdGFydERhdGUiOiIyMDI2LTA5LTE0IiwiZGF0ZVdhc1Byb3ZpZGVkIjp0cnVlLCJob3RlbFF1ZXJ5Ijoi5paw5a6_6aeF6L-R44GPIiwicGFjZSI6ImJhbGFuY2VkIiwibWVhbFBsYW4iOiJhbGwiLCJ0cmF2ZWxQcmVmZXJlbmNlIjoiY2FyIiwiYXJyaXZhbEFpcnBvcnQiOiJITkQiLCJhcnJpdmFsVGltZSI6IjEwOjMwIiwiZGVwYXJ0dXJlQWlycG9ydCI6Im5vbmUiLCJkZXBhcnR1cmVUaW1lIjoiIiwiZmxpZ2h0S2luZCI6ImRvbWVzdGljIiwiZGF5U3RhcnREZWZhdWx0IjoiMDg6MDAiLCJkYXlFbmRUYXJnZXQiOiIyMTozMCIsInRyYW5zZmVyQnVmZmVyTWludXRlcyI6MjAsInVzZXJTdGF5TWludXRlcyI6eyJnb29nbGUtc2Vuc29qaSI6MTIwfSwibGFzdEVudHJ5VGltZXMiOnsiZ29vZ2xlLXNlbnNvamkiOiIxNjozMCJ9LCJkYXlTdGFydFRpbWVzIjp7IjAiOiIwODozMCJ9LCJkYXlFbmRUaW1lcyI6eyIwIjoiMTk6NDUiLCIxIjoiMjE6MTUifSwibGVnTW9kZU92ZXJyaWRlcyI6eyJnb29nbGUtc2Vuc29qaTo6Z29vZ2xlLXNreXRyZWUiOiJ3YWxrIn0sImRheU92ZXJyaWRlcyI6eyJnb29nbGUtc2t5dHJlZSI6Mn0sInJlbW92ZWRTdG9wcyI6W3siaWQiOiJnb29nbGUtYWtpaGFiYXJhIiwibmFtZSI6IkFraWhhYmFyYSJ9XSwicmVzb2x1dGlvbk92ZXJyaWRlcyI6W3siaW5wdXRJbmRleCI6MCwicHJvdmlkZXJSZWYiOiJDaElKX3NlbnNvamktMTIzIn0seyJpbnB1dEluZGV4IjoxLCJuYW1lIjoiVHJhdmVsbGVyJ3MgcXVpZXQgZW50cmFuY2UiLCJhZGRyZXNzIjoiRWFzdCBzaWRlIG9mIHRoZSBzdGF0aW9uIiwibGF0aXR1ZGUiOjM1LjY0OTEsImxvbmdpdHVkZSI6MTM5Ljc4OTh9XX0"
+    },
+    {
+      "name": "crlf-in-code-unpaddable",
+      "code": "eyJ2IjoxLC\r\nJkZXN0aW5hdGlvbiI6ImphcGFuIiwiaXRpbmVyYXJ5IjoiMeaXpeebrlxu5rWF6I2J5a-6XG7jg4Hjg7zjg6Djg6njg5zjg5fjg6njg43jg4Pjg4QgMTU6MzAg5LqI57SEIiwidHJpcERheXMiOjMsInRyaXBTdGFydERhdGUiOiIyMDI2LTA5LTE0IiwiZGF0ZVdhc1Byb3ZpZGVkIjp0cnVlLCJob3RlbFF1ZXJ5Ijoi5paw5a6_6aeF6L-R44GPIiwicGFjZSI6ImJhbGFuY2VkIiwibWVhbFBsYW4iOiJhbGwiLCJ0cmF2ZWxQcmVmZXJlbmNlIjoiY2FyIiwiYXJyaXZhbEFpcnBvcnQiOiJITkQiLCJhcnJpdmFsVGltZSI6IjEwOjMwIiwiZGVwYXJ0dXJlQWlycG9ydCI6Im5vbmUiLCJkZXBhcnR1cmVUaW1lIjoiIiwiZmxpZ2h0S2luZCI6ImRvbWVzdGljIiwiZGF5U3RhcnREZWZhdWx0IjoiMDg6MDAiLCJkYXlFbmRUYXJnZXQiOiIyMTozMCIsInRyYW5zZmVyQnVmZmVyTWludXRlcyI6MjAsInVzZXJTdGF5TWludXRlcyI6eyJnb29nbGUtc2Vuc29qaSI6MTIwfSwibGFzdEVudHJ5VGltZXMiOnsiZ29vZ2xlLXNlbnNvamkiOiIxNjozMCJ9LCJkYXlTdGFydFRpbWVzIjp7IjAiOiIwODozMCJ9LCJkYXlFbmRUaW1lcyI6eyIwIjoiMTk6NDUiLCIxIjoiMjE6MTUifSwibGVnTW9kZU92ZXJyaWRlcyI6eyJnb29nbGUtc2Vuc29qaTo6Z29vZ2xlLXNreXRyZWUiOiJ3YWxrIn0sImRheU92ZXJyaWRlcyI6eyJnb29nbGUtc2t5dHJlZSI6Mn0sInJlbW92ZWRTdG9wcyI6W3siaWQiOiJnb29nbGUtYWtpaGFiYXJhIiwibmFtZSI6IkFraWhhYmFyYSJ9XSwicmVzb2x1dGlvbk92ZXJyaWRlcyI6W3siaW5wdXRJbmRleCI6MCwicHJvdmlkZXJSZWYiOiJDaElKX3NlbnNvamktMTIzIn0seyJpbnB1dEluZGV4IjoxLCJuYW1lIjoiVHJhdmVsbGVyJ3MgcXVpZXQgZW50cmFuY2UiLCJhZGRyZXNzIjoiRWFzdCBzaWRlIG9mIHRoZSBzdGF0aW9uIiwibGF0aXR1ZGUiOjM1LjY0OTEsImxvbmdpdHVkZSI6MTM5Ljc4OTh9XX0",
+      "decoded": null,
+      "decodedCode": null
+    },
+    {
       "name": "empty",
       "code": "",
       "decoded": null,

@@ -243,7 +243,7 @@ public enum PoiAccess {
 
   private static func normalizeAccessLabel(_ value: String) -> String {
     normalizedLabels.value(for: value) { raw in
-      let folded = raw.precomposedStringWithCompatibilityMapping.lowercased()
+      let folded = JSText.normalizeNFKC(raw).lowercased()
       return stripPattern.replacingAll(in: folded, with: "")
     }
   }

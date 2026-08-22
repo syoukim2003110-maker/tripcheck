@@ -373,6 +373,38 @@ function rawCode(payload) {
 
 const decodeVectors = [
   { name: "garbage", code: "not-base64!!" },
+  // JSON has no `Infinity`, but `1e999` overflows to it on the way in. Every `Number.isFinite`
+  // guard in `lib/share-link.ts` REJECTS here where a missing guard would silently CLAMP:
+  // tripDays falls back to 3, both optional limits stay absent, and the records stay empty.
+  {
+    name: "non-finite-numbers",
+    code: rawCode({
+      v: 1,
+      itinerary: "Senso-ji",
+      tripDays: 1e999,
+      maxWalkingMinutesPerLeg: 1e999,
+      maxTransfersPerLeg: 1e999,
+      userStayMinutes: { a: 1e999 },
+      dayOverrides: { b: -1e999 },
+      transferBufferMinutes: 1e999,
+      resolutionOverrides: [
+        { inputIndex: 1e999, providerRef: "ChIJ_infinite" },
+        { inputIndex: 0, name: "Infinite pin", address: "Nowhere", latitude: 1e999, longitude: -1e999 },
+      ],
+    }),
+  },
+  // `atob` strips ASCII whitespace, and `padEnd` counts UTF-16 units — a CRLF in the middle of a
+  // fragment (a link pasted after an email client wrapped it) is two units, not one Swift
+  // `Character`. Whether the fragment survives depends on how many units the padding then adds:
+  // four whitespace characters leave the length a multiple of four and it reads, two do not.
+  ...[
+    { name: "crlf-in-code", whitespace: "\r\n\r\n" },
+    { name: "mixed-whitespace-in-code", whitespace: "\r\n \t" },
+    { name: "crlf-in-code-unpaddable", whitespace: "\r\n" },
+  ].map(({ name, whitespace }) => {
+    const code = encodeTripShare(linkInput);
+    return { name, code: `${code.slice(0, 10)}${whitespace}${code.slice(10)}` };
+  }),
   { name: "empty", code: "" },
   { name: "not-json", code: Buffer.from("{oops", "utf8").toString("base64url") },
   { name: "wrong-length", code: Buffer.from("{}", "utf8").toString("base64url").slice(0, 1) },

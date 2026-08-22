@@ -68,7 +68,7 @@ public enum TripBuilder {
   /// TS の `toLocaleLowerCase()` は引数なしなので実行環境の既定ロケール、Swift の `lowercased()`
   /// はロケール非依存。トルコ語ロケールの `I` 以外では同じ結果になる。
   static func normalizedInput(_ value: String) -> String {
-    value.precomposedStringWithCompatibilityMapping
+    JSText.normalizeNFKC(value)
       .trimmingCharacters(in: .whitespacesAndNewlines)
       .lowercased()
   }

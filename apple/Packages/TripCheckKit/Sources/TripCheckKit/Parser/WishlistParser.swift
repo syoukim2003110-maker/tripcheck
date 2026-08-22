@@ -70,10 +70,11 @@ public enum WishlistParser {
         continue
       }
 
-      // `precomposedStringWithCompatibilityMapping` だけでは TS の `normalize("NFKC")` に届かない
-      // ——「ﾊﾟ」(U+FF8A U+FF9F)が U+30CF U+309A の 2 文字で止まり、JS が出す U+30D1 にならない。
-      // `String` の `==` は正準等価なので Swift 同士では見えないが、共有コード(Task 23)の
-      // バイト列には出る。`JSText.normalizeNFKC` が正準合成まで進める。
+      // NFKC は `Core/JSText.swift` の `normalizeNFKC` を通す。`Foundation` の
+      // `precomposedStringWithCompatibilityMapping` だけでは TS の `normalize("NFKC")` に届かず、
+      //「ﾊﾟ」(U+FF8A U+FF9F)が U+30CF U+309A の 2 文字で止まって、JS が出す U+30D1 にならない。
+      // `String` の `==` は正準等価なので Swift 同士では見えないが、共有コード(`Share/`)の
+      // バイト列には出る。
       var text = stripBullet(
         JSText.normalizeNFKC(original)
           .replacingOccurrences(of: "～", with: "~")

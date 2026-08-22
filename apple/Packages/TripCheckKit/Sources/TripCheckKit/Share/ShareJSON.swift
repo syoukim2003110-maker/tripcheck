@@ -40,11 +40,21 @@ enum ShareJSON {
     return nil
   }
 
-  /// TS `typeof value === "number"`。JSON に `NaN`/`Infinity` は書けないので、ここに来る数は
-  /// 常に有限 —— TS 側の `Number.isFinite` 検査は移植先でも書くが、常に真になる。
+  /// TS `typeof value === "number"`。
+  ///
+  /// **有限とは限らない。** JSON の文法に `Infinity` は無いが、`1e999` と書けば `JSON.parse` は
+  /// `Infinity` を返す(`Double("1e999")` も `+∞`)。TS 側はそのために `Number.isFinite` を
+  /// 別に置いているので、こちらも `typeof` だけを写して、有限かどうかは `asFiniteNumber` で
+  /// 訊く —— そうしないと「拒む」ところが「上限に丸める」に化ける。
   var asNumber: Double? {
     if case .number(let value) = self { return value }
     return nil
+  }
+
+  /// TS `typeof value === "number" && Number.isFinite(value)`
+  var asFiniteNumber: Double? {
+    guard let value = asNumber, value.isFinite else { return nil }
+    return value
   }
 
   /// TS `value === true`
@@ -407,132 +417,14 @@ private extension Unicode.Scalar {
   }
 }
 
-// MARK: - JS の素の演算
-
-/// 共有コードが Web と同じ文字を出すために要る JS の基本演算。`Core/` に置かないのは、
-/// これらが「エンジンの計算」ではなく「線の上の表記」の規則だから —— 使うのは
-/// `Share/` の 3 ファイルだけで、他所が真似ると意味が薄れる。
-enum JSText {
-
-  /// `Number::toString(10)` を経由した `JSON.stringify` の数値表記。
-  ///
-  /// Swift の `Double.description` は JS と同じ**最短往復**の桁を出すが、体裁が違う
-  /// (`1e-07` 対 `1e-7`、`90.0` 対 `90`)。そこで桁と指数だけを借り、組み立ては
-  /// ECMA-262 の `Number::toString` の手順(k 桁の s と n について 5 つの枝)でやり直す。
-  static func numberString(_ value: Double) -> String {
-    // JSON に非有限数は書けない。`JSON.stringify` はここで `null` を出す。
-    guard value.isFinite else { return "null" }
-    // `JSON.stringify(-0)` は `"0"`。
-    if value == 0 { return "0" }
-
-    let negative = value < 0
-    let description = abs(value).description
-    var mantissa = description
-    var exponent = 0
-    if let separator = description.firstIndex(where: { $0 == "e" || $0 == "E" }) {
-      mantissa = String(description[description.startIndex..<separator])
-      exponent = Int(description[description.index(after: separator)...]) ?? 0
-    }
-    var fractionDigits = 0
-    if let point = mantissa.firstIndex(of: ".") {
-      fractionDigits = mantissa.distance(from: mantissa.index(after: point), to: mantissa.endIndex)
-      mantissa.remove(at: point)
-    }
-    var digits = Array(mantissa)
-    while digits.count > 1, digits.first == "0" { digits.removeFirst() }
-    var trailingZeros = 0
-    while digits.count > 1, digits.last == "0" {
-      digits.removeLast()
-      trailingZeros += 1
-    }
-    let k = digits.count
-    // value = digits × 10^(n − k)
-    let n = k + exponent - fractionDigits + trailingZeros
-    let s = String(digits)
-
-    let sign = negative ? "-" : ""
-    if k <= n && n <= 21 { return sign + s + String(repeating: "0", count: n - k) }
-    if 0 < n && n <= 21 {
-      let split = s.index(s.startIndex, offsetBy: n)
-      return sign + s[s.startIndex..<split] + "." + s[split...]
-    }
-    if -6 < n && n <= 0 { return sign + "0." + String(repeating: "0", count: -n) + s }
-    let exponentPart = "e" + (n - 1 >= 0 ? "+" : "-") + String(abs(n - 1))
-    if k == 1 { return sign + s + exponentPart }
-    let split = s.index(after: s.startIndex)
-    return sign + s[s.startIndex..<split] + "." + s[split...] + exponentPart
-  }
-
-  /// `Math.round` —— 「一番近い整数、同点なら**大きいほう**」。Swift の
-  /// `rounded(.toNearestOrAwayFromZero)` は負の同点で向きが逆になるので使えない
-  /// (`Math.round(-2.5)` は `-2`、Swift は `-3`)。
-  static func round(_ value: Double) -> Double {
-    guard value.isFinite else { return value }
-    // `floor(x + 0.5)` は 0.5 のすぐ手前の値で 1 に跳ねてしまう(0.49999999999999994 + 0.5 == 1)。
-    if value > 0 && value < 0.5 { return 0 }
-    if value < 0 && value >= -0.5 { return -0.0 }
-    return (value + 0.5).rounded(.down)
-  }
-
-  /// JS の `WhiteSpace ∪ LineTerminator`(`\s` が `u` フラグで指す集合と同じ)。ICU の `\s` とも
-  /// `Foundation` の `.whitespacesAndNewlines` とも中身が違う(U+0085 を含まず U+FEFF を含む)ので、
-  /// 正規表現に混ぜずここで名前を付ける。
-  static let whitespaceScalars: Set<Unicode.Scalar> = [
-    "\u{09}", "\u{0A}", "\u{0B}", "\u{0C}", "\u{0D}", "\u{20}", "\u{A0}", "\u{1680}",
-    "\u{2000}", "\u{2001}", "\u{2002}", "\u{2003}", "\u{2004}", "\u{2005}", "\u{2006}",
-    "\u{2007}", "\u{2008}", "\u{2009}", "\u{200A}", "\u{2028}", "\u{2029}", "\u{202F}",
-    "\u{205F}", "\u{3000}", "\u{FEFF}",
-  ]
-
-  /// 正規表現の中で `\s` の代わりに書く文字クラスの中身(`[` と `]` は付けない)。
-  static let whitespaceClass = "\\t\\n\\u000b\\f\\r \\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff"
-
-  /// `String.prototype.normalize("NFKC")`。
-  ///
-  /// `precomposedStringWithCompatibilityMapping` だけでは足りない。互換分解で**新しく現れた**
-  /// 並びを組み直さないことがあり、半角の「ﾊﾟ」(U+FF8A U+FF9F)は U+30CF U+309A の 2 文字で
-  /// 止まる —— JS の `normalize("NFKC")` は U+30D1 の 1 文字にする。同じ文字が 2 通りの
-  /// バイト列になるので、共有コードのバイト同一が崩れる(`String` の `==` は正準等価で
-  /// 較べるため、Swift 同士の比較では見えない)。正準合成をもう一度かけて不動点まで進める。
-  static func normalizeNFKC(_ value: String) -> String {
-    value.precomposedStringWithCompatibilityMapping.precomposedStringWithCanonicalMapping
-  }
-
-  /// `String.prototype.trim()`。
-  static func trim(_ value: String) -> String {
-    var scalars = Array(value.unicodeScalars)
-    var start = 0
-    var end = scalars.count
-    while start < end, whitespaceScalars.contains(scalars[start]) { start += 1 }
-    while end > start, whitespaceScalars.contains(scalars[end - 1]) { end -= 1 }
-    scalars = Array(scalars[start..<end])
-    return String(String.UnicodeScalarView(scalars))
-  }
-
-  /// JS の `String.prototype.length` —— UTF-16 コード単位の数。Swift の `count`(書記素)とは
-  /// 別物で、掃除役の `key.length > 200` はこちらで数えている。
-  static func length(_ value: String) -> Int { value.utf16.count }
-
-  /// `String.prototype.slice(0, limit)`。切り口が代用対の途中に来たときだけ JS と分かれる:
-  /// JS は孤立サロゲートを残せるが Swift の `String` は残せないので、その半分を落とす。
-  /// 落ちるのは「上限のちょうど境目に絵文字が跨がった」場合の 1 文字分だけで、
-  /// 呼び出し側(名前 160・住所 300・行程 4,000)はいずれも境目を意味に使っていない。
-  static func slice(_ value: String, _ limit: Int) -> String {
-    let units = Array(value.utf16)
-    guard units.count > limit else { return value }
-    var cut = limit
-    if cut > 0, units[cut - 1] >= 0xD800, units[cut - 1] <= 0xDBFF { cut -= 1 }
-    return String(decoding: units[0..<cut], as: UTF16.self)
-  }
-}
 
 // MARK: - base64url
 
 /// `lib/share-link.ts:82-94` の `toBase64Url` / `fromBase64Url`。
 enum ShareBase64URL {
   private static let alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
-  private static let positionByCharacter: [Character: Int] =
-    Dictionary(uniqueKeysWithValues: alphabet.enumerated().map { ($0.element, $0.offset) })
+  private static let positionByUnit: [UInt16: Int] =
+    Dictionary(uniqueKeysWithValues: Array(alphabet.utf16).enumerated().map { ($0.element, $0.offset) })
 
   /// `btoa(...)` を `+`→`-`、`/`→`_`、末尾の `=` 落としに直したもの。
   static func encode(_ data: Data) -> String {
@@ -545,35 +437,39 @@ enum ShareBase64URL {
   /// `atob(value.replace(...).padEnd(...))`。`atob` は WHATWG の forgiving-base64 で、
   /// 桁数が 4 で割って 1 余る入力と、字母の外の文字を**拒む**(例外 → 呼び出し側では `null`)。
   /// `Data(base64Encoded:)` は取りこぼす端(過剰なパディングなど)があるので、手で書く。
+  ///
+  /// 数えるのは **UTF-16 コード単位**で、`Character`(書記素)ではない。`padEnd` が見るのは
+  /// JS の `String.prototype.length` だし、何より `"\r\n"` は Swift では 1 つの `Character` に
+  /// なるので、書記素で捨てようとすると `atob` が捨てる 2 文字を取りこぼす。
   static func decode(_ value: String) -> Data? {
-    var characters = Array(value).map { character -> Character in
-      switch character {
-      case "-": return "+"
-      case "_": return "/"
-      default: return character
+    var units = Array(value.utf16).map { unit -> UInt16 in
+      switch unit {
+      case 0x2D: return 0x2B  // "-" → "+"
+      case 0x5F: return 0x2F  // "_" → "/"
+      default: return unit
       }
     }
     // `padEnd(Math.ceil(value.length / 4) * 4, "=")`
-    let padded = (characters.count + 3) / 4 * 4
-    characters.append(contentsOf: Array(repeating: "=", count: padded - characters.count))
+    let padded = (units.count + 3) / 4 * 4
+    units.append(contentsOf: Array(repeating: UInt16(0x3D), count: padded - units.count))
 
-    // atob: まず ASCII 空白を捨てる。
-    characters.removeAll { $0 == " " || $0 == "\t" || $0 == "\n" || $0 == "\r" || $0 == "\u{0C}" }
+    // atob: まず ASCII 空白(TAB LF FF CR SPACE)を捨てる。
+    units.removeAll { $0 == 0x20 || $0 == 0x09 || $0 == 0x0A || $0 == 0x0C || $0 == 0x0D }
     // 末尾の `=` を最大 2 つまで落とす。
-    if characters.count % 4 == 0 {
+    if units.count % 4 == 0 {
       var removable = 2
-      while removable > 0, characters.last == "=" {
-        characters.removeLast()
+      while removable > 0, units.last == 0x3D {
+        units.removeLast()
         removable -= 1
       }
     }
-    if characters.count % 4 == 1 { return nil }
+    if units.count % 4 == 1 { return nil }
 
     var bits = 0
     var accumulator = 0
     var bytes: [UInt8] = []
-    for character in characters {
-      guard let position = positionByCharacter[character] else { return nil }
+    for unit in units {
+      guard let position = positionByUnit[unit] else { return nil }
       accumulator = accumulator << 6 | position
       bits += 6
       if bits >= 8 {

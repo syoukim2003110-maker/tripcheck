@@ -199,7 +199,7 @@ public enum ResolutionPipeline {
   /// TS の `toLocaleLowerCase()` は実行環境の既定ロケール依存(tr で `I` → `ı`)だが、移植先は
   /// 端末をまたいで同じ答えでなければならないので、ロケール非依存の `lowercased()` を使う。
   static func normalizePlaceName(_ value: String) -> String {
-    let folded = value.precomposedStringWithCompatibilityMapping.lowercased()
+    let folded = JSText.normalizeNFKC(value).lowercased()
     return separatorsAndMarks.replacingAll(in: folded, with: "")
   }
 

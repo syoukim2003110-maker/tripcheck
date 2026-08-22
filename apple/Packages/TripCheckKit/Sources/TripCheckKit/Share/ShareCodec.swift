@@ -183,7 +183,10 @@ public struct ShareableTripInput: Equatable, Sendable, Codable {
   /// 欄なので、合成された `init(from:)` も読まない)。
   public internal(set) var fieldOrder: ShareFieldOrder = .declared
 
-  private enum CodingKeys: String, CodingKey {
+  /// `fieldOrder` が入っていないのは意図的(既定値のある欄なので合成された `init(from:)` も
+  /// 読まない)。欄を足したら **3 か所** —— ここ、`==`、`ShareCodec.payload` —— に書き足す
+  /// ことになり、`everyFieldReachesTheWireAndTheComparison` が 3 つとも数える。
+  enum CodingKeys: String, CodingKey, CaseIterable {
     case destination, itinerary, tripDays, tripStartDate, dateWasProvided, hotelQuery, pace,
          mealPlan, travelPreference, arrivalAirport, arrivalTime, departureAirport, departureTime,
          flightKind, dayStartDefault, dayEndTarget, transferBufferMinutes, maxWalkingMinutesPerLeg,
@@ -421,12 +424,12 @@ public enum ShareCodec {
     let itinerary = parsed["itinerary"]?.asString.map { JSText.slice($0, 4_000) } ?? ""
     if JSText.trim(itinerary).isEmpty { return nil }
 
-    let tripDays = parsed["tripDays"]?.asNumber.map { Int(min(14, max(1, JSText.round($0)))) } ?? 3
+    let tripDays = parsed["tripDays"]?.asFiniteNumber.map { Int(min(14, max(1, JSText.round($0)))) } ?? 3
     let tripStartDate = cleanCalendarDate(parsed["tripStartDate"])
     let lockedOrderByDay = cleanLockedOrder(parsed["lockedOrderByDay"])
     let resolutionOverrides = cleanResolutionOverrides(parsed["resolutionOverrides"])
-    let maxWalkingMinutesPerLeg = parsed["maxWalkingMinutesPerLeg"]?.asNumber.map { Int(min(180, max(5, JSText.round($0)))) }
-    let maxTransfersPerLeg = parsed["maxTransfersPerLeg"]?.asNumber.map { Int(min(8, max(0, JSText.round($0)))) }
+    let maxWalkingMinutesPerLeg = parsed["maxWalkingMinutesPerLeg"]?.asFiniteNumber.map { Int(min(180, max(5, JSText.round($0)))) }
+    let maxTransfersPerLeg = parsed["maxTransfersPerLeg"]?.asFiniteNumber.map { Int(min(8, max(0, JSText.round($0)))) }
     let dayStartDefault = cleanClock(parsed["dayStartDefault"])
 
     return ShareableTripInput(
@@ -462,7 +465,8 @@ public enum ShareCodec {
   }
 
   /// TS `transferBuffers.has(...)`(`:291-293`)。JS の `Set#has` は `SameValueZero` なので
-  /// `20` と `20.0` は同じ、`20.5` は違う。
+  /// `20` と `20.0` は同じ、`20.5` は違う。ここに `Number.isFinite` は要らない —— 集合に
+  /// `±∞` は入っていないので、そのまま既定の 10 に落ちる。
   private static func transferBufferMinutes(_ value: ShareJSON?) -> Int {
     guard let number = value?.asNumber, let integer = Int(exactly: number),
           transferBuffers.contains(integer) else { return 10 }
@@ -502,7 +506,7 @@ public enum ShareCodec {
     guard let object = value?.asObject else { return [:] }
     var result = ShareRecord<Int>()
     for entry in object.entries.prefix(limit) {
-      guard !entry.key.isEmpty, JSText.length(entry.key) <= 200, let raw = entry.value.asNumber else { continue }
+      guard !entry.key.isEmpty, JSText.length(entry.key) <= 200, let raw = entry.value.asFiniteNumber else { continue }
       result[entry.key] = Int(min(Double(maximum), max(Double(minimum), JSText.round(raw))))
     }
     return result
@@ -635,8 +639,8 @@ public enum ShareCodec {
       let name = cleanTravellerText(entry["name"], 160)
       let address = cleanTravellerText(entry["address"], 300)
       guard !name.isEmpty, !address.isEmpty,
-            let latitude = entry["latitude"]?.asNumber, latitude >= -90, latitude <= 90,
-            let longitude = entry["longitude"]?.asNumber, longitude >= -180, longitude <= 180 else { continue }
+            let latitude = entry["latitude"]?.asFiniteNumber, latitude >= -90, latitude <= 90,
+            let longitude = entry["longitude"]?.asFiniteNumber, longitude >= -180, longitude <= 180 else { continue }
       result.append(.manual(
         inputIndex: inputIndex,
         name: name,

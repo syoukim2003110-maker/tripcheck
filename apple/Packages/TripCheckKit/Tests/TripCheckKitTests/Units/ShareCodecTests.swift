@@ -351,6 +351,43 @@ enum ShareInputs {
   #expect(String(decoding: data, as: UTF8.self).hasPrefix("{\"v\":1,"))
 }
 
+/// 欄を足したのに `==` か `payload` か `CodingKeys` のどれかに書き足し忘れると、その欄だけ
+/// 静かに落ちる —— リンクからも、比較からも。3 つとも同じ 28 を数えることで気づける。
+@Test func everyFieldReachesTheWireAndTheComparison() throws {
+  // この入力だけが 28 欄すべてを持っている(省略できる 4 欄も埋まっている)。
+  let input = try #require(ShareInputs.byName["link-optional-fields"])
+  let payload = try #require(ShareCodec.payload(input).asObject)
+  #expect(ShareableTripInput.CodingKeys.allCases.count == 28)
+  #expect(payload.keys.count == 29, "v plus all 28 fields")
+  #expect(Set(payload.keys).subtracting(["v"]) == Set(ShareableTripInput.CodingKeys.allCases.map(\.rawValue)))
+  #expect(Mirror(reflecting: input).children.count == 29, "28 coded fields plus fieldOrder")
+}
+
+/// `1e999` は JSON に書けるが、読むと `Infinity` になる。TS の `Number.isFinite` は**拒む**
+/// (既定に落ちる)ので、上限に丸めてはいけない。
+@Test func nonFiniteNumbersAreRejectedRatherThanClamped() throws {
+  let file = try ShareVectorFile.load()
+  let decoded = try #require(ShareCodec.decode(try file.decodeVector("non-finite-numbers").code))
+  #expect(decoded.tripDays == 3, "not 14")
+  #expect(decoded.maxWalkingMinutesPerLeg == nil, "not 180")
+  #expect(decoded.maxTransfersPerLeg == nil, "not 8")
+  #expect(decoded.userStayMinutes == [:], "not 720")
+  #expect(decoded.dayOverrides == [:], "not 1")
+  #expect(decoded.transferBufferMinutes == 10)
+  #expect(decoded.resolutionOverrides == nil, "an infinite occurrence and an infinite pin are both refused")
+}
+
+/// `atob` は ASCII 空白を捨て、`padEnd` は UTF-16 コード単位で数える。Swift で `"\r\n"` を
+/// 1 つの `Character` として扱うと、どちらの数え方も JS と食い違う。
+@Test func whitespaceInsideAFragmentIsCountedTheWayJavaScriptCountsIt() throws {
+  let file = try ShareVectorFile.load()
+  let wrapped = try #require(ShareCodec.decode(try file.decodeVector("crlf-in-code").code))
+  #expect(wrapped == ShareInputs.link, "four whitespace units still leave a readable fragment")
+  let mixed = try #require(ShareCodec.decode(try file.decodeVector("mixed-whitespace-in-code").code))
+  #expect(mixed == ShareInputs.link)
+  #expect(ShareCodec.decode(try file.decodeVector("crlf-in-code-unpaddable").code) == nil, "two do not")
+}
+
 /// 敵意ある `#t=` は「深い入れ子」だけで作れる。読めないと言うのは正しい —— 落ちるのは違う。
 @Test func aDeeplyNestedPayloadIsRejectedRatherThanCrashing() {
   let nested = String(repeating: "[", count: 50_000)
