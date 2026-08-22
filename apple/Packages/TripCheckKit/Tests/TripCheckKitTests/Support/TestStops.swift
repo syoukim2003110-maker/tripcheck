@@ -90,6 +90,36 @@ enum TestStops {
   /// 日本の食事窓(昼 11:00-14:30 / 夜 17:30-21:00)。食事停留所のドリフトを見るテスト用。
   static let japanMeals = Destinations.byId(.japan).meals
 
+  /// Task 13/14 の共有ヘルパー。`DayClock.buildDay` を「日本・ホテルなし・空港制約なし・09:00 開始」の
+  /// 既定で呼ぶ薄いラッパ。日割り探索は同じ日を何百回も組み直すので、テスト側の呼び出しを 1 行に保つ。
+  ///
+  /// `deadline` は**門限**(`dayEndTarget`)として渡す。出発便の締切は `index == dayCount - 1` の日に
+  /// しか効かない(`lib/trip-builder.ts:1526`)ので、任意の添字の日に締切を置けるのは門限のほうだけ。
+  /// Task 14 の食事枠が読むのは `day.deadline` の文字列と `deadlinePreviousDay` だけで
+  /// (`lib/trip-builder.ts:481, 488`)、`deadlineKind` は見ないため、この選択は
+  /// `dinnerSlotDisappearsWhenDeadlineIsBeforeDinnerStart` を表現するのに十分。
+  static func buildPlainDay(_ cluster: [RouteStop], index: Int, deadline: String? = nil) -> BuiltPlanDay {
+    DayClock.buildDay(
+      stops: cluster,
+      index: index,
+      dayCount: index + 1,
+      locale: .ja,
+      startBase: nil,
+      endBase: nil,
+      airportConstraints: [],
+      constraints: [:],
+      earlyVisitStopIds: [],
+      foodStopIds: [],
+      openingWindows: [:],
+      destination: Destinations.byId(.japan),
+      requestedStart: nil,
+      startDate: nil,
+      travel: .default,
+      dayEndTarget: deadline,
+      lockedOrder: []
+    )
+  }
+
   static func point(
     id: String,
     lat: Double,
