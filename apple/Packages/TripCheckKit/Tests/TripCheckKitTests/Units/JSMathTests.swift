@@ -30,6 +30,11 @@ struct JSMathVectors: Decodable {
     var latitudeRadians: Group
     var smallSin: Group
     var asin: Group
+    /// The three argument-reduction branches no coordinate can reach — see
+    /// `everyArgumentReductionBranchMatchesV8`.
+    var nearHalfPi: Group
+    var mediumReduction: Group
+    var hugeArguments: Group
     var corpusEdges: Group
   }
 
@@ -60,6 +65,31 @@ private func report(_ failures: [String], of total: Int, what: String) -> String
   "\(failures.count)/\(total) \(what) differ from V8:\n" + failures.prefix(20).joined(separator: "\n")
 }
 
+/// Walks a `"x cos sin"` group, returning one line per disagreement.
+private func cosSinFailures(_ entries: [String]) -> [String] {
+  var failures: [String] = []
+  for entry in entries {
+    let fields = entry.split(separator: " ")
+    guard fields.count == 3,
+      let x = double(fields[0]),
+      let expectedCos = double(fields[1]),
+      let expectedSin = double(fields[2])
+    else {
+      failures.append("malformed entry: \(entry)")
+      continue
+    }
+    let actualCos = JSMath.cos(x)
+    if actualCos.bitPattern != expectedCos.bitPattern {
+      failures.append("cos(\(x)): V8 \(hex(expectedCos)) ≠ Swift \(hex(actualCos))")
+    }
+    let actualSin = JSMath.sin(x)
+    if actualSin.bitPattern != expectedSin.bitPattern {
+      failures.append("sin(\(x)): V8 \(hex(expectedSin)) ≠ Swift \(hex(actualSin))")
+    }
+  }
+  return failures
+}
+
 @Test func jsMathMatchesV8OnEveryLatitudeInBothBands() throws {
   let vectors = try JSMathVectors.load()
   #expect(vectors.schemaVersion == 1)
@@ -67,26 +97,7 @@ private func report(_ failures: [String], of total: Int, what: String) -> String
   let entries = vectors.groups.latitudeRadians.entries
   #expect(entries.count == 45002)
 
-  var failures: [String] = []
-  for entry in entries {
-    let fields = entry.split(separator: " ")
-    guard fields.count == 3,
-      let radians = double(fields[0]),
-      let expectedCos = double(fields[1]),
-      let expectedSin = double(fields[2])
-    else {
-      failures.append("malformed entry: \(entry)")
-      continue
-    }
-    let actualCos = JSMath.cos(radians)
-    if actualCos.bitPattern != expectedCos.bitPattern {
-      failures.append("cos(\(radians)): V8 \(hex(expectedCos)) ≠ Swift \(hex(actualCos))")
-    }
-    let actualSin = JSMath.sin(radians)
-    if actualSin.bitPattern != expectedSin.bitPattern {
-      failures.append("sin(\(radians)): V8 \(hex(expectedSin)) ≠ Swift \(hex(actualSin))")
-    }
-  }
+  let failures = cosSinFailures(entries)
   #expect(failures.count == 0, "\(report(failures, of: entries.count * 2, what: "latitude cos/sin values"))")
 }
 
@@ -176,4 +187,39 @@ private func report(_ failures: [String], of total: Int, what: String) -> String
   #expect(JSMath.asin(2).isNaN)
   #expect(JSMath.asin(1) == Double.pi / 2)
   #expect(JSMath.asin(-1) == -Double.pi / 2)
+}
+
+/// The argument-reduction branches a coordinate can never reach. Every latitude this engine sees is
+/// under 1 rad, so `remPio2` normally stops at its |x| ~< π/4 or |x| < 3π/4 cases and
+/// `kernelRemPio2` never runs at all. `JSMath` implements the rest anyway — an unreachable branch
+/// that silently returns the wrong answer is worse than one that is not there — so the rest is
+/// measured too:
+///
+/// - `nearHalfPi`: high word exactly `0x3FF921FB`, the "near π/2, use 33+33+53 bit π" sub-branch
+///   sitting one `if` away from the ordinary n = ±1 path.
+/// - `mediumReduction`: 3π/4 up to 2^19 × (π/2), where the one-, two- and three-round refinements
+///   live, swept logarithmically to the exact top of the branch.
+/// - `hugeArguments`: past that ceiling, where reduction hands over to `kernelRemPio2` and the 396
+///   hex digits of 2/π, out to 1e300.
+///
+/// All three carry both signs, so the `hx < 0` negation on the way out is covered as well.
+@Test func everyArgumentReductionBranchMatchesV8() throws {
+  let groups = try JSMathVectors.load().groups
+  for (label, group) in [
+    ("near π/2", groups.nearHalfPi),
+    ("medium reduction", groups.mediumReduction),
+    ("huge arguments", groups.hugeArguments),
+  ] {
+    #expect(group.entries.count >= 200, "\(label) sweep looks too thin: \(group.entries.count)")
+    let failures = cosSinFailures(group.entries)
+    #expect(failures.count == 0, "\(report(failures, of: group.entries.count * 2, what: "\(label) cos/sin values"))")
+  }
+}
+
+/// `cos`/`sin` of a non-finite argument is NaN, by `x - x` in V8 and here.
+@Test func nonFiniteArgumentsAreNotANumber() {
+  for x in [Double.infinity, -Double.infinity, Double.nan] {
+    #expect(JSMath.cos(x).isNaN)
+    #expect(JSMath.sin(x).isNaN)
+  }
 }

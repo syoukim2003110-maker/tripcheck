@@ -75,21 +75,58 @@ for (let step = 0; step <= 200000; step += 10) {
   asin.push(`${bits(x)} ${bits(Math.asin(x))}`);
 }
 
+// 3b. The argument-reduction branches of `__ieee754_rem_pio2`. Nothing a coordinate can produce
+//     reaches them — every latitude is under 1 rad — but `JSMath` implements them, and an
+//     implementation nothing measures is a guess. Bit patterns are built explicitly so the sample
+//     lands inside the intended branch rather than near it.
+const bitsToDouble = (hi, lo) => {
+  view.setUint32(0, hi);
+  view.setUint32(4, lo);
+  return view.getFloat64(0);
+};
+
+//     (a) |x| < 3π/4 with the high word exactly 0x3FF921FB — the "near π/2, use 33+33+53 bit π"
+//         sub-branch, which is one `if` away from the ordinary n = ±1 path.
+const nearHalfPi = [];
+for (let step = 0; step < 120; step += 1) {
+  const low = Math.floor(step * 0xFFFFFFFF / 119);
+  const x = bitsToDouble(0x3FF921FB, low);
+  for (const value of [x, -x]) {
+    nearHalfPi.push(`${bits(value)} ${bits(Math.cos(value))} ${bits(Math.sin(value))}`);
+  }
+}
+
+//     (b) 3π/4 … 2^19×(π/2), the medium-size path with its one-, two- and three-round refinements,
+//         swept logarithmically and pinned at both ends.
+const mediumReduction = [];
+const mediumLow = 3 * Math.PI / 4;
+const mediumHigh = 524288 * (Math.PI / 2);  // 2^19 × (π/2), the top of the branch
+for (let step = 0; step <= 160; step += 1) {
+  const x = mediumLow * Math.exp(Math.log(mediumHigh / mediumLow) * step / 160);
+  for (const value of [x, -x]) {
+    mediumReduction.push(`${bits(value)} ${bits(Math.cos(value))} ${bits(Math.sin(value))}`);
+  }
+}
+
+//     (c) Beyond 2^19×(π/2), where reduction hands over to `__kernel_rem_pio2` and the 396 hex
+//         digits of 2/π. Swept by powers up to 1e300.
+const hugeArguments = [];
+for (let step = 0; step <= 120; step += 1) {
+  const x = mediumHigh * 1.0001 * Math.pow(10, 294 * step / 120);
+  if (!Number.isFinite(x)) continue;
+  for (const value of [x, -x]) {
+    hugeArguments.push(`${bits(value)} ${bits(Math.cos(value))} ${bits(Math.sin(value))}`);
+  }
+}
+
 // 4. Every ordered pair of distinct coordinates the builder corpus contains — stops, the trip base
 //    and the per-night bases. This is the table the port has to reproduce edge for edge: the route
 //    optimiser's strict `<` between a path and its reverse is decided by these exact bits.
-function straightLineDistanceKm(a, b) {
-  const radians = (degrees) => degrees * Math.PI / 180;
-  const earthRadiusKm = 6371;
-  const deltaLatitude = radians(b.latitude - a.latitude);
-  const deltaLongitude = radians(b.longitude - a.longitude);
-  const latitudeA = radians(a.latitude);
-  const latitudeB = radians(b.latitude);
-  const h = Math.sin(deltaLatitude / 2) ** 2
-    + Math.cos(latitudeA) * Math.cos(latitudeB) * Math.sin(deltaLongitude / 2) ** 2;
-  return 2 * earthRadiusKm * Math.asin(Math.sqrt(h));
-}
-
+//
+//    The distance comes from the engine's own `straightLineDistanceKm`, not from a copy of it here:
+//    a second transcription of the formula could drift from `lib/` and would then be pinning the
+//    wrong numbers with total confidence.
+const { straightLineDistanceKm } = await import("../lib/route-optimizer.ts");
 const { destinationById, destinationAirport } = await import("../lib/destinations.ts");
 
 const corpus = JSON.parse(readFileSync(corpusPath, "utf8"));
@@ -132,11 +169,16 @@ writeFileSync(out, `${JSON.stringify({
     latitudeRadians: { format: "radians cos sin", entries: latitudeRadians },
     smallSin: { format: "x sin", entries: smallSin },
     asin: { format: "x asin", entries: asin },
+    nearHalfPi: { format: "x cos sin", entries: nearHalfPi },
+    mediumReduction: { format: "x cos sin", entries: mediumReduction },
+    hugeArguments: { format: "x cos sin", entries: hugeArguments },
     corpusEdges: { format: "fromLat fromLon toLat toLon distanceKm", entries: corpusEdges },
   },
 })}\n`);
 
 process.stdout.write(
   `${latitudeRadians.length} latitude, ${smallSin.length} smallSin, ${asin.length} asin, `
+  + `${nearHalfPi.length} nearHalfPi, ${mediumReduction.length} mediumReduction, `
+  + `${hugeArguments.length} hugeArguments, `
   + `${corpusEdges.length} corpus edges (${points.length} distinct points) -> ${out}\n`
 );

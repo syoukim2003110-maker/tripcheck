@@ -400,6 +400,9 @@ public enum JSMath {
           i -= 1
         }
         if bits == 0 {  /* need recomputation */
+          // C reads `for (k = 1; iq[jk - k] == 0; k++)` with no lower bound, so an all-zero
+          // `iq` walks off the front of the array; `jk >= k` stops it here. The two only part
+          // company where C is already undefined, never on a value it defines.
           var k: Int32 = 1
           while jk >= k && iq[Int(jk - k)] == 0 { k += 1 }  /* k = number of terms needed */
 
