@@ -274,8 +274,11 @@ public enum Bases {
 }
 
 /// TS `foodVenuePattern` (`lib/trip-builder.ts:293`)
+/// `\b` はここだけ厳密形(`JSText.wordBoundary`)で書き下す。選択肢に `café` があり、末尾の `é` は
+/// JS にとって語の文字ではない —— `/\bcafé\b/i.test("Blue Bottle Café")` は **false** なので、
+/// 前後読みだけに置き換えると TS には無い一致が生まれる。ICU の `\b` は逆に `銀座sushi` を外す。
 private let foodVenuePattern = try! JSRegex(
-  "\\b(?:restaurant|cafe|café|lunch|dinner|sushi|ramen|izakaya|bar)\\b"
+  "\(JSText.wordBoundary)(?:restaurant|cafe|café|lunch|dinner|sushi|ramen|izakaya|bar)\(JSText.wordBoundary)"
     + "|レストラン|食堂|寿司|すし|鮨|ラーメン|居酒屋|カフェ|ランチ|ディナー|昼食|夕食"
     + "|식당|레스토랑|카페|점심|저녁|스시|라멘|餐厅|餐館|咖啡|午餐|晚餐|寿司|拉面",
   options: [.caseInsensitive]

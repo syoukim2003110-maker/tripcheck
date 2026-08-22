@@ -211,9 +211,9 @@ public enum ResolutionPipeline {
   /// ASCII の前後読み `(?<![A-Za-z0-9_])…(?![A-Za-z0-9_])` に置き換えると JS と同じ位置で当たる。
   private static let corporateQualifierPattern = try! JSRegex(
     "(?:保険(?:会社|代理店)?|生命(?:保険)?|株式会社|合同会社|本社|オフィス|insurance|corporat(?:e|ion)|headquarters"
-      + "|(?<![A-Za-z0-9_])office(?![A-Za-z0-9_])"
-      + "|(?<![A-Za-z0-9_])inc\\.?(?![A-Za-z0-9_])"
-      + "|(?<![A-Za-z0-9_])ltd\\.?(?![A-Za-z0-9_]))",
+      + "|\(JSText.notAfterWord)office\(JSText.notBeforeWord)"
+      + "|\(JSText.notAfterWord)inc\\.?\(JSText.notBeforeWord)"
+      + "|\(JSText.notAfterWord)ltd\\.?\(JSText.notBeforeWord))",
     options: [.caseInsensitive]
   )
 

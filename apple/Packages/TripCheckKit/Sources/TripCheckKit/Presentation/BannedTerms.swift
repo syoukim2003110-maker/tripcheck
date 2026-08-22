@@ -45,7 +45,7 @@ public enum BannedTerms {
     // 「経路API」「APIキー」「地域APIの品質」「APIとは」「これはAPIです」が、そのままでは
     // Swift 側だけ素通りしていた。ASCII の先読み/後読みで JS の語の文字集合を書き下す
     // (Parser/Resolution で TS の `\b` に当てているのと同じ規則)。
-    Rule("provider-internal API naming", "(?<![0-9A-Za-z_])API(?![0-9A-Za-z_])"),
+    Rule("provider-internal API naming", "\(JSText.notAfterWord)API\(JSText.notBeforeWord)"),
   ]
 
   /// ブリーフの `BannedTerms.patterns`。

@@ -9,7 +9,7 @@ import Foundation
  * —— 同じ「ﾊﾟ」が場所によって 1 文字にも 2 文字にもなると、Swift 同士の比較は正準等価に
  * 救われても、線の上では割れる(`normalizeNFKC` の但し書き)。
  */
-enum JSText {
+public enum JSText {
 
   /// `Number::toString(10)` を経由した `JSON.stringify` の数値表記。
   ///
@@ -84,6 +84,23 @@ enum JSText {
   /// 正規表現の中で `\s` の代わりに書く文字クラスの中身(`[` と `]` は付けない)。
   static let whitespaceClass = "\\t\\n\\u000b\\f\\r \\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff"
 
+  /// JS の `\b` が数える「語の文字」—— ASCII の `[0-9A-Za-z_]` だけ。ICU(`NSRegularExpression`)の
+  /// `\b` は Unicode の語構成文字で判定するので漢字・かなも語の文字に入り、`京都must` /
+  /// `浅草寺booked` / `銀座sushi` のような和欧が隣り合う行で **境界が一度も立たない**。
+  /// TS の `\b` はこの前後読みで書き下す。
+  ///
+  /// 境目の隣が必ず ASCII の語構成文字である綴り(`\bmust` の `m`、`booked\b` の `d`)では、
+  /// この 2 つは `\b` と完全に同じ。そうでない綴りには `wordBoundary` を使う。
+  static let notAfterWord = "(?<![0-9A-Za-z_])"
+  static let notBeforeWord = "(?![0-9A-Za-z_])"
+
+  /// JS の `\b` そのもの ——「片側だけが語の文字」。境目の隣が ASCII の語構成文字とは限らない
+  /// ときは `notAfterWord`/`notBeforeWord` では足りない: `café` の `é` は JS にとって語の文字では
+  /// ないので、`/\bcafé\b/.test("café")` は **false**(末尾で境界が立たない)。前後読みだけに
+  /// 置き換えると true になってしまい、TS には無い一致を作る。
+  static let wordBoundary =
+    "(?:(?<=[0-9A-Za-z_])(?![0-9A-Za-z_])|(?<![0-9A-Za-z_])(?=[0-9A-Za-z_]))"
+
   /// `String.prototype.normalize("NFKC")`。
   ///
   /// `precomposedStringWithCompatibilityMapping` だけでは足りない。互換分解で**新しく現れた**
@@ -96,7 +113,7 @@ enum JSText {
   }
 
   /// `String.prototype.trim()`。
-  static func trim(_ value: String) -> String {
+  public static func trim(_ value: String) -> String {
     var scalars = Array(value.unicodeScalars)
     var start = 0
     var end = scalars.count
@@ -108,13 +125,13 @@ enum JSText {
 
   /// JS の `String.prototype.length` —— UTF-16 コード単位の数。Swift の `count`(書記素)とは
   /// 別物で、掃除役の `key.length > 200` はこちらで数えている。
-  static func length(_ value: String) -> Int { value.utf16.count }
+  public static func length(_ value: String) -> Int { value.utf16.count }
 
   /// `String.prototype.slice(0, limit)`。切り口が代用対の途中に来たときだけ JS と分かれる:
   /// JS は孤立サロゲートを残せるが Swift の `String` は残せないので、その半分を落とす。
   /// 落ちるのは「上限のちょうど境目に絵文字が跨がった」場合の 1 文字分だけで、
   /// 呼び出し側(名前 160・住所 300・行程 4,000)はいずれも境目を意味に使っていない。
-  static func slice(_ value: String, _ limit: Int) -> String {
+  public static func slice(_ value: String, _ limit: Int) -> String {
     let units = Array(value.utf16)
     guard units.count > limit else { return value }
     var cut = limit

@@ -60,9 +60,9 @@ public enum ShareScope {
   public static let maxFragmentChars = 6_000
 
   /// JS の `\b`。ICU の `\b` は Unicode の語構成文字を見るが、JS の `u` フラグ付き `\b` は
-  /// `\w = [A-Za-z0-9_]` のまま。日本語の行で境目がずれるので、前後読みで書き下す。
-  private static let wordBoundary =
-    "(?:(?<=[A-Za-z0-9_])(?![A-Za-z0-9_])|(?<![A-Za-z0-9_])(?=[A-Za-z0-9_]))"
+  /// `\w = [A-Za-z0-9_]` のまま。日本語の行で境目がずれるので、前後読みで書き下す
+  /// (`Core/JSText.swift` の `wordBoundary` が同じ綴りを持つ唯一の定義)。
+  private static let wordBoundary = JSText.wordBoundary
 
   /// TS `:221` —— URL かメールアドレスを含む行。`\s` は ICU と中身が違うので明示する。
   private static let opaqueContactPattern = try! JSRegex(

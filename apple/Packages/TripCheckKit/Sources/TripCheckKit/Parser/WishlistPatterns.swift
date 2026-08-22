@@ -29,8 +29,13 @@ enum WishlistPatterns {
 
   // MARK: lib/wishlist-parser.ts:43-44 — must
 
+  /// TS の `\b` は `JSText.notAfterWord`/`notBeforeWord` に書き下す(逐語では ICU が漢字を語の
+  /// 文字に数え、`京都must` で境界が立たない)。前後の文字はどちらも ASCII の語構成文字なので
+  /// この 2 つで `\b` と完全に同じ。
   static let mustAnywhere = try! JSRegex(
-    "\\bmust(?:-do)?\\b|\\bnon[- ]?negotiable\\b|絶対に?行く|絶対に?行きたい|必須|絶対|マスト|필수|꼭|必去|必须",
+    "\(JSText.notAfterWord)must(?:-do)?\(JSText.notBeforeWord)"
+      + "|\(JSText.notAfterWord)non[- ]?negotiable\(JSText.notBeforeWord)"
+      + "|絶対に?行く|絶対に?行きたい|必須|絶対|マスト|필수|꼭|必去|必须",
     options: [.caseInsensitive]
   )
   static let mustTokenSource = "must(?:-do)?|non[- ]?negotiable|絶対に?行きたい|絶対に?行く|必須|絶対|マスト|필수|꼭|必去|必须"
@@ -39,7 +44,9 @@ enum WishlistPatterns {
   // MARK: lib/wishlist-parser.ts:46-47 — optional
 
   static let optionalAnywhere = try! JSRegex(
-    "\\boptional\\b|\\bif\\s+(?:there(?:'s| is)\\s+)?time\\b|時間があれば|時間が余れば|余裕があれば|できれば|任意|선택|시간(?:이|\\s)?되면|可选|有时间",
+    "\(JSText.notAfterWord)optional\(JSText.notBeforeWord)"
+      + "|\(JSText.notAfterWord)if\\s+(?:there(?:'s| is)\\s+)?time\(JSText.notBeforeWord)"
+      + "|時間があれば|時間が余れば|余裕があれば|できれば|任意|선택|시간(?:이|\\s)?되면|可选|有时间",
     options: [.caseInsensitive]
   )
   static let optionalTokenSource = "optional|if\\s+(?:there(?:'s| is)\\s+)?time|時間があれば|時間が余れば|余裕があれば|できれば|任意|선택|可选|有时间"
@@ -48,7 +55,14 @@ enum WishlistPatterns {
   // MARK: lib/wishlist-parser.ts:49-50 — reservation
 
   static let reservationAnywhere = try! JSRegex(
-    "\\bbooked\\b|\\breserved\\b|\\breservation\\b|\\btimed ticket\\b|\\bneed tickets?\\b|\\btickets? (?:required|needed)\\b|\\badvance tickets?\\b|予約済み?|要予約|予約|確定|要チケット|チケット必要|チケット(?:購入|確保)済み?|예약|예매|预约|预订",
+    "\(JSText.notAfterWord)booked\(JSText.notBeforeWord)"
+      + "|\(JSText.notAfterWord)reserved\(JSText.notBeforeWord)"
+      + "|\(JSText.notAfterWord)reservation\(JSText.notBeforeWord)"
+      + "|\(JSText.notAfterWord)timed ticket\(JSText.notBeforeWord)"
+      + "|\(JSText.notAfterWord)need tickets?\(JSText.notBeforeWord)"
+      + "|\(JSText.notAfterWord)tickets? (?:required|needed)\(JSText.notBeforeWord)"
+      + "|\(JSText.notAfterWord)advance tickets?\(JSText.notBeforeWord)"
+      + "|予約済み?|要予約|予約|確定|要チケット|チケット必要|チケット(?:購入|確保)済み?|예약|예매|预约|预订",
     options: [.caseInsensitive]
   )
   static let reservationTokenSource = "booked|reserved|reservation|timed ticket|need\\s+tickets?|tickets?\\s+(?:required|needed)|advance\\s+tickets?|予約済み?|要予約|予約|確定|要チケット|チケット必要|チケット(?:購入|確保)済み?|예약|예매|预约|预订"

@@ -249,8 +249,10 @@ public enum Catalog {
   public static let poiCount = pois.count
 
   /// lib/route-optimizer.ts:299 — `explicitAnchorPattern`
+  /// `\b` は `JSText.notAfterWord`/`notBeforeWord` へ(ICU の `\b` だと `浅草寺booked` で立たない)。
   private static let explicitAnchorPattern = try! JSRegex(
-    "\\b(?:booked|booking|reserved|reservation|ticket|fixed|must[- ]?do)\\b|予約|確定|チケット|예매|예약|티켓|预订|预约|门票",
+    "\(JSText.notAfterWord)(?:booked|booking|reserved|reservation|ticket|fixed|must[- ]?do)\(JSText.notBeforeWord)"
+      + "|予約|確定|チケット|예매|예약|티켓|预订|预约|门票",
     options: [.caseInsensitive]
   )
 
