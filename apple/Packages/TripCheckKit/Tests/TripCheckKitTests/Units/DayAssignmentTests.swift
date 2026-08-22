@@ -56,7 +56,7 @@ import Testing
     if i == 0 { evaluations += 1 }   // 1 評価につき index 0 の日はちょうど 1 回組まれる
     return TestStops.buildPlainDay(c, index: i)
   }, limits: .init(paceCapacity: 4, dayBudgetMinutes: 570))
-  // 初期解の採点も同じカウンタを進める(TS `:1837` → `:1825`)ので、上限を跨ぐことはなく
+  // 初期解の採点も同じカウンタを進める(TS `:1838` → `:1826`)ので、上限を跨ぐことはなく
   // ぴったり 600 で止まる。「初期評価のぶん超える」ことは起きない。
   #expect(evaluations == EngineConstants.maxDayAssignmentEvaluations)
   #expect(dayBuilds == EngineConstants.maxDayAssignmentEvaluations * clusters.count)
@@ -64,7 +64,7 @@ import Testing
 
 /// brief は f を 3 日目に置いたまま `lockedDayByStop: ["f": 0]` を渡し、`out[0]` に f が
 /// いることを期待していた。TS の固定は「動かさない」だけで、指定の日へ**引き寄せはしない**
-/// (`:1845-1848` は `has` しか見ない。確定先へ置くのは呼び出し側の `applyFixedDays`)。
+/// (`:1831-1834` は `has` しか見ない。確定先へ置くのは呼び出し側の `applyFixedDays`、`:996-1043`)。
 /// そこで f を最初から 1 日目に置き、そのうえで「動かさない」ことを見る。
 /// 3 日目を空にしてあるので `emptyDayCount` を下げる手が必ず存在し、最適化は必ず何かを移す。
 @Test func lockedDaysNeverMove() {
@@ -77,7 +77,7 @@ import Testing
   #expect(locked[0].contains { $0.id == "f" })
   #expect(!locked[2].isEmpty)   // 空の日は、動かせる別の停留所で埋まる
 
-  // 「N 日目」の指定(`constraints.fixedDay`)も同じ効き方をする(`:1846`)。
+  // 「N 日目」の指定(`constraints.fixedDay`)も同じ効き方をする(`:1832`)。
   let pinned = DayAssignment.optimize(
     initial: initial,
     constraints: ["f": WishlistStopConstraint(priority: .normal, fixedDay: 1, isReservation: false)],
@@ -90,4 +90,32 @@ import Testing
   // 固定が効いていることの対照。外すと、3 日目へ移されるのは f 自身。
   let free = DayAssignment.optimize(initial: initial, constraints: [:], lockedDayByStop: [:], build: build, limits: limits)
   #expect(free[2].contains { $0.id == "f" })
+}
+
+/// レビュー(fix round 1)で見つかった取り違え。TS は候補を並べるのに `localeCompare` を使う
+/// (`lib/trip-builder.ts:1856` 移動、`:1878-1879` 交換)のに、移植は UTF-16 順で並べていた。
+/// 順序が変わるのは見た目の問題ではない: 600 回で打ち切ったパスでは「見られなかった候補」が
+/// 変わり、11 項すべてが同点のときは勝者そのものが変わる。
+@Test func candidateStopsAreConsideredInLocaleOrderNotUtf16Order() {
+  // この 2 つは順が逆になる組。照合は文字を先に見て a < B、コード単位は "B"(0x42) < "a"(0x61)。
+  #expect(jsLocaleCompare("a-stop", "B-stop") < 0)
+  #expect(jsStringLess("B-stop", "a-stop"))
+
+  let stops = TestStops.line(ids: ["B-stop", "a-stop", "m-stop"])
+  var dayZeroPerEvaluation: [[String]] = []
+  _ = DayAssignment.optimize(
+    initial: [[stops[0], stops[1]], [stops[2]]],
+    constraints: [:],
+    lockedDayByStop: [:],
+    build: { cluster, index in
+      if index == 0 { dayZeroPerEvaluation.append(cluster.map(\.id)) }
+      return TestStops.buildPlainDay(cluster, index: index)
+    },
+    limits: .init(paceCapacity: 4, dayBudgetMinutes: 570)
+  )
+  // 1 回目は初期解そのもの(並べ替えは候補生成にしか効かない)。
+  #expect(dayZeroPerEvaluation.first == ["B-stop", "a-stop"])
+  // 2 回目 = 最初の候補 = 「1 日目の動かせる**先頭**を 2 日目へ移す」。照合順の先頭は "a-stop"
+  // なので 1 日目には "B-stop" が残る。UTF-16 順で並べるとここが ["a-stop"] になって落ちる。
+  #expect(dayZeroPerEvaluation.dropFirst().first == ["B-stop"])
 }

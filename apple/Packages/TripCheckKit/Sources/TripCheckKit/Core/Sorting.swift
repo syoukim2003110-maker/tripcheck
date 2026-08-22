@@ -9,14 +9,23 @@ public func jsStringCompare(_ a: String, _ b: String) -> Int {
   a == b ? 0 : (jsStringLess(a, b) ? -1 : 1)
 }
 
-/// TS `String.prototype.localeCompare`(照合順序による比較。`<` の UTF-16 順とは別物)。
+/// TS `String.prototype.localeCompare`(照合順序による比較)。`jsStringLess` の UTF-16 順とは
+/// 別物で、"a-stop" < "B-stop"(照合)と "B-stop" < "a-stop"(コード単位)のように**順が入れ替わる**。
 ///
-/// TS 側は既定ロケール依存 = 実行環境依存だが、これを使う唯一の呼び出し元
-/// (`DayAssignment` の決定的タイブレーク、`lib/trip-builder.ts:1723`)は**環境をまたいで
-/// 同じ順**でなければならない。そこで既定ロケールではなく `en` 固定で比較する — 移植先が
-/// どの端末で動いても、また TS 側が英語ロケールで動く限り、同じ日割りに落ち着く。
-/// **この関数はそのタイブレーク専用**で、他の文字列比較は `jsStringLess` のままにする
-/// (TS 側も `localeCompare` を使っているのはここだけ)。
+/// 使い分けの規則は移植元をそのまま写す: **TS が `localeCompare` を呼んでいる箇所は
+/// `jsLocaleCompare`、TS が `<` や比較関数なしの `sort()` を使っている箇所は `jsStringLess`**。
+/// TS 側の `localeCompare` は 1 箇所ではなく 12 箇所ある(`lib/trip-builder.ts:1035, 1185, 1197,
+/// 1298, 1410, 1434, 1724, 1856, 1878, 1879, 1960, 1968`)。
+///
+/// TS の `localeCompare` は既定ロケール依存 = 実行環境依存だが、移植先は端末をまたいで同じ順に
+/// ならなければならない。そこで既定ロケールではなく `en` 固定で比較する。
+///
+/// 現時点でこれを使っているのは `Builder/DayAssignment.swift` だけ(`:1724` のタイブレークと
+/// `:1856`/`:1878-1879` の候補順)。TS が `localeCompare` を使っているのに Swift 側がまだ
+/// `jsStringLess` のままの箇所 — `Builder/Clustering.swift:173`(TS `:1035`)、
+/// `Builder/Legs.swift:162`(TS `:1185`/`:1197`)ほか — は、受け取る id やモード名が ASCII で
+/// 両者が一致するという判断でそうなっている。**最終レビューでまとめて突き合わせる宿題として
+/// 記録済み**で、この段では触らない。
 public func jsLocaleCompare(_ a: String, _ b: String) -> Int {
   switch a.compare(b, options: [], range: nil, locale: Locale(identifier: "en")) {
   case .orderedAscending: return -1

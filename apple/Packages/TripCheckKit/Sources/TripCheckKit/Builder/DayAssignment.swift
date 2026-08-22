@@ -228,8 +228,8 @@ public enum DayAssignment {
   ///
   /// - Parameters:
   ///   - lockedDayByStop: 「N 日目」の指定などで既に日が確定している停留所。**値は読まない** —
-  ///     TS も `has` しか見ておらず(`:1846`)、確定先の日には `initial` の時点で既に置かれて
-  ///     いる(`applyFixedDays`)。ここでの役割は「動かさない」ことだけ。
+  ///     TS も `has` しか見ておらず(`:1831-1834`)、確定先の日には `initial` の時点で既に
+  ///     置かれている(`applyFixedDays`、`:996-1043`)。ここでの役割は「動かさない」ことだけ。
   public static func optimize(
     initial: [[RouteStop]],
     constraints: [String: WishlistStopConstraint],
@@ -247,8 +247,12 @@ public enum DayAssignment {
 
     var scoreCache: [String: DayAssignmentScore] = [:]
     var evaluationCount = 0
-    /// 署名でメモ化した採点。上限に達していたら「点を付けない」= `nil` を返す(TS `:1820-1830`)。
-    /// 呼び出し側はそれを「改善しない候補」として素通しするので、探索は上限で静かに止まる。
+    /// 署名でメモ化した採点(TS `:1821-1830`)。同じ配り方に二度と点は付けない。
+    ///
+    /// 上限に達したときの `nil` は TS `:1825` をそのまま写した防御で、**実際には返らない**:
+    /// 呼び出し側(初期評価と 2 つのループ)はいずれも直前に `evaluationCount < maxEvaluations`
+    /// を見ており、その間にカウンタは進まない。打ち切りを実際に決めているのはループ側の判定の
+    /// ほう(`:1841`, `:1855`, `:1858`, `:1876`, `:1877`, `:1882`)で、この行ではない。
     func evaluate(_ clusters: [[RouteStop]]) -> DayAssignmentScore? {
       let key = signature(clusters)
       if let cached = scoreCache[key] { return cached }
@@ -265,9 +269,14 @@ public enum DayAssignment {
     func movable(_ stop: RouteStop) -> Bool {
       constraints[stop.id]?.fixedDay == nil && lockedDayByStop[stop.id] == nil
     }
-    /// TS `:1846` の並び替え。id 昇順に固定して、600 回で打ち切ったときの答えを再現可能にする。
+    /// TS `:1856`(移動)と `:1878-1879`(交換)の並び替え。候補を見る順を id で固定して、
+    /// 600 回で打ち切ったときの答えと、全項が同点になったときの勝者を再現可能にする。
+    ///
+    /// TS はここで `localeCompare` を使う(`<` でも比較関数なしの `sort()` でもない)ので、
+    /// Swift も `jsLocaleCompare` で照合する。UTF-16 順に落とすと "B-stop" が "a-stop" より
+    /// 前に来て、打ち切りに当たったパスで**別の候補**が採用されうる。
     func movableStops(of day: [RouteStop]) -> [RouteStop] {
-      stableSorted(day.filter(movable)) { jsStringLess($0.id, $1.id) }
+      stableSorted(day.filter(movable)) { jsLocaleCompare($0.id, $1.id) < 0 }
     }
 
     var current = initial
@@ -285,7 +294,7 @@ public enum DayAssignment {
         }
       }
 
-      // 移動は詰め込みすぎた日をほどき、空いた日を意図して使わせる(`:1843-1866`)。
+      // 移動は詰め込みすぎた日をほどき、空いた日を意図して使わせる(`:1852-1871`)。
       for sourceDay in current.indices {
         if evaluationCount >= maxEvaluations { break }
         for stop in movableStops(of: current[sourceDay]) {
@@ -295,7 +304,7 @@ public enum DayAssignment {
             // ここに定員の上限は置かない。定員超過は `overloadMinutes` が既に、しかし
             // 予約・営業時間の破れ**より下**で罰している。だから「受け入れ側の停留所が
             // すべて固定されていて、そこへ入れるしか直しようがない」場合の手を残しつつ、
-            // 移動時間の節約だけで満員の日へ押し込む手は決して勝てない(`:1850-1855`)。
+            // 移動時間の節約だけで満員の日へ押し込む手は決して勝てない(`:1860-1865`)。
             var candidate = current
             candidate[sourceDay].removeAll { $0.id == stop.id }
             candidate[targetDay].append(stop)
@@ -305,7 +314,7 @@ public enum DayAssignment {
       }
 
       // 滞在の重い地理クラスタに要るのは、もう 1 回の重心移動ではなく「長い/短い」の交換で
-      // あることが多い。共有の評価上限の内側で、動かせる全ペアを試す(`:1868-1885`)。
+      // あることが多い。共有の評価上限の内側で、動かせる全ペアを試す(`:1873-1890`)。
       for leftDay in current.indices {
         if evaluationCount >= maxEvaluations { break }
         for rightDay in (leftDay + 1)..<current.count {
