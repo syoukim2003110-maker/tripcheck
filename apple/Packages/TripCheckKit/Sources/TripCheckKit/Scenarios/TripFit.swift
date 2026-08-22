@@ -154,6 +154,10 @@ public enum TripScenarios {
     }
 
     // TS `:270-275` — optional が先、そのあと滞在の長い順。`sort` は安定(ES2019)。
+    // TS の比較子 `left.priority === "optional" ? -1 : 1` は 3 値の優先度に対しては非対称
+    // (normal と must を渡すとどちらの向きでも 1 を返す)。この配列に must は入らない
+    // —— 先送りされた optional は `priority: "optional"` 固定で、日の走査は must を弾く(`:255`)——
+    // ので到達しない枝だが、Swift 側は正しい厳密弱順序になるよう `== .optional` で書いてある。
     return Array(
       stableSorted(candidates) { left, right in
         if left.priority != right.priority { return left.priority == .optional }

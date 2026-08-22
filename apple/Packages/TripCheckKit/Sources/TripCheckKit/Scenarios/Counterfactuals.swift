@@ -162,13 +162,13 @@ extension TripScenarios {
       let earlierDefault = shiftClock(context.defaultDayStart ?? EngineConstants.defaultDayStart.description, -60)
       var earlierContext = context
       earlierContext.defaultDayStart = earlierDefault
-      earlierContext.dayStartTimes = IntKeyedDictionary(Dictionary(uniqueKeysWithValues: (0..<requestedDays).map { dayIndex in
+      earlierContext.dayStartTimes = IntKeyedDictionary(Dictionary(uniqueKeysWithValues: (0..<max(0, requestedDays)).map { dayIndex in
         (dayIndex, shiftClock(context.dayStartTimes?[dayIndex] ?? context.defaultDayStart ?? EngineConstants.defaultDayStart.description, -60))
       }))
       compare("start-60-min-earlier", .START_EARLIER, nextDays: requestedDays, nextContext: earlierContext, change: .init(minutes: 60))
 
       var laterContext = context
-      laterContext.dayEndTimes = IntKeyedDictionary(Dictionary(uniqueKeysWithValues: (0..<requestedDays).map { dayIndex in
+      laterContext.dayEndTimes = IntKeyedDictionary(Dictionary(uniqueKeysWithValues: (0..<max(0, requestedDays)).map { dayIndex in
         (dayIndex, shiftClock(dayEnd(context, dayIndex), 60))
       }))
       compare("end-60-min-later", .END_LATER, nextDays: requestedDays, nextContext: laterContext, change: .init(minutes: 60))
@@ -313,9 +313,8 @@ extension TripScenarios {
     for candidate in required {
       if shortlist.contains(where: { $0.id == candidate.id }) { continue }
       // TS `:697-699` — 後ろから見て「必須でない」最初の枠を明け渡す。見つからなければ末尾。
-      let fromEnd = shortlist.reversed().firstIndex { !requiredIds.contains($0.id) }
-      let replaceIndex = fromEnd.map { shortlist.reversed().distance(from: shortlist.reversed().startIndex, to: $0) } ?? -1
-      let actualIndex = replaceIndex < 0 ? shortlist.count - 1 : shortlist.count - 1 - replaceIndex
+      let fromEnd = Array(shortlist.reversed()).firstIndex { !requiredIds.contains($0.id) }
+      let actualIndex = fromEnd.map { shortlist.count - 1 - $0 } ?? (shortlist.count - 1)
       if actualIndex >= 0 { shortlist[actualIndex] = candidate }
     }
     return stableSorted(shortlist) { left, right in
