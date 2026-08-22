@@ -184,6 +184,13 @@ struct IconShape: Shape {
   func path(in rect: CGRect) -> Path {
     IconGeometry.combined(icon.strokeShapes, scale: rect.width / 24)
   }
+
+  /// この層を描くときの線。Web の `strokeWidth={1.8}` は `viewBox="0 0 24 24"` の中の 1.8 ——
+  /// つまり絵と一緒に伸び縮みする太さで、20pt なら 1.5pt、44pt なら 3.3pt になる。
+  /// `IconShape` を自分で stroke するところは必ずこれを通す(太さを書き写さない)。
+  static func strokeStyle(size: CGFloat) -> StrokeStyle {
+    StrokeStyle(lineWidth: 1.8 * size / 24, lineCap: .round, lineJoin: .round)
+  }
 }
 
 /// 塗りつぶす層。`mark` / `signal` / `train` / `walk` の円だけが中身を持つ。
@@ -217,7 +224,7 @@ struct IconView: View {
   var body: some View {
     ZStack {
       IconShape(icon: icon)
-        .stroke(color, style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
+        .stroke(color, style: IconShape.strokeStyle(size: size))
       IconFillShape(icon: icon, layer: .ink).fill(color)
       IconFillShape(icon: icon, layer: .accent).fill(Tokens.Color.markDot)
     }

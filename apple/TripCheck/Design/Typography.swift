@@ -33,7 +33,9 @@ enum Typography {
 
     var font: Font
     if spec.usesDisplayFace, displayFaceIsInstalled {
-      font = .custom(displayFaceName, size: size)
+      // `size` は既に `UIFontMetrics` を通した後の大きさなので、`fixedSize:` で渡す。
+      // `Font.custom(_:size:)` は本文の比率でもう一度伸ばすので、二重に効いてしまう。
+      font = .custom(displayFaceName, fixedSize: size)
     } else {
       font = .system(size: size, weight: spec.weight)
     }

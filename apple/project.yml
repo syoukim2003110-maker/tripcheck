@@ -57,5 +57,10 @@ targets:
     type: bundle.ui-testing
     platform: iOS
     sources: [TripCheckUITests]
+    settings:
+      base:
+        # テストバンドルの plist は書くことが何も無いので Xcode に作らせる。アプリ本体の方は
+        # `info:` で自分の plist を持っている(こちらを YES にするのはこの的だけ)。
+        GENERATE_INFOPLIST_FILE: "YES"
     dependencies:
       - target: TripCheck
