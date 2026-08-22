@@ -199,11 +199,10 @@ public final class PlannerStore {
     // `"empty"` は機械が読む語で、旅行者に見せる文ではない(文言は画面側が引く)。
     view.screen = bundle.plan.days.isEmpty ? .error("empty") : .plan
     view.selectedDay = min(view.selectedDay, max(0, bundle.plan.days.count - 1))
-    view.announcement = VerdictCopy.hero(
-      result: bundle.result,
-      fit: bundle.fit,
-      plan: bundle.plan,
-      locale: request.locale
-    )
+    // `hero` を直に読む(独自に `VerdictCopy.hero` を再度呼ばない) —— 読み上げの 1 文と
+    // 画面に出す見出しが**同じ関数呼び出し**から来ないと、`checkCount` を渡し忘れた側だけ
+    // 数が違う文になる(`FEASIBLE_IF_ASSUMPTIONS` で実際に起きた)。`self.bundle` は 2 行上で
+    // 代入済みなので、この時点で `hero` はもう空文字列を返さない。
+    view.announcement = hero.text
   }
 }

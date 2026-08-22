@@ -67,7 +67,14 @@ struct PlanScreen: View {
     }
     // 組み上がるたびに結論の見出しを 1 度だけ読み上げる(`commit` が置く 1 文)。割り込まない
     // 優先度なので、旅行者が読んでいる途中の文を切らない。
-    .onChange(of: store.view.announcement) { _, announcement in
+    //
+    // `initial: true` が要る —— `RootView` は `.building → .plan` のたびに新しい
+    // `PlanScreen` を作り直す(`switch` の枝が変わるので SwiftUI の同一性が切れる)。
+    // `commit` は `screen` と `announcement` を同じ同期のブロックで書き換えるので、この
+    // 画面が生まれた時点でもう値は変わり終わっている。既定の `initial: false` では
+    // 「生まれてから変わった」瞬間が 1 度も来ないため、初回のビルドはもちろん、
+    // どの再ビルドでも読み上げが鳴らなかった。
+    .onChange(of: store.view.announcement, initial: true) { _, announcement in
       guard let announcement, !announcement.isEmpty else { return }
       AccessibilityNotification.Announcement(announcement).post()
     }

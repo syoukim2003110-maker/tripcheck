@@ -196,3 +196,19 @@ import TripCheckKit
   store.selectDay(-4)
   #expect(store.view.selectedDay == 0)
 }
+
+/// 読み上げは見出しと**同じ文**でなければならない —— 別々に組み立てると、`checkCount` を
+/// 渡し忘れた側だけ数の違う文になる(fix round 1: `commit` が `VerdictCopy.hero` を
+/// 独自にもう一度呼んでいて、`store.hero`(`checkCount: issueCount` あり)と食い違っていた)。
+/// 初回の組み立てだけでなく、日数を変えて組み直した後でも同じでなければならない。
+@Test @MainActor func announcementMatchesTheHeroOnScreen() async {
+  let store = PlannerStore(resolvers: [CatalogResolver()], store: nil); store.loadSample(.switzerland)
+  await store.build()
+  #expect(store.view.announcement == store.hero.text)
+  #expect(store.view.announcement?.isEmpty == false)
+
+  store.request.tripDays = 3
+  await store.build()
+  #expect(store.view.announcement == store.hero.text)
+  #expect(store.view.announcement?.isEmpty == false)
+}
