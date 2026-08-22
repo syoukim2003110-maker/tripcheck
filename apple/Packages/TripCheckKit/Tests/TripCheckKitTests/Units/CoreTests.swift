@@ -53,3 +53,35 @@ import Testing
   #expect(EngineConstants.maxDayAssignmentEvaluations == 600)
   #expect(EngineConstants.maxDayAssignmentStops == 12)
 }
+
+
+// MARK: - `Number.prototype.toFixed`(`Core/JSNumbers.swift`)
+
+/// JS の `toFixed` は同点を **大きいほう** へ倒す(ECMA-262 の `Number::toFixed`)。
+/// `String(format: "%.5f", …)` は同点を偶数側へ倒すので、二進でちょうど半分になる値で答えが割れる。
+/// 期待値は JavaScriptCore で実測した `(35.015625).toFixed(5)` などそのまま。
+@Test func toFixedRoundsTiesUpTheWayJavaScriptDoes() {
+  #expect(PlannerEdits.jsToFixed5(35.015625) == "35.01563")    // `%.5f` なら "35.01562"
+  #expect(PlannerEdits.jsToFixed5(139.765625) == "139.76563")  // `%.5f` なら "139.76562"
+  #expect(PlannerEdits.jsToFixed5(-0.078125) == "-0.07813")    // `%.5f` なら "-0.07812"
+  #expect(PlannerEdits.jsToFixed5(0) == "0.00000")
+  #expect(PlannerEdits.jsToFixed5(-0.0) == "0.00000")          // `(-0).toFixed(5)` は符号を出さない
+  #expect(PlannerEdits.jsToFixed5(35.6812) == "35.68120")      // 同点でない値は今までどおり
+
+  // 表示側が使う桁でも同じ規則(`Presentation/` の `fixed1`)。
+  #expect(jsToFixed(4.25, 1) == "4.3")
+  #expect(jsToFixed(1.45, 1) == "1.4")
+}
+
+/// 手入力の停留所 id は編集側(`Edits/PlannerEditState.swift:233`)と共有側
+/// (`Share/ShareScope.swift:208`)が別々に組み直す。同点座標でも綴りが割れないこと
+/// —— 割れると同じ場所が 2 つの id を持ち、共有リンクの停留所が行方不明になる。
+@Test func manualStopIdIsSpelledTheSameOnBothPaths() throws {
+  let latitude = 35.015625
+  let longitude = 139.765625
+  let stop = try #require(PlannerEdits.manualStop(from: .manual(
+    inputIndex: 2, name: "Tie Point", address: "somewhere", latitude: latitude, longitude: longitude
+  )))
+  #expect(stop.id == "manual-2-35.01563-139.76563")
+  #expect(stop.id == ShareScope.manualStopId(latitude: latitude, longitude: longitude, inputIndex: 2))
+}

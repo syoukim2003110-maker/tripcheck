@@ -264,10 +264,9 @@ public enum PlannerEdits {
   /// JS `Number.prototype.toFixed(5)`。手入力の停留所 id は Web と Swift の両方で座標から
   /// 組み直されるので、同じ丸めでなければ同じ場所が 2 つの id を持つ。
   ///
-  /// `%.5f` は 2 進値の丸めが偶数側、JS は仕様上「近いほうの整数、同点なら大きいほう」——
-  /// 差が出るのは 6 桁目がちょうど 5 で終わる二進小数(例 0.015625)だけで、緯度経度には現れない。
-  /// `-0` は JS が `"0.00000"` と書くのに `%.5f` が `"-0.00000"` と書くので、そこだけ均す。
-  static func jsToFixed5(_ value: Double) -> String {
-    String(format: "%.5f", value == 0 ? 0 : value)
-  }
+  /// 丸めは `Core/JSNumbers.swift` の `jsToFixed` に任せる。`String(format: "%.5f", …)` は同点を
+  /// **偶数側**へ倒すが、JS の `toFixed` は「近いほうの整数、同点なら大きいほう」で、
+  /// `35.015625` のように二進でちょうど半分になる座標で答えが割れる。`-0` を `"0.00000"` と
+  /// 書くのも `jsToFixed` の側が持っている(`abs` を通すので符号が出ない)。
+  static func jsToFixed5(_ value: Double) -> String { jsToFixed(value, 5) }
 }
