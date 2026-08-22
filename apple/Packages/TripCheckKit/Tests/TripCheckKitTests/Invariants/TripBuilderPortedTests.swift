@@ -754,3 +754,513 @@ Tokyo Skytree
   #expect(lockedTransit.days[0].legs[0].comparison.recommended.mode == .transit, "the user's fixed mode remains hard")
   #expect(lockedTransit.days[0].legs[0].transferCount == 3)
 }
+
+// MARK: - :681 waits for a verified opening window before starting a visit
+
+@Test func waitsForAVerifiedOpeningWindowBeforeStartingAVisit() {
+  var context = PlannerContext()
+  context.openingWindowsByDay = ["sensoji": [0: [VisitWindow(openMinutes: 12 * 60, closeMinutes: 17 * 60)]]]
+  let built = plan("Senso-ji", 1, .balanced, .en, context)
+
+  #expect(built.days[0].stops[0].arrival == "12:00")
+  #expect(built.days[0].stops[0].openingStatus == .verified_open)
+}
+
+// MARK: - :689 flags a reservation as late when its verified opening window starts later
+
+@Test func flagsAReservationAsLateWhenItsVerifiedOpeningWindowStartsLater() {
+  var context = PlannerContext()
+  context.openingWindowsByDay = ["sensoji": [0: [VisitWindow(openMinutes: 11 * 60, closeMinutes: 17 * 60)]]]
+  let built = plan("Senso-ji — Day 1 10:00 booked", 1, .balanced, .en, context)
+  let stop = built.days[0].stops[0]
+
+  #expect(stop.arrival == "11:00")
+  #expect(stop.fixedTime == "10:00")
+  #expect(stop.reservationLateMinutes == 60)
+  #expect(stop.openingStatus == .verified_open)
+  #expect(built.days[0].reservationConflictCount == 1)
+  #expect(built.days[0].openingConflictCount == 0)
+  #expect(built.scheduleConflictCount == 1)
+}
+
+// MARK: - :704 moves a flexible stop to an open trip day and defers it if no day can fit
+
+@Test func movesAFlexibleStopToAnOpenTripDayAndDefersItIfNoDayCanFit() {
+  var movedContext = PlannerContext()
+  movedContext.openingWindowsByDay = ["sensoji": [
+    0: [],
+    1: [VisitWindow(openMinutes: 9 * 60, closeMinutes: 17 * 60)],
+  ]]
+  let moved = plan("Senso-ji", 2, .balanced, .en, movedContext)
+  #expect(moved.days[0].stops.isEmpty)
+  #expect(moved.days[1].stops[0].stop.id == "sensoji")
+
+  var unavailableContext = PlannerContext()
+  unavailableContext.openingWindowsByDay = ["sensoji": [0: [], 1: []]]
+  let unavailable = plan("Senso-ji", 2, .balanced, .en, unavailableContext)
+  #expect(unavailable.scheduledStopCount == 0)
+  #expect(unavailable.deferredUnavailableStops.map(\.id) == ["sensoji"])
+}
+
+// MARK: - :721 suggests lunch and dinner near the route without changing schedule time
+
+@Test func suggestsLunchAndDinnerNearTheRouteWithoutChangingScheduleTime() {
+  let raw = """
+Tsukiji Outer Market
+teamLab Planets
+Senso-ji
+Tokyo Skytree
+"""
+  var mealContext = PlannerContext()
+  mealContext.mealPlan = .all
+  mealContext.tripStartDate = "2026-09-19"
+  let built = plan(raw, 1, .fast, .en, mealContext)
+
+  var baselineContext = PlannerContext()
+  baselineContext.mealPlan = .none
+  baselineContext.tripStartDate = "2026-09-19"
+  let baseline = plan(raw, 1, .fast, .en, baselineContext)
+
+  #expect(built.scheduledStopCount == 4)
+  #expect(built.mealBreakCount == 0)
+  #expect(built.days[0].stops.contains { $0.kind == .meal } == false)
+  #expect(built.days[0].totalMinutes == baseline.days[0].totalMinutes)
+  #expect(built.foodRecommendationSlots.map(\.kind) == [.lunch, .dinner])
+  #expect(built.foodRecommendationSlots.allSatisfy { $0.queryIdeas.count == 3 })
+}
+
+// MARK: - :742 can show dinner ideas without suggesting lunch
+
+@Test func canShowDinnerIdeasWithoutSuggestingLunch() {
+  var context = PlannerContext()
+  context.mealPlan = .dinner
+  let built = plan("""
+Senso-ji
+Tokyo Skytree
+Akihabara
+Shibuya Sky
+""", 1, .fast, .en, context)
+
+  #expect(built.foodRecommendationSlots.map(\.kind) == [.dinner])
+  #expect(built.days[0].stops.contains { $0.kind == .meal } == false)
+}
+
+// MARK: - :752 keeps a user-entered restaurant reservation when its area is known
+
+@Test func keepsAUserEnteredRestaurantReservationWhenItsAreaIsKnown() {
+  let built = plan("Sushi Kaze in Shibuya — Day 1 19:00 booked · must", 1, .balanced, .en)
+  let reservation = built.days[0].stops[0]
+
+  #expect(built.unknownEntries.isEmpty)
+  #expect(reservation.stop.name == "Sushi Kaze in Shibuya")
+  #expect(reservation.stop.isUserEntered == true)
+  #expect(reservation.stop.confidence == .low)
+  #expect(reservation.fixedTime == "19:00")
+  #expect(reservation.arrival == "19:00")
+}
+
+// MARK: - :764 raises the crowd planning level by one step on weekends
+
+@Test func raisesTheCrowdPlanningLevelByOneStepOnWeekends() throws {
+  var weekdayContext = PlannerContext()
+  weekdayContext.tripStartDate = "2026-09-18"
+  var weekendContext = PlannerContext()
+  weekendContext.tripStartDate = "2026-09-19"
+  let weekday = plan("Senso-ji", 1, .balanced, .en, weekdayContext)
+  let weekend = plan("Senso-ji", 1, .balanced, .en, weekendContext)
+
+  let rank: [CrowdLevel: Int] = [.quiet: 0, .moderate: 1, .busy: 2, .veryBusy: 3]
+  let weekdayCrowd = try #require(weekday.days[0].stops[0].crowd)
+  let weekendCrowd = try #require(weekend.days[0].stops[0].crowd)
+
+  #expect(weekdayCrowd.isWeekend == false)
+  #expect(weekendCrowd.isWeekend == true)
+  #expect(weekendCrowd.weekendUplift == 1)
+  #expect(rank[weekendCrowd.level] == (rank[weekdayCrowd.level] ?? 0) + 1)
+}
+
+// MARK: - :777 honors a stay-duration marker from the wishlist
+
+@Test func honorsAStayDurationMarkerFromTheWishlist() {
+  let built = plan("Senso-ji — stay 75 min\nTokyo Skytree", 1, .balanced, .en)
+  let adjusted = built.days[0].stops.first { $0.stop.id == "sensoji" }
+  let untouched = built.days[0].stops.first { $0.stop.id != "sensoji" }
+
+  #expect(adjusted?.stop.planningDurationMinutes == 75)
+  #expect(untouched?.stop.planningDurationMinutes != 75)
+
+  let japanese = plan("浅草寺 — 滞在45分", 1, .balanced, .ja)
+  #expect(japanese.days[0].stops[0].stop.planningDurationMinutes == 45)
+}
+
+// MARK: - :789 pins a bare requested time without treating it as a reservation
+
+@Test func pinsABareRequestedTimeWithoutTreatingItAsAReservation() {
+  let built = plan("Senso-ji — 15:00\nTokyo Skytree", 1, .balanced, .en)
+  let pinned = built.days[0].stops.first { $0.stop.id == "sensoji" }
+
+  #expect(pinned?.fixedTime == "15:00")
+  #expect(pinned?.isReservation == false)
+  #expect(pinned?.priority == .normal)
+  #expect((pinned?.arrival ?? "") >= "15:00")
+
+  let booked = plan("Senso-ji — 15:00 booked", 1, .balanced, .en).days[0].stops[0]
+  #expect(booked.isReservation == true)
+  #expect(booked.priority == .must)
+}
+
+// MARK: - :803 keeps a stay marker that appears on a duplicate wishlist line
+
+@Test func keepsAStayMarkerThatAppearsOnADuplicateWishlistLine() {
+  let built = plan("Senso-ji\nSenso-ji — stay 75 min", 1, .balanced, .en)
+
+  #expect(built.recognizedStopCount == 1)
+  #expect(built.days[0].stops[0].stop.planningDurationMinutes == 75)
+}
+
+// MARK: - :810 treats a time range as opening hours instead of pinning a visit time
+
+@Test func treatsATimeRangeAsOpeningHoursInsteadOfPinningAVisitTime() {
+  let built = plan("Senso-ji — 9:00-17:00", 1, .balanced, .en)
+
+  #expect(built.days[0].stops[0].fixedTime == nil)
+  #expect(built.days[0].stops[0].isReservation == false)
+}
+
+// MARK: - :817 nightly hotel bases split a day's start and end anchors
+
+@Test func nightlyHotelBasesSplitADaysStartAndEndAnchors() {
+  func nightHotel(_ id: String, _ name: String, _ latitude: Double, _ longitude: Double) -> ResolvedStop {
+    resolvedStop(
+      id: id, input: name, area: "Tokyo", address: "1 \(name), Tokyo",
+      latitude: latitude, longitude: longitude, minutes: 0,
+      sourceUrl: "https://maps.google.com/\(id)", verifiedAt: "2026-07-21T00:00:00Z"
+    )
+  }
+  var context = PlannerContext()
+  context.hotelQuery = "hotel near Shinjuku Station"
+  context.nightBases = [
+    0: nightHotel("night-0", "Asakusa Stay", 35.711, 139.797),
+    1: nightHotel("night-1", "Shibuya Stay", 35.658, 139.7),
+  ]
+  let built = plan(wishlist, 3, .balanced, .en, context)
+
+  // 1 日目は夜 0 のホテルにチェックインし、2 日目はそこで目覚めて次へ移る。
+  #expect(built.days[0].startBase?.name == "Asakusa Stay")
+  #expect(built.days[0].endBase?.name == "Asakusa Stay")
+  #expect(built.days[1].startBase?.name == "Asakusa Stay")
+  #expect(built.days[1].endBase?.name == "Shibuya Stay")
+  // 最終日は最後の夜のホテルに固定されたまま。
+  #expect(built.days[2].startBase?.name == "Shibuya Stay")
+  #expect(built.days[2].endBase?.name == "Shibuya Stay")
+  // 旅全体の拠点はフォールバック表示のために手つかず。
+  #expect(built.selectedBase?.name == "Shinjuku area")
+}
+
+// MARK: - :852 a missing night falls back to the trip-wide hotel and single-hotel plans are unchanged
+
+@Test func aMissingNightFallsBackToTheTripWideHotelAndSingleHotelPlansAreUnchanged() {
+  var partialContext = PlannerContext()
+  partialContext.hotelQuery = "hotel near Shinjuku Station"
+  partialContext.nightBases = [
+    1: resolvedStop(
+      id: "night-1", input: "Shibuya Stay", area: "Shibuya", address: "1 Shibuya, Tokyo",
+      latitude: 35.658, longitude: 139.7, minutes: 0,
+      sourceUrl: "https://maps.google.com/night-1", verifiedAt: "2026-07-21T00:00:00Z"
+    ),
+  ]
+  let partial = plan(wishlist, 3, .balanced, .en, partialContext)
+  #expect(partial.days[0].startBase?.name == "Shinjuku area")
+  #expect(partial.days[1].endBase?.name == "Shibuya Stay")
+
+  var singleContext = PlannerContext()
+  singleContext.hotelQuery = "hotel near Shinjuku Station"
+  let single = plan(wishlist, 2, .balanced, .en, singleContext)
+  for day in single.days {
+    #expect(day.startBase?.id == single.selectedBase?.id)
+    #expect(day.endBase?.id == single.selectedBase?.id)
+  }
+}
+
+// MARK: - :882 a day-pinned stop listed closed that day is flagged closed_day, not a vague conflict
+
+@Test func aDayPinnedStopListedClosedThatDayIsFlaggedClosedDay() {
+  var context = PlannerContext()
+  context.openingWindowsByDay = ["sensoji": [0: []]]
+  let built = plan("Senso-ji — Day 1", 1, .balanced, .en, context)
+  let stop = built.days[0].stops[0]
+
+  #expect(stop.openingStatus == .closed_day)
+  #expect(built.days[0].openingConflictCount == 1)
+}
+
+// MARK: - :891 an 'at sunset' wish schedules the stop into the evening
+
+@Test func anAtSunsetWishSchedulesTheStopIntoTheEvening() throws {
+  let built = plan("Senso-ji\nTokyo Skytree at sunset", 1, .balanced, .en)
+  let skytree = try #require(
+    built.days[0].stops.first { $0.stop.id == "tokyo-skytree" || $0.stop.name.contains("Skytree") },
+    "Skytree stop should be planned"
+  )
+  #expect(skytree.arrival >= "16:00", "arrival \(skytree.arrival) should be 16:00 or later")
+}
+
+// MARK: - :898 meal-typed stops drift toward meal windows instead of opening the day
+
+@Test func mealTypedStopsDriftTowardMealWindowsInsteadOfOpeningTheDay() throws {
+  func resolved(
+    _ id: String, _ name: String, _ latitude: Double, _ longitude: Double,
+    _ placeTypes: [String], _ minutes: Int
+  ) -> ResolvedStop {
+    resolvedStop(
+      id: id, input: name, area: "Shibuya", address: "\(name), Tokyo",
+      latitude: latitude, longitude: longitude, minutes: minutes,
+      sourceUrl: "https://maps.google.com/\(id)", verifiedAt: "2026-07-21T00:00:00Z",
+      placeTypes: placeTypes
+    )
+  }
+  var context = PlannerContext()
+  context.resolvedStops = [
+    resolved("ichiran-shibuya", "Ichiran Shibuya", 35.661, 139.700, ["ramen_restaurant", "restaurant"], 45),
+    resolved("meiji-jingu-r", "Meiji Jingu", 35.676, 139.699, ["shinto_shrine"], 60),
+    resolved("yoyogi-park-r", "Yoyogi Park", 35.671, 139.696, ["park"], 75),
+  ]
+  let built = plan("Ichiran Shibuya\nMeiji Jingu\nYoyogi Park", 1, .balanced, .en, context)
+  let ichiran = try #require(
+    built.days[0].stops.first { $0.stop.id == "ichiran-shibuya" },
+    "Ichiran should be planned"
+  )
+  #expect(ichiran.arrival >= "11:00", "a ramen stop should not open the day (arrival \(ichiran.arrival))")
+}
+
+// MARK: - :926 treats last entry as a hard admission cutoff distinct from closing time
+
+@Test func treatsLastEntryAsAHardAdmissionCutoffDistinctFromClosingTime() {
+  let raw = "Senso-ji — Day 1"
+  var common = PlannerContext()
+  common.durationOverrides = ["sensoji": 45]
+  common.openingWindowsByDay = ["sensoji": [0: [VisitWindow(openMinutes: 9 * 60, closeMinutes: 18 * 60)]]]
+  common.lastEntryTimes = ["sensoji": "16:30"]
+
+  var lateContext = common
+  lateContext.defaultDayStart = "16:40"
+  var onTimeContext = common
+  onTimeContext.defaultDayStart = "16:20"
+  let late = plan(raw, 1, .balanced, .en, lateContext)
+  let onTime = plan(raw, 1, .balanced, .en, onTimeContext)
+
+  #expect(late.days[0].stops[0].openingStatus == .last_entry_conflict)
+  #expect(late.days[0].openingConflictCount == 1)
+  #expect(onTime.days[0].stops[0].openingStatus == .verified_open)
+  #expect(
+    onTime.days[0].stops[0].departure == "17:05",
+    "the visit may finish after last entry while still finishing before closing"
+  )
+}
+
+// MARK: - :951 スイスの共有フィクスチャ(`swissSample` / `swissResolvedStops`)
+
+private let swissSample = """
+ルツェルン カペル橋
+リギ山
+インターラーケン
+ユングフラウヨッホ — 必須
+ラウターブルンネン
+ツェルマット
+ゴルナーグラート
+ベルン旧市街
+"""
+
+private func swissResolvedStops() -> [ResolvedStop] {
+  let definitions: [(id: String, name: String, latitude: Double, longitude: Double, minutes: Int)] = [
+    ("g-kapellbruecke", "カペル橋", 47.0517, 8.3073, 75),
+    ("g-rigi", "リギ山", 47.0567, 8.4854, 240),
+    ("g-interlaken", "インターラーケン", 46.6863, 7.8632, 90),
+    ("g-jungfraujoch", "ユングフラウヨッホ", 46.5474, 7.9854, 75),
+    ("g-lauterbrunnen", "ラウターブルンネン", 46.5936, 7.9081, 90),
+    ("g-zermatt", "ツェルマット", 46.0207, 7.7491, 90),
+    ("g-gornergrat", "ゴルナーグラート", 45.9833, 7.7842, 60),
+    ("g-bern-old-town", "ベルン旧市街", 46.948, 7.4474, 75),
+  ]
+  return definitions.enumerated().map { inputIndex, definition in
+    resolvedStop(
+      id: definition.id,
+      input: definition.name,
+      area: definition.name,
+      address: "\(definition.name), Switzerland",
+      latitude: definition.latitude,
+      longitude: definition.longitude,
+      minutes: definition.minutes,
+      inputIndex: inputIndex,
+      sourceUrl: "https://maps.google.com/?q=\(definition.id)",
+      countryCode: "CH"
+    )
+  }
+}
+
+// MARK: - :980 a hotel-based multi-day trip uses every requested day instead of cramming mega-days
+
+@Test func aHotelBasedMultiDayTripUsesEveryRequestedDayInsteadOfCrammingMegaDays() {
+  let resolvedBase = resolvedStop(
+    id: "hotel-interlaken", input: "Hotel Interlaken", area: "インターラーケン",
+    address: "Interlaken, Switzerland", latitude: 46.6866, longitude: 7.8654, minutes: 0,
+    sourceUrl: "https://maps.google.com/?q=hotel-interlaken", countryCode: "CH"
+  )
+  for pace in [Pace.relaxed, .balanced] {
+    let paceCapacity = pace == .relaxed ? 3 : 4
+    let dayBudgetMinutes = pace == .relaxed ? 480 : 570
+    var context = PlannerContext()
+    context.destination = .destination(.switzerland)
+    context.resolvedStops = swissResolvedStops()
+    context.resolvedBase = resolvedBase
+    context.tripStartDate = "2026-09-14"
+    let built = plan(swissSample, 4, pace, .ja, context)
+
+    // 日を空にするとその日のホテル往復が移動スコアから消えるので、空の日/過積載の歯止めが
+    // ないと最適化器は 0/4/4/0 を返していた。
+    let shape = built.days.map { $0.stops.count }.map(String.init).joined(separator: "/")
+    #expect(
+      built.days.allSatisfy { !$0.stops.isEmpty },
+      "\(pace): no requested day may stay empty, got \(shape)"
+    )
+    #expect(
+      built.days.allSatisfy { $0.stops.count <= paceCapacity },
+      "\(pace): pace capacity must hold after optimization, got \(shape)"
+    )
+    for day in built.days {
+      let stayMinutes = day.stops.reduce(0) { $0 + $1.stop.planningDurationMinutes }
+        + max(0, day.stops.count - 1) * 35
+      #expect(
+        stayMinutes <= dayBudgetMinutes,
+        "\(pace): stays must fit the day budget, got \(stayMinutes) > \(dayBudgetMinutes)"
+      )
+    }
+    #expect(built.scheduleConflictCount == 0, "\(pace): balancing days must not invent conflicts")
+  }
+}
+
+// MARK: - :1028 a day that is still running at dinner time keeps its dinner slot
+
+@Test func aDayThatIsStillRunningAtDinnerTimeKeepsItsDinnerSlotEndToEnd() throws {
+  // 既定の 22:00 門限下の東京 3 か所。観光は 15:00 に終わり、旅行者にはまだ 7 時間ある。
+  // 古い規則は「観光がいつ終わるか」を見ていたので、いちばん夕食の余地がある日が 30 分差で
+  // 枠を失っていた。
+  let raw = """
+Tsukiji Outer Market
+Tokyo Tower
+Meiji Jingu
+"""
+  var mealContext = PlannerContext()
+  mealContext.mealPlan = .all
+  mealContext.tripStartDate = "2026-09-12"
+  let built = plan(raw, 1, .balanced, .en, mealContext)
+  let day = built.days[0]
+
+  #expect(day.deadline == "22:00")
+  #expect(day.deadlineKind == .curfew)
+  let last = try #require(day.stops.last)
+  #expect(last.departure < "17:30", "the route ends before the dinner window opens")
+  #expect(built.foodRecommendationSlots.map(\.kind) == [.lunch, .dinner])
+
+  // 枠は推薦であって日程の変更ではない。食事を切った同じ旅と算術が一致する。
+  var baselineContext = PlannerContext()
+  baselineContext.mealPlan = .none
+  baselineContext.tripStartDate = "2026-09-12"
+  let baseline = plan(raw, 1, .balanced, .en, baselineContext)
+  #expect(day.totalMinutes == baseline.days[0].totalMinutes)
+  #expect(day.finishTime == baseline.days[0].finishTime)
+}
+
+// MARK: - :1051 a route that brackets the whole dinner window gets no dinner slot
+
+@Test func aRouteThatBracketsTheWholeDinnerWindowGetsNoDinnerSlotEndToEnd() throws {
+  // 16:00 予約のアンカーが日を 16:00–21:55 に押し広げ、日本の 17:30–21:00 の夕食窓を
+  // まるごと覆う。ここでの枠は「予定された訪問の最中」しか提案できないので、枠は無い。
+  var context = PlannerContext()
+  context.mealPlan = .all
+  context.tripStartDate = "2026-09-12"
+  let built = plan("""
+teamLab Planets — Day 1 16:00 booked
+Tokyo Tower
+Tsukiji Outer Market
+""", 1, .balanced, .en, context)
+  let day = built.days[0]
+
+  #expect(day.stops[0].arrival <= "17:30", "the route is under way when dinner opens")
+  let last = try #require(day.stops.last)
+  #expect(last.departure >= "21:00", "and is still running when it closes")
+  #expect(built.foodRecommendationSlots.filter { $0.kind == .dinner }.isEmpty)
+}
+
+// MARK: - :1065 an airport day that ends before dinner still gets no dinner slot
+
+@Test func anAirportDayThatEndsBeforeDinnerStillGetsNoDinnerSlot() {
+  // 上の変更で既存の締切規則が壊れていないこと: 終わりが夕食窓より前にある日は、
+  // 夕食の余地がある日ではない。
+  var context = PlannerContext()
+  context.mealPlan = .all
+  context.tripStartDate = "2026-09-12"
+  context.dayEndTarget = "16:00"
+  let built = plan("Senso-ji\nTokyo Skytree", 1, .balanced, .en, context)
+
+  #expect(built.days[0].deadline == "16:00")
+  #expect(built.foodRecommendationSlots.filter { $0.kind == .dinner }.isEmpty)
+}
+
+// MARK: - tests/travel-logic.test.ts の、ビルダ全体が要る 2 件
+//
+// task-14-report.md が Task 15 送りにした `travel-logic.test.ts:186`、および
+// `excludedStopIds`(`lib/trip-builder.ts:2060-2065`)を通す唯一の TS ケース `:171`。
+
+/// TS `stopAt` (`tests/travel-logic.test.ts:9-24`)
+private func stopAt(_ id: String, _ latitude: Double, _ longitude: Double, _ minutes: Int = 90) -> ResolvedStop {
+  resolvedStop(
+    id: id, input: id, address: "1 \(id)", latitude: latitude, longitude: longitude,
+    minutes: minutes, sourceUrl: "https://maps.google.com/\(id)", verifiedAt: "now"
+  )
+}
+
+// MARK: - travel-logic:171 removing a stop rebuilds the plan without it
+
+@Test func removingAStopRebuildsThePlanWithoutIt() {
+  var context = PlannerContext()
+  context.tripStartDate = "2026-09-14"
+  context.resolvedStops = [
+    stopAt("a", 34.66, 135.50),
+    stopAt("b", 34.67, 135.51),
+    stopAt("c", 34.68, 135.50),
+  ]
+  context.excludedStopIds = ["b"]
+  let removed = plan("a\nb\nc", 1, .balanced, .ja, context)
+
+  #expect(removed.days.flatMap { stopIds($0) }.sorted(by: jsStringLess) == ["a", "c"])
+  #expect(removed.recognizedStopCount == 2)
+}
+
+// MARK: - travel-logic:186 the hotel anchor gives every day one vote and resists a distant excursion
+
+@Test func theHotelAnchorGivesEveryDayOneVoteAndResistsADistantExcursion() throws {
+  let stops = [
+    stopAt("kyoto-1", 35.0116, 135.7681),
+    stopAt("kyoto-2", 35.0210, 135.7550),
+    stopAt("kyoto-3", 34.9950, 135.7750),
+    stopAt("kyoto-4", 35.0300, 135.7400),
+    stopAt("miyazu", 35.5350, 135.1950),
+  ]
+  var context = PlannerContext()
+  context.tripStartDate = "2026-09-14"
+  context.resolvedStops = stops
+  context.dayOverrides = Dictionary(uniqueKeysWithValues: stops.enumerated().map { ($1.id, $0 + 1) })
+  let built = plan(stops.map(\.id).joined(separator: "\n"), 5, .balanced, .ja, context)
+
+  let anchor = try #require(Bases.hotelAnchor(for: built))
+  let routeContext = try #require(Bases.hotelRouteContext(for: built))
+  #expect(anchor.0.latitude < 35.10, "one Miyazu day must not drag the hotel north: \(anchor.0.latitude)")
+  #expect(anchor.0.longitude > 135.68, "one Miyazu day must not drag the hotel west: \(anchor.0.longitude)")
+  #expect(routeContext.routePoints.count == 5, "each scheduled day contributes exactly one route point")
+  #expect(routeContext.spreadKm > 60, "the UI can disclose that one-hotel travel remains wide")
+
+  let balanced = try #require(Bases.balancedGeoCenter(stops.map { GeoPoint(latitude: $0.latitude, longitude: $0.longitude) }))
+  #expect(balanced.latitude < 35.10)
+  #expect(balanced.longitude > 135.68)
+}
