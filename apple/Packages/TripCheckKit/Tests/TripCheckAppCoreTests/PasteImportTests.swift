@@ -86,6 +86,37 @@ import TripCheckKit
   #expect(store.request.inputMode == .wishlist)
 }
 
+/// 貼った日が既定の `plannedDays`(既定 3 日)を超えても、その日のまま届く —— 切り捨てない。
+/// 行編集シートの `Picker` が選べる幅にもその日が含まれる(でなければ選ばれていることが
+/// 画面にもVoiceOverにも見えなくなる)。
+@Test @MainActor func aPastedDayBeyondThePlannedCountStaysItselfAndIsPickable() async {
+  let store = PlannerStore(resolvers: [], store: nil)
+  _ = store.importPasted("Day 5\nDaikanyama")
+  let id = store.request.entries[0].id
+  #expect(store.request.entries[0].fixedDay == 5)
+  #expect(store.dayPickerRange(for: id).contains(5))
+}
+
+/// 貼った日が `EngineConstants.tripDaysRange`(1〜14)の外でも、上限に畳んで受け取る ——
+/// 畳まずに載せると `Picker` に対応するタグが無い値になり、共有すれば Web が読めない見出し
+/// がそのまま出る。Kit の `WishlistParser` 自体は見出しの日を 1〜30 までしか読まない
+/// (`headingDay`)ので、20 という「Kit は読むが `tripDaysRange` の外」の値で試す ——
+/// 99 は Kit 側で見出しとして読めず、この行自体が `contextDay` を進めないまま終わる。
+@Test @MainActor func aPastedDayPastTheEnginesRangeClampsToTheUpperBound() async {
+  let store = PlannerStore(resolvers: [], store: nil)
+  _ = store.importPasted("Day 20\nOdaiba")
+  #expect(store.request.entries[0].fixedDay == EngineConstants.tripDaysRange.upperBound)
+}
+
+/// `updateEntry` も同じ範囲へ両端畳む —— 貼り付けを介さず、シートから直接 99 を送っても
+/// 結果は同じでなければならない。
+@Test @MainActor func updatingAnEntrysDayClampsToTheEnginesRange() async {
+  let store = PlannerStore(resolvers: [], store: nil)
+  let id = store.addEntrySync(text: "Ueno Park")
+  store.updateEntry(id: id, fixedDay: .some(99))
+  #expect(store.request.entries[0].fixedDay == EngineConstants.tripDaysRange.upperBound)
+}
+
 /// 外したときも同じ —— 日の付いた最後の 1 行が消えれば、旅程の確認ではなくなる。
 @Test @MainActor func removingTheLastDayedEntryPutsTheModeBack() async {
   let store = PlannerStore(resolvers: [], store: nil)

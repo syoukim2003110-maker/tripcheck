@@ -163,7 +163,7 @@ struct EntryEditSheet: View {
         set: { store.updateEntry(id: entryID, fixedDay: .some($0)) }
       )) {
         Text(app.entryDayAny).tag(Int?.none)
-        ForEach(1...store.plannedDays, id: \.self) { day in
+        ForEach(store.dayPickerRange(for: entryID), id: \.self) { day in
           Text(text.previewDay(day)).tag(Int?.some(day))
         }
       }

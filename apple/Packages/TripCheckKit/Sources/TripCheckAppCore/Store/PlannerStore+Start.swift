@@ -64,7 +64,9 @@ extension PlannerStore {
   /// 値はここで**エンジンが読める形に丸める**。`WishlistSerialization.raw` が吐く行は Kit の
   /// パーサが読み戻せなければならない(貼り付け → 編集 → 共有の往復で綴りが変わらない、が
   /// この型の存在理由)ので、時計として読めない時刻は空に、滞在は
-  /// `EngineConstants.stayMinutesRange` の中に、日は 1 日目以降に畳む。
+  /// `EngineConstants.stayMinutesRange` の中に、日は `EngineConstants.tripDaysRange`
+  /// (1〜14 日目)の中に畳む。`tripDays`(旅行者が名乗った日数)には丸めない —— 日数は後で
+  /// 増やせるし、`day > tripDays` はビルダー側が扱う話なので、ここでは切り捨てない。
   public func updateEntry(
     id: UUID,
     priority: WishlistPriority? = nil,
@@ -79,7 +81,7 @@ extension PlannerStore {
     if let isReservation { request.entries[index].isReservation = isReservation }
     if let stayMinutes { request.entries[index].stayMinutes = stayMinutes.map(Self.clampedStayMinutes) }
     if let fixedDay {
-      request.entries[index].fixedDay = fixedDay.map { max(EngineConstants.tripDaysRange.lowerBound, $0) }
+      request.entries[index].fixedDay = fixedDay.map(Self.clampedFixedDay)
       refreshInputMode()
     }
   }
@@ -100,7 +102,16 @@ extension PlannerStore {
     let parsed = WishlistSerialization.entries(fromPasted: raw)
     let already = request.entries.count
     let room = max(0, Self.placeLimit - already)
-    let added = parsed.entries.prefix(room)
+    // 貼った見出しの日は `EngineConstants.tripDaysRange` の外に出うる(「Day 99」も文字列と
+    // しては読める)。`fixedDay` に丸めずに載せると、行編集シートの `Picker` に対応するタグが
+    // 無くなり(空・VoiceOver が何も読まない・触ると黙って別の日に変わる)、共有時は
+    // `Day 99` がそのまま出て Web が受け取れない。
+    let added = parsed.entries.prefix(room).map { entry -> WishlistEntry in
+      guard let day = entry.fixedDay else { return entry }
+      var entry = entry
+      entry.fixedDay = Self.clampedFixedDay(day)
+      return entry
+    }
 
     request.entries.append(contentsOf: added)
     request.unparsedLines.append(contentsOf: parsed.unparsed)
@@ -126,6 +137,13 @@ extension PlannerStore {
     min(EngineConstants.stayMinutesRange.upperBound, max(EngineConstants.stayMinutesRange.lowerBound, minutes))
   }
 
+  /// 日を `EngineConstants.tripDaysRange`(1〜14 日目)の両端に畳む。下だけを畳んで上を
+  /// 開けたままにすると、貼り付けの「Day 99」がそのまま `fixedDay` へ載り、行編集シートの
+  /// `Picker` に対応するタグの無い値になる。
+  private static func clampedFixedDay(_ day: Int) -> Int {
+    min(EngineConstants.tripDaysRange.upperBound, max(EngineConstants.tripDaysRange.lowerBound, day))
+  }
+
   /// 滞在時間の刻み。幅は Kit の `EngineConstants.stayMinutesRange`(15〜480 分)で、Web の
   /// 数値入力には無い「段」を、指で押す `Stepper` のためにここで決める。
   public static let stayMinutesStep = 15
@@ -135,6 +153,18 @@ extension PlannerStore {
   /// に、1 日目の下限だけを足す(0 日の旅に「行く日」の選択肢は作れない)。
   public var plannedDays: Int {
     max(EngineConstants.tripDaysRange.lowerBound, request.tripDays ?? edit.tripDays)
+  }
+
+  /// 行編集シートの「行く日」`Picker` が選ばせる幅。既定は `1...plannedDays` だが、貼り付けが
+  /// その行へ `plannedDays` を超える日を既に載せていれば(旅行者がまだ日数を上げていない
+  /// 5 日目の旅程を貼った、など)、その日も範囲へ含める —— でなければ `Picker` にその日の
+  /// タグが無く、選ばれていることが画面にも VoiceOver にも見えなくなり、どこを触っても
+  /// 黙って別の日へ変わる。`fixedDay` は `updateEntry`/`importPasted` で既に
+  /// `EngineConstants.tripDaysRange` の中へ畳んであるので、上限はその範囲を超えない。
+  public func dayPickerRange(for entryId: UUID) -> ClosedRange<Int> {
+    let entryDay = request.entries.first { $0.id == entryId }?.fixedDay ?? 0
+    let upper = min(EngineConstants.tripDaysRange.upperBound, max(plannedDays, entryDay))
+    return EngineConstants.tripDaysRange.lowerBound...upper
   }
 
   // MARK: - 行き先の国
