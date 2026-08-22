@@ -338,38 +338,32 @@ public enum ShareCodec {
     if let value = input.maxWalkingMinutesPerLeg { object["maxWalkingMinutesPerLeg"] = .number(Double(value)) }
     if let value = input.maxTransfersPerLeg { object["maxTransfersPerLeg"] = .number(Double(value)) }
 
-    let dayStartTimes = ("dayStartTimes", intKeyedJSON(input.dayStartTimes) { .string($0) })
-    let dayEndTimes = ("dayEndTimes", intKeyedJSON(input.dayEndTimes) { .string($0) })
-    let userStayMinutes = ("userStayMinutes", recordJSON(input.userStayMinutes) { .number(Double($0)) })
-    let lastEntryTimes = ("lastEntryTimes", recordJSON(input.lastEntryTimes) { .string($0) })
-    let legModeOverrides = ("legModeOverrides", recordJSON(input.legModeOverrides) { .string($0.rawValue) })
-    let dayOverrides = ("dayOverrides", recordJSON(input.dayOverrides) { .number(Double($0)) })
+    let dayStartTimes = ShareJSONMember(key: "dayStartTimes", value: intKeyedJSON(input.dayStartTimes) { .string($0) })
+    let dayEndTimes = ShareJSONMember(key: "dayEndTimes", value: intKeyedJSON(input.dayEndTimes) { .string($0) })
+    let userStayMinutes = ShareJSONMember(key: "userStayMinutes", value: recordJSON(input.userStayMinutes) { .number(Double($0)) })
+    let lastEntryTimes = ShareJSONMember(key: "lastEntryTimes", value: recordJSON(input.lastEntryTimes) { .string($0) })
+    let legModeOverrides = ShareJSONMember(key: "legModeOverrides", value: recordJSON(input.legModeOverrides) { .string($0.rawValue) })
+    let dayOverrides = ShareJSONMember(key: "dayOverrides", value: recordJSON(input.dayOverrides) { .number(Double($0)) })
     let lockedOrderByDay = input.lockedOrderByDay.map { locked in
-      ("lockedOrderByDay", intKeyedJSON(locked) { ids in .array(ids.map(ShareJSON.string)) })
+      ShareJSONMember(key: "lockedOrderByDay", value: intKeyedJSON(locked) { ids in .array(ids.map(ShareJSON.string)) })
     }
-    let removedStops = ("removedStops", ShareJSON.array(input.removedStops.map { stop in
+    let removedStops = ShareJSONMember(key: "removedStops", value: .array(input.removedStops.map { stop in
       .object(ShareJSONObject([
         ShareJSONMember(key: "id", value: .string(stop.id)),
         ShareJSONMember(key: "name", value: .string(stop.name)),
       ]))
     }))
 
-    switch input.fieldOrder {
+    let remapped = [dayOverrides, lockedOrderByDay, removedStops, legModeOverrides].compactMap { $0 }
+    let members: [ShareJSONMember] = switch input.fieldOrder {
     case .declared:
-      for entry in [userStayMinutes, lastEntryTimes, dayStartTimes, dayEndTimes, legModeOverrides, dayOverrides] {
-        object[entry.0] = entry.1
-      }
-      if let lockedOrderByDay { object[lockedOrderByDay.0] = lockedOrderByDay.1 }
-      object[removedStops.0] = removedStops.1
+      [userStayMinutes, lastEntryTimes, dayStartTimes, dayEndTimes, legModeOverrides, dayOverrides]
+        + [lockedOrderByDay, removedStops].compactMap { $0 }
+    // `lib/share-scope.ts:283-311` —— 分割代入で外された欄は、作り直された順で末尾に付く。
     case .remapped:
-      // `lib/share-scope.ts:283-311` —— 分割代入で外された 7 欄は、作り直された順で末尾に付く。
-      for entry in [dayStartTimes, dayEndTimes, userStayMinutes, lastEntryTimes, dayOverrides] {
-        object[entry.0] = entry.1
-      }
-      if let lockedOrderByDay { object[lockedOrderByDay.0] = lockedOrderByDay.1 }
-      object[removedStops.0] = removedStops.1
-      object[legModeOverrides.0] = legModeOverrides.1
+      [dayStartTimes, dayEndTimes, userStayMinutes, lastEntryTimes] + remapped
     }
+    for member in members { object[member.key] = member.value }
 
     let resolutionOverrides = cleanResolutionOverrides(input.resolutionOverrides)
     if !resolutionOverrides.isEmpty {
@@ -587,7 +581,7 @@ public enum ShareCodec {
   static func cleanTravellerText(_ value: ShareJSON?, _ maximumLength: Int) -> String {
     guard let text = value?.asString else { return "" }
     var replaced = String.UnicodeScalarView()
-    for scalar in text.precomposedStringWithCompatibilityMapping.unicodeScalars {
+    for scalar in JSText.normalizeNFKC(text).unicodeScalars {
       replaced.append(scalar.value <= 0x1F || scalar.value == 0x7F ? " " : scalar)
     }
     var collapsed = String.UnicodeScalarView()

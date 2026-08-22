@@ -351,6 +351,12 @@ enum ShareInputs {
   #expect(String(decoding: data, as: UTF8.self).hasPrefix("{\"v\":1,"))
 }
 
+/// 敵意ある `#t=` は「深い入れ子」だけで作れる。読めないと言うのは正しい —— 落ちるのは違う。
+@Test func aDeeplyNestedPayloadIsRejectedRatherThanCrashing() {
+  let nested = String(repeating: "[", count: 50_000)
+  #expect(ShareCodec.decode(ShareBase64URL.encode(Data(nested.utf8))) == nil)
+}
+
 // MARK: - tests/share-link.test.ts の各ケース
 
 /// tests/share-link.test.ts:43-47
@@ -471,4 +477,271 @@ enum ShareInputs {
   let parsed = try #require(ShareJSON.parse("{\"a\":1,\"10\":2,\"2\":3,\"07\":4,\"a\":5}")?.asObject)
   #expect(parsed.keys == ["2", "10", "a", "07"])
   #expect(parsed["a"]?.asNumber == 5, "a later duplicate wins, in the first key's position")
+}
+
+// MARK: - スコープ付きの墨消し
+
+extension ShareScopeFlags {
+  var options: ShareScopeOptions {
+    ShareScopeOptions(dates: dates, hotel: hotel, airports: airports, reservations: reservations)
+  }
+}
+
+@Test func everyScopeOfEveryVectorMatchesTheWeb() throws {
+  let file = try ShareVectorFile.load()
+  for vector in file.vectors {
+    let input = try #require(ShareInputs.byName[vector.name])
+    for expected in vector.scopes {
+      let label = "\(vector.name)/\(expected.name)"
+      let result = ShareScope.scoped(input, scope: expected.scope.options, locale: vector.locale)
+      #expect(result.blocked == expected.blocked, "\(label): blocked")
+      #expect(result.warnings.map(\.rawValue) == expected.warnings, "\(label): warnings, in order")
+      #expect(result.omittedUnparsedLines == expected.omittedUnparsedLines, "\(label): omitted lines")
+      #expect(result.redactedReservationCount == expected.redactedReservationCount, "\(label): redacted bookings")
+      #expect(result.code == expected.code, "\(label): fragment bytes")
+      // 墨消しされた入力そのもの。書き直したバイトが合っていれば、欄も並びも合っている。
+      #expect(result.input.map(ShareCodec.encode) == expected.inputCode, "\(label): scoped input bytes")
+    }
+  }
+  #expect(ShareScope.maxFragmentChars == file.maxShareFragmentChars)
+}
+
+/// `lib/share-scope.ts:220-223` の 2 本の正規表現。ICU と JS では `\b`・`\s`・`\D` の中身が
+/// 違うので書き下してある。答えは Node に同じ 15 行を通して確かめたもの。
+@Test func anOpaqueLineIsSpottedByUrlEmailOrBookingReference() {
+  let sensitive = [
+    "Cafe https://example.com/x",
+    "Cafe someone@example.com",
+    "予約番号 ABCD-123456",
+    "booking ABC12345",
+    "private reference ABCD-123456",
+    "確認番号\u{FF1A}X1234",
+    "東京駅someone@example.com",
+    "ref. 12345",
+    "mail me at a@b.co",
+    "pnr 12ab-3",
+    "reservation number  AB123",
+    "ref.abcdef",
+  ]
+  for line in sensitive { #expect(ShareScope.isSensitiveOpaqueLine(line), "\(line) is opaque") }
+  for line in ["Senso-ji", "Tokyo Skytree — 15:30 booked", "booked at 15:30"] {
+    #expect(!ShareScope.isSensitiveOpaqueLine(line), "\(line) is a place")
+  }
+}
+
+/// tests/share-scope.test.ts:36-48
+@Test func privacySafeScopeRemovesHotelAirportsAndReservationDetails() throws {
+  let result = ShareScope.scoped(
+    ShareInputs.scope(),
+    scope: ShareScopeOptions(dates: true, hotel: false, airports: false, reservations: false)
+  )
+  #expect(result.blocked == false)
+  #expect(result.redactedReservationCount == 1)
+  #expect(result.omittedUnparsedLines == 1)
+  let code = try #require(result.code)
+  let decoded = try #require(ShareCodec.decode(code))
+  #expect(decoded.hotelQuery == "")
+  #expect(decoded.arrivalAirport == "none")
+  #expect(decoded.departureAirport == "none")
+  #expect(decoded.dateWasProvided == true)
+  #expect(!decoded.itinerary.contains("15:30"))
+  #expect(!decoded.itinerary.contains("booked"))
+  #expect(!decoded.itinerary.contains("ABCD-123456"))
+  #expect(decoded.itinerary.contains("teamLab Planets — must"))
+}
+
+/// tests/share-scope.test.ts:50-60
+@Test func datePrivacyScopePreservesProvisionalSemantics() throws {
+  let hidden = ShareScope.scoped(
+    ShareInputs.scope(),
+    scope: ShareScopeOptions(dates: false, hotel: false, airports: false, reservations: false)
+  )
+  #expect(hidden.blocked == false)
+  let hiddenCode = try #require(hidden.code)
+  let decodedHidden = try #require(ShareCodec.decode(hiddenCode))
+  #expect(decodedHidden.tripStartDate == "")
+  #expect(decodedHidden.dateWasProvided == false)
+
+  let provisional = ShareScope.scoped(
+    ShareInputs.scope { $0.dateWasProvided = false },
+    scope: ShareScopeOptions(dates: true, hotel: false, airports: false, reservations: false)
+  )
+  #expect(provisional.blocked == false)
+  let provisionalCode = try #require(provisional.code)
+  let decodedProvisional = try #require(ShareCodec.decode(provisionalCode))
+  #expect(decodedProvisional.dateWasProvided == false)
+}
+
+/// tests/share-scope.test.ts:62-67
+@Test func reservationDetailsAreIncludedOnlyAfterExplicitOptInAndWarn() throws {
+  let result = ShareScope.scoped(
+    ShareInputs.scope(),
+    scope: ShareScopeOptions(dates: true, hotel: true, airports: true, reservations: true)
+  )
+  #expect(result.blocked == false)
+  #expect(result.warnings.contains(.RESERVATION_DETAILS_INCLUDED))
+  let code = try #require(result.code)
+  let decoded = try #require(ShareCodec.decode(code))
+  #expect(decoded.itinerary.contains("15:30 — booked") || decoded.itinerary.contains("15:30 booked"))
+}
+
+/// tests/share-scope.test.ts:69-76
+@Test func longFragmentsAreBlockedInsteadOfSilentlyProducingABrittleUrl() {
+  let huge = (0..<150).map { "Place \($0) \(String(repeating: "x", count: 60))" }.joined(separator: "\n")
+  let result = ShareScope.scoped(
+    ShareInputs.scope { $0.itinerary = huge },
+    scope: ShareScopeOptions(dates: true, hotel: false, airports: false, reservations: false)
+  )
+  #expect(result.blocked)
+  #expect(result.code == nil)
+  #expect(result.warnings.contains(.LINK_TOO_LONG))
+  #expect(ShareScope.maxFragmentChars == 6_000)
+}
+
+/// tests/share-scope.test.ts:78-82
+@Test func anOpaqueOnlyPasteCannotBeSharedAsAFalselyCompleteItinerary() {
+  let result = ShareScope.scoped(
+    ShareInputs.scope { $0.itinerary = "https://example.com/private/ABC-123456" },
+    scope: ShareScopeOptions(dates: false, hotel: false, airports: false, reservations: false)
+  )
+  #expect(result.blocked)
+  #expect(result.warnings.contains(.NO_SHAREABLE_PLACES))
+}
+
+/// tests/share-scope.test.ts:84-122
+@Test func omittedSensitivePlacesDropTheirDecisionsAndRemapLaterOccurrences() throws {
+  let input = try #require(ShareInputs.byName["scope-omitted-sensitive"])
+  let result = ShareScope.scoped(
+    input,
+    scope: ShareScopeOptions(dates: false, hotel: false, airports: false, reservations: false)
+  )
+  #expect(result.blocked == false)
+  #expect(result.omittedUnparsedLines == 1)
+  #expect(result.input?.resolutionOverrides == [
+    .provider(inputIndex: 0, providerRef: "ChIJ_second"),
+    .manual(
+      inputIndex: 1,
+      name: "Traveller pin for third",
+      address: "Traveller-authored address",
+      latitude: 35.1,
+      longitude: 139.2
+    ),
+  ])
+  let code = try #require(result.code)
+  let decoded = try #require(ShareCodec.decode(code))
+  #expect(decoded.resolutionOverrides == result.input?.resolutionOverrides)
+  #expect(!decoded.itinerary.contains("Secret Place"))
+  #expect(!decoded.itinerary.contains("ABC-123456"))
+  #expect(decoded.itinerary.contains("Second Place"))
+  #expect(decoded.itinerary.contains("Third Place"))
+  #expect(!decoded.itinerary.contains("15:30"), "reservation redaction retains the place and its remapped decision")
+  #expect(!decoded.itinerary.contains("booked"))
+}
+
+/// tests/share-scope.test.ts:124-187
+@Test func manualStopIdsRemapEveryDependentEditAndDropOmittedOrUnknownIds() throws {
+  let input = try #require(ShareInputs.byName["scope-manual-remap"])
+  let result = ShareScope.scoped(
+    input,
+    scope: ShareScopeOptions(dates: false, hotel: false, airports: false, reservations: false)
+  )
+  let newManualId = ShareInputs.newManualId
+  let providerId = ShareInputs.providerId
+
+  #expect(result.blocked == false)
+  #expect(result.input?.resolutionOverrides == [
+    .manual(inputIndex: 0, name: "Kept Manual", address: "Traveller point", latitude: 35.1, longitude: 139.2),
+    .provider(inputIndex: 1, providerRef: "ChIJ_provider"),
+  ])
+  #expect(result.input?.userStayMinutes == [newManualId: 180, providerId: 90])
+  #expect(result.input?.lastEntryTimes == [newManualId: "16:00", providerId: "17:00"])
+  #expect(result.input?.dayOverrides == [newManualId: 2, providerId: 2])
+  #expect(result.input?.lockedOrderByDay == [0: [newManualId, providerId]])
+  #expect(result.input?.removedStops == [
+    PlannerRemovedStop(id: newManualId, name: "Kept Manual"),
+    PlannerRemovedStop(id: providerId, name: "Kept Provider"),
+  ])
+  #expect(result.input?.legModeOverrides == [
+    "\(newManualId)::\(providerId)": .transit,
+    "\(providerId)::\(newManualId)": .walk,
+  ])
+  let code = try #require(result.code)
+  let decoded = try #require(ShareCodec.decode(code))
+  #expect(decoded.userStayMinutes == result.input?.userStayMinutes)
+  #expect(decoded.lastEntryTimes == result.input?.lastEntryTimes)
+  #expect(decoded.dayOverrides == result.input?.dayOverrides)
+  #expect(decoded.lockedOrderByDay == result.input?.lockedOrderByDay)
+  #expect(decoded.removedStops == result.input?.removedStops)
+  #expect(decoded.legModeOverrides == result.input?.legModeOverrides)
+}
+
+/// tests/share-scope.test.ts:189-210
+@Test func aRenumberedDuplicateProviderFamilyDropsAmbiguousIdKeyedEdits() throws {
+  let input = try #require(ShareInputs.byName["scope-duplicate-provider-family"])
+  let result = ShareScope.scoped(
+    input,
+    scope: ShareScopeOptions(dates: false, hotel: false, airports: false, reservations: false)
+  )
+  #expect(result.blocked == false)
+  #expect(result.input?.resolutionOverrides == [.provider(inputIndex: 0, providerRef: "ChIJ_same")])
+  #expect(result.input?.userStayMinutes == [:])
+  #expect(result.input?.lockedOrderByDay == IntKeyedDictionary())
+  #expect(result.input?.removedStops == [])
+  #expect(result.input?.legModeOverrides == [:])
+}
+
+/// tests/share-scope.test.ts:212-241
+@Test func omittingASensitiveCataloguePlaceDropsItsStableIdEditsAndDisplayLabel() throws {
+  let input = try #require(ShareInputs.byName["scope-catalogue-stable-ids"])
+  let result = ShareScope.scoped(
+    input,
+    scope: ShareScopeOptions(dates: false, hotel: false, airports: false, reservations: false)
+  )
+  #expect(result.blocked == false)
+  let scopedItinerary = result.input?.itinerary ?? ""
+  #expect(!scopedItinerary.contains("Senso-ji"))
+  #expect(!scopedItinerary.contains("ABC-123456"))
+  #expect(result.input?.userStayMinutes == ["tokyo-skytree": 90])
+  #expect(result.input?.lastEntryTimes == ["tokyo-skytree": "20:00"])
+  #expect(result.input?.dayOverrides == ["tokyo-skytree": 2])
+  #expect(result.input?.lockedOrderByDay == [0: ["tokyo-skytree"]])
+  #expect(result.input?.removedStops == [PlannerRemovedStop(id: "tokyo-skytree", name: "Tokyo Skytree")])
+  #expect(result.input?.legModeOverrides == [:])
+  let bytes = try #require(ShareBase64URL.decode(result.code ?? ""))
+  #expect(!String(decoding: bytes, as: UTF8.self).contains("Hidden provider display name"))
+  #expect(ShareCodec.decode(result.code ?? "")?.removedStops == result.input?.removedStops)
+}
+
+/// tests/share-link.test.ts:168-178
+@Test func selectiveShareScopeRetainsSafeResolutionDecisionsNeededToReproduceThePlan() throws {
+  let scoped = ShareScope.scoped(
+    ShareInputs.link,
+    scope: ShareScopeOptions(dates: false, hotel: false, airports: false, reservations: false),
+    locale: .ja
+  )
+  #expect(scoped.blocked == false)
+  let code = try #require(scoped.code)
+  let decoded = try #require(ShareCodec.decode(code))
+  #expect(decoded.resolutionOverrides == ShareInputs.link.resolutionOverrides)
+}
+
+/// ブリーフの `scopeRedactsAndBlocksWithoutWeakening`。
+@Test func scopeRedactsAndBlocksWithoutWeakening() {
+  let input = ShareInputs.scope()
+  let result = ShareScope.scoped(input, scope: ShareScopeOptions(dates: true, hotel: false, airports: false, reservations: false))
+  #expect(result.redactedReservationCount > 0)
+  #expect(result.input?.hotelQuery == "")
+  #expect(result.input?.arrivalAirport == "none")
+  #expect(!result.warnings.contains(.RESERVATION_DETAILS_INCLUDED))
+
+  let opened = ShareScope.scoped(input, scope: ShareScopeOptions(dates: true, hotel: true, airports: true, reservations: true))
+  #expect(opened.warnings.contains(.RESERVATION_DETAILS_INCLUDED))
+
+  let huge = ShareScope.scoped(
+    ShareInputs.scope { $0.itinerary = String(repeating: "Tokyo Tower\n", count: 2_000) },
+    scope: ShareScopeOptions(dates: true, hotel: false, airports: false, reservations: false)
+  )
+  #expect(huge.blocked)
+  #expect(huge.warnings.contains(.LINK_TOO_LONG))
+  #expect(huge.code == nil)
 }

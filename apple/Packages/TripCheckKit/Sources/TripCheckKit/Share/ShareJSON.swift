@@ -220,6 +220,17 @@ extension ShareJSON {
   private struct Parser {
     let scalars: [Unicode.Scalar]
     var index = 0
+    private var depth = 0
+
+    /// 入れ子の上限。共有される荷物のいちばん深いところ(`resolutionOverrides` の要素)でも 3 で、
+    /// 敵意ある `#t=` は `[[[[…` だけで作れる。JS の `JSON.parse` も実装の再帰上限に当たると
+    /// `RangeError` を投げ、呼び出し側の `catch` が `null` を返す —— 落ちるより、読めないと
+    /// 言うほうが同じ振る舞いに近い。
+    static let maxDepth = 512
+
+    init(scalars: [Unicode.Scalar]) {
+      self.scalars = scalars
+    }
 
     var isAtEnd: Bool { index >= scalars.count }
     private var current: Unicode.Scalar? { index < scalars.count ? scalars[index] : nil }
@@ -234,8 +245,11 @@ extension ShareJSON {
     mutating func parseValue() -> ShareJSON? {
       guard let scalar = current else { return nil }
       switch scalar {
-      case "{": return parseObject()
-      case "[": return parseArray()
+      case "{", "[":
+        guard depth < Parser.maxDepth else { return nil }
+        depth += 1
+        defer { depth -= 1 }
+        return scalar == "{" ? parseObject() : parseArray()
       case "\"": return parseString().map(ShareJSON.string)
       case "t": return literal("true") ? .bool(true) : nil
       case "f": return literal("false") ? .bool(false) : nil
@@ -472,6 +486,17 @@ enum JSText {
 
   /// 正規表現の中で `\s` の代わりに書く文字クラスの中身(`[` と `]` は付けない)。
   static let whitespaceClass = "\\t\\n\\u000b\\f\\r \\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff"
+
+  /// `String.prototype.normalize("NFKC")`。
+  ///
+  /// `precomposedStringWithCompatibilityMapping` だけでは足りない。互換分解で**新しく現れた**
+  /// 並びを組み直さないことがあり、半角の「ﾊﾟ」(U+FF8A U+FF9F)は U+30CF U+309A の 2 文字で
+  /// 止まる —— JS の `normalize("NFKC")` は U+30D1 の 1 文字にする。同じ文字が 2 通りの
+  /// バイト列になるので、共有コードのバイト同一が崩れる(`String` の `==` は正準等価で
+  /// 較べるため、Swift 同士の比較では見えない)。正準合成をもう一度かけて不動点まで進める。
+  static func normalizeNFKC(_ value: String) -> String {
+    value.precomposedStringWithCompatibilityMapping.precomposedStringWithCanonicalMapping
+  }
 
   /// `String.prototype.trim()`。
   static func trim(_ value: String) -> String {
