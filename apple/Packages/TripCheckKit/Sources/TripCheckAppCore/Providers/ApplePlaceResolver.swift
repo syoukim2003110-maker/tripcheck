@@ -53,6 +53,48 @@ public protocol LocalSearching: Sendable {
   func search(query: String, region: GeoBounds?, locale: PlannerLocale) async throws -> [LocalSearchHit]
 }
 
+/// 待っている最中に取り消しが来たら、待たせている相手へ「畳め」の一手だけを渡す 1 枚。
+///
+/// **`MKLocalSearch.start()` は取り消しを見ない。** `Task.isCancelled` が真になっても、
+/// MapKit 自身の通信タイムアウトまで待ち続ける —— つまり `ApplePlaceResolver` の 6 秒は、
+/// 競争に負けた側が `MKLocalSearch.cancel()` で本当に手を離さないかぎり、端末では
+/// ただの飾りになる(テストの `HangingSearch` は `Task.sleep` なので取り消しで解け、
+/// この差は macOS のテストからは見えない)。
+///
+/// `@unchecked Sendable` なのは、`withTaskCancellationHandler` の `onCancel` が本線の外から
+/// 呼ばれるのに、包む相手(`MKLocalSearch`)が `Sendable` を名乗らないから。外へ出るのは
+/// 「畳め」の一手だけで、錠が 1 つ守り、2 度目以降は空振りする —— 取り消しは競争の合図と
+/// 親の取り消しの 2 度来うる。
+final class CancelHandle: @unchecked Sendable {
+  private let lock = NSLock()
+  private var pull: (() -> Void)?
+
+  init(_ pull: @escaping () -> Void) { self.pull = pull }
+
+  /// 預かった一手を**一度だけ**引く。
+  func cancel() {
+    lock.lock()
+    let pull = self.pull
+    self.pull = nil
+    lock.unlock()
+    pull?()
+  }
+
+  /// この待ちが取り消されたら `cancel()` を引く。**待ちそのものは相手のまま** —— 渡すのは
+  /// 合図だけで、取り消された `start()` はエラーを投げて返るので、続きは呼び手の `catch` が
+  /// いつもの道で受ける(待ち手が宙に浮かない)。
+  func relaying<T>(
+    isolation: isolated (any Actor)? = #isolation,
+    _ operation: () async throws -> T
+  ) async rethrows -> T {
+    try await withTaskCancellationHandler(
+      operation: operation,
+      onCancel: { self.cancel() },
+      isolation: isolation
+    )
+  }
+}
+
 /// 実物。delegate を持たない `MKLocalSearch` を 1 回の問い合わせにつき 1 台使う。
 ///
 /// `@MainActor` なのは `MKLocalSearch` とその応答が `Sendable` を名乗らないから —— 本線に
@@ -68,7 +110,12 @@ public final class MKLocalSearchAdapter: LocalSearching {
     request.resultTypes = [.pointOfInterest, .address]
     // 箱は「寄せる」だけの助言で、外の場所も返ってくる。落とすのは `ApplePlaceResolver` の側。
     if let region { request.region = Self.coordinateRegion(region) }
-    let response = try await MKLocalSearch(request: request).start()
+    // **1 台を手元に持ったまま待つ。** 作って捨てる書き方(`MKLocalSearch(request:).start()`)
+    // だと取り消しを伝える宛先が残らず、`ApplePlaceResolver.race` が時計に負けを告げても
+    // この問い合わせは MapKit の中で生き続ける。`cancel()` を掛けると `start()` は
+    // エラーを投げて返り、`race` の `catch` が `.gaveUp` にする。
+    let search = MKLocalSearch(request: request)
+    let response = try await CancelHandle { search.cancel() }.relaying { try await search.start() }
     return response.mapItems.map(Self.hit(from:))
   }
 
@@ -232,7 +279,10 @@ public struct ApplePlaceResolver: PlaceResolver {
         return .gaveUp
       }
       let first = await group.next() ?? .gaveUp
-      // 負けたほうを畳む。`Task.sleep` も `MKLocalSearch` の待ちも取り消しで解ける。
+      // 負けたほうを畳む。`withTaskGroup` は子が全部畳まれるまで返らないので、**打ち切りが
+      // 打ち切りであるためには、負けた側が取り消しで本当に解ける必要がある** ——
+      // `Task.sleep` は自分で解け、端末の地図は `CancelHandle` が `MKLocalSearch.cancel()` を
+      // 引いて解く(`theLoserOfTheRaceIsToldToStop` / `aCancelledWaitPullsTheHandle`)。
       group.cancelAll()
       return first
     }

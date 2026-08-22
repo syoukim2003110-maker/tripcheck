@@ -159,6 +159,63 @@ extension PlannerStore {
     apply(answer, to: entryId)
   }
 
+  // MARK: - 国を選び直す
+
+  /// 確認画面で国を選んだとき。**選ぶだけでは片付かない。**
+  ///
+  /// `setDestination` は「国が混ざっている」という報せを消すだけで、混ざる原因になった場所は
+  /// 行に固定されたまま残る —— 次の組み立ては固定済みの行を尋ね直さない
+  /// (`requestBuildFromStart` の `entry.pinned == nil`)し、「もう一度探す」は未解決の行に
+  /// しか出ないので、選ばなかったほうの国の場所が黙って旅程に入る。画面が約束しているのは
+  /// 「国を選ぶと、いまの入力をその国の範囲で探し直します。」(`AppCopy.resolveCountryHint`)
+  /// なので、ここで本当に探し直す —— Web も同じ一手で
+  /// `reviewWishlistPlaces({ destinationOverride })` を掛ける
+  /// (`app/components/planner/TripPlannerShell.tsx:2058-2064`)。
+  ///
+  /// 外すのは**新しい箱の外に出た**固定だけ。`.auto` と `.worldwide` は箱を持たないので
+  /// 1 件も落ちない。旅行者が地図に自分で置いた点(`.manual`)は箱の外でも動かさない ——
+  /// 座標は旅行者のもので、尋ね直す相手が居ない(統合仕様 §4.2)。
+  public func changeDestinationFromResolve(_ choice: DestinationChoice) async {
+    setDestination(choice)
+    guard let bounds = destinationBounds else { return }
+
+    let stale = request.entries.enumerated().compactMap { index, entry -> (index: Int, id: UUID, input: String)? in
+      guard let pinned = entry.pinned else { return nil }
+      if case .manual = pinned { return nil }
+      let stop = pinned.stop
+      guard !Destinations.withinBounds(bounds, latitude: stop.latitude, longitude: stop.longitude) else { return nil }
+      return (index, entry.id, entry.text)
+    }
+    guard !stale.isEmpty else { return }
+
+    // 先に固定を外す。尋ね直している間、画面が隣の国の場所を「確認済み」として見せ続けない。
+    for item in stale {
+      request.entries[item.index].pinned = nil
+      request.resolutions[item.id] = nil
+    }
+
+    // 問い合わせは 1 本ずつ。ほかの解決が走っている間は**外すところまでで止める** ——
+    // その行は「見つかっていない」として残り、「もう一度探す」で拾い直せる。黙って別の国の
+    // 場所を旅程へ入れるよりよい。
+    guard !isResolvingPlaces, view.screen != .building else { return }
+
+    isResolvingPlaces = true
+    let answers = await ResolutionPipeline.resolve(
+      stale.map { PlaceQuery(inputIndex: $0.index, input: $0.input) },
+      destination: request.destination,
+      locale: request.locale,
+      resolvers: resolvers
+    )
+    isResolvingPlaces = false
+
+    // 待っている間に行が外れている・並びが動いていることがあるので、id で書き戻す
+    // (`apply` が固定と辞書と国跨ぎの 3 つを一緒に動かす)。
+    for item in stale {
+      guard let answer = answers[item.index] else { continue }
+      apply(answer, to: item.id)
+    }
+  }
+
   // MARK: - 進む
 
   /// 確認画面の主ボタン。**必須指定と予約済みが未解決のまま残っていたら先に尋ねる** ——

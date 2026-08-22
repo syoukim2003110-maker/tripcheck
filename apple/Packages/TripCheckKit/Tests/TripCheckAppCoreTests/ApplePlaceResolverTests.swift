@@ -1,3 +1,4 @@
+import Foundation
 import MapKit
 import Testing
 @testable import TripCheckAppCore
@@ -182,6 +183,40 @@ import TripCheckKit
   #expect(candidates.map(\.stop.name) == ["Bern 0", "Bern 1", "Bern 2"])
 }
 
+/// 打ち切りは「待つのをやめる」ことではなく「相手に手を離させる」こと —— `withTaskGroup` は
+/// 子が全部畳まれるまで返らないので、負けた側が取り消しを**見なかった**場合、6 秒の時計は
+/// 端末では飾りになる(`MKLocalSearch.start()` は取り消しを見ないので、これは実際に起きうる)。
+/// 時計そのものは測らない —— 忙しい機械では取り消しの続きが後回しになり、秒を数えると
+/// 機械の都合で落ちる。**相手は 60 秒を名乗っている**ので、この関数が返ってくること自体が
+/// 「待ち続けていない」の証拠になり、`sawCancellation` が「なぜ返ってきたか」を言う。
+@Test func theLoserOfTheRaceIsToldToStop() async {
+  let watch = CancellationWatch()
+  let r = await ApplePlaceResolver(search: WatchingSearch(watch: watch), timeout: .milliseconds(30))
+    .resolve([PlaceQuery(inputIndex: 0, input: "X")], destination: .auto, locale: .en)
+
+  #expect(r[0] == .unresolved(reason: ApplePlaceResolver.unavailableReason))
+  #expect(await watch.sawCancellation == true)           // 負けた側が取り消しを受け取って解けた
+}
+
+/// `MKLocalSearchAdapter` が待ちを包む一枚。取り消しの合図が本当に外へ渡ること、そして
+/// **一度しか渡らない**こと(取り消しは競争の合図と親の取り消しの 2 度来うる)。端末の地図に
+/// 触らずに、`search` の中の配線そのものを検査する。
+@Test func aCancelledWaitPullsTheHandle() async {
+  let pulls = PullCounter()
+  let handle = CancelHandle { pulls.bump() }
+  let task = Task {
+    await handle.relaying { try? await Task.sleep(for: .seconds(60)) }
+  }
+  // 待ちが立ってから取り消す(立つ前だと `withTaskCancellationHandler` が入口で引く)。
+  try? await Task.sleep(for: .milliseconds(20))
+  task.cancel()
+  await task.value
+
+  #expect(pulls.count == 1)
+  handle.cancel()                                        // 2 度目は空振り
+  #expect(pulls.count == 1)
+}
+
 // MARK: - このファイルだけが使う相手
 
 /// 1 つの文字列にだけ永久に答えない相手。ほかは即答する。
@@ -198,4 +233,34 @@ private struct MixedSearch: LocalSearching {
 private struct ThrowingSearch: LocalSearching {
   struct Nope: Error {}
   func search(query: String, region: GeoBounds?, locale: PlannerLocale) async throws -> [LocalSearchHit] { throw Nope() }
+}
+
+/// 60 秒名乗っておいて、解かれた瞬間に「取り消されて解けたのか」を書き残す相手。
+/// `HangingSearch` との違いはその 1 点だけ。
+private struct WatchingSearch: LocalSearching {
+  let watch: CancellationWatch
+
+  func search(query: String, region: GeoBounds?, locale: PlannerLocale) async throws -> [LocalSearchHit] {
+    do {
+      try await Task.sleep(for: .seconds(60))
+    } catch {
+      await watch.note(cancelled: Task.isCancelled)
+      throw error
+    }
+    return []
+  }
+}
+
+private actor CancellationWatch {
+  private(set) var sawCancellation = false
+  func note(cancelled: Bool) { sawCancellation = sawCancellation || cancelled }
+}
+
+/// 取り消しの合図は本線の外から来るので、数える側にも錠が要る。
+private final class PullCounter: @unchecked Sendable {
+  private let lock = NSLock()
+  private var pulls = 0
+
+  var count: Int { lock.withLock { pulls } }
+  func bump() { lock.withLock { pulls += 1 } }
 }

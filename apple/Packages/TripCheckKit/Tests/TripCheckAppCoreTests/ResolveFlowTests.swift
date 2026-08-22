@@ -148,6 +148,56 @@ import TripCheckKit
   #expect(store.canContinue)
 }
 
+/// 確認画面で国を選ぶのは「その国の範囲で探し直して」という一手 —— 報せを消すだけだと、
+/// 混ざる原因になった場所が固定されたまま旅程に入る(組み立ては固定済みの行を尋ね直さない)。
+/// 箱の外に出た `.apple` / `.catalog` の固定だけを外して尋ね直し、旅行者が地図に置いた点は
+/// 動かさない。
+@Test @MainActor func choosingACountryOnResolveSearchesTheStrayPlacesAgain() async {
+  let log = AskLog()
+  let store = PlannerStore(resolvers: [LoggingResolver(log: log)], store: nil)
+  store.request.entries = [
+    WishlistEntry(text: "ベルン", pinned: .apple(providerRef: nil, stop: pinnedStop(name: "ベルン", country: "CH", latitude: 46.94, longitude: 7.44))),
+    WishlistEntry(text: "浅草寺", pinned: .apple(providerRef: nil, stop: pinnedStop(name: "浅草寺", country: "JP", latitude: 35.71, longitude: 139.79))),
+    WishlistEntry(text: "上野公園", pinned: .catalog(pinnedStop(name: "上野公園", country: "JP", latitude: 35.71, longitude: 139.77))),
+    WishlistEntry(text: "宿の前", pinned: .manual(pinnedStop(name: "宿の前", country: "JP", latitude: 35.70, longitude: 139.70))),
+  ]
+  store.request.tripDays = 2
+  await store.requestBuildFromStart()
+  #expect(store.view.screen == .resolve)
+  #expect(!store.request.mixedCountryCodes.isEmpty)   // 国が混ざったから確認画面に来た
+  #expect(await log.inputs.isEmpty)                   // 全部固定済みなので、まだ誰も尋ねていない
+
+  await store.changeDestinationFromResolve(.destination(.switzerland))
+
+  #expect(await log.inputs.sorted() == ["上野公園", "浅草寺"])          // 箱の外の 2 件だけを尋ね直した
+  #expect(store.request.entries[0].pinned?.stop.name == "ベルン")      // 箱の中の固定はそのまま
+  #expect(store.request.entries[1].pinned?.stop.name == "浅草寺 (CH)") // 新しい国での答えに入れ替わった
+  #expect(store.request.entries[2].pinned?.stop.name == "上野公園 (CH)")
+  #expect(store.request.entries[3].pinned?.stop.name == "宿の前")      // 手で置いた点は箱の外でも動かさない
+  #expect(store.request.mixedCountryCodes.isEmpty)                     // 数え直した結果、混ざっていない
+  #expect(store.isResolvingPlaces == false)
+}
+
+/// 「世界中を対象にする」は箱を持たない —— 何も外さず、何も尋ね直さない。国を選ばずに
+/// 混ざったまま進みたい旅行者の逃げ道なので、ここで固定を捨てると逃げ道が罠になる。
+@Test @MainActor func choosingWorldwideOnResolveKeepsEveryPin() async {
+  let log = AskLog()
+  let store = PlannerStore(resolvers: [LoggingResolver(log: log)], store: nil)
+  store.request.entries = [
+    WishlistEntry(text: "ベルン", pinned: .apple(providerRef: nil, stop: pinnedStop(name: "ベルン", country: "CH", latitude: 46.94, longitude: 7.44))),
+    WishlistEntry(text: "浅草寺", pinned: .apple(providerRef: nil, stop: pinnedStop(name: "浅草寺", country: "JP", latitude: 35.71, longitude: 139.79))),
+  ]
+  store.request.tripDays = 2
+  await store.requestBuildFromStart()
+
+  await store.changeDestinationFromResolve(.destination(.worldwide))
+
+  #expect(await log.inputs.isEmpty)
+  #expect(store.request.entries.allSatisfy { $0.pinned != nil })
+  #expect(store.request.mixedCountryCodes.isEmpty)
+  #expect(store.canContinue)
+}
+
 /// 確認済みの行は住所を見せ、候補待ちの行は候補を、見つからない行は何も持たない —— 画面が
 /// 状態ごとに別の的を出せるだけの材料が、1 つの行の型に揃っている。
 @Test @MainActor func rowsCarryWhatEachStateNeedsToShow() async {
@@ -203,6 +253,29 @@ private struct FlakyResolver: PlaceResolver {
     }
     return out
   }
+}
+
+/// 尋ねられた文字列をそのまま書き残し、**選ばれた国の中の 1 点**を答える解決器。
+/// 「探し直した」が本当かどうかは、何を尋ねたかでしか分からない。
+private struct LoggingResolver: PlaceResolver {
+  let log: AskLog
+
+  func resolve(_ queries: [PlaceQuery], destination: DestinationChoice, locale: PlannerLocale) async -> [Int: PlaceResolution] {
+    var out: [Int: PlaceResolution] = [:]
+    for query in queries {
+      await log.note(query.input)
+      out[query.inputIndex] = .confirmed(pinnedStop(
+        name: "\(query.input) (CH)", country: "CH", latitude: 46.95, longitude: 7.45,
+        input: query.input, inputIndex: query.inputIndex
+      ))
+    }
+    return out
+  }
+}
+
+private actor AskLog {
+  private(set) var inputs: [String] = []
+  func note(_ input: String) { inputs.append(input) }
 }
 
 private actor AskCounter {

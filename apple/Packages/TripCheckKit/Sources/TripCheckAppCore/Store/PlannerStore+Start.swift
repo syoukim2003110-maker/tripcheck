@@ -172,6 +172,11 @@ extension PlannerStore {
   /// 行き先を決める。国を選ぶのは「場所が 2 か国に散っている」という問いに旅行者が答えた
   /// ということなので、跨ぎの報せはその場で消す。`auto` に戻したときだけ、いま決まっている
   /// 場所からもう一度数え直す。
+  ///
+  /// **記録するだけで、決まっている場所には触らない。** Start 画面ではまだ何も尋ねていない
+  /// ので、それで足りる —— CTA の `requestBuildFromStart` が新しい国で尋ねる。確認画面から
+  /// 呼ぶときは `changeDestinationFromResolve` のほうを使う: そちらは箱の外に出た場所の
+  /// 固定を外して尋ね直す(ここで止めると、報せだけ消えて場所が残る)。
   public func setDestination(_ choice: DestinationChoice) {
     request.destination = choice
     guard choice == .auto else {

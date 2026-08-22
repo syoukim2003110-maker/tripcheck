@@ -111,8 +111,14 @@ struct ResolveScreen: View {
         .tcFont(.body)
         .accessibilityIdentifier("resolve.editInput")
 
+      // **`setDestination` ではなく `changeDestinationFromResolve`。** すぐ下の一文が
+      // 「その国の範囲で探し直します」と約束しているので、報せを消すだけでは足りない ——
+      // 箱の外に出た場所の固定を外して、その行だけをもう一度尋ねる。
       DestinationPicker(
-        choice: Binding(get: { store.request.destination }, set: { store.setDestination($0) }),
+        choice: Binding(
+          get: { store.request.destination },
+          set: { choice in Task { await store.changeDestinationFromResolve(choice) } }
+        ),
         locale: store.request.locale
       )
 
@@ -121,8 +127,9 @@ struct ResolveScreen: View {
         .foregroundStyle(Tokens.Color.muted)
 
       // 1 か国に収まらない旅のための逃げ道。国の一覧の最後にも同じ選択肢があるが、
-      // 混ざったと言われた直後の旅行者に、探させない。
-      Button(app.resolveWorldwide) { store.setDestination(.destination(.worldwide)) }
+      // 混ざったと言われた直後の旅行者に、探させない。世界中には箱が無いので、この道では
+      // 1 件も外れない(`changeDestinationFromResolve`)。
+      Button(app.resolveWorldwide) { Task { await store.changeDestinationFromResolve(.destination(.worldwide)) } }
         .buttonStyle(.secondaryPill)
         .tcFont(.body)
         .disabled(store.request.destination == .destination(.worldwide))
