@@ -4,7 +4,7 @@ import TripCheckAppCore
 /// いちばん外側の画面。出ているものは `store.view.screen` ただ 1 つで決まる —— 画面が自分で
 /// 「次はどこ」を覚えないので、どの道から来ても同じ状態には同じ画面が出る。
 ///
-/// `.resolve` / `.building` / `.plan` は Task 5・6 が中身を入れるまでの置き札。
+/// `.building` / `.plan` は Task 6 が中身を入れるまでの置き札。
 struct RootView: View {
   @Environment(PlannerStore.self) private var store
 
@@ -13,7 +13,7 @@ struct RootView: View {
     case .start:
       StartScreen()
     case .resolve:
-      placeholder("resolve")
+      ResolveScreen()
     case .building:
       placeholder("building")
     case .plan:

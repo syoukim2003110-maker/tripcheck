@@ -67,6 +67,61 @@ public struct AppCopy: Sendable {
   public let mapScopeAll: String
   public let mapScopeDay: String
 
+  // MARK: - 確認画面(Task 5)
+
+  /// 確認画面の見出しと、そこから入力へ戻る 2 つの逃げ道(リスト全体・行 1 つ)。
+  public let resolveTitle: String
+  public let resolveEditInput: String
+  public let resolveEditName: String
+  /// 国が混ざったときの但し書きと、1 か国に収まらない旅のための選択。
+  public let resolveCountryHint: String
+  public let resolveWorldwide: String
+  /// 候補のどれでもない、と言うためのボタン。押すと住所で指定する道へ移る。
+  public let resolveNoneOfThese: String
+  /// 4 件目以降の行に出す抑止の 1 文。
+  public let resolveDeferred: String
+  /// 見つからなかった行の 1 文と、そこから戻る 3 つの道。
+  public let resolveNotFound: String
+  public let resolveSearchAgain: String
+  public let resolvePinOnMap: String
+  /// 行頭の絵が意味するもの(絵は読み上げないので、これが読み上げられる)。
+  public let resolveStatusConfirmed: String
+  public let resolveStatusReview: String
+  public let resolveStatusUnresolved: String
+  /// 地図で自分の点を置くシート。
+  public let manualAddressLabel: String
+  public let manualLatitude: String
+  public let manualLongitude: String
+  public let manualUsePoint: String
+  public let manualPinHint: String
+  public let manualPinMapLabel: String
+  /// 条件の折り畳みのうち、Kit に対応する鍵が無いもの。
+  public let bufferHeading: String
+  public let maxWalkingHeading: String
+  public let maxWalkingNote: String
+  public let maxWalkingDefault: String
+  public let maxTransfersHeading: String
+  public let maxTransfersNote: String
+  public let maxTransfersDefault: String
+  public let flightsDisclosure: String
+  /// 空港の比較。数字はどれも TripCheck の見立てで、空港が示した事実ではない。
+  public let airportCompareArrival: String
+  public let airportCompareDeparture: String
+  public let airportArrivalBoundary: String
+  public let airportDepartureBoundary: String
+  public let airportNextDay: String
+  public let airportPreviousDay: String
+  public let airportArrivalWinner: String
+  public let airportDepartureWinner: String
+  public let airportEstimate: String
+  public let airportUse: String
+  public let airportSelected: String
+  public let airportDisclaimer: String
+  /// 未解決の必須・予約を抱えたまま進もうとしたときの問いかけ。
+  public let mustUnresolvedTitle: String
+  public let mustUnresolvedContinue: String
+  public let mustUnresolvedBack: String
+
   /// 結論の詳細に出す差分表の見出し。Kit の `TripScenarioMetrics` の 6 欄と 1 対 1 で、
   /// **この並びが表の行順**になる(衝突・超過・移動・最小余白・訪問数・日数)。Web は
   /// 訪問数と日数を 1 行に詰めるが、iPhone の幅では 1 欄 1 行のほうが読める。
@@ -79,6 +134,17 @@ public struct AppCopy: Sendable {
   private let mustRemovalNoteText: @Sendable (String) -> String
   private let reservationRemovalNoteText: @Sendable (String) -> String
   private let removedStopToastText: @Sendable (String) -> String
+  private let resolveAllConfirmedText: @Sendable (Int) -> String
+  private let resolveCountryConflictText: @Sendable ([String]) -> String
+  private let resolveCandidateQuestionText: @Sendable (String) -> String
+  private let resolveCandidatesLabelText: @Sendable (String) -> String
+  private let resolveUnresolvedCountText: @Sendable (Int) -> String
+  private let resolveAmbiguousCountText: @Sendable (Int) -> String
+  private let resolveContinueText: @Sendable (Int) -> String
+  private let minutesShortText: @Sendable (Int) -> String
+  private let airportArrivalBreakdownText: @Sendable (Int, Int) -> String
+  private let airportDepartureBreakdownText: @Sendable (Int, Int) -> String
+  private let mustUnresolvedBodyText: @Sendable ([String]) -> String
 
   init(
     startTitle: String,
@@ -111,6 +177,48 @@ public struct AppCopy: Sendable {
     mapTab: String,
     mapScopeAll: String,
     mapScopeDay: String,
+    resolveTitle: String,
+    resolveEditInput: String,
+    resolveEditName: String,
+    resolveCountryHint: String,
+    resolveWorldwide: String,
+    resolveNoneOfThese: String,
+    resolveDeferred: String,
+    resolveNotFound: String,
+    resolveSearchAgain: String,
+    resolvePinOnMap: String,
+    resolveStatusConfirmed: String,
+    resolveStatusReview: String,
+    resolveStatusUnresolved: String,
+    manualAddressLabel: String,
+    manualLatitude: String,
+    manualLongitude: String,
+    manualUsePoint: String,
+    manualPinHint: String,
+    manualPinMapLabel: String,
+    bufferHeading: String,
+    maxWalkingHeading: String,
+    maxWalkingNote: String,
+    maxWalkingDefault: String,
+    maxTransfersHeading: String,
+    maxTransfersNote: String,
+    maxTransfersDefault: String,
+    flightsDisclosure: String,
+    airportCompareArrival: String,
+    airportCompareDeparture: String,
+    airportArrivalBoundary: String,
+    airportDepartureBoundary: String,
+    airportNextDay: String,
+    airportPreviousDay: String,
+    airportArrivalWinner: String,
+    airportDepartureWinner: String,
+    airportEstimate: String,
+    airportUse: String,
+    airportSelected: String,
+    airportDisclaimer: String,
+    mustUnresolvedTitle: String,
+    mustUnresolvedContinue: String,
+    mustUnresolvedBack: String,
     diffLabels: [String],
     pasteLimitToast: @escaping @Sendable (Int) -> String,
     daysValue: @escaping @Sendable (Int) -> String,
@@ -118,7 +226,18 @@ public struct AppCopy: Sendable {
     removeStopQuestion: @escaping @Sendable (String) -> String,
     mustRemovalNote: @escaping @Sendable (String) -> String,
     reservationRemovalNote: @escaping @Sendable (String) -> String,
-    removedStopToast: @escaping @Sendable (String) -> String
+    removedStopToast: @escaping @Sendable (String) -> String,
+    resolveAllConfirmed: @escaping @Sendable (Int) -> String,
+    resolveCountryConflict: @escaping @Sendable ([String]) -> String,
+    resolveCandidateQuestion: @escaping @Sendable (String) -> String,
+    resolveCandidatesLabel: @escaping @Sendable (String) -> String,
+    resolveUnresolvedCount: @escaping @Sendable (Int) -> String,
+    resolveAmbiguousCount: @escaping @Sendable (Int) -> String,
+    resolveContinue: @escaping @Sendable (Int) -> String,
+    minutesShort: @escaping @Sendable (Int) -> String,
+    airportArrivalBreakdown: @escaping @Sendable (Int, Int) -> String,
+    airportDepartureBreakdown: @escaping @Sendable (Int, Int) -> String,
+    mustUnresolvedBody: @escaping @Sendable ([String]) -> String
   ) {
     self.startTitle = startTitle
     self.startHelpShort = startHelpShort
@@ -150,6 +269,48 @@ public struct AppCopy: Sendable {
     self.mapTab = mapTab
     self.mapScopeAll = mapScopeAll
     self.mapScopeDay = mapScopeDay
+    self.resolveTitle = resolveTitle
+    self.resolveEditInput = resolveEditInput
+    self.resolveEditName = resolveEditName
+    self.resolveCountryHint = resolveCountryHint
+    self.resolveWorldwide = resolveWorldwide
+    self.resolveNoneOfThese = resolveNoneOfThese
+    self.resolveDeferred = resolveDeferred
+    self.resolveNotFound = resolveNotFound
+    self.resolveSearchAgain = resolveSearchAgain
+    self.resolvePinOnMap = resolvePinOnMap
+    self.resolveStatusConfirmed = resolveStatusConfirmed
+    self.resolveStatusReview = resolveStatusReview
+    self.resolveStatusUnresolved = resolveStatusUnresolved
+    self.manualAddressLabel = manualAddressLabel
+    self.manualLatitude = manualLatitude
+    self.manualLongitude = manualLongitude
+    self.manualUsePoint = manualUsePoint
+    self.manualPinHint = manualPinHint
+    self.manualPinMapLabel = manualPinMapLabel
+    self.bufferHeading = bufferHeading
+    self.maxWalkingHeading = maxWalkingHeading
+    self.maxWalkingNote = maxWalkingNote
+    self.maxWalkingDefault = maxWalkingDefault
+    self.maxTransfersHeading = maxTransfersHeading
+    self.maxTransfersNote = maxTransfersNote
+    self.maxTransfersDefault = maxTransfersDefault
+    self.flightsDisclosure = flightsDisclosure
+    self.airportCompareArrival = airportCompareArrival
+    self.airportCompareDeparture = airportCompareDeparture
+    self.airportArrivalBoundary = airportArrivalBoundary
+    self.airportDepartureBoundary = airportDepartureBoundary
+    self.airportNextDay = airportNextDay
+    self.airportPreviousDay = airportPreviousDay
+    self.airportArrivalWinner = airportArrivalWinner
+    self.airportDepartureWinner = airportDepartureWinner
+    self.airportEstimate = airportEstimate
+    self.airportUse = airportUse
+    self.airportSelected = airportSelected
+    self.airportDisclaimer = airportDisclaimer
+    self.mustUnresolvedTitle = mustUnresolvedTitle
+    self.mustUnresolvedContinue = mustUnresolvedContinue
+    self.mustUnresolvedBack = mustUnresolvedBack
     self.diffLabels = diffLabels
     self.pasteLimitToastText = pasteLimitToast
     self.daysValueText = daysValue
@@ -158,6 +319,17 @@ public struct AppCopy: Sendable {
     self.mustRemovalNoteText = mustRemovalNote
     self.reservationRemovalNoteText = reservationRemovalNote
     self.removedStopToastText = removedStopToast
+    self.resolveAllConfirmedText = resolveAllConfirmed
+    self.resolveCountryConflictText = resolveCountryConflict
+    self.resolveCandidateQuestionText = resolveCandidateQuestion
+    self.resolveCandidatesLabelText = resolveCandidatesLabel
+    self.resolveUnresolvedCountText = resolveUnresolvedCount
+    self.resolveAmbiguousCountText = resolveAmbiguousCount
+    self.resolveContinueText = resolveContinue
+    self.minutesShortText = minutesShort
+    self.airportArrivalBreakdownText = airportArrivalBreakdown
+    self.airportDepartureBreakdownText = airportDepartureBreakdown
+    self.mustUnresolvedBodyText = mustUnresolvedBody
   }
 
   /// 貼り付けが上限に当たったときのトースト。**件数を名指しする** —— 12 までですとだけ
@@ -181,6 +353,41 @@ public struct AppCopy: Sendable {
 
   /// 外した後に出るトースト。
   public func removedStopToast(name: String) -> String { removedStopToastText(name) }
+
+  /// 全部決まったときの見出し。数えるのは決まった場所で、行の数ではない。
+  public func resolveAllConfirmed(count: Int) -> String { resolveAllConfirmedText(count) }
+
+  /// 場所が 2 か国以上に分かれた、と伝える 1 文。**国コードを並べる** —— どの国が混ざった
+  /// のかが分からなければ、旅行者はどちらを選べばよいかを決められない。
+  public func resolveCountryConflict(codes: [String]) -> String { resolveCountryConflictText(codes) }
+
+  /// 「どちらの『X』ですか？」。X は旅行者が書いた文字列そのもの。
+  public func resolveCandidateQuestion(name: String) -> String { resolveCandidateQuestionText(name) }
+
+  /// 候補の並びをひとまとめに読み上げるときの名前。
+  public func resolveCandidatesLabel(name: String) -> String { resolveCandidatesLabelText(name) }
+
+  /// 未解決・同名候補が残っている件数。件数を名指しするのは、旅行者が数え直さずに済むように。
+  public func resolveUnresolvedCount(count: Int) -> String { resolveUnresolvedCountText(count) }
+  public func resolveAmbiguousCount(count: Int) -> String { resolveAmbiguousCountText(count) }
+
+  /// 確認画面の主ボタン。
+  public func resolveContinue(count: Int) -> String { resolveContinueText(count) }
+
+  /// 「10分」のような短い分数。余白の錠剤に出す。
+  public func minutesShort(_ minutes: Int) -> String { minutesShortText(minutes) }
+
+  /// 空港の内訳 1 行。前の数が空港内、後ろの数が市街地までの移動。
+  public func airportArrivalBreakdown(airportMinutes: Int, transferMinutes: Int) -> String {
+    airportArrivalBreakdownText(airportMinutes, transferMinutes)
+  }
+
+  public func airportDepartureBreakdown(airportMinutes: Int, transferMinutes: Int) -> String {
+    airportDepartureBreakdownText(airportMinutes, transferMinutes)
+  }
+
+  /// 未解決の必須・予約を抱えたまま進もうとしたときの本文。名前を並べる。
+  public func mustUnresolvedBody(names: [String]) -> String { mustUnresolvedBodyText(names) }
 
   public static func `for`(_ locale: PlannerLocale) -> AppCopy {
     locale == .ja ? ja : en
@@ -224,6 +431,48 @@ public struct AppCopy: Sendable {
     mapTab: "地図",
     mapScopeAll: "全日程",
     mapScopeDay: "この日",
+    resolveTitle: "場所を確認してください。",
+    resolveEditInput: "入力を直す",
+    resolveEditName: "この名前を直す",
+    resolveCountryHint: "国を選ぶと、いまの入力をその国の範囲で探し直します。",
+    resolveWorldwide: "世界中を対象にする",
+    resolveNoneOfThese: "候補にない（住所で指定）",
+    resolveDeferred: "先に上の項目を確認すると、ここが選べるようになります。",
+    resolveNotFound: "この場所だけ見つかりませんでした",
+    resolveSearchAgain: "もう一度探す",
+    resolvePinOnMap: "地図で場所を指定する",
+    resolveStatusConfirmed: "確認済み",
+    resolveStatusReview: "候補を選択",
+    resolveStatusUnresolved: "見つかっていません",
+    manualAddressLabel: "住所・目印（任意）",
+    manualLatitude: "緯度",
+    manualLongitude: "経度",
+    manualUsePoint: "この地点を使う",
+    manualPinHint: "地図をタップすると座標が入ります。住所だけでも大丈夫です。提供元が確認した地点ではなく、あなたが指定した地点として表示します。",
+    manualPinMapLabel: "地図（タップで地点を指定）",
+    bufferHeading: "移動ごとの余白",
+    maxWalkingHeading: "1区間の徒歩上限（任意）",
+    maxWalkingNote: "超える徒歩は他の移動手段を優先します。",
+    maxWalkingDefault: "標準 30分",
+    maxTransfersHeading: "1区間の乗換上限（任意）",
+    maxTransfersNote: "乗換回数を取得できない区間は未確認と表示します。",
+    maxTransfersDefault: "標準 2回",
+    flightsDisclosure: "フライト・空港の条件",
+    airportCompareArrival: "到着便の候補を比較",
+    airportCompareDeparture: "出発便の候補を比較",
+    airportArrivalBoundary: "主要市街地で動ける目安",
+    airportDepartureBoundary: "主要市街地を出る目安",
+    airportNextDay: "翌日",
+    airportPreviousDay: "前日",
+    airportArrivalWinner: "市街地で動ける時刻が最も早い",
+    airportDepartureWinner: "市街地を出る時刻が最も遅い",
+    airportEstimate: "TripCheckの見立て",
+    airportUse: "この候補を使う",
+    airportSelected: "選択中",
+    airportDisclaimer: "空港内と市街地移動の分数は、空港が示した事実ではなくTripCheckの計画用の目安です。ホテルまでではなく主要市街地までの目安なので、最終確認は航空会社で行ってください。",
+    mustUnresolvedTitle: "見つからなかった場所があります",
+    mustUnresolvedContinue: "続ける",
+    mustUnresolvedBack: "戻って直す",
     diffLabels: ["重大な衝突", "超過", "移動", "最小余白", "訪問数", "日数"],
     pasteLimitToast: { "\($0)件あります。1回に確認できるのは12か所までです。残りは別の旅として分けてください。" },
     daysValue: { "\($0)日" },
@@ -231,7 +480,22 @@ public struct AppCopy: Sendable {
     removeStopQuestion: { "「\($0)」を予定から外しますか？" },
     mustRemovalNote: { "「\($0)」は必須に指定されています" },
     reservationRemovalNote: { "「\($0)」は予約済みとして固定されています" },
-    removedStopToast: { "「\($0)」を外しました" }
+    removedStopToast: { "「\($0)」を外しました" },
+    resolveAllConfirmed: { "\($0)か所を確認しました。" },
+    resolveCountryConflict: { codes in
+      "場所が\(codes.count)か国（\(codes.joined(separator: "・"))）に分かれています。国を選ぶとその範囲で探し直します。1か国に収まらない旅なら「世界中」を選んでください。"
+    },
+    resolveCandidateQuestion: { "どちらの「\($0)」ですか？" },
+    resolveCandidatesLabel: { "\($0)の候補" },
+    resolveUnresolvedCount: { "\($0)件は見つかっていません。確認が終わるまで結論を出しません。" },
+    resolveAmbiguousCount: { "\($0)件は同名候補があります。住所を見て選んでください。" },
+    resolveContinue: { "\($0)か所で続ける" },
+    minutesShort: { "\($0)分" },
+    airportArrivalBreakdown: { "着陸後：空港内 \($0)分 + 主要市街地まで約\($1)分" },
+    airportDepartureBreakdown: { "出発前：空港まで約\($1)分 + 空港内 \($0)分" },
+    mustUnresolvedBody: { names in
+      "「\(names.joined(separator: "」「"))」は必須または予約として指定されていますが、場所が決まっていません。このまま進めると旅程に入りません。"
+    }
   )
 
   static let en = AppCopy(
@@ -265,6 +529,48 @@ public struct AppCopy: Sendable {
     mapTab: "Map",
     mapScopeAll: "All days",
     mapScopeDay: "This day",
+    resolveTitle: "Check these places.",
+    resolveEditInput: "Edit input",
+    resolveEditName: "Edit the name",
+    resolveCountryHint: "Choose a country to search the current input again inside it.",
+    resolveWorldwide: "Search worldwide",
+    resolveNoneOfThese: "None of these (use an address)",
+    resolveDeferred: "Settle the items above first — this one unlocks next.",
+    resolveNotFound: "We couldn’t find this place",
+    resolveSearchAgain: "Search again",
+    resolvePinOnMap: "Pin it on the map",
+    resolveStatusConfirmed: "Confirmed",
+    resolveStatusReview: "Choose a match",
+    resolveStatusUnresolved: "Not found yet",
+    manualAddressLabel: "Address or landmark (optional)",
+    manualLatitude: "Latitude",
+    manualLongitude: "Longitude",
+    manualUsePoint: "Use this point",
+    manualPinHint: "Tap the map to capture coordinates. An address alone is enough. This stays labelled as a traveller-supplied point, not a place a provider confirmed.",
+    manualPinMapLabel: "Map (tap to place the point)",
+    bufferHeading: "Buffer after each leg",
+    maxWalkingHeading: "Max walking per leg (optional)",
+    maxWalkingNote: "Longer walks are deprioritised when another mode is available.",
+    maxWalkingDefault: "Default 30 min",
+    maxTransfersHeading: "Max transfers per leg (optional)",
+    maxTransfersNote: "A leg stays marked unverified when transfer-step data is unavailable.",
+    maxTransfersDefault: "Default 2",
+    flightsDisclosure: "Flight and airport constraints",
+    airportCompareArrival: "Compare arrival options",
+    airportCompareDeparture: "Compare departure options",
+    airportArrivalBoundary: "Ready in the main city",
+    airportDepartureBoundary: "Leave the main city",
+    airportNextDay: "next day",
+    airportPreviousDay: "previous day",
+    airportArrivalWinner: "Earliest city-ready time",
+    airportDepartureWinner: "Latest leave-city time",
+    airportEstimate: "TripCheck estimate",
+    airportUse: "Use this option",
+    airportSelected: "Selected",
+    airportDisclaimer: "Minutes at the airport and to the city are TripCheck planning assumptions, not facts supplied by the airport, and the transfer is to the main city rather than your hotel. Confirm the final flight with the airline.",
+    mustUnresolvedTitle: "Some places were not found",
+    mustUnresolvedContinue: "Continue",
+    mustUnresolvedBack: "Go back and fix",
     diffLabels: ["Hard conflicts", "Overrun", "Travel", "Minimum slack", "Visits", "Days"],
     pasteLimitToast: { "\($0) places found. Up to 12 places at a time. Keep the rest for a second trip." },
     daysValue: { "\($0) day\($0 == 1 ? "" : "s")" },
@@ -272,6 +578,21 @@ public struct AppCopy: Sendable {
     removeStopQuestion: { "Remove “\($0)” from the plan?" },
     mustRemovalNote: { "“\($0)” is marked as a must-visit" },
     reservationRemovalNote: { "“\($0)” is pinned as a booking" },
-    removedStopToast: { "Removed “\($0)”" }
+    removedStopToast: { "Removed “\($0)”" },
+    resolveAllConfirmed: { "Confirmed \($0) place\($0 == 1 ? "" : "s")." },
+    resolveCountryConflict: { codes in
+      "Your places span \(codes.count) countries (\(codes.joined(separator: ", "))). Choose a country to search again inside it, or pick worldwide for a trip that genuinely crosses borders."
+    },
+    resolveCandidateQuestion: { "Which “\($0)” did you mean?" },
+    resolveCandidatesLabel: { "Candidates for \($0)" },
+    resolveUnresolvedCount: { "\($0) place\($0 == 1 ? " is" : "s are") still not found. The result stays conditional until they are confirmed." },
+    resolveAmbiguousCount: { "\($0) place\($0 == 1 ? " has" : "s have") same-name matches. Choose by address." },
+    resolveContinue: { "Continue with \($0) place\($0 == 1 ? "" : "s")" },
+    minutesShort: { "\($0) min" },
+    airportArrivalBreakdown: { "After landing: \($0) min at the airport + about \($1) min to the main city" },
+    airportDepartureBreakdown: { "Before takeoff: about \($1) min to the airport + \($0) min at the airport" },
+    mustUnresolvedBody: { names in
+      "“\(names.joined(separator: "”, “"))” \(names.count == 1 ? "is" : "are") marked must-visit or booked, but the place is still not found. Continuing leaves \(names.count == 1 ? "it" : "them") out of the itinerary."
+    }
   )
 }

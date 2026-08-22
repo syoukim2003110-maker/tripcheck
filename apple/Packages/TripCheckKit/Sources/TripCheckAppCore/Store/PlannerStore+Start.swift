@@ -271,7 +271,11 @@ extension PlannerStore {
 
   /// 決まった 1 件を、**どうやって決まったか**を残す形に畳む(保存した旅程を開き直すときに
   /// 扱いが分かれる —— Task 11)。Plan 2 に居る解決器はカタログと Apple と手入力だけ。
-  private static func pinned(_ stop: ResolvedStop) -> PinnedResolution {
+  ///
+  /// `private` ではないのは、確認画面(`PlannerStore+Resolve.swift`)が同じ畳み方をするから
+  /// —— 候補を選んだ 1 件と、最初の解決で決まった 1 件が別の形で入ると、保存した旅程を
+  /// 開き直したときに扱いが分かれる。
+  static func pinned(_ stop: ResolvedStop) -> PinnedResolution {
     switch stop.provider {
     case .apple: .apple(providerRef: stop.providerRef, stop: stop)
     case .user: .manual(stop)

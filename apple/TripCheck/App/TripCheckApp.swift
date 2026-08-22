@@ -17,8 +17,13 @@ struct TripCheckApp: App {
     let directory = isUITesting
       ? FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
       : URL.applicationSupportDirectory.appendingPathComponent("TripCheck")
-    // 解決器はカタログだけ。端末の地図を使う `ApplePlaceResolver` は Task 5 がこの列の先頭へ足す。
-    _store = State(initialValue: PlannerStore(resolvers: [CatalogResolver()], store: TripStore(directory: directory)))
+    // 解決器は順に呼ばれ、**先に `confirmed` を返したところで止まる**。端末の地図が先頭に
+    // 立つのは、鍵ゼロで世界中の場所を知っているから —— カタログは東京 18 + スイス 8 地点
+    // しか持たず、地図が答えられなかったぶんを受け止める控えになる。
+    _store = State(initialValue: PlannerStore(
+      resolvers: [ApplePlaceResolver(), CatalogResolver()],
+      store: TripStore(directory: directory)
+    ))
   }
 
   var body: some Scene {
