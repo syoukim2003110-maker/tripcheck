@@ -59,6 +59,34 @@ enum TestStops {
     }
   }
 
+  /// 東京駅周辺 4 点 + 吉祥寺周辺 4 点(約 17km 離れた 2 群)を、群ごとにまとまっていない
+  /// 交互順で返す。`Clustering.clusterStops` が入力順ではなく地理で日をまとめること、そして
+  /// 種が最西端(= 吉祥寺側)から始まることを確かめるためのフィクスチャ。
+  /// 経度は 8 点すべて異なるので「最西端」は一意に決まる。
+  static func twoClusters() -> [RouteStop] {
+    let tokyo = (latitude: 35.681236, longitude: 139.767125)      // 東京駅
+    let kichijoji = (latitude: 35.703043, longitude: 139.579703)  // 吉祥寺駅
+    // 群の広がりは半径 500m 程度。群間(約 17km)より 1 桁以上小さいので、どの点も自分の群の
+    // 種のほうが近い。
+    let offsets: [(latitude: Double, longitude: Double)] = [(0, 0), (0.004, 0.003), (-0.003, 0.005), (0.002, -0.004)]
+    return (0..<4).flatMap { index -> [RouteStop] in
+      [
+        point(
+          id: "tokyo-\(index)",
+          lat: tokyo.latitude + offsets[index].latitude,
+          lng: tokyo.longitude + offsets[index].longitude,
+          area: "Tokyo Station"
+        ),
+        point(
+          id: "kichijoji-\(index)",
+          lat: kichijoji.latitude + offsets[index].latitude,
+          lng: kichijoji.longitude + offsets[index].longitude,
+          area: "Kichijoji"
+        ),
+      ]
+    }
+  }
+
   /// 日本の食事窓(昼 11:00-14:30 / 夜 17:30-21:00)。食事停留所のドリフトを見るテスト用。
   static let japanMeals = Destinations.byId(.japan).meals
 
