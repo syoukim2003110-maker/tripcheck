@@ -120,7 +120,15 @@ public enum Airports {
         transferMinutes: comparison.transferMinutes,
         transferCount: transferCount,
         sourceUrl: selected.sourceUrl,
-        googleMapsUrl: base.map { GoogleMapsUrl.build([airport, $0.routeStop], travelMode: transitMode) }
+        // 到着は空港からホテルへ、出発はホテルから空港へ。TS も向きごとに端点を入れ替える
+        // (`:917` は `[airport, base]`、`:944` は `[base, airport]`)。同じ順で組むと
+        // 出発リンクが「空港から出発してホテルへ向かう」逆走の経路を開いてしまう。
+        googleMapsUrl: base.map {
+          GoogleMapsUrl.build(
+            direction == .arrival ? [airport, $0.routeStop] : [$0.routeStop, airport],
+            travelMode: transitMode
+          )
+        }
       )
     }
 

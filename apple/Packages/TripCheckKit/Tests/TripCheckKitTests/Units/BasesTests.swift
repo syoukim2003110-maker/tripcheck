@@ -15,6 +15,29 @@ import Testing
 
 @Test func tokyoBaseDefinitionsAreFive() { #expect(Bases.tokyoDefinitions.count == 5) }
 
+/// 5 定義が数だけでなく**実際にカタログで解決できる**ことを固定する。`buildBase` は
+/// `Catalog.resolveKnownStops(lookup)` が空なら `nil` を返すので、カタログ側の別名が壊れると
+/// 拠点が黙って消え、`recommendBases` が 3 件ではなく 2 件を返すだけになってしまう。
+/// `area` は借りてきたカタログ点のものなので、座標が本当に付いたことの証拠にもなる。
+@Test func allFiveTokyoBasesResolveThroughTheCatalog() {
+  let expected: [(query: String, id: String, name: String, area: String)] = [
+    (query: "Shinjuku", id: "base-shinjuku", name: "Shinjuku area", area: "Shinjuku"),
+    (query: "Shibuya", id: "base-shibuya", name: "Shibuya area", area: "Shibuya"),
+    (query: "Tokyo Station", id: "base-tokyo-station", name: "Tokyo Station area", area: "Marunouchi"),
+    (query: "Ueno", id: "base-ueno", name: "Ueno area", area: "Ueno"),
+    (query: "Asakusa", id: "base-asakusa", name: "Asakusa area", area: "Asakusa"),
+  ]
+  #expect(expected.map(\.id) == Bases.tokyoDefinitions.map(\.id))
+  for row in expected {
+    let base = Bases.resolveTripBase(query: row.query, resolved: nil, locale: .en)
+    #expect(base?.id == row.id)
+    #expect(base?.name == row.name)
+    #expect(base?.area == row.area)
+    #expect(base?.latitude != 0)
+    #expect(base?.longitude != 0)
+  }
+}
+
 // MARK: - tests/travel-logic.test.ts
 // 「one distant excursion does not drag the hotel away…」の末尾 2 行(`balancedGeoCenter` を
 // 直接呼ぶ部分)。前半の `hotelAnchorForDraft`/`hotelRouteContextForDraft` の主張は

@@ -61,8 +61,62 @@ import Testing
   #expect(arrival.transferMinutes == 37)
   #expect(arrival.transferCount == 2)
   #expect(arrival.cityTime == "12:07")
-  #expect(arrival.googleMapsUrl?.contains("travelmode=transit") == true)
+  // 到着リンクは空港(HND 35.5494,139.7798)発・ホテル着。
+  #expect(arrival.googleMapsUrl == hndToUenoTransit)
 }
+
+// 出発側の実測は `routeLegKey(base, airport)` で引く(`:839`、到着の逆向き)。到着だけを
+// 覆っていると、この鍵を取り違えても気づけない。
+@Test func aMeasuredHotelToAirportRouteBeatsTheCountryWideEstimate() {
+  let base = TripBase(routeStop: TestStops.point(id: "base-ueno", lat: 35.7148, lng: 139.7732, stayMinutes: 0), query: "Ueno hotel")
+  var ctx = PlannerContext()
+  ctx.departureAirport = "NRT"
+  ctx.departureTime = "18:00"
+  ctx.flightKind = .international
+  let travel = TravelInputs(
+    preference: .auto,
+    // 到着向きの鍵しか持たないなら、出発の制約は全国推定(105 分)のまま。
+    transit: [routeLegKey(base.id, "airport-nrt"): 45, routeLegKey("airport-nrt", base.id): 999],
+    transfers: [routeLegKey(base.id, "airport-nrt"): 1, routeLegKey("airport-nrt", base.id): 9]
+  )
+  let departure = Airports.buildAirportConstraints(
+    context: ctx, destination: Destinations.byId(.japan), base: base, travel: travel
+  ).first { $0.direction == .departure }!
+
+  #expect(departure.transferMinutes == 45)
+  #expect(departure.transferCount == 1)
+  #expect(departure.cityTime == "15:15")   // 18:00 − 120 − 45
+}
+
+// MARK: - 地図リンクの向き (lib/trip-builder.ts:917 / :944)
+
+@Test func theMapLinkLeavesFromTheAirportOnArrivalAndFromTheHotelOnDeparture() {
+  let base = TripBase(routeStop: TestStops.point(id: "base-ueno", lat: 35.7148, lng: 139.7732, stayMinutes: 0), query: "Ueno hotel")
+  var ctx = PlannerContext()
+  ctx.arrivalAirport = "HND"
+  ctx.arrivalTime = "10:00"
+  ctx.departureAirport = "NRT"
+  ctx.departureTime = "18:00"
+  ctx.flightKind = .international
+  let constraints = Airports.buildAirportConstraints(
+    context: ctx, destination: Destinations.byId(.japan), base: base, travel: .default
+  )
+  let arrival = constraints.first { $0.direction == .arrival }!
+  let departure = constraints.first { $0.direction == .departure }!
+
+  // 到着は空港 → ホテル(`:917` の `[airport, base]`)。
+  #expect(arrival.googleMapsUrl == hndToUenoTransit)
+  // 出発はホテル → 空港(`:944` の `[base, airport]`)。両者を同じ順で組むと、出発リンクが
+  // 空港を出発地にした逆走の経路を開いてしまう。
+  #expect(departure.googleMapsUrl == "https://www.google.com/maps/dir/?api=1&origin=35.7148%2C139.7732&destination=35.772%2C140.3929&travelmode=transit")
+  // 端点の順以外は同じ経路なので、片方をもう片方の入れ替えとしても読めることを固定する。
+  #expect(arrival.googleMapsUrl != departure.googleMapsUrl)
+}
+
+/// HND(35.5494,139.7798) → 上野のホテル(35.7148,139.7732)、`travelmode=transit`。
+/// 座標は `Destinations` と `TestStops.point` の決定的な値なので完全一致で固定できる。
+private let hndToUenoTransit =
+  "https://www.google.com/maps/dir/?api=1&origin=35.5494%2C139.7798&destination=35.7148%2C139.7732&travelmode=transit"
 
 // 「keeps an early departure cutoff on the previous calendar day」の `airportConstraints` 部分。
 

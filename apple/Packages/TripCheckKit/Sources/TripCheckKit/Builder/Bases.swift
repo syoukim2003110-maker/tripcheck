@@ -259,6 +259,10 @@ public enum Bases {
   /// 32 bit で回るので `UInt32` の巻き上げ演算がそのまま同じビット列になり、`hash >>> 0` 後の
   /// `Math.abs` は恒等なので基数 36 に落とすだけでよい。`for...of` は符号位置(コードポイント)
   /// 単位で回るので `unicodeScalars` を使う。
+  ///
+  /// 呼び出し側の `name.toLocaleLowerCase()` (`:690`) は `lowercased()` に写した。両者が食い違うのは
+  /// ホストのロケールが tr/az(`I` → `ı`)や lt のときだけで、`lowercased()` はロケール非依存に
+  /// 畳む。id は端末をまたいで同じでなければならないので、ここではロケール非依存のほうが正しい。
   static func stableEntryId(_ value: String) -> String {
     var hash: UInt32 = 2166136261
     for scalar in value.unicodeScalars {
@@ -288,6 +292,10 @@ private let entryNoteSeparator = try! JSRegex("\\s+[—–-]\\s+")
 ///
 /// task-14-brief.md の Interfaces は `(_ place: ParsedWishlistPlace, ...)` だが、移植元は
 /// 文字列 1 本(呼び出し側の `entry` = `place.name`、`:1978`/`:1983`)を受ける。TS を正とした。
+///
+/// TS は `{...area}` (`:691`) で `TripBase` を展開するので、戻り値の `RouteStop` に `query` キーが
+/// 実行時だけ紛れ込む。型としては `RouteStop` なので誰も読まない余剰フィールドで、Swift では
+/// 表現しない(`area.routeStop` が `query` を落とす)。
 public func resolveUserFoodReservation(
   entry: String,
   constraint: WishlistStopConstraint,
