@@ -78,16 +78,22 @@ extension TripScenarios {
 
   // MARK: - 反実仮想
 
-  /// TS `TripCounterfactualAlternative["kind"]` の並び順表(`lib/trip-scenarios.ts:660-668`)
-  static let kindRank: [CounterfactualKind: Int] = [
-    .CHANGE_DAYS: 0,
-    .START_EARLIER: 1,
-    .END_LATER: 2,
-    .REMOVE_OPTIONAL: 3,
-    .CHANGE_BASE: 4,
-    .CHANGE_MODE: 5,
-    .OPTIMIZE_ORDER: 6,
-  ]
+  /// TS `kindRank` (`lib/trip-scenarios.ts:660-668`) — 同点になった候補をどの順で見せるか。
+  ///
+  /// TS は `Record<Kind, number>` なので全キーが揃っているかは型が保証する。Swift の辞書引きは
+  /// `Int?` を返し、`?? 0` の既定値が「新しい種を足したのに順位を書き忘れた」を静かに
+  /// CHANGE_DAYS と同順に落としてしまう。網羅 `switch` なら同じ書き忘れがコンパイルエラーになる。
+  static func kindRank(_ kind: CounterfactualKind) -> Int {
+    switch kind {
+    case .CHANGE_DAYS: return 0
+    case .START_EARLIER: return 1
+    case .END_LATER: return 2
+    case .REMOVE_OPTIONAL: return 3
+    case .CHANGE_BASE: return 4
+    case .CHANGE_MODE: return 5
+    case .OPTIMIZE_ORDER: return 6
+    }
+  }
 
   /// TS `generateTripCounterfactuals` (`lib/trip-scenarios.ts:498-706`)。
   ///
@@ -178,10 +184,11 @@ extension TripScenarios {
     let alreadyDeferred = Set(plan.deferredOptionalStops.map(\.id))
     if let optional = fit.cutCandidates.first(where: { $0.priority == .optional && !alreadyDeferred.contains($0.id) }) {
       var excludedContext = context
-      // TS `[...new Set([...(context.excludedStopIds ?? []), optional.id])]` — 挿入順を保った重複排除。
-      var excluded = context.excludedStopIds ?? []
-      if !excluded.contains(optional.id) { excluded.append(optional.id) }
-      excludedContext.excludedStopIds = excluded
+      // TS `[...new Set([...(context.excludedStopIds ?? []), optional.id])]` — 既存の並びに 1 件足して
+      // から**配列全体**を初出順で重複排除する。`optional.id` の追加だけを見るのでは足りない:
+      // 呼び出し側が同じ id を 2 度入れた `excludedStopIds` を渡してきたとき、TS はそれも畳む。
+      var seen: Set<String> = []
+      excludedContext.excludedStopIds = ((context.excludedStopIds ?? []) + [optional.id]).filter { seen.insert($0).inserted }
       compare(
         "remove-\(optional.id)",
         .REMOVE_OPTIONAL,
@@ -192,8 +199,12 @@ extension TripScenarios {
       )
     }
 
-    // TS `:585-606` — 上位 3 つの推薦拠点を、実測で改善したときだけ。
-    for recommendation in plan.baseRecommendations.prefix(3) {
+    // TS `:585-606` — 上位いくつの推薦拠点を試すか。TS は `slice(0, 3)` の直書きで、これは
+    // 「候補として組み直してみる拠点の数」。**返す反実仮想の上限
+    // (`EngineConstants.counterfactualLimit`、TS `:694` の `slice(0, 3)`)とは別の 3** で、
+    // 片方を動かしてももう片方は動かない。
+    let baseCandidateLimit = 3
+    for recommendation in plan.baseRecommendations.prefix(baseCandidateLimit) {
       if recommendation.base.id == plan.selectedBase?.id { continue }
       let base = recommendation.base
       var baseContext = context
@@ -291,8 +302,8 @@ extension TripScenarios {
         let r = right.improvement.slackMinutesGained ?? Int.min
         if l != r { return r < l }
       }
-      let leftRank = kindRank[left.kind] ?? 0
-      let rightRank = kindRank[right.kind] ?? 0
+      let leftRank = kindRank(left.kind)
+      let rightRank = kindRank(right.kind)
       if leftRank != rightRank { return leftRank < rightRank }
       return jsLocaleCompare(left.id, right.id) < 0
     }
@@ -300,14 +311,19 @@ extension TripScenarios {
     let minimalCompleteRepair = stableSorted(
       sorted.filter { $0.kind != .OPTIMIZE_ORDER && $0.after.hardConflictCount == 0 && $0.after.overrunMinutes == 0 },
       by: { left, right in
-        let leftRank = kindRank[left.kind] ?? 0
-        let rightRank = kindRank[right.kind] ?? 0
+        let leftRank = kindRank(left.kind)
+        let rightRank = kindRank(right.kind)
         if leftRank != rightRank { return leftRank < rightRank }
         return jsLocaleCompare(left.id, right.id) < 0
       }
     ).first
     let optimized = sorted.first { $0.kind == .OPTIMIZE_ORDER }
-    // TS は参照同一性で `includes`/`indexOf` する。id は候補ごとに一意なので id で置き換える。
+    // TS は参照同一性で `includes`/`indexOf` する。Swift の `TripCounterfactual` は値型なので
+    // `==` は全フィールド比較になり、同じ指標を持つ別候補を取り違えうる。代わりに id で照合する:
+    // 1 つの計画の中で id は一意である —— `use-minimum-days` / `start-60-min-earlier` /
+    // `end-60-min-later` / `optimize-existing-order` は各 1 件、`remove-<停留所 id>` は
+    // `cutCandidates` から 1 件だけ、`base-<拠点 id>` は `baseRecommendations` の相異なる拠点、
+    // `mode-<legId>-<mode>` は (レグ, モード) の組ごとに 1 件。
     let required = [minimalCompleteRepair, optimized].compactMap { $0 }
     let requiredIds = Set(required.map(\.id))
     for candidate in required {
@@ -317,6 +333,7 @@ extension TripScenarios {
       let actualIndex = fromEnd.map { shortlist.count - 1 - $0 } ?? (shortlist.count - 1)
       if actualIndex >= 0 { shortlist[actualIndex] = candidate }
     }
+    // TS `:705` の `sorted.indexOf(...)`。ここも id 照合(上と同じ理由・同じ一意性の根拠)。
     return stableSorted(shortlist) { left, right in
       let leftIndex = sorted.firstIndex { $0.id == left.id } ?? -1
       let rightIndex = sorted.firstIndex { $0.id == right.id } ?? -1

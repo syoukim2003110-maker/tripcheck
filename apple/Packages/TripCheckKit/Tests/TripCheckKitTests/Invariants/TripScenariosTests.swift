@@ -646,6 +646,11 @@ private func tokyoThreeFit(days: Int, base: ResolvedStop?) -> TripFitAssessment 
 
 /// TS `test("a traveller's own hotel is never replaced by a provisional area")`
 @Test func aTravellersOwnHotelIsNeverReplacedByAProvisionalArea() {
+  // TS の文字どおりの値(`tests/days-undecided-complete-context.test.ts`)。2 つだけ写せない:
+  // `confidence: "high"` は TS 側が `as unknown as ResolvedInputStop` で押し込んだ嘘の値で、
+  // Swift の `Confidence` には `low`/`medium` しか無い(`lib/route-optimizer.ts:12`)ので `.medium`。
+  // `sourceUrl: null` / `verifiedAt: null` も同じ経路の嘘で、Swift では非 Optional の
+  // `String` なので空文字。どちらもこのテストの主張(自前ホテルの id が生き残るか)には効かない。
   let hotel = ResolvedStop(
     id: "traveller-hotel",
     name: "Hotel Gajoen",

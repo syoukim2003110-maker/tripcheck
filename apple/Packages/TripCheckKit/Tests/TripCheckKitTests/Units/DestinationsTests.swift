@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import TripCheckKit
 
@@ -35,6 +36,49 @@ import Testing
   let ny = Destinations.utcOffsetMinutes(at: try #require(Destinations.localDateTimeWithOffset(date: "2026-03-07", time: "12:00", timeZone: "America/New_York")), timeZone: "America/New_York")
   let ny2 = Destinations.utcOffsetMinutes(at: try #require(Destinations.localDateTimeWithOffset(date: "2026-03-08", time: "12:00", timeZone: "America/New_York")), timeZone: "America/New_York")
   #expect(ny == -300); #expect(ny2 == -240)
+}
+
+// MARK: - tests/mandatory-edge-cases.test.ts の時刻 2 本(Task 17 で移植)
+
+/// TS の `new Date("....Z")`。
+private func instant(_ iso: String) -> Date? {
+  let formatter = ISO8601DateFormatter()
+  formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+  return formatter.date(from: iso)
+}
+
+/// TS の `localDateTimeWithOffset` が返す文字列("2026-03-07T09:00:00-05:00")の組み立て。
+/// Swift 版は `Date?` を返す(移植メモは `Destinations/DestinationTime.swift:14-18`)ので、
+/// 突き合わせる側でその瞬間を目的地のゾーンで書き出す。
+private func localIso(_ moment: Date, timeZone: String) -> String? {
+  guard let zone = TimeZone(identifier: timeZone) else { return nil }
+  let formatter = ISO8601DateFormatter()
+  formatter.timeZone = zone
+  formatter.formatOptions = [.withInternetDateTime, .withColonSeparatorInTimeZone]
+  return formatter.string(from: moment)
+}
+
+/// TS `test("mandatory cases: local trip dates do not inherit the device timezone")`
+/// (`tests/mandatory-edge-cases.test.ts:27-35`)。同じ瞬間でも、日付は端末のゾーンではなく
+/// **目的地のゾーン**で決まる。日付をまたぐ組がそれを一番はっきり見せる。
+@Test func localTripDatesDoNotInheritTheDeviceTimezone() throws {
+  let moment = try #require(instant("2026-01-01T10:30:00.000Z"))
+  #expect(Destinations.localDateIn(timeZone: "Pacific/Auckland", at: moment).description == "2026-01-01")
+  #expect(Destinations.localDateIn(timeZone: "America/Los_Angeles", at: moment).description == "2026-01-01")
+
+  let crossing = try #require(instant("2026-01-01T23:30:00.000Z"))
+  #expect(Destinations.localDateIn(timeZone: "Pacific/Auckland", at: crossing).description == "2026-01-02")
+  #expect(Destinations.localDateIn(timeZone: "America/Los_Angeles", at: crossing).description == "2026-01-01")
+}
+
+/// TS `test("mandatory case: DST dates use the destination's actual UTC offset")`
+/// (`tests/mandatory-edge-cases.test.ts:37-42`)。上の `utcOffsetsHonourDst` は 12:00 で同じ
+/// 転換を押さえているが、TS の文字どおりの入力(09:00)と出力文字列そのものはここで突き合わせる。
+@Test func dstDatesUseTheDestinationsActualUtcOffset() throws {
+  let before = try #require(Destinations.localDateTimeWithOffset(date: "2026-03-07", time: "09:00", timeZone: "America/New_York"))
+  let after = try #require(Destinations.localDateTimeWithOffset(date: "2026-03-08", time: "09:00", timeZone: "America/New_York"))
+  #expect(localIso(before, timeZone: "America/New_York") == "2026-03-07T09:00:00-05:00")
+  #expect(localIso(after, timeZone: "America/New_York") == "2026-03-08T09:00:00-04:00")
 }
 
 @Test func entryAuthorityAndPassportRulesMatchTable() {
