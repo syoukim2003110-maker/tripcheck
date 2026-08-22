@@ -158,3 +158,17 @@ import Testing
     )).isEmpty)
   }
 }
+
+// MARK: - 修正 1 回目:ICU の `\b` は CJK を語の文字として数える
+
+/// TS の `/\bAPI\b/` は語の文字を ASCII に限る。ICU の `\b` をそのまま使うと、漢字・かなの
+/// 隣では境界が立たず、TS が捕まえる並びが Swift 側だけ素通りしていた。
+@Test func theApiPatternFiresNextToJapaneseText() {
+  for flagged in ["経路API", "APIキー", "地域APIの品質", "APIとは", "これはAPIです", "Uses the Places API for lookup", "API"] {
+    #expect(BannedTerms.violations(in: flagged).contains("provider-internal API naming"), "\(flagged) must be flagged")
+  }
+  // 語の文字(ASCII)が隣にあるものは、これまでどおり通す。
+  for allowed in ["GOOGLE_MAPS_API_KEY", "/api/place-photo", "?api=1", "APIs", "RAPID", "Rakuten Travel", "Claude"] {
+    #expect(BannedTerms.violations(in: allowed).isEmpty, "\(allowed) must stay allowed")
+  }
+}

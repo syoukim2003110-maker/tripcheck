@@ -279,7 +279,7 @@ public enum TimelinePresentation {
     guard let boarding, let first = boarding.steps.first, let last = boarding.steps.last else { return nil }
     let lineLabel = [
       first.shortName ?? first.lineName,
-      first.headsign.map { locale == .ja ? "\($0)行き" : "toward \($0)" },
+      presentValue(first.headsign).map { locale == .ja ? "\($0)行き" : "toward \($0)" },
     ].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: locale == .ja ? "・" : " ")
     let extra = boarding.steps.count - 1
     let walkTo = boarding.walkToStopMinutes
@@ -288,12 +288,12 @@ public enum TimelinePresentation {
     if locale == .ja {
       if let walkTo, walkTo > 0, isPresent(first.departureStop) { parts.append("徒歩約\(walkTo)分 →") }
       if let departureStop = presentValue(first.departureStop) {
-        let time = first.departureTime.map { "\($0)発" } ?? ""
+        let time = presentValue(first.departureTime).map { "\($0)発" } ?? ""
         parts.append("\(departureStop) \(time)".trimmingCharacters(in: .whitespaces))
       }
       parts.append(isPresent(first.departureStop)
         ? lineLabel
-        : "\(lineLabel)\(first.departureTime.map { " · \($0)発" } ?? "")")
+        : "\(lineLabel)\(presentValue(first.departureTime).map { " · \($0)発" } ?? "")")
       if extra > 0 { parts.append("乗継ぎ\(extra)本") }
       if let arrivalStop = presentValue(last.arrivalStop) {
         let stops = extra == 0 ? (first.stopCount.flatMap { $0 == 0 ? nil : "(\($0)駅)" } ?? "") : ""
@@ -303,11 +303,11 @@ public enum TimelinePresentation {
     } else {
       if let walkTo, walkTo > 0, isPresent(first.departureStop) { parts.append("~\(walkTo) min walk →") }
       if let departureStop = presentValue(first.departureStop) {
-        parts.append("\(departureStop)\(first.departureTime.map { " dep \($0)" } ?? "")")
+        parts.append("\(departureStop)\(presentValue(first.departureTime).map { " dep \($0)" } ?? "")")
       }
       parts.append(isPresent(first.departureStop)
         ? lineLabel
-        : "\(lineLabel)\(first.departureTime.map { " · dep \($0)" } ?? "")")
+        : "\(lineLabel)\(presentValue(first.departureTime).map { " · dep \($0)" } ?? "")")
       if extra > 0 { parts.append("+\(extra) connection\(extra == 1 ? "" : "s")") }
       if let arrivalStop = presentValue(last.arrivalStop) {
         let stops = extra == 0 ? (first.stopCount.flatMap { $0 == 0 ? nil : " (\($0) stops)" } ?? "") : ""
@@ -338,7 +338,10 @@ public enum TimelinePresentation {
     return "\(free) of this day is free — room for \(remaining) more \(remaining == 1 ? "stop" : "stops")."
   }
 
-  /// JS の真偽 —— 空文字は falsy(`first.departureStop` の `?` 分岐がそれを見ている)。
+  /// JS の真偽 —— 空文字は falsy。TS の `transitBoardingText` は `departureStop`・`shortName`
+  /// だけでなく `headsign`・`departureTime` も `?` で見ている(`:174-175`、`:183-184`、
+  /// `:190-191`)ので、4 つとも同じ規則で「空文字は無い」と扱う —— そうしないと `headsign: ""`
+  /// が `JC・行き`、`departureTime: ""` が `新宿 発` になる。
   private static func isPresent(_ value: String?) -> Bool { !(value ?? "").isEmpty }
 
   private static func presentValue(_ value: String?) -> String? {

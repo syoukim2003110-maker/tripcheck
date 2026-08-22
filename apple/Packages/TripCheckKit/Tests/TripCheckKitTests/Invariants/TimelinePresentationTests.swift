@@ -549,3 +549,72 @@ private func presentationDay(
   #expect(TimelinePresentation.dayHeaderSummary(presentation, locale: .ja) == "2か所・余裕5時間")
   #expect(TimelinePresentation.dayHeaderSummary(presentation, locale: .en) == "2 stops · 5h buffer")
 }
+
+// MARK: - 修正 1 回目:`Intl.DateTimeFormat` と空文字の扱い
+
+/// TS `formatCheckedAt`(`lib/presentation/trip-presentation.ts:182-191`)の 1 行を、時間帯を
+/// 固定して字面ごと留める。骨格(`dateFormat(fromTemplate:)`)版はここで 3 通りに割れていた:
+/// ja が `午後10:41`、en のつなぎが `" at "`、en の時が 0 詰めなしの `9:05`。
+@Test func formatCheckedAtMatchesIntlDateTimeFormat() {
+  let tokyo = TimeZone(identifier: "Asia/Tokyo")!
+  // 2026-08-22 22:41 JST
+  let evening = "2026-08-22T13:41:00.000Z"
+  #expect(TripPresentation.formatCheckedAt(evening, locale: .ja, timeZone: tokyo) == "8月22日 22:41")
+  #expect(TripPresentation.formatCheckedAt(evening, locale: .en, timeZone: tokyo) == "Aug 22, 10:41 PM")
+  // 2026-01-05 09:05 JST —— 時が 1 桁でも 0 詰めが残ることを見る。
+  let morning = "2026-01-05T00:05:00.000Z"
+  #expect(TripPresentation.formatCheckedAt(morning, locale: .en, timeZone: tokyo) == "Jan 5, 09:05 AM")
+  #expect(TripPresentation.formatCheckedAt(morning, locale: .ja, timeZone: tokyo) == "1月5日 09:05")
+  // 秒までの ISO(ミリ秒なし)も読む。読めない値は空文字。
+  #expect(TripPresentation.formatCheckedAt("2026-08-22T13:41:00Z", locale: .ja, timeZone: tokyo) == "8月22日 22:41")
+  #expect(TripPresentation.formatCheckedAt("not a date", locale: .ja, timeZone: tokyo) == "")
+}
+
+/// TS の `transitBoardingText` は `headsign` と `departureTime` も `?` で見ている ——
+/// 空文字は「無い」。`.map` のままだと `JC・行き` や `新宿 発` という宙ぶらりんの語が出ていた。
+@Test func transitBoardingTextTreatsEmptyStringsAsAbsent() {
+  let emptyHeadsign = TransitLegBoarding(
+    steps: [TransitStepSummary(
+      lineName: "Chuo Line",
+      headsign: "",
+      departureStop: "新宿",
+      arrivalStop: "東京",
+      departureTime: "09:15",
+      shortName: "JC",
+      stopCount: 4
+    )],
+    walkToStopMinutes: nil,
+    walkFromStopMinutes: nil
+  )
+  let ja = TimelinePresentation.transitBoardingText(emptyHeadsign, locale: .ja)
+  #expect(ja == "新宿 09:15発 JC → 東京(4駅)")
+  #expect(ja?.contains("行き") == false)
+  let en = TimelinePresentation.transitBoardingText(emptyHeadsign, locale: .en)
+  #expect(en == "新宿 dep 09:15 JC → 東京 (4 stops)")
+  #expect(en?.contains("toward") == false)
+
+  let emptyTime = TransitLegBoarding(
+    steps: [TransitStepSummary(
+      lineName: "Chuo Line",
+      headsign: "東京",
+      departureStop: "新宿",
+      arrivalStop: "東京",
+      departureTime: "",
+      shortName: "JC",
+      stopCount: 4
+    )],
+    walkToStopMinutes: nil,
+    walkFromStopMinutes: nil
+  )
+  #expect(TimelinePresentation.transitBoardingText(emptyTime, locale: .ja) == "新宿 JC・東京行き → 東京(4駅)")
+  #expect(TimelinePresentation.transitBoardingText(emptyTime, locale: .en) == "新宿 JC toward 東京 → 東京 (4 stops)")
+
+  // 停留所が無い枝でも同じ規則(行の名前のうしろに時刻を足す側)。
+  let noStop = TransitLegBoarding(
+    steps: [TransitStepSummary(lineName: "Chuo Line", headsign: "", departureStop: "", arrivalStop: "", departureTime: "", shortName: "JC")],
+    walkToStopMinutes: 5,
+    walkFromStopMinutes: 5
+  )
+  #expect(TimelinePresentation.transitBoardingText(noStop, locale: .ja) == "JC")
+  #expect(TimelinePresentation.transitBoardingText(noStop, locale: .en) == "JC")
+}

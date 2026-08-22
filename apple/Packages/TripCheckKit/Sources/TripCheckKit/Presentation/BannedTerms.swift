@@ -38,7 +38,14 @@ public enum BannedTerms {
     Rule("対応品質/地域品質 (coverage-grade jargon)", "対応品質|地域品質"),
     // 大文字・語境界つきの API。小文字の経路("/api/place-photo"、"?api=1")や
     // `API_KEY`(前に語境界が無い)は当たらない。表示される "Places API" は当たる。
-    Rule("provider-internal API naming", "\\bAPI\\b"),
+    //
+    // TS は `/\bAPI\b/` と書くが、`\b` をそのまま移すと **境界が一度も立たない**:
+    // JS の `\b` は語の文字を ASCII の `[0-9A-Za-z_]` に限るのに対し、ICU の `\b` は
+    // Unicode 全体を見るので、漢字・かなも語の文字として数えてしまう。結果、TS が捕まえる
+    // 「経路API」「APIキー」「地域APIの品質」「APIとは」「これはAPIです」が、そのままでは
+    // Swift 側だけ素通りしていた。ASCII の先読み/後読みで JS の語の文字集合を書き下す
+    // (Parser/Resolution で TS の `\b` に当てているのと同じ規則)。
+    Rule("provider-internal API naming", "(?<![0-9A-Za-z_])API(?![0-9A-Za-z_])"),
   ]
 
   /// ブリーフの `BannedTerms.patterns`。

@@ -343,9 +343,24 @@ public enum TripPresentation {
   }
 
   /// TS `formatCheckedAt`(`:182-191`)—— `Intl.DateTimeFormat(locale, { month: "short",
-  /// day: "numeric", hour: "2-digit", minute: "2-digit" })`。ICU/CLDR の同じ骨格を
-  /// `DateFormatter.dateFormat(fromTemplate:)` で組み直す(表示専用で、TS 側にもテストは無い)。
-  public static func formatCheckedAt(_ value: String, locale: PlannerLocale) -> String {
+  /// day: "numeric", hour: "2-digit", minute: "2-digit" })` と同じ 1 行。
+  ///
+  /// `DateFormatter.dateFormat(fromTemplate:)` は使えない。同じ CLDR を読んでいても、骨格から
+  /// 組み直すと TS と 3 か所で割れることを実測で確認した(同じ時間帯で比較):
+  ///
+  ///   * ja-JP —— TS `8月22日 22:41` に対して骨格版は `8月22日 午後10:41`。
+  ///     `hour: "2-digit"` は ja-JP では h23 に解決されるのに、`hhmm` の骨格が 12 時間制を
+  ///     指定してしまう。
+  ///   * en-US —— TS `Aug 22, 10:41 PM` に対して骨格版は `Aug 22 at 10:41 PM`。
+  ///     日付と時刻のつなぎが `", "` ではなく `" at "` になる。
+  ///   * en-US —— TS `Jan 5, 09:05 AM` に対して骨格版は `Jan 5 at 9:05 AM`。
+  ///     `hour: "2-digit"` の 0 詰めが落ちる。
+  ///
+  /// なので骨格ではなくロケールごとの並びを直接書く。`en_US_POSIX` は AM/PM の字面を変えず、
+  /// 端末の 12/24 時間設定に書式を上書きされないので、英語はそちらを使う。
+  ///
+  /// `timeZone` は既定で端末の時間帯(TS の `Intl` と同じ)。テストは固定の帯を渡す。
+  public static func formatCheckedAt(_ value: String, locale: PlannerLocale, timeZone: TimeZone? = nil) -> String {
     let parser = ISO8601DateFormatter()
     parser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     let date = parser.date(from: value) ?? {
@@ -354,14 +369,10 @@ public enum TripPresentation {
       return plain.date(from: value)
     }()
     guard let date else { return "" }
-    let identifier = locale == .ja ? "ja_JP" : "en_US"
     let formatter = DateFormatter()
-    formatter.locale = Locale(identifier: identifier)
-    formatter.dateFormat = DateFormatter.dateFormat(
-      fromTemplate: "MMMdhhmm",
-      options: 0,
-      locale: Locale(identifier: identifier)
-    ) ?? "MMM d, hh:mm"
+    formatter.locale = Locale(identifier: locale == .ja ? "ja_JP" : "en_US_POSIX")
+    if let timeZone { formatter.timeZone = timeZone }
+    formatter.dateFormat = locale == .ja ? "M月d日 HH:mm" : "MMM d, hh:mm a"
     return formatter.string(from: date)
   }
 
