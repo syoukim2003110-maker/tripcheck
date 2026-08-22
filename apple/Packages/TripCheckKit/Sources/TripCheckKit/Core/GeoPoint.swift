@@ -10,13 +10,19 @@ public struct GeoPoint: Hashable, Codable, Sendable {
   }
 }
 
-/// lib/route-optimizer.ts:318-328 — `straightLineDistanceKm`(地球半径 6371km の Haversine)。
+/// lib/route-optimizer.ts:318-328 — `straightLineDistanceKm` (a 6371 km Haversine).
 ///
-/// 式の**書き方**まで TS に合わせてある。`asin(√h)` と `atan2(√h, √(1−h))` は実数では同じ値だが
-/// 浮動小数では最後の 1 ulp が食い違い、`optimizeFromBase` / `optimizeKnownStopOrder` の厳密な
-/// `<` 比較が引き分けの向きを逆に倒すことがある(2 点の日が TS と逆順に出る)。同じ理由で
-/// `度 × π ÷ 180` を `度 × (π ÷ 180)` に畳んではいけない。`x ** 2` は V8 が `x * x` へ特殊化する
-/// (fdlibm `__ieee754_pow` の y == 2 分岐)ので、そこだけは掛け算で書いてよい。
+/// Both the shape of the expression and the arithmetic behind it are TypeScript's. `asin(√h)` is
+/// not written as `atan2(√h, √(1−h))`, `度 × π ÷ 180` is not folded into `度 × (π ÷ 180)`, and the
+/// two cosines multiply the *squared* half-angle sine rather than the sine twice, because `**`
+/// binds tighter than `*`. Each of those rewrites is exact in real arithmetic and moves the last
+/// bit in floating point.
+///
+/// The trigonometry comes from `JSMath`, a port of V8's own `ieee754.cc`, not from Foundation:
+/// Apple's libm is the more accurate of the two and therefore the wrong one here. The route
+/// optimiser compares a path against its own reverse — the same edges in the other order — so a
+/// one-ulp difference in a single edge decides the direction of a whole day. See the `JSMath`
+/// header for the measured divergence rates.
 public func straightLineDistanceKm(_ a: GeoPoint, _ b: GeoPoint) -> Double {
   func radians(_ degrees: Double) -> Double { degrees * Double.pi / 180 }
   let earthRadiusKm = 6371.0
@@ -24,10 +30,10 @@ public func straightLineDistanceKm(_ a: GeoPoint, _ b: GeoPoint) -> Double {
   let deltaLongitude = radians(b.longitude - a.longitude)
   let latitudeA = radians(a.latitude)
   let latitudeB = radians(b.latitude)
-  // `**` binds tighter than `*`, so TS multiplies the two cosines by the *squared* sine — not by
-  // the sine twice. The two groupings do not round the same way.
-  let halfLatitudeSineSquared = sin(deltaLatitude / 2) * sin(deltaLatitude / 2)
-  let halfLongitudeSineSquared = sin(deltaLongitude / 2) * sin(deltaLongitude / 2)
-  let h = halfLatitudeSineSquared + cos(latitudeA) * cos(latitudeB) * halfLongitudeSineSquared
-  return 2 * earthRadiusKm * asin(sqrt(h))
+  let halfLatitudeSineSquared = JSMath.sin(deltaLatitude / 2) * JSMath.sin(deltaLatitude / 2)
+  let halfLongitudeSineSquared = JSMath.sin(deltaLongitude / 2) * JSMath.sin(deltaLongitude / 2)
+  let h = halfLatitudeSineSquared + JSMath.cos(latitudeA) * JSMath.cos(latitudeB) * halfLongitudeSineSquared
+  // `h > 1` yields NaN, exactly as `Math.asin` does in the browser. Clamping would be a kindness
+  // the TypeScript engine does not extend, and parity is the whole point.
+  return 2 * earthRadiusKm * JSMath.asin(h.squareRoot())
 }
