@@ -45,6 +45,16 @@ public final class PlannerStore {
   @ObservationIgnored let clock: any Clock<Duration>
   @ObservationIgnored private var buildTask: Task<Void, Never>?
 
+  /// 組み立ての答えを `commit` へ渡す直前の関所。**テストだけが差す**(`internal` なので
+  /// アプリからは見えず、既定の `nil` では 1 度の分岐すら挟まらない)。
+  ///
+  /// 要るのは、「計算は終わったが、まだ画面へ渡していない」一点が外から掴めないからである。
+  /// `buildGeneration` は `build()` の頭で同期に進むので、世代の変化を見ても捕まえられるのは
+  /// **組み立てが始まった**ことだけで、答えが返る前かどうかは機械の忙しさ次第になる ——
+  /// `swift test --parallel` で実際に、世代を見てから `screen` を読む間に commit が滑り込み、
+  /// 取り消しの検査が落ちた。ここで待たせれば、遅れて届く答えを毎回きっかり作れる。
+  var buildGate: (@Sendable () async -> Void)?
+
   public init(
     resolvers: [any PlaceResolver],
     store: TripStore?,
@@ -133,6 +143,7 @@ public final class PlannerStore {
     }
     buildTask = Task { _ = await task.value }
     let result = await task.value
+    await buildGate?()   // 既定は nil = 素通り。テストが「遅れて届く答え」を作るための関所
     guard generation == buildGeneration, !Task.isCancelled else { return }
     commit(result)
   }

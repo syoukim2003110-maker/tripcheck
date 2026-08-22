@@ -2,6 +2,41 @@ import Testing
 @testable import TripCheckAppCore
 import TripCheckKit
 
+/// 組み上がった答えを `commit` の直前で止めておく関所(`PlannerStore.buildGate` に差す)。
+///
+/// これが要るのは、「組み立ては始まったが、答えはまだ画面へ渡っていない」一点を、機械の
+/// 忙しさに依らず掴むため。`buildGeneration` は `build()` の頭で同期に進むので、世代の変化を
+/// `Task.yield()` で待っても、次の行を読むころには commit が済んでいることがある(`--parallel`
+/// で実際に落ちた)。関所を差せば、答えは必ずテストが `open()` するまでそこに留まる。
+private actor BuildGate {
+  private var held = false
+  private var opened = false
+  private var arrivals: [CheckedContinuation<Void, Never>] = []
+  private var departures: [CheckedContinuation<Void, Never>] = []
+
+  /// 組み立て側。着いたことを知らせ、`open()` が来るまで待つ。
+  func hold() async {
+    held = true
+    for waiter in arrivals { waiter.resume() }
+    arrivals.removeAll()
+    guard !opened else { return }
+    await withCheckedContinuation { departures.append($0) }
+  }
+
+  /// テスト側。組み立てが関所に着く(= 答えが出来た)まで待つ。
+  func waitUntilHeld() async {
+    guard !held else { return }
+    await withCheckedContinuation { arrivals.append($0) }
+  }
+
+  /// テスト側。留めていた答えを先へ通す。
+  func open() {
+    opened = true
+    for waiter in departures { waiter.resume() }
+    departures.removeAll()
+  }
+}
+
 @Test @MainActor func tripRequestNeverReadsViewState() async {
   // コンパイル時の保証に加えて、view を変えても TripRequest が同一であること
   let store = PlannerStore(resolvers: [], store: nil)
@@ -58,27 +93,26 @@ import TripCheckKit
 /// いう**結果**を見る。それだけだと、先に始まったほうが世代を取る前に入力が変わってしまい、
 /// 2 回とも同じ日数で組んで「捨てる」場面が一度も起きないことがある(実測した)。
 ///
-/// こちらは古い世代を確実に作る:先に始まった組み立てが世代を取り切る(= 4 日の
-/// `TripRequest` を掴む)まで待ってから入力を 2 日に変える。4 日ぶんの答えは後から返るので、
-/// 世代ガードが無ければ 2 日の旅程を上書きしてしまう。
+/// こちらは古い世代を確実に作る:先に始まった 4 日ぶんの答えを関所で留め、その間に入力を
+/// 2 日へ変えて組み直す。留めていた 4 日ぶんは後から届くので、世代ガードが無ければ 2 日の
+/// 旅程を上書きしてしまう —— 「捨てる」場面が毎回きっかり起きる。
 @Test @MainActor func anOlderBuildLandingLateCannotOverwriteTheNewerOne() async {
   let store = PlannerStore(resolvers: [], store: nil)
   store.loadSample(.switzerland)   // 4 日
   let before = store.buildGeneration
+  let gate = BuildGate()
+  store.buildGate = { await gate.hold() }
+
   async let stale: Void = store.build()
-  var spins = 0
-  while store.buildGeneration == before, spins < 1_000 {
-    await Task.yield()
-    spins += 1
-  }
-  // 世代を取った時点で、その組み立ては既に 4 日の TripRequest を掴んで計算に入っている
-  // (`build()` は世代を進めてから `tripRequest()` を読み、次の中断点まで一気に走る)。
+  await gate.waitUntilHeld()   // 4 日ぶんの答えは出来上がり、関所で止まっている
   #expect(store.buildGeneration == before + 1)
 
+  store.buildGate = nil        // 2 本目は素通りさせる
   store.request.tripDays = 2
   await store.build()
   #expect(store.bundle?.request.days == 2)
 
+  await gate.open()            // ここで初めて 4 日ぶんの答えが世代ガードへ届く
   await stale
   #expect(store.bundle?.request.days == 2)   // 4 日ぶんの答えは返ってきたが、世代が違うので捨てられた
   #expect(store.edit.tripDays == 2)
@@ -88,16 +122,16 @@ import TripCheckKit
 @Test @MainActor func cancellingABuildDiscardsItsAnswer() async {
   let store = PlannerStore(resolvers: [], store: nil)
   store.loadSample(.switzerland)
-  let before = store.buildGeneration
+  let gate = BuildGate()
+  store.buildGate = { await gate.hold() }
+
   async let running: Void = store.build()
-  var spins = 0
-  while store.buildGeneration == before, spins < 1_000 {
-    await Task.yield()
-    spins += 1
-  }
+  await gate.waitUntilHeld()             // 答えは出来たが、まだ commit していない一点
   #expect(store.view.screen == .building)
+  #expect(store.bundle == nil)
 
   store.cancelBuild()
+  await gate.open()                      // 取り消した後に答えが届く
   await running
   #expect(store.bundle == nil)           // 計算は最後まで走るが、受け取る側が居ない
   #expect(store.view.screen == .start)   // まだ旅程が無いので入力画面へ戻す
