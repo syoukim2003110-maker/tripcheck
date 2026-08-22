@@ -1,0 +1,61 @@
+# XcodeGen の入力。`TripCheck.xcodeproj` は生成物なので commit しない(`apple/.gitignore:2`)。
+#
+#   cd apple && ~/.local/xcodegen/bin/xcodegen generate
+#
+# ふだんは `apple/tools/verify-app.sh` が generate → build までまとめて回す。
+name: TripCheck
+options:
+  developmentLanguage: ja
+  deploymentTarget:
+    iOS: "17.0"
+packages:
+  TripCheckKit:
+    path: Packages/TripCheckKit
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: "T8L5BPC2XJ"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  TripCheck:
+    type: application
+    platform: iOS
+    sources: [TripCheck]
+    dependencies:
+      - package: TripCheckKit
+        product: TripCheckKit
+      - package: TripCheckKit
+        product: TripCheckAppCore
+    scheme:
+      testTargets: [TripCheckUITests]        # Task 14 で TripCheckTests を先頭に足す
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.muraoshoki.tripcheck
+        TARGETED_DEVICE_FAMILY: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    info:
+      path: TripCheck/Resources/Info.plist
+      properties:
+        CFBundleDisplayName: TripCheck
+        # `INFOPLIST_KEY_UIUserInterfaceStyle` は Xcode に plist を作らせるときだけ効く設定で、
+        # こちらは自前の plist を渡しているので鍵として書く(組んだ bundle で確認済み)。
+        # 紙の上の旅程表という見立てなので、端末が暗い配色でも色を反転させない。
+        UIUserInterfaceStyle: Light
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UIAppFonts: [Anton-Regular.ttf]
+        ITSAppUsesNonExemptEncryption: false
+        CFBundleURLTypes:
+          - CFBundleURLName: com.muraoshoki.tripcheck
+            CFBundleURLSchemes: [tripcheck]
+  TripCheckUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [TripCheckUITests]
+    dependencies:
+      - target: TripCheck

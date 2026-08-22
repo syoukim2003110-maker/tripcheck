@@ -1,6 +1,8 @@
 # apple/ — TripCheck の Swift 実装
 
 - `Packages/TripCheckKit`: 決定論エンジン(`import` は Foundation だけ)。回すのは `apple/tools/verify-kit.sh`。
+- `Packages/TripCheckKit` の `TripCheckAppCore`: 画面の手前側(状態・文言・MapKit の場所解決)。Kit と違って端末の framework を import してよい。中身は Plan 2 の Task 2 以降。
+- `TripCheck/`: iPhone アプリ本体。`project.yml`(XcodeGen)から `TripCheck.xcodeproj` を起こす —— プロジェクトは生成物なので commit しない。回すのは `apple/tools/verify-app.sh`。
 - 移植元は `../lib/`。golden 500(`Tests/TripCheckKitTests/Fixtures/golden-feasibility.v1.json`)は `../tests/fixtures/` の**バイト同一のコピー**で、更新するときは Web 側で再生成してからコピーし直す(こちらで編集しない)。
 - 設計は `../docs/superpowers/specs/2026-08-21-tripcheck-swift-v1-design.md`、計画は `../docs/superpowers/plans/`。UI と Apple 側の場所解決(MapKit)は Plan 2 の担当で、この Kit には入らない。
 
@@ -13,6 +15,30 @@ apple/tools/verify-kit.sh --filter Golden # そのほかの引数は swift test 
 ```
 
 並列を既定にしているのは、この suite が**並列で緑であること自体が検査対象**だから。実時計に触るテストが混ざると機械の忙しさで答えが変わる —— 照合系(G1/G3)は `Tests/TripCheckKitTests/Support/FrozenClock.swift` の止まった時計を使い、予算切れの側は `TestStops.timedOutTriple()` の刻む時計が受け持つ。
+
+アプリ側は XcodeGen(`~/.local/xcodegen/bin/xcodegen`、2.46)が要る。
+
+```
+apple/tools/verify-app.sh          # generate → iPhone 17 Pro シミュレータ向けに build
+apple/tools/verify-app.sh test     # UI テストまで
+apple/tools/screenshot.sh boot     # 起動中のシミュレータを PNG に
+```
+
+DerivedData は `apple/build`(`apple/.gitignore`)。組んだものを端末に入れて開くのは
+
+```
+xcrun simctl install booted apple/build/Build/Products/Debug-iphonesimulator/TripCheck.app
+xcrun simctl launch booted com.muraoshoki.tripcheck
+```
+
+## 見出しの書体
+
+`TripCheck/Design/Fonts/Anton-Regular.ttf` は Google Fonts の OFL 版(`ofl/anton`)をそのまま同梱している。SIL Open Font License 1.1 は配布時にライセンス本文を添えることを求めるので、`OFL.txt` も同じ場所に置いて bundle に入れてある。PostScript 名は `Anton-Regular`(`Typography.displayFaceName`)で、`Info.plist` の `UIAppFonts` から登録される。同梱が外れた版では `Typography` が system の太字に落ちる。
+
+| ファイル | sha256 |
+| --- | --- |
+| `Anton-Regular.ttf` | `a4ba3a92350ebb031da0cb47630ac49eb265082ca1bc0450442f4a83ab947cab` |
+| `OFL.txt` | `ee67e6ee22790b7929f1a3769ca2801d565c64b5a9096942c1adf5596de9c9e4` |
 
 ## 検証値(2026-08-23、`apple/tools/verify-kit.sh` を 3 回)
 
