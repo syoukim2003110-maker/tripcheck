@@ -26,16 +26,22 @@ struct GoldenRun {
 /// TS (`:66`), so `alternatives` keeps its `[]` default — the golden oracle never inspects the
 /// counterfactual list.
 func runGolden(_ scenario: GoldenScenario) -> GoldenRun {
+  runPlannerScenario(trip: scenario.trip, evidence: scenario.evidence)
+}
+
+/// The same four stages over a bare `{trip, evidence}` pair, so a corpus that carries no golden
+/// oracle — G3's hand-written builder corpus — runs through exactly this code path too.
+func runPlannerScenario(trip: GoldenTrip, evidence options: EvidenceSnapshotOptions) -> GoldenRun {
   let request = TripRequest(
-    raw: scenario.trip.raw,
-    days: scenario.trip.days,
-    pace: scenario.trip.pace,
-    locale: scenario.trip.locale,
-    context: scenario.trip.context
+    raw: trip.raw,
+    days: trip.days,
+    pace: trip.pace,
+    locale: trip.locale,
+    context: trip.context
   )
   let plan = TripBuilder.build(request)
   let fit = TripScenarios.assessTripFit(request, plan: plan)
-  let evidence = Feasibility.snapshot(plan: plan, options: scenario.evidence)
+  let evidence = Feasibility.snapshot(plan: plan, options: options)
   return GoldenRun(
     plan: plan,
     fit: fit,
