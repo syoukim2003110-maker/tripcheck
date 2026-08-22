@@ -1,0 +1,867 @@
+{
+  "schemaVersion": 1,
+  "corpusId": "tripcheck-builder-parity-v1",
+  "description": "Synthetic contract fixtures for G3's builder half. Hand-written to exercise the parts of buildTripFromWishlist the golden 500 never reach — multi-day assignment, ordering, trimming, bases, airports, opening windows, live transit evidence and user overrides. Coordinates, addresses and stay durations are invented for determinism and do not measure real-world places; the TypeScript engine, not this file, is the oracle.",
+  "generatedBy": "hand-authored for task 19 (G3)",
+  "latitudeConstraint": "Every latitude here is one where V8's Math.cos and Apple's libm cos return the same double. They disagree by one ulp on about 7% of latitudes, and the geographic optimiser decides direction-symmetric routes (every two-stop day, and any day whose reversed path ties) on a strict < between two sums of the same edges — so a latitude on a disagreement measures the two runtimes' libm rather than this port. Five latitudes were moved by 0.0001 degrees (~11 m) for that reason: Skytree 35.7101 -> 35.7102, Shinjuku Gyoen 35.6852 -> 35.6853, Interlaken 46.6863 -> 46.6862, Jungfraujoch 46.5474 -> 46.5473, Lauterbrunnen 46.5936 -> 46.5937. See 付録 A.3 of docs/superpowers/specs/2026-08-21-tripcheck-swift-v1-design.md. Screen any new latitude the same way before adding a scenario.",
+  "realWorldAccuracyClaim": false,
+  "providerCallsAllowed": false,
+  "fixedAt": "2026-08-21",
+  "scenarios": [
+    {
+      "id": "builder-01-multiday-nine-stops",
+      "covers": "3 days, 9 resolved stops, balanced/en — day assignment, clustering, ordering, legs",
+      "trip": {
+        "raw": "Sensoji Temple\nTokyo Skytree\nUeno Park\nAkihabara Electric Town\nImperial Palace East Garden\nGinza Six\nTsukiji Outer Market\nShibuya Scramble Square\nMeiji Jingu Shrine",
+        "days": 3,
+        "pace": "balanced",
+        "locale": "en",
+        "context": {
+          "destination": "japan",
+          "tripStartDate": "2026-10-13",
+          "defaultDayStart": "09:00",
+          "dayEndTarget": "20:00",
+          "transferBufferMinutes": 20,
+          "resolvedStops": [
+            {"id":"tk-sensoji","input":"Sensoji Temple","inputIndex":0,"name":"Sensoji Temple","area":"Asakusa","address":"Synthetic fixture address, Asakusa","latitude":35.7148,"longitude":139.7967,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-sensoji","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":90,"isAnchor":false},
+            {"id":"tk-skytree","input":"Tokyo Skytree","inputIndex":1,"name":"Tokyo Skytree","area":"Sumida","address":"Synthetic fixture address, Sumida","latitude":35.7102,"longitude":139.8107,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-skytree","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":90,"isAnchor":false},
+            {"id":"tk-ueno","input":"Ueno Park","inputIndex":2,"name":"Ueno Park","area":"Ueno","address":"Synthetic fixture address, Ueno","latitude":35.7156,"longitude":139.7745,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-ueno","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":75,"isAnchor":false},
+            {"id":"tk-akihabara","input":"Akihabara Electric Town","inputIndex":3,"name":"Akihabara Electric Town","area":"Akihabara","address":"Synthetic fixture address, Akihabara","latitude":35.6984,"longitude":139.7731,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-akihabara","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-imperial","input":"Imperial Palace East Garden","inputIndex":4,"name":"Imperial Palace East Garden","area":"Chiyoda","address":"Synthetic fixture address, Chiyoda","latitude":35.6853,"longitude":139.7528,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-imperial","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-ginza","input":"Ginza Six","inputIndex":5,"name":"Ginza Six","area":"Ginza","address":"Synthetic fixture address, Ginza","latitude":35.6699,"longitude":139.7639,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-ginza","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-tsukiji","input":"Tsukiji Outer Market","inputIndex":6,"name":"Tsukiji Outer Market","area":"Tsukiji","address":"Synthetic fixture address, Tsukiji","latitude":35.6654,"longitude":139.7707,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-tsukiji","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-shibuya","input":"Shibuya Scramble Square","inputIndex":7,"name":"Shibuya Scramble Square","area":"Shibuya","address":"Synthetic fixture address, Shibuya","latitude":35.658,"longitude":139.7016,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-shibuya","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":75,"isAnchor":false},
+            {"id":"tk-meiji","input":"Meiji Jingu Shrine","inputIndex":8,"name":"Meiji Jingu Shrine","area":"Shibuya","address":"Synthetic fixture address, Shibuya","latitude":35.6764,"longitude":139.6993,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-meiji","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false}
+          ]
+        }
+      },
+      "evidence": {
+        "dateWasProvided": true,
+        "baseWasProvided": false,
+        "dayEndWasProvided": true,
+        "capturedAt": "2026-08-09T00:00:00.000Z",
+        "transferBufferMinutes": 20,
+        "dayStartTimes": {"0": "09:00", "1": "09:00", "2": "09:00"},
+        "dayEndTimes": {"0": "20:00", "1": "20:00", "2": "20:00"}
+      }
+    },
+    {
+      "id": "builder-02-two-stops-pinned-to-one-day",
+      "covers": "dayOverrides pinning two stops to day 2 while a third stays unpinned",
+      "trip": {
+        "raw": "Sensoji Temple\nTokyo Skytree\nUeno Park\nGinza Six\nTsukiji Outer Market\nShibuya Scramble Square\nMeiji Jingu Shrine",
+        "days": 4,
+        "pace": "balanced",
+        "locale": "en",
+        "context": {
+          "destination": "japan",
+          "tripStartDate": "2026-10-13",
+          "defaultDayStart": "09:30",
+          "dayEndTarget": "19:00",
+          "transferBufferMinutes": 20,
+          "dayOverrides": {"tk-shibuya": 2, "tk-meiji": 2, "tk-sensoji": 1},
+          "resolvedStops": [
+            {"id":"tk-sensoji","input":"Sensoji Temple","inputIndex":0,"name":"Sensoji Temple","area":"Asakusa","address":"Synthetic fixture address, Asakusa","latitude":35.7148,"longitude":139.7967,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-sensoji","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":90,"isAnchor":false},
+            {"id":"tk-skytree","input":"Tokyo Skytree","inputIndex":1,"name":"Tokyo Skytree","area":"Sumida","address":"Synthetic fixture address, Sumida","latitude":35.7102,"longitude":139.8107,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-skytree","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":90,"isAnchor":false},
+            {"id":"tk-ueno","input":"Ueno Park","inputIndex":2,"name":"Ueno Park","area":"Ueno","address":"Synthetic fixture address, Ueno","latitude":35.7156,"longitude":139.7745,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-ueno","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":75,"isAnchor":false},
+            {"id":"tk-ginza","input":"Ginza Six","inputIndex":3,"name":"Ginza Six","area":"Ginza","address":"Synthetic fixture address, Ginza","latitude":35.6699,"longitude":139.7639,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-ginza","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-tsukiji","input":"Tsukiji Outer Market","inputIndex":4,"name":"Tsukiji Outer Market","area":"Tsukiji","address":"Synthetic fixture address, Tsukiji","latitude":35.6654,"longitude":139.7707,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-tsukiji","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-shibuya","input":"Shibuya Scramble Square","inputIndex":5,"name":"Shibuya Scramble Square","area":"Shibuya","address":"Synthetic fixture address, Shibuya","latitude":35.658,"longitude":139.7016,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-shibuya","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":75,"isAnchor":false},
+            {"id":"tk-meiji","input":"Meiji Jingu Shrine","inputIndex":6,"name":"Meiji Jingu Shrine","area":"Shibuya","address":"Synthetic fixture address, Shibuya","latitude":35.6764,"longitude":139.6993,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-meiji","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false}
+          ]
+        }
+      },
+      "evidence": {
+        "dateWasProvided": true,
+        "baseWasProvided": false,
+        "dayEndWasProvided": true,
+        "capturedAt": "2026-08-09T00:00:00.000Z",
+        "transferBufferMinutes": 20,
+        "dayStartTimes": {"0": "09:30", "1": "09:30", "2": "09:30", "3": "09:30"},
+        "dayEndTimes": {"0": "19:00", "1": "19:00", "2": "19:00", "3": "19:00"}
+      }
+    },
+    {
+      "id": "builder-03-optionals-trimmed-by-fast-pace",
+      "covers": "pace fast, 2 days, 10 stops with optional markers — pace/budget trimming and deferredOptionalStops",
+      "trip": {
+        "raw": "Sensoji Temple must\nTokyo Skytree\nUeno Park optional\nAkihabara Electric Town optional\nImperial Palace East Garden\nGinza Six optional\nTsukiji Outer Market\nShibuya Scramble Square optional\nMeiji Jingu Shrine\nYanaka Ginza optional",
+        "days": 2,
+        "pace": "fast",
+        "locale": "en",
+        "context": {
+          "destination": "japan",
+          "tripStartDate": "2026-10-13",
+          "defaultDayStart": "10:00",
+          "dayEndTarget": "17:00",
+          "transferBufferMinutes": 20,
+          "resolvedStops": [
+            {"id":"tk-sensoji","input":"Sensoji Temple","inputIndex":0,"name":"Sensoji Temple","area":"Asakusa","address":"Synthetic fixture address, Asakusa","latitude":35.7148,"longitude":139.7967,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-sensoji","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":90,"isAnchor":false},
+            {"id":"tk-skytree","input":"Tokyo Skytree","inputIndex":1,"name":"Tokyo Skytree","area":"Sumida","address":"Synthetic fixture address, Sumida","latitude":35.7102,"longitude":139.8107,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-skytree","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":90,"isAnchor":false},
+            {"id":"tk-ueno","input":"Ueno Park","inputIndex":2,"name":"Ueno Park","area":"Ueno","address":"Synthetic fixture address, Ueno","latitude":35.7156,"longitude":139.7745,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-ueno","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":75,"isAnchor":false},
+            {"id":"tk-akihabara","input":"Akihabara Electric Town","inputIndex":3,"name":"Akihabara Electric Town","area":"Akihabara","address":"Synthetic fixture address, Akihabara","latitude":35.6984,"longitude":139.7731,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-akihabara","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-imperial","input":"Imperial Palace East Garden","inputIndex":4,"name":"Imperial Palace East Garden","area":"Chiyoda","address":"Synthetic fixture address, Chiyoda","latitude":35.6853,"longitude":139.7528,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-imperial","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-ginza","input":"Ginza Six","inputIndex":5,"name":"Ginza Six","area":"Ginza","address":"Synthetic fixture address, Ginza","latitude":35.6699,"longitude":139.7639,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-ginza","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-tsukiji","input":"Tsukiji Outer Market","inputIndex":6,"name":"Tsukiji Outer Market","area":"Tsukiji","address":"Synthetic fixture address, Tsukiji","latitude":35.6654,"longitude":139.7707,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-tsukiji","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-shibuya","input":"Shibuya Scramble Square","inputIndex":7,"name":"Shibuya Scramble Square","area":"Shibuya","address":"Synthetic fixture address, Shibuya","latitude":35.658,"longitude":139.7016,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-shibuya","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":75,"isAnchor":false},
+            {"id":"tk-meiji","input":"Meiji Jingu Shrine","inputIndex":8,"name":"Meiji Jingu Shrine","area":"Shibuya","address":"Synthetic fixture address, Shibuya","latitude":35.6764,"longitude":139.6993,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-meiji","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-yanaka","input":"Yanaka Ginza","inputIndex":9,"name":"Yanaka Ginza","area":"Taito","address":"Synthetic fixture address, Taito","latitude":35.7276,"longitude":139.766,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-yanaka","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":45,"isAnchor":false}
+          ]
+        }
+      },
+      "evidence": {
+        "dateWasProvided": true,
+        "baseWasProvided": false,
+        "dayEndWasProvided": true,
+        "capturedAt": "2026-08-09T00:00:00.000Z",
+        "transferBufferMinutes": 20,
+        "dayStartTimes": {"0": "10:00", "1": "10:00"},
+        "dayEndTimes": {"0": "17:00", "1": "17:00"}
+      }
+    },
+    {
+      "id": "builder-04-theme-park-anchor",
+      "covers": "a 480-minute theme-park anchor (stay >= 300) alongside four ordinary stops",
+      "trip": {
+        "raw": "Tokyo Disneyland must\nSensoji Temple\nTokyo Skytree\nUeno Park\nGinza Six",
+        "days": 2,
+        "pace": "balanced",
+        "locale": "en",
+        "context": {
+          "destination": "japan",
+          "tripStartDate": "2026-10-13",
+          "defaultDayStart": "08:30",
+          "dayEndTarget": "21:00",
+          "transferBufferMinutes": 30,
+          "durationOverrides": {"tk-disney": 480},
+          "resolvedStops": [
+            {"id":"tk-disney","input":"Tokyo Disneyland","inputIndex":0,"name":"Tokyo Disneyland","area":"Urayasu","address":"Synthetic fixture address, Urayasu","latitude":35.6329,"longitude":139.8804,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-disney","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":480,"isAnchor":true},
+            {"id":"tk-sensoji","input":"Sensoji Temple","inputIndex":1,"name":"Sensoji Temple","area":"Asakusa","address":"Synthetic fixture address, Asakusa","latitude":35.7148,"longitude":139.7967,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-sensoji","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":90,"isAnchor":false},
+            {"id":"tk-skytree","input":"Tokyo Skytree","inputIndex":2,"name":"Tokyo Skytree","area":"Sumida","address":"Synthetic fixture address, Sumida","latitude":35.7102,"longitude":139.8107,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-skytree","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":90,"isAnchor":false},
+            {"id":"tk-ueno","input":"Ueno Park","inputIndex":3,"name":"Ueno Park","area":"Ueno","address":"Synthetic fixture address, Ueno","latitude":35.7156,"longitude":139.7745,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-ueno","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":75,"isAnchor":false},
+            {"id":"tk-ginza","input":"Ginza Six","inputIndex":4,"name":"Ginza Six","area":"Ginza","address":"Synthetic fixture address, Ginza","latitude":35.6699,"longitude":139.7639,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-ginza","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false}
+          ]
+        }
+      },
+      "evidence": {
+        "dateWasProvided": true,
+        "baseWasProvided": false,
+        "dayEndWasProvided": true,
+        "capturedAt": "2026-08-09T00:00:00.000Z",
+        "transferBufferMinutes": 30,
+        "userDurationStopIds": ["tk-disney"],
+        "dayStartTimes": {"0": "08:30", "1": "08:30"},
+        "dayEndTimes": {"0": "21:00", "1": "21:00"}
+      }
+    },
+    {
+      "id": "builder-05-base-and-night-bases",
+      "covers": "resolvedBase plus per-night nightBases (night 1 moved, night 2 explicitly null)",
+      "trip": {
+        "raw": "Sensoji Temple\nTokyo Skytree\nUeno Park\nShibuya Scramble Square\nMeiji Jingu Shrine\nShinjuku Gyoen",
+        "days": 3,
+        "pace": "balanced",
+        "locale": "en",
+        "context": {
+          "destination": "japan",
+          "tripStartDate": "2026-10-13",
+          "hotelQuery": "Marunouchi Base Hotel",
+          "defaultDayStart": "09:00",
+          "dayEndTarget": "20:00",
+          "transferBufferMinutes": 20,
+          "resolvedBase": {"id":"tk-base-marunouchi","input":"Marunouchi Base Hotel","inputIndex":0,"name":"Marunouchi Base Hotel","area":"Chiyoda","address":"Synthetic fixture address, Chiyoda","latitude":35.6812,"longitude":139.7671,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-base-marunouchi","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":0,"isAnchor":false},
+          "nightBases": {
+            "1": {"id":"tk-base-shinjuku","input":"Shinjuku Base Hotel","name":"Shinjuku Base Hotel","area":"Shinjuku","address":"Synthetic fixture address, Shinjuku","latitude":35.6896,"longitude":139.7006,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-base-shinjuku","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":0,"isAnchor":false},
+            "2": null
+          },
+          "resolvedStops": [
+            {"id":"tk-sensoji","input":"Sensoji Temple","inputIndex":0,"name":"Sensoji Temple","area":"Asakusa","address":"Synthetic fixture address, Asakusa","latitude":35.7148,"longitude":139.7967,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-sensoji","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":90,"isAnchor":false},
+            {"id":"tk-skytree","input":"Tokyo Skytree","inputIndex":1,"name":"Tokyo Skytree","area":"Sumida","address":"Synthetic fixture address, Sumida","latitude":35.7102,"longitude":139.8107,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-skytree","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":90,"isAnchor":false},
+            {"id":"tk-ueno","input":"Ueno Park","inputIndex":2,"name":"Ueno Park","area":"Ueno","address":"Synthetic fixture address, Ueno","latitude":35.7156,"longitude":139.7745,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-ueno","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":75,"isAnchor":false},
+            {"id":"tk-shibuya","input":"Shibuya Scramble Square","inputIndex":3,"name":"Shibuya Scramble Square","area":"Shibuya","address":"Synthetic fixture address, Shibuya","latitude":35.658,"longitude":139.7016,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-shibuya","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":75,"isAnchor":false},
+            {"id":"tk-meiji","input":"Meiji Jingu Shrine","inputIndex":4,"name":"Meiji Jingu Shrine","area":"Shibuya","address":"Synthetic fixture address, Shibuya","latitude":35.6764,"longitude":139.6993,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-meiji","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-gyoen","input":"Shinjuku Gyoen","inputIndex":5,"name":"Shinjuku Gyoen","area":"Shinjuku","address":"Synthetic fixture address, Shinjuku","latitude":35.6853,"longitude":139.71,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-gyoen","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":90,"isAnchor":false}
+          ]
+        }
+      },
+      "evidence": {
+        "dateWasProvided": true,
+        "baseWasProvided": true,
+        "dayEndWasProvided": true,
+        "capturedAt": "2026-08-09T00:00:00.000Z",
+        "transferBufferMinutes": 20,
+        "dayStartTimes": {"0": "09:00", "1": "09:00", "2": "09:00"},
+        "dayEndTimes": {"0": "20:00", "1": "20:00", "2": "20:00"}
+      }
+    },
+    {
+      "id": "builder-06-airports-late-international-arrival",
+      "covers": "HND arrival at 23:30 (international) and an NRT departure, with a base — airport boundaries and a shifted first day",
+      "trip": {
+        "raw": "Sensoji Temple\nTokyo Skytree\nUeno Park\nGinza Six\nShibuya Scramble Square\nMeiji Jingu Shrine",
+        "days": 3,
+        "pace": "balanced",
+        "locale": "en",
+        "context": {
+          "destination": "japan",
+          "tripStartDate": "2026-10-13",
+          "arrivalAirport": "HND",
+          "arrivalTime": "23:30",
+          "departureAirport": "NRT",
+          "departureTime": "18:00",
+          "flightKind": "international",
+          "hotelQuery": "Marunouchi Base Hotel",
+          "defaultDayStart": "09:00",
+          "dayEndTarget": "20:00",
+          "transferBufferMinutes": 20,
+          "resolvedBase": {"id":"tk-base-marunouchi","input":"Marunouchi Base Hotel","inputIndex":0,"name":"Marunouchi Base Hotel","area":"Chiyoda","address":"Synthetic fixture address, Chiyoda","latitude":35.6812,"longitude":139.7671,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-base-marunouchi","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":0,"isAnchor":false},
+          "resolvedStops": [
+            {"id":"tk-sensoji","input":"Sensoji Temple","inputIndex":0,"name":"Sensoji Temple","area":"Asakusa","address":"Synthetic fixture address, Asakusa","latitude":35.7148,"longitude":139.7967,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-sensoji","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":90,"isAnchor":false},
+            {"id":"tk-skytree","input":"Tokyo Skytree","inputIndex":1,"name":"Tokyo Skytree","area":"Sumida","address":"Synthetic fixture address, Sumida","latitude":35.7102,"longitude":139.8107,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-skytree","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":90,"isAnchor":false},
+            {"id":"tk-ueno","input":"Ueno Park","inputIndex":2,"name":"Ueno Park","area":"Ueno","address":"Synthetic fixture address, Ueno","latitude":35.7156,"longitude":139.7745,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-ueno","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":75,"isAnchor":false},
+            {"id":"tk-ginza","input":"Ginza Six","inputIndex":3,"name":"Ginza Six","area":"Ginza","address":"Synthetic fixture address, Ginza","latitude":35.6699,"longitude":139.7639,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-ginza","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-shibuya","input":"Shibuya Scramble Square","inputIndex":4,"name":"Shibuya Scramble Square","area":"Shibuya","address":"Synthetic fixture address, Shibuya","latitude":35.658,"longitude":139.7016,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-shibuya","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":75,"isAnchor":false},
+            {"id":"tk-meiji","input":"Meiji Jingu Shrine","inputIndex":5,"name":"Meiji Jingu Shrine","area":"Shibuya","address":"Synthetic fixture address, Shibuya","latitude":35.6764,"longitude":139.6993,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-meiji","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false}
+          ]
+        }
+      },
+      "evidence": {
+        "dateWasProvided": true,
+        "baseWasProvided": true,
+        "dayEndWasProvided": true,
+        "capturedAt": "2026-08-09T00:00:00.000Z",
+        "transferBufferMinutes": 20,
+        "dayStartTimes": {"0": "09:00", "1": "09:00", "2": "09:00"},
+        "dayEndTimes": {"0": "20:00", "1": "20:00", "2": "20:00"},
+        "routeEvidenceByFactId": {
+          "route:airport:arrival:HND": {"legId": "airport-hnd::tk-base-marunouchi", "mode": "transit", "departureBucket": "2026-10-13T23:30", "requestKey": "builder-06-arrival", "status": "verified", "fetchedAt": "2026-08-09T00:00:00.000Z", "minutes": 55, "transferCount": 1},
+          "route:airport:departure:NRT": {"legId": "tk-base-marunouchi::airport-nrt", "mode": "transit", "departureBucket": "2026-10-15T14:00", "requestKey": "builder-06-departure", "status": "unknown", "minutes": null, "reason": "no timetable in fixture"}
+        }
+      }
+    },
+    {
+      "id": "builder-07-opening-windows-closed-day-and-last-entry",
+      "covers": "openingWindowsByDay with a closed day (empty window list) and a lastEntryMinutes cutoff, plus lastEntryTimes",
+      "trip": {
+        "raw": "Sensoji Temple\nTokyo Skytree\nUeno Park\nImperial Palace East Garden\nGinza Six",
+        "days": 3,
+        "pace": "balanced",
+        "locale": "en",
+        "context": {
+          "destination": "japan",
+          "tripStartDate": "2026-10-13",
+          "defaultDayStart": "09:00",
+          "dayEndTarget": "20:00",
+          "transferBufferMinutes": 20,
+          "dayOverrides": {"tk-imperial": 2, "tk-skytree": 1},
+          "lastEntryTimes": {"tk-skytree": "15:30"},
+          "openingWindowsByDay": {
+            "tk-imperial": {"0": [{"openMinutes": 540, "closeMinutes": 1020}], "1": [], "2": [{"openMinutes": 540, "closeMinutes": 1020}]},
+            "tk-skytree": {"0": [{"openMinutes": 600, "closeMinutes": 1260, "lastEntryMinutes": 930}], "1": [{"openMinutes": 600, "closeMinutes": 1260, "lastEntryMinutes": 930}], "2": [{"openMinutes": 600, "closeMinutes": 1260, "lastEntryMinutes": 930}]}
+          },
+          "resolvedStops": [
+            {"id":"tk-sensoji","input":"Sensoji Temple","inputIndex":0,"name":"Sensoji Temple","area":"Asakusa","address":"Synthetic fixture address, Asakusa","latitude":35.7148,"longitude":139.7967,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-sensoji","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":90,"isAnchor":false},
+            {"id":"tk-skytree","input":"Tokyo Skytree","inputIndex":1,"name":"Tokyo Skytree","area":"Sumida","address":"Synthetic fixture address, Sumida","latitude":35.7102,"longitude":139.8107,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-skytree","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":90,"isAnchor":false},
+            {"id":"tk-ueno","input":"Ueno Park","inputIndex":2,"name":"Ueno Park","area":"Ueno","address":"Synthetic fixture address, Ueno","latitude":35.7156,"longitude":139.7745,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-ueno","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":75,"isAnchor":false},
+            {"id":"tk-imperial","input":"Imperial Palace East Garden","inputIndex":3,"name":"Imperial Palace East Garden","area":"Chiyoda","address":"Synthetic fixture address, Chiyoda","latitude":35.6853,"longitude":139.7528,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-imperial","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-ginza","input":"Ginza Six","inputIndex":4,"name":"Ginza Six","area":"Ginza","address":"Synthetic fixture address, Ginza","latitude":35.6699,"longitude":139.7639,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-ginza","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false}
+          ]
+        }
+      },
+      "evidence": {
+        "dateWasProvided": true,
+        "baseWasProvided": false,
+        "dayEndWasProvided": true,
+        "capturedAt": "2026-08-09T00:00:00.000Z",
+        "transferBufferMinutes": 20,
+        "dayStartTimes": {"0": "09:00", "1": "09:00", "2": "09:00"},
+        "dayEndTimes": {"0": "20:00", "1": "20:00", "2": "20:00"},
+        "openingEvidenceByStop": {
+          "tk-imperial": {"fetchedAt": "2026-08-09T00:00:00.000Z", "dateSpecific": true, "dateSpecificDates": ["2026-10-13", "2026-10-14", "2026-10-15"]},
+          "tk-skytree": {"fetchedAt": "2026-08-09T00:00:00.000Z"}
+        },
+        "lastEntryEvidenceByStop": {
+          "tk-skytree": {"time": "15:30", "status": "verified", "fetchedAt": "2026-08-09T00:00:00.000Z"}
+        }
+      }
+    },
+    {
+      "id": "builder-08-tight-day-end-and-buffer-thirty",
+      "covers": "per-day dayEndTimes, transferBufferMinutes 30, maxWalkingMinutesPerLeg 10 and maxTransfersPerLeg 0",
+      "trip": {
+        "raw": "Sensoji Temple\nTokyo Skytree\nUeno Park\nAkihabara Electric Town\nGinza Six\nTsukiji Outer Market\nOdaiba Seaside Park",
+        "days": 2,
+        "pace": "balanced",
+        "locale": "en",
+        "context": {
+          "destination": "japan",
+          "tripStartDate": "2026-10-13",
+          "defaultDayStart": "09:00",
+          "dayEndTarget": "17:00",
+          "dayEndTimes": {"0": "16:00", "1": "18:30"},
+          "dayStartTimes": {"0": "10:00"},
+          "transferBufferMinutes": 30,
+          "maxWalkingMinutesPerLeg": 10,
+          "maxTransfersPerLeg": 0,
+          "resolvedStops": [
+            {"id":"tk-sensoji","input":"Sensoji Temple","inputIndex":0,"name":"Sensoji Temple","area":"Asakusa","address":"Synthetic fixture address, Asakusa","latitude":35.7148,"longitude":139.7967,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-sensoji","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":90,"isAnchor":false},
+            {"id":"tk-skytree","input":"Tokyo Skytree","inputIndex":1,"name":"Tokyo Skytree","area":"Sumida","address":"Synthetic fixture address, Sumida","latitude":35.7102,"longitude":139.8107,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-skytree","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":90,"isAnchor":false},
+            {"id":"tk-ueno","input":"Ueno Park","inputIndex":2,"name":"Ueno Park","area":"Ueno","address":"Synthetic fixture address, Ueno","latitude":35.7156,"longitude":139.7745,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-ueno","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":75,"isAnchor":false},
+            {"id":"tk-akihabara","input":"Akihabara Electric Town","inputIndex":3,"name":"Akihabara Electric Town","area":"Akihabara","address":"Synthetic fixture address, Akihabara","latitude":35.6984,"longitude":139.7731,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-akihabara","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-ginza","input":"Ginza Six","inputIndex":4,"name":"Ginza Six","area":"Ginza","address":"Synthetic fixture address, Ginza","latitude":35.6699,"longitude":139.7639,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-ginza","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-tsukiji","input":"Tsukiji Outer Market","inputIndex":5,"name":"Tsukiji Outer Market","area":"Tsukiji","address":"Synthetic fixture address, Tsukiji","latitude":35.6654,"longitude":139.7707,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-tsukiji","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-odaiba","input":"Odaiba Seaside Park","inputIndex":6,"name":"Odaiba Seaside Park","area":"Minato","address":"Synthetic fixture address, Minato","latitude":35.6299,"longitude":139.7742,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-odaiba","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":75,"isAnchor":false}
+          ]
+        }
+      },
+      "evidence": {
+        "dateWasProvided": true,
+        "baseWasProvided": false,
+        "dayEndWasProvided": true,
+        "capturedAt": "2026-08-09T00:00:00.000Z",
+        "transferBufferMinutes": 30,
+        "dayStartTimes": {"0": "10:00", "1": "09:00"},
+        "dayEndTimes": {"0": "16:00", "1": "18:30"}
+      }
+    },
+    {
+      "id": "builder-09-live-transit-evidence",
+      "covers": "liveTransitMinutes, liveTransitAbsentLegs, liveTransitTransferCounts, liveWalkingMinutes and liveDrivingMinutes over a locked existing itinerary so the leg keys are exact",
+      "trip": {
+        "raw": "Day 1\nSensoji Temple\nTokyo Skytree\nUeno Park\nDay 2\nShibuya Scramble Square\nMeiji Jingu Shrine\nShinjuku Gyoen",
+        "days": 2,
+        "pace": "balanced",
+        "locale": "en",
+        "context": {
+          "destination": "japan",
+          "tripStartDate": "2026-10-13",
+          "defaultDayStart": "09:00",
+          "dayEndTarget": "20:00",
+          "transferBufferMinutes": 20,
+          "lockedOrderByDay": {"0": ["tk-sensoji", "tk-skytree", "tk-ueno"], "1": ["tk-shibuya", "tk-meiji", "tk-gyoen"]},
+          "liveTransitMinutes": {"tk-sensoji::tk-skytree": 14, "tk-skytree::tk-ueno": 22, "tk-shibuya::tk-meiji": 11},
+          "liveTransitTransferCounts": {"tk-sensoji::tk-skytree": 0, "tk-skytree::tk-ueno": 1},
+          "liveTransitAbsentLegs": {"tk-meiji::tk-gyoen": true},
+          "liveDrivingMinutes": {"tk-meiji::tk-gyoen": 18, "tk-skytree::tk-ueno": 25},
+          "liveWalkingMinutes": {"tk-shibuya::tk-meiji": 34},
+          "resolvedStops": [
+            {"id":"tk-sensoji","input":"Sensoji Temple","inputIndex":0,"name":"Sensoji Temple","area":"Asakusa","address":"Synthetic fixture address, Asakusa","latitude":35.7148,"longitude":139.7967,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-sensoji","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":90,"isAnchor":false},
+            {"id":"tk-skytree","input":"Tokyo Skytree","inputIndex":1,"name":"Tokyo Skytree","area":"Sumida","address":"Synthetic fixture address, Sumida","latitude":35.7102,"longitude":139.8107,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-skytree","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":90,"isAnchor":false},
+            {"id":"tk-ueno","input":"Ueno Park","inputIndex":2,"name":"Ueno Park","area":"Ueno","address":"Synthetic fixture address, Ueno","latitude":35.7156,"longitude":139.7745,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-ueno","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":75,"isAnchor":false},
+            {"id":"tk-shibuya","input":"Shibuya Scramble Square","inputIndex":3,"name":"Shibuya Scramble Square","area":"Shibuya","address":"Synthetic fixture address, Shibuya","latitude":35.658,"longitude":139.7016,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-shibuya","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":75,"isAnchor":false},
+            {"id":"tk-meiji","input":"Meiji Jingu Shrine","inputIndex":4,"name":"Meiji Jingu Shrine","area":"Shibuya","address":"Synthetic fixture address, Shibuya","latitude":35.6764,"longitude":139.6993,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-meiji","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-gyoen","input":"Shinjuku Gyoen","inputIndex":5,"name":"Shinjuku Gyoen","area":"Shinjuku","address":"Synthetic fixture address, Shinjuku","latitude":35.6853,"longitude":139.71,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-gyoen","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":90,"isAnchor":false}
+          ]
+        }
+      },
+      "evidence": {
+        "dateWasProvided": true,
+        "baseWasProvided": false,
+        "dayEndWasProvided": true,
+        "capturedAt": "2026-08-09T00:00:00.000Z",
+        "transferBufferMinutes": 20,
+        "dayStartTimes": {"0": "09:00", "1": "09:00"},
+        "dayEndTimes": {"0": "20:00", "1": "20:00"},
+        "transitConvergence": {"nonConverged": false, "stopReason": "converged", "iterations": 2, "eventCount": 6},
+        "routeEvidenceByFactId": {
+          "route:Day 1:tk-sensoji:tk-skytree": {"legId": "tk-sensoji::tk-skytree", "mode": "transit", "departureBucket": "2026-10-13T10:30", "requestKey": "builder-09-leg-1", "status": "verified", "fetchedAt": "2026-08-09T00:00:00.000Z", "minutes": 14, "transferCount": 0},
+          "route:Day 1:tk-skytree:tk-ueno": {"legId": "tk-skytree::tk-ueno", "mode": "transit", "departureBucket": "2026-10-13T13:00", "requestKey": "builder-09-leg-2", "status": "verified", "fetchedAt": "2026-08-09T00:00:00.000Z", "minutes": 22, "transferCount": 1},
+          "route:Day 2:tk-meiji:tk-gyoen": {"legId": "tk-meiji::tk-gyoen", "mode": "transit", "departureBucket": "2026-10-14T13:00", "requestKey": "builder-09-leg-3", "status": "failed", "minutes": null, "reason": "no transit route in fixture"}
+        }
+      }
+    },
+    {
+      "id": "builder-10-leg-mode-overrides",
+      "covers": "legModeOverrides forcing taxi and walk on named legs of a locked itinerary",
+      "trip": {
+        "raw": "Day 1\nSensoji Temple\nTokyo Skytree\nUeno Park\nAkihabara Electric Town\nDay 2\nGinza Six\nTsukiji Outer Market\nOdaiba Seaside Park",
+        "days": 2,
+        "pace": "balanced",
+        "locale": "en",
+        "context": {
+          "destination": "japan",
+          "tripStartDate": "2026-10-13",
+          "defaultDayStart": "09:00",
+          "dayEndTarget": "21:00",
+          "transferBufferMinutes": 10,
+          "lockedOrderByDay": {"0": ["tk-sensoji", "tk-skytree", "tk-ueno", "tk-akihabara"], "1": ["tk-ginza", "tk-tsukiji", "tk-odaiba"]},
+          "legModeOverrides": {"tk-sensoji::tk-skytree": "taxi", "tk-ueno::tk-akihabara": "walk", "tk-ginza::tk-tsukiji": "walk"},
+          "resolvedStops": [
+            {"id":"tk-sensoji","input":"Sensoji Temple","inputIndex":0,"name":"Sensoji Temple","area":"Asakusa","address":"Synthetic fixture address, Asakusa","latitude":35.7148,"longitude":139.7967,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-sensoji","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":90,"isAnchor":false},
+            {"id":"tk-skytree","input":"Tokyo Skytree","inputIndex":1,"name":"Tokyo Skytree","area":"Sumida","address":"Synthetic fixture address, Sumida","latitude":35.7102,"longitude":139.8107,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-skytree","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":90,"isAnchor":false},
+            {"id":"tk-ueno","input":"Ueno Park","inputIndex":2,"name":"Ueno Park","area":"Ueno","address":"Synthetic fixture address, Ueno","latitude":35.7156,"longitude":139.7745,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-ueno","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":75,"isAnchor":false},
+            {"id":"tk-akihabara","input":"Akihabara Electric Town","inputIndex":3,"name":"Akihabara Electric Town","area":"Akihabara","address":"Synthetic fixture address, Akihabara","latitude":35.6984,"longitude":139.7731,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-akihabara","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-ginza","input":"Ginza Six","inputIndex":4,"name":"Ginza Six","area":"Ginza","address":"Synthetic fixture address, Ginza","latitude":35.6699,"longitude":139.7639,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-ginza","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-tsukiji","input":"Tsukiji Outer Market","inputIndex":5,"name":"Tsukiji Outer Market","area":"Tsukiji","address":"Synthetic fixture address, Tsukiji","latitude":35.6654,"longitude":139.7707,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-tsukiji","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-odaiba","input":"Odaiba Seaside Park","inputIndex":6,"name":"Odaiba Seaside Park","area":"Minato","address":"Synthetic fixture address, Minato","latitude":35.6299,"longitude":139.7742,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-odaiba","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":75,"isAnchor":false}
+          ]
+        }
+      },
+      "evidence": {
+        "dateWasProvided": true,
+        "baseWasProvided": false,
+        "dayEndWasProvided": true,
+        "capturedAt": "2026-08-09T00:00:00.000Z",
+        "transferBufferMinutes": 10,
+        "dayStartTimes": {"0": "09:00", "1": "09:00"},
+        "dayEndTimes": {"0": "21:00", "1": "21:00"}
+      }
+    },
+    {
+      "id": "builder-11-existing-itinerary-locked-order",
+      "covers": "existing_itinerary raw text with day headings and an explicit lockedOrderByDay that contradicts the geographic optimum",
+      "trip": {
+        "raw": "Day 1\nGinza Six\nSensoji Temple\nTsukiji Outer Market\nDay 2\nMeiji Jingu Shrine\nUeno Park\nShibuya Scramble Square\nDay 3\nOdaiba Seaside Park\nTokyo Tower",
+        "days": 3,
+        "pace": "balanced",
+        "locale": "en",
+        "context": {
+          "destination": "japan",
+          "tripStartDate": "2026-10-13",
+          "defaultDayStart": "09:00",
+          "dayEndTarget": "20:00",
+          "transferBufferMinutes": 20,
+          "lockedOrderByDay": {
+            "0": ["tk-ginza", "tk-sensoji", "tk-tsukiji"],
+            "1": ["tk-meiji", "tk-ueno", "tk-shibuya"],
+            "2": ["tk-odaiba", "tk-tower"]
+          },
+          "resolvedStops": [
+            {"id":"tk-ginza","input":"Ginza Six","inputIndex":0,"name":"Ginza Six","area":"Ginza","address":"Synthetic fixture address, Ginza","latitude":35.6699,"longitude":139.7639,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-ginza","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-sensoji","input":"Sensoji Temple","inputIndex":1,"name":"Sensoji Temple","area":"Asakusa","address":"Synthetic fixture address, Asakusa","latitude":35.7148,"longitude":139.7967,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-sensoji","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":90,"isAnchor":false},
+            {"id":"tk-tsukiji","input":"Tsukiji Outer Market","inputIndex":2,"name":"Tsukiji Outer Market","area":"Tsukiji","address":"Synthetic fixture address, Tsukiji","latitude":35.6654,"longitude":139.7707,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-tsukiji","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-meiji","input":"Meiji Jingu Shrine","inputIndex":3,"name":"Meiji Jingu Shrine","area":"Shibuya","address":"Synthetic fixture address, Shibuya","latitude":35.6764,"longitude":139.6993,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-meiji","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-ueno","input":"Ueno Park","inputIndex":4,"name":"Ueno Park","area":"Ueno","address":"Synthetic fixture address, Ueno","latitude":35.7156,"longitude":139.7745,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-ueno","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":75,"isAnchor":false},
+            {"id":"tk-shibuya","input":"Shibuya Scramble Square","inputIndex":5,"name":"Shibuya Scramble Square","area":"Shibuya","address":"Synthetic fixture address, Shibuya","latitude":35.658,"longitude":139.7016,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-shibuya","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":75,"isAnchor":false},
+            {"id":"tk-odaiba","input":"Odaiba Seaside Park","inputIndex":6,"name":"Odaiba Seaside Park","area":"Minato","address":"Synthetic fixture address, Minato","latitude":35.6299,"longitude":139.7742,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-odaiba","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":75,"isAnchor":false},
+            {"id":"tk-tower","input":"Tokyo Tower","inputIndex":7,"name":"Tokyo Tower","area":"Minato","address":"Synthetic fixture address, Minato","latitude":35.6586,"longitude":139.7454,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-tower","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false}
+          ]
+        }
+      },
+      "evidence": {
+        "dateWasProvided": true,
+        "baseWasProvided": false,
+        "dayEndWasProvided": true,
+        "capturedAt": "2026-08-09T00:00:00.000Z",
+        "transferBufferMinutes": 20,
+        "dayStartTimes": {"0": "09:00", "1": "09:00", "2": "09:00"},
+        "dayEndTimes": {"0": "20:00", "1": "20:00", "2": "20:00"}
+      }
+    },
+    {
+      "id": "builder-12-existing-itinerary-order-released",
+      "covers": "the same pasted itinerary as builder-11 with optimizeExistingOrder true — day assignments kept, order re-optimised",
+      "trip": {
+        "raw": "Day 1\nGinza Six\nSensoji Temple\nTsukiji Outer Market\nDay 2\nMeiji Jingu Shrine\nUeno Park\nShibuya Scramble Square\nDay 3\nOdaiba Seaside Park\nTokyo Tower",
+        "days": 3,
+        "pace": "balanced",
+        "locale": "en",
+        "context": {
+          "destination": "japan",
+          "tripStartDate": "2026-10-13",
+          "defaultDayStart": "09:00",
+          "dayEndTarget": "20:00",
+          "transferBufferMinutes": 20,
+          "optimizeExistingOrder": true,
+          "lockedOrderByDay": {
+            "0": ["tk-ginza", "tk-sensoji", "tk-tsukiji"],
+            "1": ["tk-meiji", "tk-ueno", "tk-shibuya"],
+            "2": ["tk-odaiba", "tk-tower"]
+          },
+          "resolvedStops": [
+            {"id":"tk-ginza","input":"Ginza Six","inputIndex":0,"name":"Ginza Six","area":"Ginza","address":"Synthetic fixture address, Ginza","latitude":35.6699,"longitude":139.7639,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-ginza","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-sensoji","input":"Sensoji Temple","inputIndex":1,"name":"Sensoji Temple","area":"Asakusa","address":"Synthetic fixture address, Asakusa","latitude":35.7148,"longitude":139.7967,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-sensoji","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":90,"isAnchor":false},
+            {"id":"tk-tsukiji","input":"Tsukiji Outer Market","inputIndex":2,"name":"Tsukiji Outer Market","area":"Tsukiji","address":"Synthetic fixture address, Tsukiji","latitude":35.6654,"longitude":139.7707,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-tsukiji","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-meiji","input":"Meiji Jingu Shrine","inputIndex":3,"name":"Meiji Jingu Shrine","area":"Shibuya","address":"Synthetic fixture address, Shibuya","latitude":35.6764,"longitude":139.6993,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-meiji","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-ueno","input":"Ueno Park","inputIndex":4,"name":"Ueno Park","area":"Ueno","address":"Synthetic fixture address, Ueno","latitude":35.7156,"longitude":139.7745,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-ueno","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":75,"isAnchor":false},
+            {"id":"tk-shibuya","input":"Shibuya Scramble Square","inputIndex":5,"name":"Shibuya Scramble Square","area":"Shibuya","address":"Synthetic fixture address, Shibuya","latitude":35.658,"longitude":139.7016,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-shibuya","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":75,"isAnchor":false},
+            {"id":"tk-odaiba","input":"Odaiba Seaside Park","inputIndex":6,"name":"Odaiba Seaside Park","area":"Minato","address":"Synthetic fixture address, Minato","latitude":35.6299,"longitude":139.7742,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-odaiba","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":75,"isAnchor":false},
+            {"id":"tk-tower","input":"Tokyo Tower","inputIndex":7,"name":"Tokyo Tower","area":"Minato","address":"Synthetic fixture address, Minato","latitude":35.6586,"longitude":139.7454,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-tower","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false}
+          ]
+        }
+      },
+      "evidence": {
+        "dateWasProvided": true,
+        "baseWasProvided": false,
+        "dayEndWasProvided": true,
+        "capturedAt": "2026-08-09T00:00:00.000Z",
+        "transferBufferMinutes": 20,
+        "dayStartTimes": {"0": "09:00", "1": "09:00", "2": "09:00"},
+        "dayEndTimes": {"0": "20:00", "1": "20:00", "2": "20:00"}
+      }
+    },
+    {
+      "id": "builder-13-excluded-stops",
+      "covers": "excludedStopIds removing two of eight resolved stops after day pins were set",
+      "trip": {
+        "raw": "Sensoji Temple\nTokyo Skytree\nUeno Park\nAkihabara Electric Town\nImperial Palace East Garden\nGinza Six\nTsukiji Outer Market\nShibuya Scramble Square",
+        "days": 3,
+        "pace": "balanced",
+        "locale": "en",
+        "context": {
+          "destination": "japan",
+          "tripStartDate": "2026-10-13",
+          "defaultDayStart": "09:00",
+          "dayEndTarget": "19:30",
+          "transferBufferMinutes": 20,
+          "excludedStopIds": ["tk-akihabara", "tk-ginza"],
+          "dayOverrides": {"tk-shibuya": 3},
+          "resolvedStops": [
+            {"id":"tk-sensoji","input":"Sensoji Temple","inputIndex":0,"name":"Sensoji Temple","area":"Asakusa","address":"Synthetic fixture address, Asakusa","latitude":35.7148,"longitude":139.7967,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-sensoji","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":90,"isAnchor":false},
+            {"id":"tk-skytree","input":"Tokyo Skytree","inputIndex":1,"name":"Tokyo Skytree","area":"Sumida","address":"Synthetic fixture address, Sumida","latitude":35.7102,"longitude":139.8107,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-skytree","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":90,"isAnchor":false},
+            {"id":"tk-ueno","input":"Ueno Park","inputIndex":2,"name":"Ueno Park","area":"Ueno","address":"Synthetic fixture address, Ueno","latitude":35.7156,"longitude":139.7745,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-ueno","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":75,"isAnchor":false},
+            {"id":"tk-akihabara","input":"Akihabara Electric Town","inputIndex":3,"name":"Akihabara Electric Town","area":"Akihabara","address":"Synthetic fixture address, Akihabara","latitude":35.6984,"longitude":139.7731,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-akihabara","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-imperial","input":"Imperial Palace East Garden","inputIndex":4,"name":"Imperial Palace East Garden","area":"Chiyoda","address":"Synthetic fixture address, Chiyoda","latitude":35.6853,"longitude":139.7528,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-imperial","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-ginza","input":"Ginza Six","inputIndex":5,"name":"Ginza Six","area":"Ginza","address":"Synthetic fixture address, Ginza","latitude":35.6699,"longitude":139.7639,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-ginza","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-tsukiji","input":"Tsukiji Outer Market","inputIndex":6,"name":"Tsukiji Outer Market","area":"Tsukiji","address":"Synthetic fixture address, Tsukiji","latitude":35.6654,"longitude":139.7707,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-tsukiji","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-shibuya","input":"Shibuya Scramble Square","inputIndex":7,"name":"Shibuya Scramble Square","area":"Shibuya","address":"Synthetic fixture address, Shibuya","latitude":35.658,"longitude":139.7016,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-shibuya","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":75,"isAnchor":false}
+          ]
+        }
+      },
+      "evidence": {
+        "dateWasProvided": true,
+        "baseWasProvided": false,
+        "dayEndWasProvided": true,
+        "capturedAt": "2026-08-09T00:00:00.000Z",
+        "transferBufferMinutes": 20,
+        "dayStartTimes": {"0": "09:00", "1": "09:00", "2": "09:00"},
+        "dayEndTimes": {"0": "19:30", "1": "19:30", "2": "19:30"}
+      }
+    },
+    {
+      "id": "builder-14-travel-preference-car",
+      "covers": "travelPreference car over spread-out stops, with a base and a generous walking limit",
+      "trip": {
+        "raw": "Sensoji Temple\nTokyo Skytree\nOdaiba Seaside Park\nTokyo Tower\nRoppongi Hills\nMeiji Jingu Shrine",
+        "days": 3,
+        "pace": "balanced",
+        "locale": "en",
+        "context": {
+          "destination": "japan",
+          "tripStartDate": "2026-10-13",
+          "hotelQuery": "Marunouchi Base Hotel",
+          "defaultDayStart": "09:00",
+          "dayEndTarget": "20:00",
+          "transferBufferMinutes": 0,
+          "travelPreference": "car",
+          "maxWalkingMinutesPerLeg": 45,
+          "maxTransfersPerLeg": 4,
+          "resolvedBase": {"id":"tk-base-marunouchi","input":"Marunouchi Base Hotel","inputIndex":0,"name":"Marunouchi Base Hotel","area":"Chiyoda","address":"Synthetic fixture address, Chiyoda","latitude":35.6812,"longitude":139.7671,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-base-marunouchi","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":0,"isAnchor":false},
+          "resolvedStops": [
+            {"id":"tk-sensoji","input":"Sensoji Temple","inputIndex":0,"name":"Sensoji Temple","area":"Asakusa","address":"Synthetic fixture address, Asakusa","latitude":35.7148,"longitude":139.7967,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-sensoji","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":90,"isAnchor":false},
+            {"id":"tk-skytree","input":"Tokyo Skytree","inputIndex":1,"name":"Tokyo Skytree","area":"Sumida","address":"Synthetic fixture address, Sumida","latitude":35.7102,"longitude":139.8107,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-skytree","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":90,"isAnchor":false},
+            {"id":"tk-odaiba","input":"Odaiba Seaside Park","inputIndex":2,"name":"Odaiba Seaside Park","area":"Minato","address":"Synthetic fixture address, Minato","latitude":35.6299,"longitude":139.7742,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-odaiba","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":75,"isAnchor":false},
+            {"id":"tk-tower","input":"Tokyo Tower","inputIndex":3,"name":"Tokyo Tower","area":"Minato","address":"Synthetic fixture address, Minato","latitude":35.6586,"longitude":139.7454,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-tower","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-roppongi","input":"Roppongi Hills","inputIndex":4,"name":"Roppongi Hills","area":"Minato","address":"Synthetic fixture address, Minato","latitude":35.6605,"longitude":139.7292,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-roppongi","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-meiji","input":"Meiji Jingu Shrine","inputIndex":5,"name":"Meiji Jingu Shrine","area":"Shibuya","address":"Synthetic fixture address, Shibuya","latitude":35.6764,"longitude":139.6993,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-meiji","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false}
+          ]
+        }
+      },
+      "evidence": {
+        "dateWasProvided": true,
+        "baseWasProvided": true,
+        "dayEndWasProvided": true,
+        "capturedAt": "2026-08-09T00:00:00.000Z",
+        "transferBufferMinutes": 0,
+        "dayStartTimes": {"0": "09:00", "1": "09:00", "2": "09:00"},
+        "dayEndTimes": {"0": "20:00", "1": "20:00", "2": "20:00"}
+      }
+    },
+    {
+      "id": "builder-15-japanese-locale",
+      "covers": "locale ja with Japanese input lines and mealPlan all — meal slots, themes and labels in the other locale",
+      "trip": {
+        "raw": "浅草寺\n東京スカイツリー\n上野公園\n築地場外市場\n銀座シックス\n明治神宮\n新宿御苑",
+        "days": 3,
+        "pace": "balanced",
+        "locale": "ja",
+        "context": {
+          "destination": "japan",
+          "tripStartDate": "2026-10-13",
+          "defaultDayStart": "09:00",
+          "dayEndTarget": "20:30",
+          "transferBufferMinutes": 20,
+          "mealPlan": "all",
+          "resolvedStops": [
+            {"id":"tk-sensoji","input":"浅草寺","inputIndex":0,"name":"浅草寺","area":"浅草","address":"合成フィクスチャ住所、浅草","latitude":35.7148,"longitude":139.7967,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-sensoji","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":90,"isAnchor":false},
+            {"id":"tk-skytree","input":"東京スカイツリー","inputIndex":1,"name":"東京スカイツリー","area":"墨田","address":"合成フィクスチャ住所、墨田","latitude":35.7102,"longitude":139.8107,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-skytree","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":90,"isAnchor":false},
+            {"id":"tk-ueno","input":"上野公園","inputIndex":2,"name":"上野公園","area":"上野","address":"合成フィクスチャ住所、上野","latitude":35.7156,"longitude":139.7745,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-ueno","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":75,"isAnchor":false},
+            {"id":"tk-tsukiji","input":"築地場外市場","inputIndex":3,"name":"築地場外市場","area":"築地","address":"合成フィクスチャ住所、築地","latitude":35.6654,"longitude":139.7707,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-tsukiji","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-ginza","input":"銀座シックス","inputIndex":4,"name":"銀座シックス","area":"銀座","address":"合成フィクスチャ住所、銀座","latitude":35.6699,"longitude":139.7639,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-ginza","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-meiji","input":"明治神宮","inputIndex":5,"name":"明治神宮","area":"渋谷","address":"合成フィクスチャ住所、渋谷","latitude":35.6764,"longitude":139.6993,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-meiji","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-gyoen","input":"新宿御苑","inputIndex":6,"name":"新宿御苑","area":"新宿","address":"合成フィクスチャ住所、新宿","latitude":35.6853,"longitude":139.71,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-gyoen","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":90,"isAnchor":false}
+          ]
+        }
+      },
+      "evidence": {
+        "dateWasProvided": true,
+        "baseWasProvided": false,
+        "dayEndWasProvided": true,
+        "capturedAt": "2026-08-09T00:00:00.000Z",
+        "transferBufferMinutes": 20,
+        "dayStartTimes": {"0": "09:00", "1": "09:00", "2": "09:00"},
+        "dayEndTimes": {"0": "20:30", "1": "20:30", "2": "20:30"}
+      }
+    },
+    {
+      "id": "builder-16-switzerland-mountain-access",
+      "covers": "destination switzerland with Jungfraujoch and Gornergrat present so the PoiAccess policies fire on their legs",
+      "trip": {
+        "raw": "Lucerne Chapel Bridge\nMount Rigi\nInterlaken\nJungfraujoch\nLauterbrunnen\nZermatt\nGornergrat\nBern Old Town",
+        "days": 4,
+        "pace": "balanced",
+        "locale": "en",
+        "context": {
+          "destination": "switzerland",
+          "tripStartDate": "2026-07-06",
+          "defaultDayStart": "08:30",
+          "dayEndTarget": "20:00",
+          "transferBufferMinutes": 20,
+          "resolvedStops": [
+            {"id":"ch-lucerne","input":"Lucerne Chapel Bridge","inputIndex":0,"name":"Lucerne Chapel Bridge","area":"Lucerne","address":"Synthetic fixture address, Lucerne","latitude":47.0517,"longitude":8.3073,"countryCode":"CH","sourceUrl":"https://example.test/builder/ch-lucerne","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":45,"isAnchor":false,"openingHoursApplicable":false},
+            {"id":"ch-rigi","input":"Mount Rigi","inputIndex":1,"name":"Mount Rigi","area":"Arth","address":"Synthetic fixture address, Arth","latitude":47.0567,"longitude":8.4854,"countryCode":"CH","sourceUrl":"https://example.test/builder/ch-rigi","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":150,"isAnchor":false,"openingHoursApplicable":false},
+            {"id":"ch-interlaken","input":"Interlaken","inputIndex":2,"name":"Interlaken","area":"Interlaken","address":"Synthetic fixture address, Interlaken","latitude":46.6862,"longitude":7.8632,"countryCode":"CH","sourceUrl":"https://example.test/builder/ch-interlaken","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":90,"isAnchor":false,"openingHoursApplicable":false},
+            {"id":"ch-jungfraujoch","input":"Jungfraujoch","inputIndex":3,"name":"Jungfraujoch","area":"Lauterbrunnen","address":"Synthetic fixture address, Lauterbrunnen","latitude":46.5473,"longitude":7.9793,"countryCode":"CH","sourceUrl":"https://example.test/builder/ch-jungfraujoch","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":150,"isAnchor":false},
+            {"id":"ch-lauterbrunnen","input":"Lauterbrunnen","inputIndex":4,"name":"Lauterbrunnen","area":"Lauterbrunnen","address":"Synthetic fixture address, Lauterbrunnen","latitude":46.5937,"longitude":7.9081,"countryCode":"CH","sourceUrl":"https://example.test/builder/ch-lauterbrunnen","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false,"openingHoursApplicable":false},
+            {"id":"ch-zermatt","input":"Zermatt","inputIndex":5,"name":"Zermatt","area":"Zermatt","address":"Synthetic fixture address, Zermatt","latitude":46.0207,"longitude":7.7491,"countryCode":"CH","sourceUrl":"https://example.test/builder/ch-zermatt","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":120,"isAnchor":false,"openingHoursApplicable":false},
+            {"id":"ch-gornergrat","input":"Gornergrat","inputIndex":6,"name":"Gornergrat","area":"Zermatt","address":"Synthetic fixture address, Zermatt","latitude":45.9833,"longitude":7.7842,"countryCode":"CH","sourceUrl":"https://example.test/builder/ch-gornergrat","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":120,"isAnchor":false},
+            {"id":"ch-bern","input":"Bern Old Town","inputIndex":7,"name":"Bern Old Town","area":"Bern","address":"Synthetic fixture address, Bern","latitude":46.948,"longitude":7.4474,"countryCode":"CH","sourceUrl":"https://example.test/builder/ch-bern","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":90,"isAnchor":false,"openingHoursApplicable":false}
+          ]
+        }
+      },
+      "evidence": {
+        "dateWasProvided": true,
+        "baseWasProvided": false,
+        "dayEndWasProvided": true,
+        "capturedAt": "2026-08-09T00:00:00.000Z",
+        "transferBufferMinutes": 20,
+        "dayStartTimes": {"0": "08:30", "1": "08:30", "2": "08:30", "3": "08:30"},
+        "dayEndTimes": {"0": "20:00", "1": "20:00", "2": "20:00", "3": "20:00"}
+      }
+    },
+    {
+      "id": "builder-17-relaxed-five-days-twelve-stops",
+      "covers": "pace relaxed over 5 days and 12 stops — the widest day-assignment search in the corpus",
+      "trip": {
+        "raw": "Sensoji Temple\nTokyo Skytree\nUeno Park\nYanaka Ginza\nAkihabara Electric Town\nImperial Palace East Garden\nGinza Six\nTsukiji Outer Market\nOdaiba Seaside Park\nTokyo Tower\nRoppongi Hills\nMeiji Jingu Shrine",
+        "days": 5,
+        "pace": "relaxed",
+        "locale": "en",
+        "context": {
+          "destination": "japan",
+          "tripStartDate": "2026-10-13",
+          "defaultDayStart": "09:30",
+          "dayEndTarget": "18:30",
+          "transferBufferMinutes": 20,
+          "resolvedStops": [
+            {"id":"tk-sensoji","input":"Sensoji Temple","inputIndex":0,"name":"Sensoji Temple","area":"Asakusa","address":"Synthetic fixture address, Asakusa","latitude":35.7148,"longitude":139.7967,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-sensoji","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":90,"isAnchor":false},
+            {"id":"tk-skytree","input":"Tokyo Skytree","inputIndex":1,"name":"Tokyo Skytree","area":"Sumida","address":"Synthetic fixture address, Sumida","latitude":35.7102,"longitude":139.8107,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-skytree","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":90,"isAnchor":false},
+            {"id":"tk-ueno","input":"Ueno Park","inputIndex":2,"name":"Ueno Park","area":"Ueno","address":"Synthetic fixture address, Ueno","latitude":35.7156,"longitude":139.7745,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-ueno","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":75,"isAnchor":false},
+            {"id":"tk-yanaka","input":"Yanaka Ginza","inputIndex":3,"name":"Yanaka Ginza","area":"Taito","address":"Synthetic fixture address, Taito","latitude":35.7276,"longitude":139.766,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-yanaka","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":45,"isAnchor":false},
+            {"id":"tk-akihabara","input":"Akihabara Electric Town","inputIndex":4,"name":"Akihabara Electric Town","area":"Akihabara","address":"Synthetic fixture address, Akihabara","latitude":35.6984,"longitude":139.7731,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-akihabara","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-imperial","input":"Imperial Palace East Garden","inputIndex":5,"name":"Imperial Palace East Garden","area":"Chiyoda","address":"Synthetic fixture address, Chiyoda","latitude":35.6853,"longitude":139.7528,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-imperial","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-ginza","input":"Ginza Six","inputIndex":6,"name":"Ginza Six","area":"Ginza","address":"Synthetic fixture address, Ginza","latitude":35.6699,"longitude":139.7639,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-ginza","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-tsukiji","input":"Tsukiji Outer Market","inputIndex":7,"name":"Tsukiji Outer Market","area":"Tsukiji","address":"Synthetic fixture address, Tsukiji","latitude":35.6654,"longitude":139.7707,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-tsukiji","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-odaiba","input":"Odaiba Seaside Park","inputIndex":8,"name":"Odaiba Seaside Park","area":"Minato","address":"Synthetic fixture address, Minato","latitude":35.6299,"longitude":139.7742,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-odaiba","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":75,"isAnchor":false},
+            {"id":"tk-tower","input":"Tokyo Tower","inputIndex":9,"name":"Tokyo Tower","area":"Minato","address":"Synthetic fixture address, Minato","latitude":35.6586,"longitude":139.7454,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-tower","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-roppongi","input":"Roppongi Hills","inputIndex":10,"name":"Roppongi Hills","area":"Minato","address":"Synthetic fixture address, Minato","latitude":35.6605,"longitude":139.7292,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-roppongi","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-meiji","input":"Meiji Jingu Shrine","inputIndex":11,"name":"Meiji Jingu Shrine","area":"Shibuya","address":"Synthetic fixture address, Shibuya","latitude":35.6764,"longitude":139.6993,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-meiji","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false}
+          ]
+        }
+      },
+      "evidence": {
+        "dateWasProvided": true,
+        "baseWasProvided": false,
+        "dayEndWasProvided": true,
+        "capturedAt": "2026-08-09T00:00:00.000Z",
+        "transferBufferMinutes": 20,
+        "dayStartTimes": {"0": "09:30", "1": "09:30", "2": "09:30", "3": "09:30", "4": "09:30"},
+        "dayEndTimes": {"0": "18:30", "1": "18:30", "2": "18:30", "3": "18:30", "4": "18:30"}
+      }
+    },
+    {
+      "id": "builder-18-fast-two-days-twelve-stops",
+      "covers": "12 stops crammed into 2 fast days — the day-budget trimmer runs to exhaustion, including its second pass",
+      "trip": {
+        "raw": "Sensoji Temple must\nTokyo Skytree\nUeno Park\nYanaka Ginza\nAkihabara Electric Town\nImperial Palace East Garden\nGinza Six\nTsukiji Outer Market\nOdaiba Seaside Park\nTokyo Tower must\nRoppongi Hills\nMeiji Jingu Shrine",
+        "days": 2,
+        "pace": "fast",
+        "locale": "en",
+        "context": {
+          "destination": "japan",
+          "tripStartDate": "2026-10-13",
+          "defaultDayStart": "10:00",
+          "dayEndTarget": "16:30",
+          "transferBufferMinutes": 30,
+          "resolvedStops": [
+            {"id":"tk-sensoji","input":"Sensoji Temple","inputIndex":0,"name":"Sensoji Temple","area":"Asakusa","address":"Synthetic fixture address, Asakusa","latitude":35.7148,"longitude":139.7967,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-sensoji","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":90,"isAnchor":false},
+            {"id":"tk-skytree","input":"Tokyo Skytree","inputIndex":1,"name":"Tokyo Skytree","area":"Sumida","address":"Synthetic fixture address, Sumida","latitude":35.7102,"longitude":139.8107,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-skytree","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":90,"isAnchor":false},
+            {"id":"tk-ueno","input":"Ueno Park","inputIndex":2,"name":"Ueno Park","area":"Ueno","address":"Synthetic fixture address, Ueno","latitude":35.7156,"longitude":139.7745,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-ueno","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":75,"isAnchor":false},
+            {"id":"tk-yanaka","input":"Yanaka Ginza","inputIndex":3,"name":"Yanaka Ginza","area":"Taito","address":"Synthetic fixture address, Taito","latitude":35.7276,"longitude":139.766,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-yanaka","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":45,"isAnchor":false},
+            {"id":"tk-akihabara","input":"Akihabara Electric Town","inputIndex":4,"name":"Akihabara Electric Town","area":"Akihabara","address":"Synthetic fixture address, Akihabara","latitude":35.6984,"longitude":139.7731,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-akihabara","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-imperial","input":"Imperial Palace East Garden","inputIndex":5,"name":"Imperial Palace East Garden","area":"Chiyoda","address":"Synthetic fixture address, Chiyoda","latitude":35.6853,"longitude":139.7528,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-imperial","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-ginza","input":"Ginza Six","inputIndex":6,"name":"Ginza Six","area":"Ginza","address":"Synthetic fixture address, Ginza","latitude":35.6699,"longitude":139.7639,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-ginza","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-tsukiji","input":"Tsukiji Outer Market","inputIndex":7,"name":"Tsukiji Outer Market","area":"Tsukiji","address":"Synthetic fixture address, Tsukiji","latitude":35.6654,"longitude":139.7707,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-tsukiji","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-odaiba","input":"Odaiba Seaside Park","inputIndex":8,"name":"Odaiba Seaside Park","area":"Minato","address":"Synthetic fixture address, Minato","latitude":35.6299,"longitude":139.7742,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-odaiba","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":75,"isAnchor":false},
+            {"id":"tk-tower","input":"Tokyo Tower","inputIndex":9,"name":"Tokyo Tower","area":"Minato","address":"Synthetic fixture address, Minato","latitude":35.6586,"longitude":139.7454,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-tower","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-roppongi","input":"Roppongi Hills","inputIndex":10,"name":"Roppongi Hills","area":"Minato","address":"Synthetic fixture address, Minato","latitude":35.6605,"longitude":139.7292,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-roppongi","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-meiji","input":"Meiji Jingu Shrine","inputIndex":11,"name":"Meiji Jingu Shrine","area":"Shibuya","address":"Synthetic fixture address, Shibuya","latitude":35.6764,"longitude":139.6993,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-meiji","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false}
+          ]
+        }
+      },
+      "evidence": {
+        "dateWasProvided": true,
+        "baseWasProvided": false,
+        "dayEndWasProvided": true,
+        "capturedAt": "2026-08-09T00:00:00.000Z",
+        "transferBufferMinutes": 30,
+        "dayStartTimes": {"0": "10:00", "1": "10:00"},
+        "dayEndTimes": {"0": "16:30", "1": "16:30"}
+      }
+    },
+    {
+      "id": "builder-19-meal-plan-dinner-and-early-visits",
+      "covers": "mealPlan dinner with earlyVisitStopIds and a reservation line — meal slots and the reservation clock",
+      "trip": {
+        "raw": "Tsukiji Outer Market\nGinza Six 18:30 booked\nSensoji Temple\nTokyo Skytree\nUeno Park",
+        "days": 2,
+        "pace": "balanced",
+        "locale": "en",
+        "context": {
+          "destination": "japan",
+          "tripStartDate": "2026-10-13",
+          "defaultDayStart": "08:00",
+          "dayEndTarget": "21:30",
+          "transferBufferMinutes": 20,
+          "mealPlan": "dinner",
+          "earlyVisitStopIds": ["tk-tsukiji"],
+          "resolvedStops": [
+            {"id":"tk-tsukiji","input":"Tsukiji Outer Market","inputIndex":0,"name":"Tsukiji Outer Market","area":"Tsukiji","address":"Synthetic fixture address, Tsukiji","latitude":35.6654,"longitude":139.7707,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-tsukiji","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-ginza","input":"Ginza Six","inputIndex":1,"name":"Ginza Six","area":"Ginza","address":"Synthetic fixture address, Ginza","latitude":35.6699,"longitude":139.7639,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-ginza","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-sensoji","input":"Sensoji Temple","inputIndex":2,"name":"Sensoji Temple","area":"Asakusa","address":"Synthetic fixture address, Asakusa","latitude":35.7148,"longitude":139.7967,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-sensoji","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":90,"isAnchor":false},
+            {"id":"tk-skytree","input":"Tokyo Skytree","inputIndex":3,"name":"Tokyo Skytree","area":"Sumida","address":"Synthetic fixture address, Sumida","latitude":35.7102,"longitude":139.8107,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-skytree","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":90,"isAnchor":false},
+            {"id":"tk-ueno","input":"Ueno Park","inputIndex":4,"name":"Ueno Park","area":"Ueno","address":"Synthetic fixture address, Ueno","latitude":35.7156,"longitude":139.7745,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-ueno","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":75,"isAnchor":false}
+          ]
+        }
+      },
+      "evidence": {
+        "dateWasProvided": true,
+        "baseWasProvided": false,
+        "dayEndWasProvided": true,
+        "capturedAt": "2026-08-09T00:00:00.000Z",
+        "transferBufferMinutes": 20,
+        "dayStartTimes": {"0": "08:00", "1": "08:00"},
+        "dayEndTimes": {"0": "21:30", "1": "21:30"}
+      }
+    },
+    {
+      "id": "builder-20-overrides-stacked",
+      "covers": "dayOverrides, durationOverrides, lastEntryTimes, per-day dayStartTimes/dayEndTimes and a day-1 pin all at once",
+      "trip": {
+        "raw": "Sensoji Temple\nTokyo Skytree\nUeno Park\nAkihabara Electric Town\nImperial Palace East Garden\nGinza Six\nTokyo Tower",
+        "days": 4,
+        "pace": "balanced",
+        "locale": "en",
+        "context": {
+          "destination": "japan",
+          "tripStartDate": "2026-10-13",
+          "defaultDayStart": "09:00",
+          "dayEndTarget": "20:00",
+          "dayStartTimes": {"0": "07:30", "2": "11:00"},
+          "dayEndTimes": {"1": "15:00", "3": "22:00"},
+          "transferBufferMinutes": 20,
+          "durationOverrides": {"tk-skytree": 45, "tk-ueno": 180, "tk-tower": 15},
+          "dayOverrides": {"tk-sensoji": 1, "tk-tower": 4, "tk-ginza": 3, "tk-imperial": 3},
+          "lastEntryTimes": {"tk-tower": "16:00", "tk-imperial": "14:30"},
+          "resolvedStops": [
+            {"id":"tk-sensoji","input":"Sensoji Temple","inputIndex":0,"name":"Sensoji Temple","area":"Asakusa","address":"Synthetic fixture address, Asakusa","latitude":35.7148,"longitude":139.7967,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-sensoji","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":90,"isAnchor":false},
+            {"id":"tk-skytree","input":"Tokyo Skytree","inputIndex":1,"name":"Tokyo Skytree","area":"Sumida","address":"Synthetic fixture address, Sumida","latitude":35.7102,"longitude":139.8107,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-skytree","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":90,"isAnchor":false},
+            {"id":"tk-ueno","input":"Ueno Park","inputIndex":2,"name":"Ueno Park","area":"Ueno","address":"Synthetic fixture address, Ueno","latitude":35.7156,"longitude":139.7745,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-ueno","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":75,"isAnchor":false},
+            {"id":"tk-akihabara","input":"Akihabara Electric Town","inputIndex":3,"name":"Akihabara Electric Town","area":"Akihabara","address":"Synthetic fixture address, Akihabara","latitude":35.6984,"longitude":139.7731,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-akihabara","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-imperial","input":"Imperial Palace East Garden","inputIndex":4,"name":"Imperial Palace East Garden","area":"Chiyoda","address":"Synthetic fixture address, Chiyoda","latitude":35.6853,"longitude":139.7528,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-imperial","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-ginza","input":"Ginza Six","inputIndex":5,"name":"Ginza Six","area":"Ginza","address":"Synthetic fixture address, Ginza","latitude":35.6699,"longitude":139.7639,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-ginza","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false},
+            {"id":"tk-tower","input":"Tokyo Tower","inputIndex":6,"name":"Tokyo Tower","area":"Minato","address":"Synthetic fixture address, Minato","latitude":35.6586,"longitude":139.7454,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-tower","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false}
+          ]
+        }
+      },
+      "evidence": {
+        "dateWasProvided": true,
+        "baseWasProvided": false,
+        "dayEndWasProvided": true,
+        "capturedAt": "2026-08-09T00:00:00.000Z",
+        "transferBufferMinutes": 20,
+        "userDurationStopIds": ["tk-skytree", "tk-ueno", "tk-tower"],
+        "dayStartTimes": {"0": "07:30", "1": "09:00", "2": "11:00", "3": "09:00"},
+        "dayEndTimes": {"0": "20:00", "1": "15:00", "2": "20:00", "3": "22:00"},
+        "lastEntryEvidenceByStop": {
+          "tk-tower": {"time": "16:00", "status": "user_provided"},
+          "tk-imperial": {"time": "14:30", "status": "estimated", "fetchedAt": "2026-08-09T00:00:00.000Z"}
+        }
+      }
+    },
+    {
+      "id": "builder-21-spare-days",
+      "covers": "five days for five nearby stops — spare capacity, empty days and the assumption list that comes with them",
+      "trip": {
+        "raw": "Sensoji Temple\nTokyo Skytree\nUeno Park\nYanaka Ginza\nAkihabara Electric Town",
+        "days": 5,
+        "pace": "balanced",
+        "locale": "en",
+        "context": {
+          "destination": "japan",
+          "tripStartDate": "2026-10-13",
+          "defaultDayStart": "09:00",
+          "dayEndTarget": "20:00",
+          "transferBufferMinutes": 20,
+          "resolvedStops": [
+            {"id":"tk-sensoji","input":"Sensoji Temple","inputIndex":0,"name":"Sensoji Temple","area":"Asakusa","address":"Synthetic fixture address, Asakusa","latitude":35.7148,"longitude":139.7967,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-sensoji","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":90,"isAnchor":false},
+            {"id":"tk-skytree","input":"Tokyo Skytree","inputIndex":1,"name":"Tokyo Skytree","area":"Sumida","address":"Synthetic fixture address, Sumida","latitude":35.7102,"longitude":139.8107,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-skytree","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":90,"isAnchor":false},
+            {"id":"tk-ueno","input":"Ueno Park","inputIndex":2,"name":"Ueno Park","area":"Ueno","address":"Synthetic fixture address, Ueno","latitude":35.7156,"longitude":139.7745,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-ueno","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":75,"isAnchor":false},
+            {"id":"tk-yanaka","input":"Yanaka Ginza","inputIndex":3,"name":"Yanaka Ginza","area":"Taito","address":"Synthetic fixture address, Taito","latitude":35.7276,"longitude":139.766,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-yanaka","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":45,"isAnchor":false},
+            {"id":"tk-akihabara","input":"Akihabara Electric Town","inputIndex":4,"name":"Akihabara Electric Town","area":"Akihabara","address":"Synthetic fixture address, Akihabara","latitude":35.6984,"longitude":139.7731,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-akihabara","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":60,"isAnchor":false}
+          ]
+        }
+      },
+      "evidence": {
+        "dateWasProvided": true,
+        "baseWasProvided": false,
+        "dayEndWasProvided": true,
+        "capturedAt": "2026-08-09T00:00:00.000Z",
+        "transferBufferMinutes": 20,
+        "dayStartTimes": {"0": "09:00", "1": "09:00", "2": "09:00", "3": "09:00", "4": "09:00"},
+        "dayEndTimes": {"0": "20:00", "1": "20:00", "2": "20:00", "3": "20:00", "4": "20:00"}
+      }
+    },
+    {
+      "id": "builder-22-mixed-country-worldwide-fallback",
+      "covers": "auto destination over a Tokyo/Swiss mix — the country vote falls back to worldwide, and an unresolved line becomes an unknown entry",
+      "trip": {
+        "raw": "Sensoji Temple\nTokyo Skytree\nZermatt\nBern Old Town\nNowhere In Particular Zzz",
+        "days": 3,
+        "pace": "balanced",
+        "locale": "en",
+        "context": {
+          "tripStartDate": "2026-10-13",
+          "defaultDayStart": "09:00",
+          "dayEndTarget": "20:00",
+          "transferBufferMinutes": 20,
+          "resolvedStops": [
+            {"id":"tk-sensoji","input":"Sensoji Temple","inputIndex":0,"name":"Sensoji Temple","area":"Asakusa","address":"Synthetic fixture address, Asakusa","latitude":35.7148,"longitude":139.7967,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-sensoji","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":90,"isAnchor":false},
+            {"id":"tk-skytree","input":"Tokyo Skytree","inputIndex":1,"name":"Tokyo Skytree","area":"Sumida","address":"Synthetic fixture address, Sumida","latitude":35.7102,"longitude":139.8107,"countryCode":"JP","sourceUrl":"https://example.test/builder/tk-skytree","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":90,"isAnchor":false},
+            {"id":"ch-zermatt","input":"Zermatt","inputIndex":2,"name":"Zermatt","area":"Zermatt","address":"Synthetic fixture address, Zermatt","latitude":46.0207,"longitude":7.7491,"countryCode":"CH","sourceUrl":"https://example.test/builder/ch-zermatt","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":120,"isAnchor":false,"openingHoursApplicable":false},
+            {"id":"ch-bern","input":"Bern Old Town","inputIndex":3,"name":"Bern Old Town","area":"Bern","address":"Synthetic fixture address, Bern","latitude":46.948,"longitude":7.4474,"countryCode":"CH","sourceUrl":"https://example.test/builder/ch-bern","verifiedAt":"2026-08-09T00:00:00.000Z","confidence":"medium","planningDurationMinutes":90,"isAnchor":false,"openingHoursApplicable":false}
+          ]
+        }
+      },
+      "evidence": {
+        "dateWasProvided": true,
+        "baseWasProvided": false,
+        "dayEndWasProvided": true,
+        "capturedAt": "2026-08-09T00:00:00.000Z",
+        "transferBufferMinutes": 20,
+        "dayStartTimes": {"0": "09:00", "1": "09:00", "2": "09:00"},
+        "dayEndTimes": {"0": "20:00", "1": "20:00", "2": "20:00"}
+      }
+    }
+  ]
+}
