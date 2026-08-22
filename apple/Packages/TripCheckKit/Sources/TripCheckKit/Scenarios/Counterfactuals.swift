@@ -98,10 +98,15 @@ extension TripScenarios {
   /// TS `generateTripCounterfactuals` (`lib/trip-scenarios.ts:498-706`)。
   ///
   /// 実際に組み直して現在の計画と比べたものだけを返す。
+  ///
+  /// `options` は中で回す `assessTripFit` にそのまま渡る。既定のままだと実時計と 1 秒の予算で
+  /// 測ることになり、機械が忙しいだけで候補が消える(予算切れの `fit` は比較対象から外れる)
+  /// —— spec §3.1 の「同期・決定論」に反するので、時計を差し替える口をここにも開けておく。
   public static func counterfactuals(
     _ request: TripRequest,
     plan currentPlan: BuiltTripPlan? = nil,
-    fit currentFit: TripFitAssessment? = nil
+    fit currentFit: TripFitAssessment? = nil,
+    options: TripFitSearchOptions = TripFitSearchOptions()
   ) -> [TripCounterfactual] {
     let raw = request.raw
     let requestedDays = request.days
@@ -114,7 +119,7 @@ extension TripScenarios {
     }
 
     let plan = currentPlan ?? build(requestedDays, context)
-    let fit = currentFit ?? assessTripFit(request, plan: plan)
+    let fit = currentFit ?? assessTripFit(request, plan: plan, options: options)
     if fit.status == .incomplete || fit.status == .timed_out { return [] }
     let before = scenarioMetrics(plan, fit: fit)
     var candidates: [TripCounterfactual] = []
@@ -133,7 +138,8 @@ extension TripScenarios {
       let nextPlan = build(nextDays, nextContext)
       let nextFit = assessTripFit(
         TripRequest(raw: raw, days: nextDays, pace: pace, locale: locale, context: nextContext),
-        plan: nextPlan
+        plan: nextPlan,
+        options: options
       )
       if nextFit.status == .incomplete || nextFit.status == .timed_out { return }
       let after = scenarioMetrics(nextPlan, fit: nextFit)
@@ -229,7 +235,8 @@ extension TripScenarios {
       let optimizedPlan = build(requestedDays, optimizedContext)
       let optimizedFit = assessTripFit(
         TripRequest(raw: raw, days: requestedDays, pace: pace, locale: locale, context: optimizedContext),
-        plan: optimizedPlan
+        plan: optimizedPlan,
+        options: options
       )
       if optimizedFit.status != .incomplete && optimizedFit.status != .timed_out {
         let after = scenarioMetrics(optimizedPlan, fit: optimizedFit)

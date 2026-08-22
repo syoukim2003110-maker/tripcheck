@@ -688,3 +688,36 @@ private func tokyoThreeFit(days: Int, base: ResolvedStop?) -> TripFitAssessment 
   #expect(baseChange.after.hardConflictCount <= baseChange.before.hardConflictCount)
   #expect(baseChange.change.baseId != plan.selectedBase?.id)
 }
+
+
+// MARK: - 反実仮想が読む時計は呼び出し側のもの
+
+/// spec §3.1 は「全て同期・決定論」。`counterfactuals` は中で `assessTripFit` を 3 か所
+/// (`Scenarios/Counterfactuals.swift:122, 139, 230`)回すが、そこだけ既定の実時計と 1 秒の予算で
+/// 測っていた —— 予算切れの `fit` は比較対象から外れるので、機械が忙しいだけで候補が消える。
+/// `options` を通して、時計を差し替えられることと、差し替えが実際に内側へ届くことを見る。
+@Test func counterfactualsRunOnTheClockTheCallerHandsThem() throws {
+  var context = PlannerContext()
+  context.hotelQuery = "Shinjuku hotel"
+  let request = TripRequest(raw: "Senso-ji\nTokyo Skytree", days: 2, pace: .balanced, locale: .en, context: context)
+  let plan = TripBuilder.build(request)
+  let fit = TripScenarios.assessTripFit(request, plan: plan, options: .frozen)
+  #expect(fit.solverTimedOut == false)
+
+  // 止まった時計なら、2 回続けて回しても同じ答え。
+  let encoder = JSONEncoder()
+  encoder.outputFormatting = [.sortedKeys]
+  let first = TripScenarios.counterfactuals(request, plan: plan, fit: fit, options: .frozen)
+  let second = TripScenarios.counterfactuals(request, plan: plan, fit: fit, options: .frozen)
+  #expect(!first.isEmpty)
+  #expect(first.allSatisfy { $0.after.dayCount > 0 })
+  let firstJSON = try String(decoding: encoder.encode(first), as: UTF8.self)
+  let secondJSON = try String(decoding: encoder.encode(second), as: UTF8.self)
+  #expect(firstJSON == secondJSON)
+
+  // 1 回読むごとに 1ms 進む時計 + 1ms の予算なら、内側の `assessTripFit` は最初の一歩で
+  // 予算切れになる。予算切れの `fit` は比較対象から外れるので候補は 1 つも残らない ——
+  // `options` が本当に内側へ届いている証拠(届いていなければ上と同じ 3 件が返る)。
+  let ticking = TripFitSearchOptions(timeout: .milliseconds(1), clock: TestTickClock())
+  #expect(TripScenarios.counterfactuals(request, plan: plan, fit: fit, options: ticking).isEmpty)
+}
