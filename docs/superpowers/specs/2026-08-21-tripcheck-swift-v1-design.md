@@ -368,3 +368,62 @@ TDD: 各モジュールは**まず golden/不変条件のテストを赤にし�
 | Swift 6 strict concurrency で MapKit/`MKLocalSearch` の非 Sendable 型 | adapter 内で `@MainActor` に閉じ、Kit には値型だけ渡す |
 | Dynamic Type 最大でファーストビューが崩れる | iOS 版のファーストビュー契約: **既定の Dynamic Type・iPhone 17 Pro(402×874pt)で、ヒーロー 1 文 + 警告 1 件 + 日タブ + 最初の停留所 1 件**がスクロールなしで見える(UI テストで固定)。最大サイズでは「ヒーロー + 警告 + 日タブ」まででよい(Web の Gate E「2 停留所 + Filler」より緩い) |
 | 12 か所 × 14 日の探索が端末で遅い | TS と同じ上限(600 評価・1 秒)。バックグラウンドで計算し UI を止めない |
+
+---
+
+## 付録 A: G3 の差分記録
+
+G3(TS スナップショット照合)は、同じシナリオを TypeScript エンジン(`node --experimental-strip-types scripts/export-golden-snapshots.mjs`)と Swift エンジンに通し、`plan` / `fit` / `evidence` / `result` を**フィールド単位**で突き合わせる。
+
+| | 母集団 | 結果 |
+| --- | --- | --- |
+| golden | `tests/fixtures/golden-feasibility.v1.json` の 500 件(1 日・1 停留所・balanced・en) | 下表の除外パスを除き **差分 0** |
+| builder | `Tests/TripCheckKitTests/Fixtures/builder-scenarios.v1.json` の 22 件(2〜5 日・5〜12 停留所・ja/en・switzerland を含む) | 同じく **差分 0** |
+
+再生成:
+
+```
+node --experimental-strip-types scripts/export-golden-snapshots.mjs \
+  --out apple/Packages/TripCheckKit/Tests/TripCheckKitTests/Fixtures/ts-snapshots.v1.json \
+  tests/fixtures/golden-feasibility.v1.json
+node --experimental-strip-types scripts/export-golden-snapshots.mjs \
+  --out apple/Packages/TripCheckKit/Tests/TripCheckKitTests/Fixtures/ts-builder-snapshots.v1.json \
+  apple/Packages/TripCheckKit/Tests/TripCheckKitTests/Fixtures/builder-scenarios.v1.json
+```
+
+### A.1 除外パス(`SnapshotParityTests.swift` の `snapshotParityIgnoredPaths`)
+
+配列の添字は `[]` に畳んである。1 行が 1 フィールドを指し、部分木ごと黙らせている行は無い。
+
+| # | シナリオ | パス | TS 値 | Swift 値 | 理由 |
+| --- | --- | --- | --- | --- | --- |
+| A-1 | 全件 | `evidence.capturedAt` | `2026-08-22T08:24:31.006Z` | 別の時刻 | `options.capturedAt` が無いシナリオは実行時刻。時計そのものなので一致しえない |
+| A-2 | 全件 | `evidence.providerSnapshotHash` / `result.providerSnapshotHash` | `fnv1a-e1e3c4ba` | `fnv1a-ee880a7c` | Task 16 の決定。Swift の安定文字列化は `undefined` のキーと A-4 の漏れキーを含めないので、同じ FNV-1a でも原文が違う。verdict の入力ではなくキャッシュの合鍵 |
+| A-3 | 全件(`RouteStop` 型の全位置) | `…stop.input` / `…stop.inputIndex` / `…stop.address` / `…stop.countryCode`(`plan.days[].stops[].stop`、`plan.days[].legs[].from`/`.to`、`plan.days[].startBase`/`.endBase`、`plan.selectedBase`、`plan.baseRecommendations[].base`、`plan.deferredOptionalStops[]`、`plan.deferredUnavailableStops[]`、および `result.scheduledDays[]` の対応する位置) | `"Tokyo Skytree"` / `1` / `"Synthetic fixture address, Sumida"` / `"JP"` | 不在 | TS は構造的型付けなので、`RouteStop` を宣言した場所に `ResolvedInputStop` が入ると余分な 4 キーが実行時オブジェクトに付いたまま出力される。Swift は `RouteStop` と `ResolvedStop` が別の型なので入口で落ちる。ビルダーはこの 4 キーを `RouteStop` から読まない(純粋な入力の反響) |
+| A-4 | `openingEvidenceByStop` を渡すシナリオ | `evidence.facts[].evidence.dateSpecific` / `evidence.facts[].evidence.dateSpecificDates` | `true` / `["2026-10-13",…]` | 不在 | `createPlannerEvidenceSnapshot` が `{ ...hoursEvidence }` を `Evidence` へ展開する(`lib/feasibility-result.ts:440`、`:556`)ため、`Evidence` 型が宣言していない 2 キーが同乗する。A-3 と同じ「構造的型付けの漏れ」で、エンジンはこの値を読み返さない。Swift の `Evidence` は宣言したフィールドだけを持つ(Task 16 の決定のまま) |
+
+### A.2 修正した差分
+
+| # | 症状 | 原因 | 直した場所 |
+| --- | --- | --- | --- |
+| A-5 | builder-04 / 05 / 14 で 1 日ぶんの訪問順が TS と**逆順**になり、その日の到着・出発・脚・Maps URL・evidence の並びまで連鎖して食い違った(初回 494 差分) | `Core/GeoPoint.swift` の Haversine が TS と**式の書き方**まで一致していなかった。(a) `asin(√h)` を `atan2(√h, √(1−h))` で書いていた、(b) `度 × π ÷ 180` を `度 × (π ÷ 180)` に畳んでいた、(c) `cos(A)·cos(B)·sin²` を `cos(A)·cos(B)·sin·sin` と書いていた。いずれも実数では同値だが最後の 1 ulp が動く。訪問順の最適化は開路・閉路とも**逆順が厳密に同距離**なので、勝敗は同じ 3 辺を別の順で足した和の `<` 比較だけで決まる。1 ulp が向きを倒す | `Sources/TripCheckKit/Core/GeoPoint.swift` を TS `lib/route-optimizer.ts:318-328` の式の形どおりに書き直した |
+
+### A.3 直せない環境差(記録のみ)
+
+**V8 の `Math.cos` と Apple の libm `cos` は 1 ulp 食い違う。** 35.5〜38.5° と 45.9〜47.4° を 0.0001° 刻みで 45,002 点調べたところ **3,089 点(6.86%)** で戻り値のビット列が違った(`sin` / `sqrt` / `asin` は、同じ入力を与えるかぎり全点一致した)。V8 は自前の fdlibm 由来 `base::ieee754::cos` を積んでおり、Apple の libm はそれより正確に丸める。どちらかを「直す」筋合いは Swift 側に無い。
+
+影響は A-5 と同じ場所に出る。訪問順の最適化が**逆順と厳密に同距離**になる日(base のある 2 停留所の日は必ずそう、開路もしばしばそう)では、勝敗が 1 ulp の差で決まるので、緯度が食い違う点に乗っていると TS と逆順になりうる。
+
+G3 の母集団では、これは「移植の差」ではなく「2 つのランタイムの libm の差」を測ってしまう。そこで `builder-scenarios.v1.json` の緯度は**両ランタイムの `cos` が一致する値だけ**を使う。この規約のために 5 点を 0.0001°(約 11 m)動かした:
+
+| 停留所 | 変更前 | 変更後 |
+| --- | --- | --- |
+| Tokyo Skytree | 35.7101 | 35.7102 |
+| Shinjuku Gyoen | 35.6852 | 35.6853 |
+| Interlaken | 46.6863 | 46.6862 |
+| Jungfraujoch | 46.5474 | 46.5473 |
+| Lauterbrunnen | 46.5936 | 46.5937 |
+
+同じ規約が `builder-scenarios.v1.json` の `latitudeConstraint` にも書いてある。シナリオを足すときは新しい緯度も同じ手順で選別すること。
+
+製品としての含みは残る: **Swift 版と Web 版が同じ旅程を逆順に出す日がありうる。** 距離が厳密に同点のときだけで、選ぶ場所の集合も所要時間も変わらない。これを消したいなら、同点判定を許容差 + id の決定的な tie-break に変える必要があるが、それは TS 側も一緒に変えなければ parity が崩れる(この spec の範囲外)。
