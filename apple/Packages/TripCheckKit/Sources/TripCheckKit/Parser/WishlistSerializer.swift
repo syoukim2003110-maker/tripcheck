@@ -64,7 +64,7 @@ public enum WishlistSerializer {
       case .empty, .heading:
         continue
       case .unparsed(let rawText):
-        output.append(rawText.trimmingCharacters(in: .whitespacesAndNewlines))
+        output.append(JSText.trim(rawText))
       case .place(_, let places):
         for place in places {
           if let day = place.day, day != visibleDay {
@@ -161,7 +161,7 @@ public enum WishlistSerializer {
         if output.last != "" { output.append("") }
       case .heading(let rawText, let day):
         visibleDay = day
-        output.append(rawText.trimmingCharacters(in: .whitespacesAndNewlines))
+        output.append(JSText.trim(rawText))
       case .unparsed(let rawText):
         output.append(rawText)
       case .place(_, let places):
@@ -177,7 +177,7 @@ public enum WishlistSerializer {
       }
     }
     let joined = blankRunCollapse.replacingAll(in: output.joined(separator: "\n"), with: "\n\n")
-    return joined.trimmingCharacters(in: .whitespacesAndNewlines)
+    return JSText.trim(joined)
   }
 
   // MARK: - Helpers (lib/wishlist-parser.ts:426-429, 458-466, 592-615)

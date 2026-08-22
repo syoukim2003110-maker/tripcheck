@@ -189,3 +189,33 @@ import Testing
   #expect(place.priority == .optional)
   #expect(place.isReservation == false)
 }
+
+
+// MARK: - 行の端を落とす規則は JS の `trim()`
+
+/// TS は行の端を `String.prototype.trim()` で落とす(`lib/wishlist-parser.ts:247`
+/// `const original = rawLine.trim();`、同 `:259` / `:297` / `:87` / `:105`)。JS が落とす空白は
+/// `Foundation` の `.whitespacesAndNewlines` と中身が違い、**U+FEFF を落として U+0085 は残す**
+/// —— どちらも向きが逆。貼り付けの 1 行目に付いてくる BOM がそのまま場所名になっていた。
+@Test func lineEdgesAreTrimmedTheWayJavaScriptTrims() {
+  // BOM 付きで貼られた 1 行目。TS は `raw` も名前も BOM 無しになる。
+  let bom = WishlistParser.parse("\u{FEFF}Senso-ji")
+  guard case .place(let bomRaw, let bomPlaces) = bom.first else {
+    Issue.record("BOM 付きの行が場所として読まれていない")
+    return
+  }
+  #expect(bomRaw == "Senso-ji")
+  #expect(bomPlaces.map(\.name) == ["Senso-ji"])
+  #expect(WishlistSerializer.formatLines("\u{FEFF}Senso-ji", languageCode: .en) == "Senso-ji")
+
+  // BOM だけの行は JS の `trim()` で空になる = 空行。
+  #expect(WishlistParser.parse("\u{FEFF}").first == .empty(raw: "\u{FEFF}"))
+
+  // U+0085 は JS の空白ではないので `raw` に残る(`.whitespacesAndNewlines` は落としてしまう)。
+  let nel = WishlistParser.parse("\u{85}Senso-ji")
+  guard case .place(let nelRaw, _) = nel.first else {
+    Issue.record("U+0085 付きの行が場所として読まれていない")
+    return
+  }
+  #expect(nelRaw == "\u{85}Senso-ji")
+}

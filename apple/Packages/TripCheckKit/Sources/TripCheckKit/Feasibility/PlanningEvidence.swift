@@ -120,14 +120,19 @@ public enum PlanningEvidence {
   /// TS `reasonOrder`(`:38`)。
   public static let reasonOrder: [SoftDurationReason] = [.crowd, .queue, .sold_out, .early_close, .detour]
 
-  static let whitespacePattern = try! JSRegex("\\s+")
+  /// TS の `/\s+/g`。ICU の `\s` は U+0085 を空白に数え U+FEFF を数えないので、JS の集合を
+  /// `JSText.whitespaceClass` から書き下す(向きは両方とも逆)。
+  static let whitespacePattern = try! JSRegex("[\(JSText.whitespaceClass)]+")
 
   /// TS `normalizeEvidenceText`(`:40-42`)—— NFKC で畳んでから空白を 1 つに詰める。
+  ///
+  /// 3 つの道具はいずれも `Foundation` の既定ではなく JS の規則を使う。`normalize("NFKC")` は
+  /// `precomposedStringWithCompatibilityMapping` だけでは不動点に届かず(`JSText.normalizeNFKC`
+  /// の但し書き)、`\s` と `trim()` は U+0085 / U+FEFF の扱いが `Foundation` と逆になる。
+  /// ここで畳んだ文が同一性の鍵(`stopPlanningEvidence` の `seen`)になるので、差は件数に出る。
   static func normalize(_ value: String) -> String {
-    let folded = value.precomposedStringWithCompatibilityMapping
-    return whitespacePattern
-      .replacingAll(in: folded, with: " ")
-      .trimmingCharacters(in: .whitespacesAndNewlines)
+    let folded = JSText.normalizeNFKC(value)
+    return JSText.trim(whitespacePattern.replacingAll(in: folded, with: " "))
   }
 
   /// TS `classify`(`:44-48`)—— 肯定形に当たり、かつ否定形に当たらない理由だけ。

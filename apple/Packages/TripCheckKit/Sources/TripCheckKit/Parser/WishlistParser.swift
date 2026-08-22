@@ -64,12 +64,16 @@ public enum WishlistParser {
     var previousCalendarDate: (year: Int, month: Int, day: Int)? = nil
 
     for rawLine in raw.components(separatedBy: "\n") {
-      let original = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+      let original = JSText.trim(rawLine)
       if original.isEmpty {
         lines.append(.empty(raw: rawLine))
         continue
       }
 
+      // `trim()` も `Core/JSText.swift` から。JS が落とす空白は `.whitespacesAndNewlines` と
+      // 中身が違い、U+FEFF(先頭 BOM)を落とさず U+0085 を落としてしまう —— どちらも行頭の
+      // 場所名の綴りに出る。
+      //
       // NFKC は `Core/JSText.swift` の `normalizeNFKC` を通す。`Foundation` の
       // `precomposedStringWithCompatibilityMapping` だけでは TS の `normalize("NFKC")` に届かず、
       //「ﾊﾟ」(U+FF8A U+FF9F)が U+30CF U+309A の 2 文字で止まって、JS が出す U+30D1 にならない。
@@ -87,7 +91,7 @@ public enum WishlistParser {
         heading = m
         if let day = headingDay(m) {
           contextDay = day
-          let rest = String(text[m.range.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+          let rest = JSText.trim(String(text[m.range.upperBound...]))
           if rest.isEmpty {
             lines.append(.heading(raw: original, day: day))
             continue
@@ -122,7 +126,7 @@ public enum WishlistParser {
         let day = calendarDay ?? calendarHeadingCount
         contextDay = day
         calendarHeadingCount = max(calendarHeadingCount, day)
-        let rest = String(text[calMatch.range.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+        let rest = JSText.trim(String(text[calMatch.range.upperBound...]))
         if rest.isEmpty {
           lines.append(.heading(raw: original, day: day))
           continue
@@ -261,7 +265,7 @@ public enum WishlistParser {
   private static func stripBullet(_ line: String) -> String {
     var value = WishlistPatterns.bulletLead.replacingAll(in: line, with: "")
     value = WishlistPatterns.numberedLead.replacingAll(in: value, with: "")
-    return value.trimmingCharacters(in: .whitespacesAndNewlines)
+    return JSText.trim(value)
   }
 
   /// lib/wishlist-parser.ts:90-106 — `tidyName`
@@ -273,7 +277,7 @@ public enum WishlistParser {
     result = WishlistPatterns.edgeSepLeading.replacingAll(in: result, with: "")
     result = WishlistPatterns.edgeSepTrailing.replacingAll(in: result, with: "")
     result = WishlistPatterns.multiSpace.replacingAll(in: result, with: " ")
-    return result.trimmingCharacters(in: .whitespacesAndNewlines)
+    return JSText.trim(result)
   }
 
   /// lib/wishlist-parser.ts:108-110 — `hasCjk`

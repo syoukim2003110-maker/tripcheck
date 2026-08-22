@@ -41,6 +41,40 @@ private let scopeReference = Date(timeIntervalSince1970: 1_786_492_800) // 2026-
   #expect(PlanningEvidence.classify("very busy") == [.crowd])
 }
 
+/// TS `normalizeEvidenceText`(`lib/planning-evidence.ts:40-42`)は JS の 3 つの道具
+/// —— `normalize("NFKC")` / `replace(/\s+/g, " ")` / `trim()` —— でできている。3 つとも
+/// `Foundation` の既定と食い違うので、食い違う点をそれぞれ固定する(期待値は
+/// JavaScriptCore で実測)。
+@Test func evidenceTextIsFoldedTheWayJavaScriptFoldsIt() {
+  // `normalize("NFKC")` —— 半角の「ﾊﾟ」は 1 文字の U+30D1 まで畳む。`String` の `==` は正準
+  // 等価で較べて差を隠すのでスカラ列で見る(`precomposedStringWithCompatibilityMapping`
+  // だけでは U+30CF U+309A の 2 文字で止まる)。
+  #expect(
+    PlanningEvidence.normalize("ﾊﾟﾚｰﾄ").unicodeScalars.map(\.value) == [0x30D1, 0x30EC, 0x30FC, 0x30C8]
+  )
+
+  // U+FEFF は JS の空白 —— `\s+` で潰れ `trim()` で落ちる。ICU の `\s` も
+  // `.whitespacesAndNewlines` も U+FEFF を空白と見ない。
+  #expect(
+    PlanningEvidence.normalize("\u{FEFF}大混雑\u{FEFF}").unicodeScalars.map(\.value) == [0x5927, 0x6DF7, 0x96D1]
+  )
+
+  // U+0085 は JS の空白ではない —— そのまま残る。ICU の `\s` と `.whitespacesAndNewlines` は
+  // どちらも空白として扱ってしまう。
+  #expect(
+    PlanningEvidence.normalize("大\u{85}混雑").unicodeScalars.map(\.value) == [0x5927, 0x85, 0x6DF7, 0x96D1]
+  )
+}
+
+/// 畳んだ文がそのまま証拠の同一性の鍵になる(TS `new Map(...)`、`lib/planning-evidence.ts:74-79`)
+/// ので、上の 3 点は「証拠が何件か」= 余白の分に出る。
+@Test func foldingDifferencesShowUpInTheEvidenceCount() {
+  // BOM 付きと素の文は TS では同じ鍵 → 証拠 1 件 → 15 分。
+  #expect(PlanningEvidence.softBufferMinutes(mentions: ["\u{FEFF}大混雑", "大混雑"]) == 15)
+  // U+0085 は空白に潰れないので、空白入りの文とは別の鍵 → 証拠 2 件 → 30 分。
+  #expect(PlanningEvidence.softBufferMinutes(mentions: ["大\u{85}混雑", "大 混雑"]) == 30)
+}
+
 /// ブリーフは `TripScope.warnings(plan:destination:)` と書くが、TS が正 —— 国コードを持つのは
 /// 解決済みの停留所(`ResolvedInputStop`)であって `BuiltTripPlan` の `RouteStop` ではないので、
 /// TS の `tripScopeWarnings(stops, transitSteps, reference)` の形をそのまま移してある。
