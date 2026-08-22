@@ -147,3 +147,23 @@ import TripCheckKit
   #expect(store.bundle?.plan.inputMode == .wishlist)
   #expect(store.view.announcement?.isEmpty == false)   // 結論の見出しを読み上げに載せている
 }
+
+/// 日数「未定」の枝(`build()` の `daysUndecided`)。日数と拠点は互いに依存するので不動点を
+/// 回すが、**旅行者が自分で決めたホテルはその中で動かない** —— Kit の `baseFor` は
+/// `resolvedHotel ?? recommendBase(candidate)`(`Scenarios/ProvisionalTripLength.swift:79-81`)で、
+/// 既定の `contextFor` は毎ラウンド `resolvedBase` を書き換える。`resolvedHotel:` を渡し忘れると
+/// 「未定」を選んだだけでホテルが推薦の拠点に黙って差し替わる。
+@Test @MainActor func undecidedLengthKeepsTheTravellersOwnHotel() async {
+  let store = PlannerStore(resolvers: [], store: nil)
+  store.loadSample(.switzerland)
+  let hotel = SwissSample.resolvedStops(locale: .ja)[2]   // インターラーケン
+  store.edit.resolvedBase = hotel
+  store.request.tripDays = nil   // 「未定」——(日数, 拠点)の不動点が走る
+
+  await store.build()
+
+  #expect((store.bundle?.request.days ?? 0) > 0)   // 不動点が日数を決めた
+  #expect(store.bundle?.request.context.resolvedBase?.id == hotel.id)   // 推薦ではなく旅行者のホテル
+  #expect(store.edit.tripDays == store.bundle?.request.days)
+  #expect(store.view.screen == .plan)
+}

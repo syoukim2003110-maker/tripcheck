@@ -111,9 +111,15 @@ public final class PlannerStore {
     let task = Task.detached(priority: .userInitiated) { () -> BuiltPlanBundle in
       if daysUndecided {
         // 日数未定:(日数, 拠点)の不動点。日数を決めるには拠点が要り、拠点を選ぶには
-        // 日数が要るので、両方が動かなくなるまで回す。`recommendBase` の既定は
-        // `baseRecommendations.first` → `provisionalBaseAsResolved`。
-        let fixed = ProvisionalTripLength.resolve(request: req)
+        // 日数が要るので、両方が動かなくなるまで回す。
+        //
+        // `resolvedHotel:` を渡すのは省略できない。Kit の `baseFor` は
+        // `resolvedHotel ?? recommendBase(candidate)`(`Scenarios/ProvisionalTripLength.swift:79-81`)
+        // で、既定の `contextFor` は毎ラウンド `resolvedBase` を書き換える —— 渡さないと、
+        // 自分でホテルを決めた旅行者が「未定」を選んだだけで、そのホテルが黙って
+        // `baseRecommendations.first` に差し替わる。旅行者自身のホテルが常に勝ち、
+        // 推薦(`provisionalBaseAsResolved`)はホテルが無いときの控えである。
+        let fixed = ProvisionalTripLength.resolve(request: req, resolvedHotel: req.context.resolvedBase)
         var ctx = req.context
         ctx.resolvedBase = fixed.base
         return BuildRunner.run(TripRequest(raw: req.raw, days: fixed.days, pace: req.pace, locale: req.locale, context: ctx))
