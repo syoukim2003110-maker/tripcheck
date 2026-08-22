@@ -36,12 +36,16 @@ import Testing
   #expect(!Catalog.isReservationSensitive(id: "unknown-poi-id"))
 }
 
+/// 欄は Web のデモ投入(`app/components/planner/hooks/usePlanBuild.tsx:808-822`)と同じ値で
+/// 固定する —— 同じサンプルが Web とアプリで別物になると、共有リンクと golden が食い違う。
 @Test func swissSampleBuildsResolvedStopsForBuilderFixtures() {
   let stops = SwissSample.resolvedStops(locale: .en)
   #expect(stops.count == 8)
-  #expect(stops.map(\.id) == (0..<8).map { "sample-\($0)" })
+  // TS `id: `sample-${demoDestination.id}-${index}``(`usePlanBuild.tsx:809`)
+  #expect(stops.map(\.id) == (0..<8).map { "sample-switzerland-\($0)" })
+  // TS `sourceUrl: ""` / `verifiedAt: ""` / `confidence: "medium"` / `isAnchor: false`(`:817-821`)
   #expect(stops.allSatisfy {
-    $0.provider == .catalog && $0.confidence == .medium && $0.verifiedAt == "2026-08-09" && $0.isAnchor && $0.sourceUrl == ""
+    $0.provider == .catalog && $0.confidence == .medium && $0.verifiedAt == "" && !$0.isAnchor && $0.sourceUrl == ""
   })
   #expect(stops[0].name == "Lucerne Chapel Bridge")
   #expect(stops[0].input == stops[0].name)
@@ -49,9 +53,10 @@ import Testing
   #expect(stops[0].address == stops[0].area)
   #expect(stops[0].openingHoursApplicable == false) // 広場は営業時間の概念が無い(TS :285 openingHoursApplicable: false)
   #expect(stops[3].name == "Jungfraujoch")
-  #expect(stops[3].openingHoursApplicable == true) // 省略時は既定 true(TS の `?? true` 相当)
+  // TS は `openingHoursApplicable === false` のときだけ欄を置く(`:822`)—— 既定は欄ごと無い。
+  #expect(stops[3].openingHoursApplicable == nil)
 
   let ja = SwissSample.resolvedStops(locale: .ja)
   #expect(ja[3].name == "ユングフラウヨッホ")
-  #expect(ja[3].id == "sample-3") // id はロケールに依存しない
+  #expect(ja[3].id == "sample-switzerland-3") // id はロケールに依存しない
 }

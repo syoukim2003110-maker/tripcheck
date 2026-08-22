@@ -124,7 +124,7 @@ enum TestStops {
 
   /// スイスのサンプル旅程まるごと 1 件のリクエスト。生テキストは
   /// `Destinations.byId(.switzerland).sample`(`lib/destinations.ts` のサンプル 8 行)、
-  /// 解決済み停留所は `SwissSample.resolvedStops(locale:)`(id は `sample-0`…`sample-7`、
+  /// 解決済み停留所は `SwissSample.resolvedStops(locale:)`(id は `sample-switzerland-0`…`-7`、
   /// `inputIndex` は 0…7)、行き先は明示 `switzerland`。
   ///
   /// `extraUnresolvedLines` はサンプルの後ろに足す「解決できない行」で、`unknownEntries` を
@@ -600,7 +600,11 @@ Shibuya Sky — Day 3
 extension TestStops {
   /// 名前だけを述べた解決済み停留所。座標は東京駅で、id・名前・`input` は同じ文字列
   /// (順位や混在国の判定はどれも名前と国コードしか読まないので、これで足りる)。
-  static func resolved(_ name: String, countryCode: String? = nil) -> ResolvedStop {
+  static func resolved(
+    _ name: String,
+    countryCode: String? = nil,
+    placeTypes: [String]? = nil
+  ) -> ResolvedStop {
     ResolvedStop(
       id: name,
       name: name,
@@ -612,17 +616,23 @@ extension TestStops {
       confidence: .medium,
       planningDurationMinutes: 60,
       isAnchor: false,
+      placeTypes: placeTypes,
       input: name,
       address: "",
       countryCode: countryCode
     )
   }
 
-  /// 解決器が返す候補 1 件。`isTouristic` は `PlaceCandidate` の既定
-  /// (= `ResolutionPipeline.isNonTouristic` の否定)に任せる —— 自動採用の規則そのものを測る
-  /// テストが、その規則の答えを手で書いてしまわないように。
-  static func candidate(name: String, category: String? = nil, countryCode: String? = nil) -> PlaceCandidate {
-    PlaceCandidate(stop: resolved(name, countryCode: countryCode), category: category)
+  /// 解決器が返す候補 1 件。`isTouristic` は `PlaceCandidate` の既定(カテゴリ・`placeTypes`・
+  /// 名前のどれも非観光でないこと)に任せる —— 自動採用の規則そのものを測るテストが、その規則の
+  /// 答えを手で書いてしまわないように。
+  static func candidate(
+    name: String,
+    category: String? = nil,
+    countryCode: String? = nil,
+    placeTypes: [String]? = nil
+  ) -> PlaceCandidate {
+    PlaceCandidate(stop: resolved(name, countryCode: countryCode, placeTypes: placeTypes), category: category)
   }
 }
 

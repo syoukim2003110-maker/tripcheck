@@ -6,7 +6,7 @@ import Foundation
  * 移植元:
  * - `lib/google-place-resolver.ts:163-165` `normalizePlaceName`
  * - `lib/google-place-resolver.ts:286-303` `nonVisitPrimaryTypes`(12 種)
- * - `lib/google-place-resolver.ts:305` `corporateQualifierPattern`(逐語)
+ * - `lib/google-place-resolver.ts:305` `corporateQualifierPattern`(`\b` の 3 か所だけ ICU 向けに書き換え、他は逐語)
  * - `lib/google-place-resolver.ts:307-325` `isPlainlyNonVisitCandidate`
  * - `lib/google-place-resolver.ts:327-343` `autoPickCandidates` / `exactNameCandidate`
  * - `lib/google-place-resolver.ts:345-379` `needsTravellerChoice`
@@ -25,6 +25,12 @@ public enum ResolutionPipeline {
   /// (`places` にも `ambiguous` にも出てこない入力がそのまま「未解決」だった)。
   public static let notFoundReason = "not_found"
 
+  /// 確認へ回す候補の上限。TS `ambiguous.push({ input, candidates: eligibleCandidates.slice(0, 3) })`
+  /// (`lib/google-place-resolver.ts:403`)。統合仕様 §5.3 の「インライン候補は最大 3」も同じ数で、
+  /// **切るのは表示ではなく結果の側** —— 4 件目以降は誰にも渡らないので、画面が別の 3 件を選ぶ
+  /// 余地が生まれない。
+  public static let reviewShortlistLimit = 3
+
   /// 解決器を順に呼び、**先に `confirmed` を返した解決器で止まる**(spec §4.2)。
   ///
   /// 止まり方は問い合わせ 1 件ごと:確定した添字は次の解決器に渡らないので、全件が確定すれば
@@ -37,6 +43,8 @@ public enum ResolutionPipeline {
   /// どの解決器も答えなかった添字には `unresolved(reason: notFoundReason)` が入るので、
   /// 戻り値は必ず全問い合わせを覆う。同じ `inputIndex` が二度渡されたときは最初の 1 件だけを使う
   /// (答えは `inputIndex` で引かれるので、二度尋ねても後の答えが前を消すだけ)。
+  ///
+  /// `review` の候補は `reviewShortlistLimit` 件に切ってから収める(TS `:403`)。
   public static func resolve(
     _ queries: [PlaceQuery],
     destination: DestinationChoice,
@@ -54,7 +62,8 @@ public enum ResolutionPipeline {
     for resolver in resolvers {
       if pending.isEmpty { break }
       let answers = await resolver.resolve(pending, destination: destination, locale: locale)
-      for (inputIndex, answer) in answers where asked.contains(inputIndex) {
+      for (inputIndex, rawAnswer) in answers where asked.contains(inputIndex) {
+        let answer = capped(rawAnswer)
         guard let existing = results[inputIndex] else {
           results[inputIndex] = answer
           continue
@@ -88,10 +97,15 @@ public enum ResolutionPipeline {
   /// 差し替える Kit では成り立たない。差は**確認画面に回る件数が増える**方向だけで、
   /// 旅行者の意図しない場所が黙って旅程に入ることはない。
   ///
-  /// auto のときの国跨ぎ(`:363-364`)もここでは見ない —— それは `mixedCountryCodes` が
-  /// 旅程全体に対して答える(TS も画面側 `usePlanBuild.tsx:907-912` で判定している)。
+  /// **TS の「auto では国跨ぎの候補一覧を必ず旅行者へ返す」(`:363-364`)は再現していない。**
+  /// あれは 1 件の入力に対する候補どうしの国を見る規則で、`mixedCountryCodes`(旅程全体で
+  /// 解決済みの停留所の国を見る、`place-resolution-client.ts:30-37` の側)とは別物 —— 前者の
+  /// 代わりにはならない。ここで採るのは「完全一致 1 件」か「非観光を落として 1 件」だけなので、
+  /// **候補が 2 件以上ある国跨ぎの一覧は、国を見るまでもなくどのみち確認へ回る**。逆に、
+  /// 候補が 1 件しか無いときの国は誰も見ていない —— それは `mixedCountryCodes` が旅程の側で拾う。
   ///
-  /// 「非観光」を読むのは `PlaceCandidate.isTouristic`(既定は `isNonTouristic` の否定)。
+  /// 「非観光」を読むのは `PlaceCandidate.isTouristic`(既定は `isNonTouristic` と `stop.placeTypes` の
+  /// 両方から計算される)。
   public static func autoAccept(input: String, candidates: [PlaceCandidate]) -> PlaceCandidate? {
     let eligible = candidates.filter(\.isTouristic)
     guard !eligible.isEmpty else { return nil }
@@ -127,8 +141,13 @@ public enum ResolutionPipeline {
   /// 含むため自動採用されるが、Kit では確認へ回る(ブリーフの
   /// `singleNonTouristicCandidateGoesToReview` が要求する側)。TS のコメント自身が挙げる
   /// 「ベルン旧市街 → Universität Bern は誤ランクである」という意図はこちらで、代償は
-  /// 「大学を本当に探した人にも一度尋ねる」こと。TS の `service` 型の規則(`:319-324`)も
-  /// 入力との比較が要るので同じ理由で持ってきていない。
+  /// 「大学を本当に探した人にも一度尋ねる」こと。
+  ///
+  /// もう一点、**企業名パターンの適用範囲が TS より広い**。TS がこのパターンを見るのは
+  /// (a) 12 種のどれかに当たった候補(`:316-318`)と(b) `service` 型の候補(`:319-324`)だけで、
+  /// しかも「旅行者が書いていない語をプロバイダが足した」ときに限る。ここでは**カテゴリが何であれ
+  /// 名前だけで判定する**ので、`Post Office Museum` のような名前は TS が観光地として通す一方で
+  /// Kit は確認へ回す。どちらも「黙って誤った場所を旅程に入れない」側への差である。
   public static func isNonTouristic(name: String, category: String?) -> Bool {
     if let category, nonTouristicCategories.contains(category) { return true }
     return corporateQualifierPattern.test(name)
@@ -184,14 +203,28 @@ public enum ResolutionPipeline {
     return separatorsAndMarks.replacingAll(in: folded, with: "")
   }
 
-  /// TS `corporateQualifierPattern`(`lib/google-place-resolver.ts:305`)を逐語転記。
-  /// ICU の `\b` は既定で JS と同じ単純な語境界(`[A-Za-z0-9_]`)。
+  /// TS `corporateQualifierPattern`(`lib/google-place-resolver.ts:305`)。
+  ///
+  /// `\b` の 3 か所だけは**逐語ではなく等価な書き換え**にしてある。JS の `\b` は常に ASCII
+  /// (`[A-Za-z0-9_]`)基準だが、ICU の `\b` は Unicode の語構成文字 —— 漢字・かなも「語の文字」——
+  /// で判定するため、`東京office` / `Officeビル` / `浅草寺office` で JS は当たり ICU は外れる。
+  /// ASCII の前後読み `(?<![A-Za-z0-9_])…(?![A-Za-z0-9_])` に置き換えると JS と同じ位置で当たる。
   private static let corporateQualifierPattern = try! JSRegex(
-    "(?:保険(?:会社|代理店)?|生命(?:保険)?|株式会社|合同会社|本社|オフィス|insurance|corporat(?:e|ion)|headquarters|\\boffice\\b|\\binc\\.?\\b|\\bltd\\.?\\b)",
+    "(?:保険(?:会社|代理店)?|生命(?:保険)?|株式会社|合同会社|本社|オフィス|insurance|corporat(?:e|ion)|headquarters"
+      + "|(?<![A-Za-z0-9_])office(?![A-Za-z0-9_])"
+      + "|(?<![A-Za-z0-9_])inc\\.?(?![A-Za-z0-9_])"
+      + "|(?<![A-Za-z0-9_])ltd\\.?(?![A-Za-z0-9_]))",
     options: [.caseInsensitive]
   )
 
   private static let separatorsAndMarks = try! JSRegex("[\\s\\p{P}\\p{S}]+")
+
+  /// 候補一覧を `reviewShortlistLimit` 件に切る(TS `:403` の `slice(0, 3)`)。解決器が何件返しても、
+  /// パイプラインを出た先には 3 件しか無い。
+  private static func capped(_ resolution: PlaceResolution) -> PlaceResolution {
+    guard case .review(let candidates) = resolution, candidates.count > reviewShortlistLimit else { return resolution }
+    return .review(Array(candidates.prefix(reviewShortlistLimit)))
+  }
 
   /// `confirmed > review > unresolved`。パイプラインが後の答えで置き換えてよいかだけに使う。
   private static func rank(_ resolution: PlaceResolution) -> Int {

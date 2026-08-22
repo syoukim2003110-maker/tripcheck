@@ -40,16 +40,21 @@ public struct PlaceQuery: Hashable, Sendable {
 public struct PlaceCandidate: Hashable, Codable, Sendable {
   public var stop: ResolvedStop
   public var category: String?
-  /// 「訪れる場所」として自動採用してよいか。**既定は
-  /// `!ResolutionPipeline.isNonTouristic(name:category:)`** で、解決器がそれより良い判断を
-  /// 持っているとき(自前の分類器を持つ MapKit など)だけ明示的に上書きする。
-  /// `ResolutionPipeline.autoAccept` が読むのはこの欄で、規則の再計算はしない。
+  /// 「訪れる場所」として自動採用してよいか。**既定は `category`・`stop.placeTypes`・名前の
+  /// どれもが非観光の合図を出していないこと** —— TS `isPlainlyNonVisitCandidate` が
+  /// `candidate.placeTypes ?? []` を見る(`lib/google-place-resolver.ts:308-318`)のと同じで、
+  /// Google は `primaryType` を `types` にも並べるので、片方だけ見ると取りこぼす。
+  /// 解決器がそれより良い判断を持っているとき(自前の分類器を持つ MapKit など)だけ明示的に
+  /// 上書きする。`ResolutionPipeline.autoAccept` が読むのはこの欄で、規則の再計算はしない。
   public var isTouristic: Bool
 
   public init(stop: ResolvedStop, category: String? = nil, isTouristic: Bool? = nil) {
     self.stop = stop
     self.category = category
-    self.isTouristic = isTouristic ?? !ResolutionPipeline.isNonTouristic(name: stop.name, category: category)
+    self.isTouristic = isTouristic ?? !(
+      ResolutionPipeline.isNonTouristic(name: stop.name, category: category)
+        || (stop.placeTypes ?? []).contains { ResolutionPipeline.nonTouristicCategories.contains($0) }
+    )
   }
 }
 

@@ -27,8 +27,26 @@ import Testing
   #expect(gornergrat.provider == .catalog)
   guard case .confirmed(let bern) = r[1] else { Issue.record("expected confirmed"); return }
   #expect(bern.name == "Bern Old Town")
+  // スイスのサンプルは Web のデモ投入と同じ欄(`usePlanBuild.tsx:808-822`)。
+  #expect(bern.id == "sample-switzerland-7")
+  #expect(bern.verifiedAt == "")
+  #expect(!bern.isAnchor)
   #expect(r[2] == nil)
   #expect(r.count == 2)
+}
+
+/// 旅行者が既にプロバイダの候補を選んでいる行には、カタログは手を出さない —— その id の
+/// 同一性を確かめられるのは、id を発行した解決器だけだから(TS `:268-270`)。
+@Test func catalogResolverAbstainsOnPinnedProviderChoices() async {
+  let queries = [
+    PlaceQuery(inputIndex: 0, input: "Senso-ji", pinnedProviderRef: "ChIJ8T1GpMGOGGARDYGSgpooDWw"),
+    PlaceQuery(inputIndex: 1, input: "Senso-ji", pinnedProviderRef: nil),
+  ]
+  let r = await CatalogResolver().resolve(queries, destination: .auto, locale: .en)
+  #expect(r[0] == nil)
+  guard case .confirmed(let stop) = r[1] else { Issue.record("expected confirmed"); return }
+  #expect(stop.id == "sensoji")
+  #expect(r.count == 1)
 }
 
 // MARK: - 自動採用の規則
@@ -61,6 +79,19 @@ import Testing
   #expect(ResolutionPipeline.autoAccept(input: "Bern", candidates: [uni, oldTown])?.stop.name == "Bern Old Town")
 }
 
+/// 非観光の合図は `category` だけでなく `placeTypes` からも来る —— Google は `primaryType` を
+/// `types` にも並べるので、片方しか見ないと取りこぼす(TS `:308-318`)。
+@Test func placeTypesAloneCanSendACandidateToReview() {
+  let clinic = TestStops.candidate(name: "Bern Center", placeTypes: ["point_of_interest", "hospital"])
+  #expect(!clinic.isTouristic)
+  #expect(ResolutionPipeline.autoAccept(input: "Bern Center", candidates: [clinic]) == nil)
+  let park = TestStops.candidate(name: "Bern Center", placeTypes: ["point_of_interest", "park"])
+  #expect(park.isTouristic)
+  #expect(ResolutionPipeline.autoAccept(input: "Bern Center", candidates: [park])?.stop.name == "Bern Center")
+  // 解決器が自分の分類を持っているときは、明示的な上書きが勝つ。
+  #expect(PlaceCandidate(stop: TestStops.resolved("Kyoto University Museum"), category: "university", isTouristic: true).isTouristic)
+}
+
 /// 企業名パターンは名前だけを見る(TS の 12 種のタイプ + `corporateQualifierPattern` を逐語)。
 @Test func nonTouristicCoversTheTypeListAndTheCorporateNamePattern() {
   #expect(ResolutionPipeline.nonTouristicCategories.count == 12)
@@ -70,9 +101,18 @@ import Testing
   for name in ["東京海上日動 本社", "アクメ株式会社", "Zurich Insurance", "Acme Ltd.", "Acme Corporate Center", "Global Headquarters", "The Post Office"] {
     #expect(ResolutionPipeline.isNonTouristic(name: name, category: nil), "\(name) should read as non-touristic")
   }
-  // `\boffice\b` は語境界つき —— 「officer」や地名の一部は捕まえない。
+  // 語境界つき —— 「officer」や地名の一部は捕まえない。
   #expect(!ResolutionPipeline.isNonTouristic(name: "Officers Club Museum", category: "museum"))
   #expect(!ResolutionPipeline.isNonTouristic(name: "Gornergrat", category: nil))
+  // JS の `\b` は ASCII 基準なので、漢字・かなの隣でも当たる。ICU の `\b` は当たらない ——
+  // ASCII の前後読みに書き換えて JS と同じ位置で当てる(`ResolutionPipeline` の当該コメント)。
+  for name in ["東京office", "Officeビル", "浅草寺office", "東京inc", "アクメltd"] {
+    #expect(ResolutionPipeline.isNonTouristic(name: name, category: nil), "\(name) should read as non-touristic")
+  }
+  // TS の `corporateQualifierPattern.test("Post Office Museum")` も true。ただし TS が
+  // このパターンを見るのは 12 種か `service` 型の候補だけ(`:316-324`)なので、TS 全体の答えは
+  // 「観光地」。Kit はカテゴリを問わず名前で判定する = **TS より広い**(逸脱として記録済み)。
+  #expect(ResolutionPipeline.isNonTouristic(name: "Post Office Museum", category: "museum"))
 }
 
 // MARK: - 解決器の連結
@@ -119,6 +159,17 @@ import Testing
   #expect(r[1] == PlaceResolution.review(shortlist))
   #expect(r[2] == PlaceResolution.unresolved(reason: "not_found"))
   #expect(r[3] == PlaceResolution.review(shortlist))
+}
+
+/// 確認へ回る候補は 3 件まで(TS `:403` の `slice(0, 3)`)。切るのは表示ではなく結果の側。
+@Test func reviewShortlistsAreCutToThree() async {
+  #expect(ResolutionPipeline.reviewShortlistLimit == 3)
+  let four = ["Bern Old Town", "Bern Minster", "Bern Bear Park", "Bern Museum"]
+    .map { TestStops.candidate(name: $0, category: "tourist_attraction") }
+  let query = [PlaceQuery(inputIndex: 0, input: "Bern", pinnedProviderRef: nil)]
+  let r = await ResolutionPipeline.resolve(query, destination: .auto, locale: .en, resolvers: [StubResolver([0: .review(four)])])
+  guard case .review(let shown) = r[0] else { Issue.record("expected review"); return }
+  #expect(shown.map(\.stop.name) == ["Bern Old Town", "Bern Minster", "Bern Bear Park"])
 }
 
 // MARK: - 混在国と「3 件ずつ」
