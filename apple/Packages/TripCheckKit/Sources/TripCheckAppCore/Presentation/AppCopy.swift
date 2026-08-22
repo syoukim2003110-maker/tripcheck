@@ -122,6 +122,19 @@ public struct AppCopy: Sendable {
   public let mustUnresolvedContinue: String
   public let mustUnresolvedBack: String
 
+  // MARK: - 結果画面(Task 6)
+
+  /// 結論の警告 1 件に添えるボタンの文。Kit の `WarningAction` が持たない 3 つだけ ——
+  /// 「入力を直す」は `resolveEditInput` を使い回す(同じ行き先・同じ一手)。
+  public let chooseCountryAction: String
+  public let chooseCandidateAction: String
+  public let retryBuildAction: String
+  /// 「旅程 | 地図」の切替そのものの読み上げ名(2 つの錠剤の親)。
+  public let viewSwitchLabel: String
+  /// 組み上がった旅程が 1 日も持たなかったときの 1 文。`Screen.error` の機械語ではなく、
+  /// 旅行者が読む側。
+  public let planErrorMessage: String
+
   /// 結論の詳細に出す差分表の見出し。Kit の `TripScenarioMetrics` の 6 欄と 1 対 1 で、
   /// **この並びが表の行順**になる(衝突・超過・移動・最小余白・訪問数・日数)。Web は
   /// 訪問数と日数を 1 行に詰めるが、iPhone の幅では 1 欄 1 行のほうが読める。
@@ -145,6 +158,10 @@ public struct AppCopy: Sendable {
   private let airportArrivalBreakdownText: @Sendable (Int, Int) -> String
   private let airportDepartureBreakdownText: @Sendable (Int, Int) -> String
   private let mustUnresolvedBodyText: @Sendable ([String]) -> String
+  private let planUnresolvedWarningText: @Sendable ([String]) -> String
+  private let planAmbiguousWarningText: @Sendable ([String]) -> String
+  private let planDeferredAnchorsText: @Sendable ([String]) -> String
+  private let dayTimeBarLabelText: @Sendable (String, String, String, String, Int, Int) -> String
 
   init(
     startTitle: String,
@@ -219,6 +236,11 @@ public struct AppCopy: Sendable {
     mustUnresolvedTitle: String,
     mustUnresolvedContinue: String,
     mustUnresolvedBack: String,
+    chooseCountryAction: String,
+    chooseCandidateAction: String,
+    retryBuildAction: String,
+    viewSwitchLabel: String,
+    planErrorMessage: String,
     diffLabels: [String],
     pasteLimitToast: @escaping @Sendable (Int) -> String,
     daysValue: @escaping @Sendable (Int) -> String,
@@ -237,7 +259,11 @@ public struct AppCopy: Sendable {
     minutesShort: @escaping @Sendable (Int) -> String,
     airportArrivalBreakdown: @escaping @Sendable (Int, Int) -> String,
     airportDepartureBreakdown: @escaping @Sendable (Int, Int) -> String,
-    mustUnresolvedBody: @escaping @Sendable ([String]) -> String
+    mustUnresolvedBody: @escaping @Sendable ([String]) -> String,
+    planUnresolvedWarning: @escaping @Sendable ([String]) -> String,
+    planAmbiguousWarning: @escaping @Sendable ([String]) -> String,
+    planDeferredAnchors: @escaping @Sendable ([String]) -> String,
+    dayTimeBarLabel: @escaping @Sendable (String, String, String, String, Int, Int) -> String
   ) {
     self.startTitle = startTitle
     self.startHelpShort = startHelpShort
@@ -311,6 +337,11 @@ public struct AppCopy: Sendable {
     self.mustUnresolvedTitle = mustUnresolvedTitle
     self.mustUnresolvedContinue = mustUnresolvedContinue
     self.mustUnresolvedBack = mustUnresolvedBack
+    self.chooseCountryAction = chooseCountryAction
+    self.chooseCandidateAction = chooseCandidateAction
+    self.retryBuildAction = retryBuildAction
+    self.viewSwitchLabel = viewSwitchLabel
+    self.planErrorMessage = planErrorMessage
     self.diffLabels = diffLabels
     self.pasteLimitToastText = pasteLimitToast
     self.daysValueText = daysValue
@@ -330,6 +361,10 @@ public struct AppCopy: Sendable {
     self.airportArrivalBreakdownText = airportArrivalBreakdown
     self.airportDepartureBreakdownText = airportDepartureBreakdown
     self.mustUnresolvedBodyText = mustUnresolvedBody
+    self.planUnresolvedWarningText = planUnresolvedWarning
+    self.planAmbiguousWarningText = planAmbiguousWarning
+    self.planDeferredAnchorsText = planDeferredAnchors
+    self.dayTimeBarLabelText = dayTimeBarLabel
   }
 
   /// 貼り付けが上限に当たったときのトースト。**件数を名指しする** —— 12 までですとだけ
@@ -388,6 +423,30 @@ public struct AppCopy: Sendable {
 
   /// 未解決の必須・予約を抱えたまま進もうとしたときの本文。名前を並べる。
   public func mustUnresolvedBody(names: [String]) -> String { mustUnresolvedBodyText(names) }
+
+  /// 場所が決まらなかった入力を名指しする 1 文。結論の警告と課題の行が**同じ文**を使う ——
+  /// 同じ事実に 2 通りの言い方があると、旅行者は 2 件あると読む。
+  public func planUnresolvedWarning(names: [String]) -> String { planUnresolvedWarningText(names) }
+
+  /// 同名候補が残っている入力を名指しする 1 文。
+  public func planAmbiguousWarning(names: [String]) -> String { planAmbiguousWarningText(names) }
+
+  /// 日程に入り切らなかった、旅行者が名前で書いた場所。
+  public func planDeferredAnchors(names: [String]) -> String { planDeferredAnchorsText(names) }
+
+  /// 時間帯の読み上げ 1 文。帯は絵なので、内訳は全部この文が運ぶ(`role="img"` 相当)。
+  /// 分数は呼び出し側が `TripPresentation.formatDuration` で整えたものを渡す ——
+  /// 画面の他の分数と同じ書式にするため。
+  public func dayTimeBarLabel(
+    visit: String,
+    travel: String,
+    slack: String,
+    available: String,
+    reservations: Int,
+    conflicts: Int
+  ) -> String {
+    dayTimeBarLabelText(visit, travel, slack, available, reservations, conflicts)
+  }
 
   public static func `for`(_ locale: PlannerLocale) -> AppCopy {
     locale == .ja ? ja : en
@@ -473,6 +532,11 @@ public struct AppCopy: Sendable {
     mustUnresolvedTitle: "見つからなかった場所があります",
     mustUnresolvedContinue: "続ける",
     mustUnresolvedBack: "戻って直す",
+    chooseCountryAction: "国を選ぶ",
+    chooseCandidateAction: "候補から選ぶ",
+    retryBuildAction: "もう一度つくる",
+    viewSwitchLabel: "表示を切り替える",
+    planErrorMessage: "この条件では1日も組めませんでした。場所か日数を見直してから、もう一度つくってください。",
     diffLabels: ["重大な衝突", "超過", "移動", "最小余白", "訪問数", "日数"],
     pasteLimitToast: { "\($0)件あります。1回に確認できるのは12か所までです。残りは別の旅として分けてください。" },
     daysValue: { "\($0)日" },
@@ -495,6 +559,25 @@ public struct AppCopy: Sendable {
     airportDepartureBreakdown: { "出発前：空港まで約\($1)分 + 空港内 \($0)分" },
     mustUnresolvedBody: { names in
       "「\(names.joined(separator: "」「"))」は必須または予約として指定されていますが、場所が決まっていません。このまま進めると旅程に入りません。"
+    },
+    planUnresolvedWarning: { names in
+      "「\(AppCopy.nameList(names, locale: .ja))」の場所がまだ決まっていません。決まるまで旅程には入りません。"
+    },
+    planAmbiguousWarning: { names in
+      "「\(AppCopy.nameList(names, locale: .ja))」は同名の候補が残っています。住所を見て選んでください。"
+    },
+    planDeferredAnchors: { names in
+      "「\(AppCopy.nameList(names, locale: .ja))」は、いまの条件では日程に入りません。"
+    },
+    dayTimeBarLabel: { visit, travel, slack, available, reservations, conflicts in
+      ([
+        "1日の時間配分。訪問\(visit)",
+        "移動\(travel)",
+        "余裕\(slack)",
+        "利用可能\(available)",
+        reservations > 0 ? "予約マーカー\(reservations)件" : nil,
+        conflicts > 0 ? "衝突\(conflicts)件" : nil,
+      ].compactMap { $0 }).joined(separator: "、") + "。"
     }
   )
 
@@ -571,6 +654,11 @@ public struct AppCopy: Sendable {
     mustUnresolvedTitle: "Some places were not found",
     mustUnresolvedContinue: "Continue",
     mustUnresolvedBack: "Go back and fix",
+    chooseCountryAction: "Choose a country",
+    chooseCandidateAction: "Pick a match",
+    retryBuildAction: "Build it again",
+    viewSwitchLabel: "Switch view",
+    planErrorMessage: "Nothing could be scheduled under these conditions. Revisit the places or the day count, then build again.",
     diffLabels: ["Hard conflicts", "Overrun", "Travel", "Minimum slack", "Visits", "Days"],
     pasteLimitToast: { "\($0) places found. Up to 12 places at a time. Keep the rest for a second trip." },
     daysValue: { "\($0) day\($0 == 1 ? "" : "s")" },
@@ -593,6 +681,35 @@ public struct AppCopy: Sendable {
     airportDepartureBreakdown: { "Before takeoff: about \($1) min to the airport + \($0) min at the airport" },
     mustUnresolvedBody: { names in
       "“\(names.joined(separator: "”, “"))” \(names.count == 1 ? "is" : "are") marked must-visit or booked, but the place is still not found. Continuing leaves \(names.count == 1 ? "it" : "them") out of the itinerary."
+    },
+    planUnresolvedWarning: { names in
+      "“\(AppCopy.nameList(names, locale: .en))” \(names.count == 1 ? "has" : "have") no place yet, so \(names.count == 1 ? "it stays" : "they stay") out of the itinerary until settled."
+    },
+    planAmbiguousWarning: { names in
+      "“\(AppCopy.nameList(names, locale: .en))” still \(names.count == 1 ? "has" : "have") same-name matches. Pick one by its address."
+    },
+    planDeferredAnchors: { names in
+      "“\(AppCopy.nameList(names, locale: .en))” \(names.count == 1 ? "does" : "do") not fit the plan as it stands."
+    },
+    dayTimeBarLabel: { visit, travel, slack, available, reservations, conflicts in
+      ([
+        "Day time allocation: \(visit) visiting",
+        "\(travel) travelling",
+        "\(slack) spare",
+        "\(available) available",
+        reservations > 0 ? "\(reservations) reservation marker\(reservations == 1 ? "" : "s")" : nil,
+        conflicts > 0 ? "\(conflicts) conflict\(conflicts == 1 ? "" : "s")" : nil,
+      ].compactMap { $0 }).joined(separator: ", ") + "."
     }
   )
+
+  /// 名前を並べるときの共通の切り詰め —— 先頭 2 件だけを出し、残りは件数で言う。Kit の
+  /// `minimumDaysCopy`(`Presentation/Copy.swift`)が未確定の場所を並べるのと同じ形で、
+  /// 3 つ以上を読み上げても旅行者はどれから直すか決められない。
+  static func nameList(_ names: [String], locale: PlannerLocale) -> String {
+    let head = names.prefix(2).joined(separator: locale == .ja ? "・" : ", ")
+    let extra = names.count - 2
+    guard extra > 0 else { return head }
+    return head + (locale == .ja ? " 他\(extra)件" : " +\(extra) more")
+  }
 }

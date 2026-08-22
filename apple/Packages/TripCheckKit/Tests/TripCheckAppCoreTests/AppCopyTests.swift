@@ -21,7 +21,9 @@ import TripCheckKit
               c.airportCompareArrival, c.airportCompareDeparture, c.airportArrivalBoundary, c.airportDepartureBoundary,
               c.airportNextDay, c.airportPreviousDay, c.airportArrivalWinner, c.airportDepartureWinner,
               c.airportEstimate, c.airportUse, c.airportSelected, c.airportDisclaimer,
-              c.mustUnresolvedTitle, c.mustUnresolvedContinue, c.mustUnresolvedBack] + c.diffLabels
+              c.mustUnresolvedTitle, c.mustUnresolvedContinue, c.mustUnresolvedBack,
+              c.chooseCountryAction, c.chooseCandidateAction, c.retryBuildAction, c.viewSwitchLabel,
+              c.planErrorMessage] + c.diffLabels
               + [c.daysValue(1), c.daysValue(4), c.priorityLabel(name: "X"), c.removeStopQuestion(name: "X"), c.mustRemovalNote(name: "X"), c.reservationRemovalNote(name: "X"), c.removedStopToast(name: "X"), c.pasteLimitToast(count: 14)]
               + [c.resolveAllConfirmed(count: 1), c.resolveAllConfirmed(count: 4),
                  c.resolveCountryConflict(codes: ["CH", "JP"]), c.resolveCandidateQuestion(name: "X"),
@@ -30,14 +32,40 @@ import TripCheckKit
                  c.resolveContinue(count: 1), c.resolveContinue(count: 4), c.minutesShort(10),
                  c.airportArrivalBreakdown(airportMinutes: 90, transferMinutes: 60),
                  c.airportDepartureBreakdown(airportMinutes: 120, transferMinutes: 60),
-                 c.mustUnresolvedBody(names: ["X"]), c.mustUnresolvedBody(names: ["X", "Y"])] {
+                 c.mustUnresolvedBody(names: ["X"]), c.mustUnresolvedBody(names: ["X", "Y"])]
+              + [c.planUnresolvedWarning(names: ["X"]), c.planUnresolvedWarning(names: ["X", "Y", "Z"]),
+                 c.planAmbiguousWarning(names: ["X"]), c.planAmbiguousWarning(names: ["X", "Y", "Z"]),
+                 c.planDeferredAnchors(names: ["X"]), c.planDeferredAnchors(names: ["X", "Y", "Z"]),
+                 c.dayTimeBarLabel(visit: "1", travel: "2", slack: "3", available: "4", reservations: 0, conflicts: 0),
+                 c.dayTimeBarLabel(visit: "1", travel: "2", slack: "3", available: "4", reservations: 1, conflicts: 2)] {
       #expect(BannedTerms.violations(in: s).isEmpty, "\(locale): \(s)")
       #expect(!s.isEmpty, "\(locale): empty copy")
       checked += 1
     }
   }
-  // ja/en それぞれ 30 + Task 5 の 42 + diffLabels 6 + 引数を取る 8 + Task 5 の引数つき 16
-  #expect(checked == 204)
+  // ja/en それぞれ 30 + Task 5 の 42 + Task 6 の 5 + diffLabels 6 + 引数を取る 8
+  // + Task 5 の引数つき 16 + Task 6 の引数つき 8
+  #expect(checked == 230)
+}
+
+/// 帯の読み上げは 4 つの分数を**別々の節**に置く —— 入れ替わると「訪問30分・移動6時間」が
+/// 逆に読める。数の並びは言語ごとに違う(英語は数のあとに動詞が付く)ので、引数の名前だけ
+/// では守れない。
+@Test func theDayTimeBarLabelKeepsItsFourDurationsApart() {
+  for locale in [PlannerLocale.ja, .en] {
+    let text = AppCopy.for(locale).dayTimeBarLabel(
+      visit: "6時間", travel: "2時間", slack: "45分", available: "9時間",
+      reservations: 1, conflicts: 2
+    )
+    let parts = ["6時間", "2時間", "45分", "9時間"]
+    var cursor = text.startIndex
+    for part in parts {
+      let found = text.range(of: part, range: cursor..<text.endIndex)
+      #expect(found != nil, "\(locale): \(part) missing or out of order in \(text)")
+      cursor = found?.upperBound ?? cursor
+    }
+    #expect(text.contains("1") && text.contains("2"), "\(locale): \(text)")
+  }
 }
 
 /// 空港の内訳は 2 つの数を**別の場所**に出す —— 入れ替わると「空港内 60 分・市街地まで 90 分」が

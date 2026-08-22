@@ -3,4 +3,6 @@
 DerivedData/
 xcuserdata/
 .swiftpm/
-build/
+# xcodebuild の DerivedData は apple/build ちょうど 1 か所。先頭の "/" を落とすと
+# 大文字小文字を区別しないファイルシステムでは Screens/Build/ まで消える(実際に消えた)。
+/build/
