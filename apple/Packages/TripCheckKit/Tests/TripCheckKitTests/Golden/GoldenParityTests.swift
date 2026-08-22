@@ -8,7 +8,9 @@ import Testing
 ///
 /// Ported from `tests/golden-feasibility.test.ts`: `runScenario` (:60-67), `canonicalRun`
 /// (:69-77), the corpus-shape test (:79-129), the oracle sweep (:131-186), the repair-pair
-/// test (:188-208) and the determinism repetition (:210-224).
+/// test (:188-208), and both halves of the determinism test (:210-224) — the full-corpus
+/// double run (:211-213) and the hundred repetitions per archetype (:215-223), which are one
+/// `test()` in Node and two `@Test`s here so a failure names which half broke.
 
 /// tests/golden-feasibility.test.ts:60-67 — `runScenario`
 struct GoldenRun {
@@ -216,7 +218,20 @@ private func label(_ scenario: GoldenScenario) -> String {
   #expect(failures.count == 0, "\(report)")
 }
 
-/// tests/golden-feasibility.test.ts:210-224 — one representative per archetype, 100 repetitions.
+/// tests/golden-feasibility.test.ts:211-213 — every scenario, built twice, byte-equal. The
+/// hundred-repetition test below only covers ten representatives; this covers the other 490,
+/// where a stray dictionary or set iteration order would show up first.
+@Test func everyScenarioReproducesItselfExactly() throws {
+  let corpus = try GoldenCorpus.load()
+  var failures: [String] = []
+  for scenario in corpus.scenarios where try canonicalGoldenRun(scenario) != canonicalGoldenRun(scenario) {
+    failures.append("\(label(scenario)): the second build did not match the first")
+  }
+  let report = "\(failures.count) failures:\n" + failures.prefix(40).joined(separator: "\n")
+  #expect(failures.count == 0, "\(report)")
+}
+
+/// tests/golden-feasibility.test.ts:215-223 — one representative per archetype, 100 repetitions.
 @Test func eachArchetypeIsDeterministicOverAHundredRuns() throws {
   let corpus = try GoldenCorpus.load()
   var seen = Set<String>()
