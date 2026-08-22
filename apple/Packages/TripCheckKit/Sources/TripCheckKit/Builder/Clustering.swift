@@ -170,15 +170,14 @@ public enum Clustering {
   }
 
   /// TS `:1031-1037` の比較子。`original` が未知(TS の `undefined`)なら「元の日ではない」扱い。
-  /// 最後から 2 番目の項は TS が `localeCompare` を使うが、停留所 id はカタログの slug・
-  /// `google-…`・`manual-…` のような ASCII なので、コード単位順(`jsStringLess`)と一致する。
+  /// 最後から 2 番目の項は TS が `localeCompare`(`:1035`)なので、こちらも `jsLocaleCompare`。
   private static func isBetterFixedDayMove(_ left: FixedDayMove, _ right: FixedDayMove) -> Bool {
     let leftAway = left.destination != left.original
     let rightAway = right.destination != right.original
     if leftAway != rightAway { return !leftAway }
     if left.destinationSize != right.destinationSize { return left.destinationSize < right.destinationSize }
     if left.distanceKm != right.distanceKm { return left.distanceKm < right.distanceKm }
-    if left.stop.id != right.stop.id { return jsStringLess(left.stop.id, right.stop.id) }
+    if left.stop.id != right.stop.id { return jsLocaleCompare(left.stop.id, right.stop.id) < 0 }
     return left.destination < right.destination
   }
 

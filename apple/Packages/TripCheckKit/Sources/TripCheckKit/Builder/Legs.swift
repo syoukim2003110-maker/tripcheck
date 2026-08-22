@@ -159,13 +159,13 @@ public enum Legs {
   }
 
   /// TS `:1183-1189` / `:1195-1201` の比較子: 上限を破る方を後ろへ、次に所要分、最後にモード名。
-  /// TS の `localeCompare` はここでは ASCII 小文字 3 語しか受け取らないので、コード単位順と一致する。
+  /// モード名の比較は TS が `localeCompare`(`:1185` / `:1197`)なので、こちらも `jsLocaleCompare`。
   private static func leastBroken(_ left: ModeEstimate, _ right: ModeEstimate, breaks: (ModeEstimate) -> Bool) -> Bool {
     let leftBreaks = breaks(left)
     let rightBreaks = breaks(right)
     if leftBreaks != rightBreaks { return !leftBreaks }
     if left.minutes != right.minutes { return left.minutes < right.minutes }
-    return jsStringLess(left.mode.rawValue, right.mode.rawValue)
+    return jsLocaleCompare(left.mode.rawValue, right.mode.rawValue) < 0
   }
 
   /// TS `endpointAsRouteStop` (`lib/trip-builder.ts:1205-1213`)。

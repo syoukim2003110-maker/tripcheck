@@ -37,14 +37,14 @@ public struct ScheduleOrderScore: Comparable, Hashable, Sendable {
   }
 
   /// TS `compareScheduleOrderScore` (`lib/trip-builder.ts:1293-1300`) — 先頭 5 項を数値で、
-  /// 最後の 1 項を文字列比較で。
+  /// 最後の 1 項(`deterministicTieBreak`)を `localeCompare`(`:1298`)で。
   public static func < (left: Self, right: Self) -> Bool {
     if left.hardViolationCount != right.hardViolationCount { return left.hardViolationCount < right.hardViolationCount }
     if left.hardViolationMinutes != right.hardViolationMinutes { return left.hardViolationMinutes < right.hardViolationMinutes }
     if left.softPenalty != right.softPenalty { return left.softPenalty < right.softPenalty }
     if left.travelMinutes != right.travelMinutes { return left.travelMinutes < right.travelMinutes }
     if left.elapsedMinutes != right.elapsedMinutes { return left.elapsedMinutes < right.elapsedMinutes }
-    return jsStringLess(left.idKey, right.idKey)
+    return jsLocaleCompare(left.idKey, right.idKey) < 0
   }
 }
 
@@ -160,9 +160,10 @@ public enum DayOrdering {
       for (index, stopId) in lockedOrder.enumerated() { rank[stopId] = index }
       // 途中まで編集された既存旅程には、まだ固定されていない新しい場所が混ざりうる。固定済みの
       // 訪問はその相対順のまま保ち、本当に新しい訪問だけを決定的な順で末尾に足す。固定済みの
-      // 訪問のあいだに黙って割り込ませることは決してしない。
+      // 訪問のあいだに黙って割り込ませることは決してしない。末尾の順は TS `:1410` の
+      // `localeCompare` に合わせる。
       let listed = stableSorted(stops.filter { rank[$0.id] != nil }) { rank[$0.id]! < rank[$1.id]! }
-      let unlisted = stableSorted(stops.filter { rank[$0.id] == nil }) { jsStringLess($0.id, $1.id) }
+      let unlisted = stableSorted(stops.filter { rank[$0.id] == nil }) { jsLocaleCompare($0.id, $1.id) < 0 }
       return listed + unlisted
     }
 
@@ -223,7 +224,7 @@ public enum DayOrdering {
   /// 固定時刻の節は TS `:1462-1464` では「どちらかに時刻指定があればその場で return」なので、
   /// **両方が同じ時刻に予約されている組は同点(0)で止まり、閉店時刻も id も見ない**。
   /// 安定ソートなのでその組は入力順のまま残る。ここを落とすと種が変わり、貪欲挿入と改善パスの
-  /// 出発点が TS とずれる。
+  /// 出発点が TS とずれる。最後の id 比較は TS `:1434` の `localeCompare`。
   static func urgencySeed(
     stops: [RouteStop],
     constraints: [String: WishlistStopConstraint],
@@ -245,7 +246,7 @@ public enum DayOrdering {
       let leftClose = closingKey(left)
       let rightClose = closingKey(right)
       if leftClose != rightClose { return leftClose < rightClose }
-      return jsStringLess(left.id, right.id)
+      return jsLocaleCompare(left.id, right.id) < 0
     }
   }
 

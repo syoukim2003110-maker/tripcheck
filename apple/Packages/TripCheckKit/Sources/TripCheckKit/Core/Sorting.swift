@@ -20,12 +20,23 @@ public func jsStringCompare(_ a: String, _ b: String) -> Int {
 /// TS の `localeCompare` は既定ロケール依存 = 実行環境依存だが、移植先は端末をまたいで同じ順に
 /// ならなければならない。そこで既定ロケールではなく `en` 固定で比較する。
 ///
-/// 現時点でこれを使っているのは `Builder/DayAssignment.swift` だけ(`:1724` のタイブレークと
-/// `:1856`/`:1878-1879` の候補順)。TS が `localeCompare` を使っているのに Swift 側がまだ
-/// `jsStringLess` のままの箇所 — `Builder/Clustering.swift:173`(TS `:1035`)、
-/// `Builder/Legs.swift:162`(TS `:1185`/`:1197`)ほか — は、受け取る id やモード名が ASCII で
-/// 両者が一致するという判断でそうなっている。**最終レビューでまとめて突き合わせる宿題として
-/// 記録済み**で、この段では触らない。
+/// TS 側の 12 箇所は全て突き合わせ済みで、対応する Swift 側は次の通り(Task 26 で最後の 5 件を
+/// 揃えた):
+///
+/// | TS `lib/trip-builder.ts` | Swift |
+/// | --- | --- |
+/// | `:1035`(移動候補のタイブレーク) | `Builder/Clustering.swift` `isBetterFixedDayMove` |
+/// | `:1185` / `:1197`(代替モード名) | `Builder/Legs.swift` `leastBroken` |
+/// | `:1298`(`deterministicTieBreak`) | `Builder/DayOrdering.swift` `ScheduleOrderScore.<` |
+/// | `:1410`(固定順に無い訪問の末尾) | `Builder/DayOrdering.swift` `orderForReservations` |
+/// | `:1434`(緊急度順の種) | `Builder/DayOrdering.swift` `urgencySeed` |
+/// | `:1724`(割り当て得点のタイブレーク) | `Builder/DayAssignment.swift` `DayAssignmentScore.compare` |
+/// | `:1856` / `:1878` / `:1879`(移動候補順) | `Builder/DayAssignment.swift` `movableStops` |
+/// | `:1960` / `:1968`(解決済み停留所の選択) | `Builder/TripBuilder.swift` |
+///
+/// 受け取るのが ASCII の id やモード名であればコード単位順と結果は変わらないが、利用者が付けた
+/// 名前から作られる id はいつでも ASCII の外へ出られる。**どちらの順になるかを移植元と同じ関数で
+/// 決める**ほうが、一致の根拠として強い。
 public func jsLocaleCompare(_ a: String, _ b: String) -> Int {
   switch a.compare(b, options: [], range: nil, locale: Locale(identifier: "en")) {
   case .orderedAscending: return -1
