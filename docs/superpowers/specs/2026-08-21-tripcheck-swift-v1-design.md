@@ -377,8 +377,8 @@ G3(TS スナップショット照合)は、同じシナリオを TypeScript エ�
 
 | | 母集団 | 結果 |
 | --- | --- | --- |
-| golden | `tests/fixtures/golden-feasibility.v1.json` の 500 件(1 日・1 停留所・balanced・en) | 下表の除外パスを除き **差分 0** |
-| builder | `Tests/TripCheckKitTests/Fixtures/builder-scenarios.v1.json` の 22 件(2〜5 日・5〜12 停留所・ja/en・switzerland を含む) | 同じく **差分 0** |
+| golden | `tests/fixtures/golden-feasibility.v1.json` の 500 件(1 日・1 停留所・balanced・en) | A.1 の除外パスを除き **差分 0** |
+| builder | `Tests/TripCheckKitTests/Fixtures/builder-scenarios.v1.json` の 23 件(2〜5 日・4〜12 停留所・ja/en・switzerland・worldwide を含む) | 同じく **差分 0** |
 
 再生成:
 
@@ -389,41 +389,53 @@ node --experimental-strip-types scripts/export-golden-snapshots.mjs \
 node --experimental-strip-types scripts/export-golden-snapshots.mjs \
   --out apple/Packages/TripCheckKit/Tests/TripCheckKitTests/Fixtures/ts-builder-snapshots.v1.json \
   apple/Packages/TripCheckKit/Tests/TripCheckKitTests/Fixtures/builder-scenarios.v1.json
+node --experimental-strip-types scripts/export-js-math-vectors.mjs \
+  --out apple/Packages/TripCheckKit/Tests/TripCheckKitTests/Fixtures/js-math-vectors.v1.json \
+  apple/Packages/TripCheckKit/Tests/TripCheckKitTests/Fixtures/builder-scenarios.v1.json
 ```
 
 ### A.1 除外パス(`SnapshotParityTests.swift` の `snapshotParityIgnoredPaths`)
 
-配列の添字は `[]` に畳んである。1 行が 1 フィールドを指し、部分木ごと黙らせている行は無い。
+配列の添字は `[]` に畳んである。1 行が 1 フィールドを指し、部分木ごと黙らせている行は無い。**`everyIgnoredPathStillEarnsItsPlace` が、どの行も 2 つの母集団のどこかで実際に差分を 1 件以上飲み込んでいることを検査する。** 何も飲み込まない行は「もう直った差」か「誰もシナリオを書かなかった場合」のどちらかで、置いたままにすると照合が見逃せる範囲が黙って広がる。
 
 | # | シナリオ | パス | TS 値 | Swift 値 | 理由 |
 | --- | --- | --- | --- | --- | --- |
-| A-1 | 全件 | `evidence.capturedAt` | `2026-08-22T08:24:31.006Z` | 別の時刻 | `options.capturedAt` が無いシナリオは実行時刻。時計そのものなので一致しえない |
+| A-1 | `builder-23-closed-every-day-and-unpinned-capture`(`options.capturedAt` を渡さない唯一のシナリオ) | `evidence.capturedAt` | `2026-08-22T09:13:11.309Z` | 別の時刻 | `capturedAt` が無ければ実行時刻(`new Date().toISOString()`)。時計そのものなので一致しえない |
 | A-2 | 全件 | `evidence.providerSnapshotHash` / `result.providerSnapshotHash` | `fnv1a-e1e3c4ba` | `fnv1a-ee880a7c` | Task 16 の決定。Swift の安定文字列化は `undefined` のキーと A-4 の漏れキーを含めないので、同じ FNV-1a でも原文が違う。verdict の入力ではなくキャッシュの合鍵 |
-| A-3 | 全件(`RouteStop` 型の全位置) | `…stop.input` / `…stop.inputIndex` / `…stop.address` / `…stop.countryCode`(`plan.days[].stops[].stop`、`plan.days[].legs[].from`/`.to`、`plan.days[].startBase`/`.endBase`、`plan.selectedBase`、`plan.baseRecommendations[].base`、`plan.deferredOptionalStops[]`、`plan.deferredUnavailableStops[]`、および `result.scheduledDays[]` の対応する位置) | `"Tokyo Skytree"` / `1` / `"Synthetic fixture address, Sumida"` / `"JP"` | 不在 | TS は構造的型付けなので、`RouteStop` を宣言した場所に `ResolvedInputStop` が入ると余分な 4 キーが実行時オブジェクトに付いたまま出力される。Swift は `RouteStop` と `ResolvedStop` が別の型なので入口で落ちる。ビルダーはこの 4 キーを `RouteStop` から読まない(純粋な入力の反響) |
+| A-3 | 全件(`RouteStop` 型の全 14 位置) | `…input` / `…inputIndex` / `…address` / `…countryCode` を `plan.days[].stops[].stop`、`plan.days[].legs[].from`/`.to`、`plan.days[].startBase`/`.endBase`、`plan.selectedBase`、`plan.baseRecommendations[].base`、`plan.deferredOptionalStops[]`、`plan.deferredUnavailableStops[]`、および `result.scheduledDays[]` の対応する 5 位置 | `"Tokyo Skytree"` / `1` / `"Synthetic fixture address, Sumida"` / `"JP"` | 不在 | TS は構造的型付けなので、`RouteStop` を宣言した場所に `ResolvedInputStop` が入ると余分な 4 キーが実行時オブジェクトに付いたまま出力される。Swift は `RouteStop` と `ResolvedStop` が別の型なので入口で落ちる。ビルダーはこの 4 キーを `RouteStop` から読まない(純粋な入力の反響) |
 | A-4 | `openingEvidenceByStop` を渡すシナリオ | `evidence.facts[].evidence.dateSpecific` / `evidence.facts[].evidence.dateSpecificDates` | `true` / `["2026-10-13",…]` | 不在 | `createPlannerEvidenceSnapshot` が `{ ...hoursEvidence }` を `Evidence` へ展開する(`lib/feasibility-result.ts:440`、`:556`)ため、`Evidence` 型が宣言していない 2 キーが同乗する。A-3 と同じ「構造的型付けの漏れ」で、エンジンはこの値を読み返さない。Swift の `Evidence` は宣言したフィールドだけを持つ(Task 16 の決定のまま) |
+
+除外行は 61 行あるが、**種類は 4 つ**で、うち 56 行は A-3 の同じ 4 フィールド × 14 か所である。
 
 ### A.2 修正した差分
 
 | # | 症状 | 原因 | 直した場所 |
 | --- | --- | --- | --- |
-| A-5 | builder-04 / 05 / 14 で 1 日ぶんの訪問順が TS と**逆順**になり、その日の到着・出発・脚・Maps URL・evidence の並びまで連鎖して食い違った(初回 494 差分) | `Core/GeoPoint.swift` の Haversine が TS と**式の書き方**まで一致していなかった。(a) `asin(√h)` を `atan2(√h, √(1−h))` で書いていた、(b) `度 × π ÷ 180` を `度 × (π ÷ 180)` に畳んでいた、(c) `cos(A)·cos(B)·sin²` を `cos(A)·cos(B)·sin·sin` と書いていた。いずれも実数では同値だが最後の 1 ulp が動く。訪問順の最適化は開路・閉路とも**逆順が厳密に同距離**なので、勝敗は同じ 3 辺を別の順で足した和の `<` 比較だけで決まる。1 ulp が向きを倒す | `Sources/TripCheckKit/Core/GeoPoint.swift` を TS `lib/route-optimizer.ts:318-328` の式の形どおりに書き直した |
+| A-5 | builder-04 / 05 / 14 で 1 日ぶんの訪問順が TS と**逆順**になり、その日の到着・出発・脚・Maps URL・evidence の並びまで連鎖して食い違った | Haversine が TS と**式の書き方**まで一致していなかった。(a) `asin(√h)` を `atan2(√h, √(1−h))` で書いていた、(b) `度 × π ÷ 180` を `度 × (π ÷ 180)` に畳んでいた、(c) `**` は `*` より強く結合するので TS は `cos(A)·cos(B)·sin²` だが Swift は `cos(A)·cos(B)·sin·sin` と書いていた。いずれも実数では同値だが最後の 1 ulp が動く | `Sources/TripCheckKit/Core/GeoPoint.swift` を `lib/route-optimizer.ts:318-328` の式の形どおりに書き直した |
+| A-6 | 上を直しても差分は消えず**増えた**(494 → 887)。式の形ではなく `cos` / `sin` / `asin` そのものが V8 と食い違っていた | Foundation(Apple の libm)を呼んでいた。A.3 参照 | `Sources/TripCheckKit/Core/JSMath.swift` を新設し、`straightLineDistanceKm` から呼ぶようにした |
 
-### A.3 直せない環境差(記録のみ)
+**なぜ 1 ulp が効くのか。** 訪問順の最適化(`RouteOrdering.optimize` / `optimizeFromBase`)は、開路も閉路も**逆順が厳密に同じ辺集合**なので距離が完全に同点になる。勝敗は「同じ辺を別の順で足した 2 つの和」の厳密な `<` だけで決まる。辺 1 本の最後の 1 ビットで向きが倒れ、その日の stops・legs・到着/出発時刻・Maps URL・theme・evidence の並び・assumptions まで連鎖して食い違う。
 
-**V8 の `Math.cos` と Apple の libm `cos` は 1 ulp 食い違う。** 35.5〜38.5° と 45.9〜47.4° を 0.0001° 刻みで 45,002 点調べたところ **3,089 点(6.86%)** で戻り値のビット列が違った(`sin` / `sqrt` / `asin` は、同じ入力を与えるかぎり全点一致した)。V8 は自前の fdlibm 由来 `base::ieee754::cos` を積んでおり、Apple の libm はそれより正確に丸める。どちらかを「直す」筋合いは Swift 側に無い。
+### A.3 V8 と Apple libm の 1 ulp 差 — 測定と解消
 
-影響は A-5 と同じ場所に出る。訪問順の最適化が**逆順と厳密に同距離**になる日(base のある 2 停留所の日は必ずそう、開路もしばしばそう)では、勝敗が 1 ulp の差で決まるので、緯度が食い違う点に乗っていると TS と逆順になりうる。
+**測定。** 緯度 35.5〜38.5° と 45.9〜47.4° を 0.0001° 刻みにした 45,002 点、および haversine が実際に評価する範囲の掃引で、V8(Node 22.18.0 / V8 12.4.254.21)と Apple libm の戻り値のビット列を突き合わせた。
 
-G3 の母集団では、これは「移植の差」ではなく「2 つのランタイムの libm の差」を測ってしまう。そこで `builder-scenarios.v1.json` の緯度は**両ランタイムの `cos` が一致する値だけ**を使う。この規約のために 5 点を 0.0001°(約 11 m)動かした:
+| 関数 | 標本 | 不一致 | 率 |
+| --- | --- | --- | --- |
+| `cos(緯度 × π ÷ 180)` | 45,002 | 3,089 | 6.86 % |
+| `sin(緯度 × π ÷ 180)` | 45,002 | 4,489 | 9.97 % |
+| `sin(x)`(0〜0.035 rad = haversine の半差分) | 100,001 | 7 | 0.007 % |
+| `asin(x)`(定義域 `[0, 1]` 全体) | 200,001 | 17,319 | 8.66 % |
+| `asin(√h)`(2 点間 0.9〜400 km に対応) | 200,001 | 4,217 | 2.11 % |
 
-| 停留所 | 変更前 | 変更後 |
-| --- | --- | --- |
-| Tokyo Skytree | 35.7101 | 35.7102 |
-| Shinjuku Gyoen | 35.6852 | 35.6853 |
-| Interlaken | 46.6863 | 46.6862 |
-| Jungfraujoch | 46.5474 | 46.5473 |
-| Lauterbrunnen | 46.5936 | 46.5937 |
+V8 は自前の fdlibm 由来 `base::ieee754::cos` / `sin` / `asin` を積んでおり(`V8_USE_LIBM_TRIG_FUNCTIONS` はこのビルドで未定義)、Apple の libm はそれより正確に丸める。**正確なほうが「正しい」が、parity にとっては正しくない。**
 
-同じ規約が `builder-scenarios.v1.json` の `latitudeConstraint` にも書いてある。シナリオを足すときは新しい緯度も同じ手順で選別すること。
+**解消。** `Core/JSMath.swift` に V8 `src/base/ieee754.cc`(tag 12.4.254.21 = Node 22.18.0 が積む版)の `cos` / `sin` / `asin` を移植し、`straightLineDistanceKm` はそちらを呼ぶ。移植したのは Sun の fdlibm 5.3 ではなく **V8 のファイル**である(V8 版は本家から乖離している)。中身は `__kernel_cos`、`__kernel_sin`、`__ieee754_rem_pio2`(π/4 以下の素通し・|x| < 3π/4 の n = ±1・2^19×(π/2) までの中規模、およびそれ以上のための `__kernel_rem_pio2` 全体)、`asin` の有理近似。
 
-製品としての含みは残る: **Swift 版と Web 版が同じ旅程を逆順に出す日がありうる。** 距離が厳密に同点のときだけで、選ぶ場所の集合も所要時間も変わらない。これを消したいなら、同点判定を許容差 + id の決定的な tie-break に変える必要があるが、それは TS 側も一緒に変えなければ parity が崩れる(この spec の範囲外)。
+**移植で最初に外した点 — 融合積和。** V8 はこのファイルを Clang の既定(`-ffp-contract=on`)でビルドするので、arm64 では 1 つの式の中の `a + b * c` がすべて `fmadd` 1 命令になり、積は丸められずに全幅のまま加算される。ふつうの `*` と `+` で書き写した最初の版は、アルゴリズムは同じでも算術が違い、**cos 507 / 45,002、sin 1,023 / 45,002、asin 2,618 / 200,001** が V8 と食い違ったままだった。どこが融合するかは推測せず、V8 のソースを `clang++ -O2` に通した LLVM IR の `llvm.fmuladd.f64` を読んで決めた。`JSMath.swift` の `fma(...)` はその位置を、素の `*`/`+`/`-` はそうでない位置を表している。
+
+**検証。** V8 のソースから `cos`/`sin`/`asin` だけを抜き出して `clang++ -O2` でビルドしたものは、標本 590,007 点すべてで V8 と一致した(= 差の原因は融合積和だけだと確認できた)。`JSMath` も同じ 590,007 点で V8 と一致する。恒久的な回帰テストは Node が書き出す `Tests/TripCheckKitTests/Fixtures/js-math-vectors.v1.json`(緯度 45,002 点の cos と sin、小引数 sin 20,001 点、asin 20,001 点、builder コーパスが取りうる**全 702 順序対**の距離)で、`Tests/TripCheckKitTests/Units/JSMathTests.swift` が 1 ビットも違わないことを確認する。
+
+**結果。** builder コーパスの全順序対 702 辺のうち、Swift と TS で食い違う辺は **0**。緯度をずらして差を避ける必要は無くなったので、以前この付録に載っていた「5 点を 0.0001° 動かした」表と「新しい緯度は選別すること」という運用は**撤回**した。フィクスチャの座標は元に戻してある。
+
+**残る限界。** 一致は「同じ数式を、V8 と同じ丸めで」実行することに依存する。V8 が `ieee754.cc` を差し替えるか、`V8_USE_LIBM_TRIG_FUNCTIONS` を有効にしたビルドが出回るか、Swift 側が FMA の無い環境に載れば、また 1 ulp で向きが倒れうる。`js-math-vectors.v1.json` は `v8Version` を記録しており、`JSMathTests` は移植が名乗る 12.4.254.21 と食い違えば落ちる。
