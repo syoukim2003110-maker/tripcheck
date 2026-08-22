@@ -40,7 +40,9 @@ func runPlannerScenario(trip: GoldenTrip, evidence options: EvidenceSnapshotOpti
     context: trip.context
   )
   let plan = TripBuilder.build(request)
-  let fit = TripScenarios.assessTripFit(request, plan: plan)
+  // 時計は止めて渡す(`Support/FrozenClock.swift`)。既定の実時計だと `--parallel` の負荷で
+  // 1 秒の予算を跨ぎ、`solverTimedOut` が立って出力が変わる —— 照合のたびに答えが揺れる。
+  let fit = TripScenarios.assessTripFit(request, plan: plan, options: .frozen)
   let evidence = Feasibility.snapshot(plan: plan, options: options)
   return GoldenRun(
     plan: plan,

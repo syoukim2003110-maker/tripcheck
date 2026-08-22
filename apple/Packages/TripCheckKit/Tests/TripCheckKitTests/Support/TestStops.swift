@@ -288,7 +288,7 @@ extension TestStops {
     context.openingWindowsByDay = ["sensoji": [0: []]]
     let request = tokyoRequest("Senso-ji — Day 1", days: 1, context: context)
     let plan = TripBuilder.build(request)
-    return (plan, TripScenarios.assessTripFit(request, plan: plan))
+    return (plan, TripScenarios.assessTripFit(request, plan: plan, options: .frozen))
   }
 
   /// 衝突の無い 1 日旅程。注意(attention)の排他順を見るためのもの —— 営業時間が未取得なので
@@ -298,7 +298,7 @@ extension TestStops {
     context.tripStartDate = "2026-10-13"
     let request = tokyoRequest("Senso-ji\nTokyo Skytree", days: 1, context: context)
     let plan = TripBuilder.build(request)
-    return (plan, TripScenarios.assessTripFit(request, plan: plan))
+    return (plan, TripScenarios.assessTripFit(request, plan: plan, options: .frozen))
   }
 }
 
@@ -803,7 +803,7 @@ extension TestStops {
   static func planWithSpareDay() -> (plan: BuiltTripPlan, fit: TripFitAssessment) {
     let request = tokyoRequest("Senso-ji\nTokyo Skytree\nteamLab Planets\nMeiji Jingu", days: 2)
     let plan = TripBuilder.build(request)
-    return (plan, TripScenarios.assessTripFit(request, plan: plan))
+    return (plan, TripScenarios.assessTripFit(request, plan: plan, options: .frozen))
   }
 
   /// パリとローマ —— 国境はまたぐが時計は同じ。TS
