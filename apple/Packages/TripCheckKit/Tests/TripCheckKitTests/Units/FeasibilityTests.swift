@@ -10,8 +10,9 @@ import Testing
 // MARK: - ブリーフの 5 本
 
 @Test func stateDerivationFollowsThePriorityLadder() {
-  let plan = TripBuilder.build(TestStops.swissRequest(days: 4))
-  let fit = TestStops.fitStub(for: plan, requestedDays: 4)
+  let request = TestStops.swissRequest(days: 4)
+  let plan = TripBuilder.build(request)
+  let fit = TripScenarios.assessTripFit(request, plan: plan)
   var opts = EvidenceSnapshotOptions(dateWasProvided: true, baseWasProvided: false, dayEndWasProvided: false)
   let r1 = Feasibility.derive(plan: plan, fit: fit, evidence: Feasibility.snapshot(plan: plan, options: opts))
   #expect(r1.state == .FEASIBLE_IF_ASSUMPTIONS || r1.state == .PROVISIONAL_FEASIBLE)
@@ -120,9 +121,10 @@ private func fitDay(_ dayIndex: Int, _ label: String, slack: Int, placeCount: In
 /// 選ばれる日は TS `:818-820` の絞り込みと並びで決まる:
 /// `placeCount > 0` かつ `slackMinutes >= 0` の日だけを見て、余裕の小さい順 → 日の若い順。
 @Test func aVerifiedButTightDayReportsLowBufferWithItsOwnSlackAndDay() {
-  let plan = TripBuilder.build(TestStops.tokyoRequest("Senso-ji\nTokyo Skytree", days: 2))
+  let request = TestStops.tokyoRequest("Senso-ji\nTokyo Skytree", days: 2)
+  let plan = TripBuilder.build(request)
   #expect(plan.days.count == 2)
-  var fit = TestStops.fitStub(for: plan, requestedDays: 2)
+  var fit = TripScenarios.assessTripFit(request, plan: plan)
   fit.days = [
     fitDay(0, "Day 1", slack: 45),
     fitDay(1, "Day 2", slack: 20),
@@ -159,8 +161,9 @@ private func fitDay(_ dayIndex: Int, _ label: String, slack: Int, placeCount: In
 /// 同じ場面で余裕が 60 分以上あれば、注意は何も言わない(TS `:868` の `< 60`、
 /// `EngineConstants.tightBufferMinutes`)。境界そのものも押さえる。
 @Test func aVerifiedRoomyDayRaisesNoAttentionAtAll() {
-  let plan = TripBuilder.build(TestStops.tokyoRequest("Senso-ji\nTokyo Skytree", days: 2))
-  var fit = TestStops.fitStub(for: plan, requestedDays: 2)
+  let request = TestStops.tokyoRequest("Senso-ji\nTokyo Skytree", days: 2)
+  let plan = TripBuilder.build(request)
+  var fit = TripScenarios.assessTripFit(request, plan: plan)
   let evidence = syntheticSnapshot([.verified])
 
   fit.days = [fitDay(0, "Day 1", slack: 120), fitDay(1, "Day 2", slack: 60)]
@@ -298,12 +301,13 @@ private func syntheticSnapshot(_ statuses: [EvidenceStatus], solverTimedOut: Boo
   )
 }
 
-/// TS `cleanPlan` (`tests/feasibility-result.test.ts:38-42`)。`fit` は Task 17 が来るまで
-/// `TestStops.fitStub` で代用する(`assessTripFit` はまだ無い)。
+/// TS `cleanPlan` (`tests/feasibility-result.test.ts:38-42`)。`fit` は本物の
+/// `TripScenarios.assessTripFit`(`lib/trip-scenarios.ts:325`)。
 private func cleanPlan() -> (raw: String, plan: BuiltTripPlan, fit: TripFitAssessment) {
   let raw = "Senso-ji\nTokyo Skytree"
-  let plan = TripBuilder.build(TestStops.tokyoRequest(raw, days: 1))
-  return (raw, plan, TestStops.fitStub(for: plan, requestedDays: 1))
+  let request = TestStops.tokyoRequest(raw, days: 1)
+  let plan = TripBuilder.build(request)
+  return (raw, plan, TripScenarios.assessTripFit(request, plan: plan))
 }
 
 /// JS `encodeURIComponent` — `A-Za-z0-9` と `-_.!~*'()` 以外を UTF-8 の大文字 `%XX` に。
@@ -347,12 +351,14 @@ private func transitRequestKey(_ legId: String, _ departureBucket: String) -> St
   airportContext.arrivalAirport = "HND"
   airportContext.arrivalTime = "10:00"
   airportContext.flightKind = .international
-  let conflictPlan = TripBuilder.build(TestStops.tokyoRequest("teamLab Planets — Day 1 12:00 booked", days: 1, context: airportContext))
-  let conflictFit = TestStops.fitStub(for: conflictPlan, requestedDays: 1)
+  let conflictRequest = TestStops.tokyoRequest("teamLab Planets — Day 1 12:00 booked", days: 1, context: airportContext)
+  let conflictPlan = TripBuilder.build(conflictRequest)
+  let conflictFit = TripScenarios.assessTripFit(conflictRequest, plan: conflictPlan)
   #expect(Feasibility.derive(plan: conflictPlan, fit: conflictFit, evidence: syntheticSnapshot([.verified])).state == .INFEASIBLE_HARD_CONFLICT)
 
-  let unknownPlan = TripBuilder.build(TestStops.tokyoRequest("Senso-ji\nA private cafe from my notes", days: 1))
-  let unknownFit = TestStops.fitStub(for: unknownPlan, requestedDays: 1)
+  let unknownRequest = TestStops.tokyoRequest("Senso-ji\nA private cafe from my notes", days: 1)
+  let unknownPlan = TripBuilder.build(unknownRequest)
+  let unknownFit = TripScenarios.assessTripFit(unknownRequest, plan: unknownPlan)
   #expect(Feasibility.derive(plan: unknownPlan, fit: unknownFit, evidence: syntheticSnapshot([.verified])).state == .UNKNOWN)
 }
 
@@ -376,8 +382,9 @@ private func transitRequestKey(_ legId: String, _ departureBucket: String) -> St
   context.departureAirport = "HND"
   context.departureTime = "13:00"
   context.flightKind = .international
-  let plan = TripBuilder.build(TestStops.tokyoRequest("teamLab Planets — Day 1 12:00 booked", days: 1, context: context))
-  let fit = TestStops.fitStub(for: plan, requestedDays: 1)
+  let request = TestStops.tokyoRequest("teamLab Planets — Day 1 12:00 booked", days: 1, context: context)
+  let plan = TripBuilder.build(request)
+  let fit = TripScenarios.assessTripFit(request, plan: plan)
   let result = Feasibility.derive(plan: plan, fit: fit, evidence: syntheticSnapshot([.verified]))
 
   #expect(result.state == .INFEASIBLE_HARD_CONFLICT)
@@ -486,8 +493,9 @@ private func transitRequestKey(_ legId: String, _ departureBucket: String) -> St
   ]
 
   for scenario in cases {
-    let plan = TripBuilder.build(TestStops.tokyoRequest(scenario.raw, days: scenario.days, context: scenario.context))
-    let fit = TestStops.fitStub(for: plan, requestedDays: scenario.days)
+    let request = TestStops.tokyoRequest(scenario.raw, days: scenario.days, context: scenario.context)
+    let plan = TripBuilder.build(request)
+    let fit = TripScenarios.assessTripFit(request, plan: plan)
     let evidence = Feasibility.snapshot(plan: plan, options: .init(
       dateWasProvided: true,
       baseWasProvided: false,
@@ -542,8 +550,9 @@ private func transitRequestKey(_ legId: String, _ departureBucket: String) -> St
 
   var context = PlannerContext()
   context.openingWindowsByDay = ["sensoji": [0: []]]
-  let closedPlan = TripBuilder.build(TestStops.tokyoRequest("Senso-ji — Day 1", days: 1, context: context))
-  let closedFit = TestStops.fitStub(for: closedPlan, requestedDays: 1)
+  let closedRequest = TestStops.tokyoRequest("Senso-ji — Day 1", days: 1, context: context)
+  let closedPlan = TripBuilder.build(closedRequest)
+  let closedFit = TripScenarios.assessTripFit(closedRequest, plan: closedPlan)
   let weeklyEvidence = Feasibility.snapshot(plan: closedPlan, options: .init(
     dateWasProvided: true,
     baseWasProvided: false,
@@ -593,8 +602,9 @@ private func transitRequestKey(_ legId: String, _ departureBucket: String) -> St
 @Test func doesNotOfferRemovingAnOptionalStopThatIsAlreadyOutsideTheSchedule() {
   var context = PlannerContext()
   context.openingWindowsByDay = ["tokyo-skytree": [0: []]]
-  let plan = TripBuilder.build(TestStops.tokyoRequest("Senso-ji\nTokyo Skytree — optional", days: 1, context: context))
-  let fit = TestStops.fitStub(for: plan, requestedDays: 1)
+  let request = TestStops.tokyoRequest("Senso-ji\nTokyo Skytree — optional", days: 1, context: context)
+  let plan = TripBuilder.build(request)
+  let fit = TripScenarios.assessTripFit(request, plan: plan)
   let result = Feasibility.derive(plan: plan, fit: fit, evidence: syntheticSnapshot([.verified]))
 
   #expect(plan.deferredOptionalStops.map(\.id) == ["tokyo-skytree"])
@@ -703,8 +713,9 @@ private func transitRequestKey(_ legId: String, _ departureBucket: String) -> St
   context.resolvedStops = resolvedStops
   context.resolvedBase = resolvedBase
   context.transferBufferMinutes = 10
-  let plan = TripBuilder.build(TestStops.tokyoRequest(names.joined(separator: "\n"), days: 3, context: context))
-  let fit = TestStops.fitStub(for: plan, requestedDays: 3)
+  let request = TestStops.tokyoRequest(names.joined(separator: "\n"), days: 3, context: context)
+  let plan = TripBuilder.build(request)
+  let fit = TripScenarios.assessTripFit(request, plan: plan)
   let evidence = Feasibility.snapshot(plan: plan, options: .init(
     dateWasProvided: false,
     baseWasProvided: true,
@@ -722,8 +733,9 @@ private func transitRequestKey(_ legId: String, _ departureBucket: String) -> St
 /// tests/feasibility-result.test.ts:418-459
 @Test func failedTransitEvidenceStaysFailedAndNonConvergenceIsAnExplicitCondition() throws {
   let raw = "Senso-ji\nteamLab Planets"
-  let plan = TripBuilder.build(TestStops.tokyoRequest(raw, days: 1))
-  let fit = TestStops.fitStub(for: plan, requestedDays: 1)
+  let request = TestStops.tokyoRequest(raw, days: 1)
+  let plan = TripBuilder.build(request)
+  let fit = TripScenarios.assessTripFit(request, plan: plan)
   let leg = try #require(plan.days[0].legs.first { $0.comparison.recommended.mode == .transit })
   let factId = "route:\(plan.days[0].label):\(leg.from.id):\(leg.to.id)"
   let legId = routeLegKey(leg.from.id, leg.to.id)
@@ -757,8 +769,9 @@ private func transitRequestKey(_ legId: String, _ departureBucket: String) -> St
   context.durationOverrides = ["sensoji": 45]
   context.openingWindowsByDay = ["sensoji": [0: [VisitWindow(openMinutes: 9 * 60, closeMinutes: 18 * 60)]]]
   context.lastEntryTimes = ["sensoji": "16:30"]
-  let plan = TripBuilder.build(TestStops.tokyoRequest("Senso-ji — Day 1", days: 1, context: context))
-  let fit = TestStops.fitStub(for: plan, requestedDays: 1)
+  let request = TestStops.tokyoRequest("Senso-ji — Day 1", days: 1, context: context)
+  let plan = TripBuilder.build(request)
+  let fit = TripScenarios.assessTripFit(request, plan: plan)
   let evidence = Feasibility.snapshot(plan: plan, options: .init(
     dateWasProvided: true,
     baseWasProvided: false,
@@ -815,8 +828,9 @@ private func transitRequestKey(_ legId: String, _ departureBucket: String) -> St
   let firstLeg = initial.days[0].legs[0]
   var context = initialContext
   context.legModeOverrides = [routeLegKey(firstLeg.from.id, firstLeg.to.id): .walk]
-  let plan = TripBuilder.build(TestStops.tokyoRequest(raw, days: 1, context: context))
-  let fit = TestStops.fitStub(for: plan, requestedDays: 1)
+  let request = TestStops.tokyoRequest(raw, days: 1, context: context)
+  let plan = TripBuilder.build(request)
+  let fit = TripScenarios.assessTripFit(request, plan: plan)
   let evidence = Feasibility.snapshot(
     plan: plan,
     options: .init(dateWasProvided: false, baseWasProvided: false, dayEndWasProvided: false)
@@ -842,8 +856,9 @@ private func transitRequestKey(_ legId: String, _ departureBucket: String) -> St
   context.liveTransitTransferCounts = [legId: 3]
   context.lockedOrderByDay = [0: [seedLeg.from.id, seedLeg.to.id]]
   context.legModeOverrides = [legId: .transit]
-  let plan = TripBuilder.build(TestStops.tokyoRequest(raw, days: 1, context: context))
-  let fit = TestStops.fitStub(for: plan, requestedDays: 1)
+  let request = TestStops.tokyoRequest(raw, days: 1, context: context)
+  let plan = TripBuilder.build(request)
+  let fit = TripScenarios.assessTripFit(request, plan: plan)
   let leg = plan.days[0].legs[0]
   let routeFactId = "route:\(plan.days[0].label):\(leg.from.id):\(leg.to.id)"
   let transferFactId = "transfers:\(plan.days[0].label):\(leg.from.id):\(leg.to.id)"
