@@ -290,8 +290,9 @@ public enum Catalog {
     pois.first { $0.id == id }?.reservationSensitive ?? false
   }
 
-  /// lib/route-optimizer.ts:289-298 — `toStop`
-  private static func toStop(_ poi: CatalogPoi, locale: PlannerLocale, line: String) -> RouteStop {
+  /// lib/route-optimizer.ts:289-298 — `toStop`。Task 21 の `CatalogResolver` が名前の完全一致で
+  /// 引いた POI を同じ形に畳むので internal(モジュール内)まで開けてある。
+  static func toStop(_ poi: CatalogPoi, locale: PlannerLocale, line: String) -> RouteStop {
     RouteStop(
       id: poi.id,
       name: poi.name[locale] ?? poi.name[.en] ?? "",
