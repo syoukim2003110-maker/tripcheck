@@ -176,20 +176,30 @@ let snapshotParityIgnoredPaths: [String] = [
   "evidence.facts[].evidence.dateSpecificDates",
 ]
 
-/// Groups the raw diff lines by field path so a single wrong field over 500 scenarios reads as one
-/// line with a count, not 500 lines that scroll the real signal off the screen.
-private func report(_ diffs: [String], corpus: String) -> String {
+/// One disagreement, with the scenario that produced it kept as its own field: a route-leg key
+/// such as `tk-a::tk-b` really does appear inside paths, so the pieces must never be recovered by
+/// splitting the formatted line back apart.
+private struct ScenarioDifference {
+  var scenario: String
+  var path: String
+  var detail: String
+
+  var line: String { "\(scenario): \(path): \(detail)" }
+}
+
+/// Groups the diffs by field path so a single wrong field over 500 scenarios reads as one line with
+/// a count, not 500 lines that scroll the real signal off the screen.
+private func report(_ diffs: [ScenarioDifference], corpus: String) -> String {
   var byPath: [String: (count: Int, sample: String)] = [:]
   var byScenario: [String: Int] = [:]
   var order: [String] = []
   for diff in diffs {
-    byScenario[String(diff.prefix(while: { $0 != ":" })), default: 0] += 1
-    // "<scenario-id>: <path>: <detail>" — the path is the second field. Array indices collapse so
-    // "the same field on every day" reads as one row rather than one row per position.
-    let parts = diff.split(separator: ":", maxSplits: 2, omittingEmptySubsequences: false)
-    let path = JSONDiff.normalize(parts.count >= 2 ? parts[1].trimmingCharacters(in: .whitespaces) : diff)
+    byScenario[diff.scenario, default: 0] += 1
+    // Array indices collapse so "the same field on every day" reads as one row rather than one row
+    // per position.
+    let path = JSONDiff.normalize(diff.path)
     if byPath[path] == nil { order.append(path) }
-    byPath[path, default: (0, diff)].count += 1
+    byPath[path, default: (0, diff.line)].count += 1
   }
   let ranked = order.sorted { (byPath[$0]?.count ?? 0, $1) > (byPath[$1]?.count ?? 0, $0) }
   let lines = ranked.prefix(40).map { "  ×\(byPath[$0]!.count)  \(byPath[$0]!.sample)" }
@@ -207,23 +217,53 @@ private func report(_ diffs: [String], corpus: String) -> String {
     + lines.joined(separator: "\n") + tail
 }
 
-private func diffCorpus(
-  file: TSSnapshotFile,
-  runs: [String: GoldenRun],
-  corpus: String
-) throws -> [String] {
-  var diffs: [String] = []
+private struct CorpusDiff {
+  var differences: [ScenarioDifference] = []
+  var ignoresThatSuppressedSomething: Set<String> = []
+}
+
+private func diffCorpus(file: TSSnapshotFile, runs: [String: GoldenRun]) throws -> CorpusDiff {
+  var result = CorpusDiff()
   for snapshot in file.snapshots {
     guard let run = runs[snapshot.id] else {
-      diffs.append("\(snapshot.id): no scenario with this id in the Swift-side corpus")
+      result.differences.append(
+        .init(scenario: snapshot.id, path: "<scenario>", detail: "no scenario with this id in the Swift-side corpus")
+      )
       continue
     }
     let mine = try snapshotTree(run)
-    diffs += JSONDiff
-      .paths(expected: snapshot.tree, actual: mine, ignoring: snapshotParityIgnoredPaths)
-      .map { "\(snapshot.id): \($0)" }
+    let report = JSONDiff.compare(expected: snapshot.tree, actual: mine, ignoring: snapshotParityIgnoredPaths)
+    result.differences += report.differences.map {
+      ScenarioDifference(scenario: snapshot.id, path: $0.path, detail: $0.detail)
+    }
+    result.ignoresThatSuppressedSomething.formUnion(report.ignoresThatSuppressedSomething)
   }
-  return diffs
+  return result
+}
+
+/// Filled in by the two parity tests and read by `everyIgnoredPathStillEarnsItsPlace`. An `ignoring`
+/// line that suppresses nothing on either corpus is either a difference that has since been fixed or
+/// a scenario nobody wrote; both want deleting, not carrying.
+private final class IgnoreLedger: @unchecked Sendable {
+  private let lock = NSLock()
+  private var used: Set<String> = []
+  private var corpora: Set<String> = []
+
+  static let shared = IgnoreLedger()
+
+  func record(corpus: String, used entries: Set<String>) {
+    lock.lock()
+    defer { lock.unlock() }
+    used.formUnion(entries)
+    corpora.insert(corpus)
+  }
+
+  /// `nil` until both corpora have reported, so the check cannot pass by looking at half the data.
+  func settled() -> Set<String>? {
+    lock.lock()
+    defer { lock.unlock() }
+    return corpora == ["golden", "builder"] ? used : nil
+  }
 }
 
 /// The golden 500, field by field against the TypeScript engine that produced them.
@@ -233,8 +273,9 @@ private func diffCorpus(
   let corpus = try GoldenCorpus.load()
   #expect(file.snapshots.count == corpus.scenarios.count)
   let runs = Dictionary(uniqueKeysWithValues: corpus.scenarios.map { ($0.id, runGolden($0)) })
-  let diffs = try diffCorpus(file: file, runs: runs, corpus: "golden")
-  #expect(diffs.count == 0, "\(report(diffs, corpus: "golden"))")
+  let diffs = try diffCorpus(file: file, runs: runs)
+  IgnoreLedger.shared.record(corpus: "golden", used: diffs.ignoresThatSuppressedSomething)
+  #expect(diffs.differences.count == 0, "\(report(diffs.differences, corpus: "golden"))")
 }
 
 /// The builder corpus — multi-day assignment, ordering, trimming, bases, airports, opening
@@ -252,8 +293,9 @@ private func diffCorpus(
       ($0.id, runPlannerScenario(trip: $0.trip, evidence: $0.evidence))
     }
   )
-  let diffs = try diffCorpus(file: file, runs: runs, corpus: "builder")
-  #expect(diffs.count == 0, "\(report(diffs, corpus: "builder"))")
+  let diffs = try diffCorpus(file: file, runs: runs)
+  IgnoreLedger.shared.record(corpus: "builder", used: diffs.ignoresThatSuppressedSomething)
+  #expect(diffs.differences.count == 0, "\(report(diffs.differences, corpus: "builder"))")
 }
 
 /// The builder corpus is a synthetic contract fixture like the golden one: no provider identifiers,
@@ -266,10 +308,33 @@ private func diffCorpus(
       #expect(stop.sourceUrl.hasPrefix("https://example.test/builder/"), "\(scenario.id)")
       #expect(stop.providerRef == nil, "\(scenario.id) must not contain a provider identifier")
     }
-    if let base = scenario.trip.context.resolvedBase {
+    for base in [scenario.trip.context.resolvedBase].compactMap({ $0 })
+      + (scenario.trip.context.nightBases?.values.values.compactMap { $0 } ?? []) {
       #expect(base.sourceUrl.hasPrefix("https://example.test/builder/"), "\(scenario.id)")
       #expect(base.providerRef == nil, "\(scenario.id)")
     }
     #expect(!scenario.covers.isEmpty, "\(scenario.id) must say what it covers")
   }
+}
+
+/// Every line of `snapshotParityIgnoredPaths` has to suppress a real disagreement on at least one
+/// scenario across the two corpora. A line that suppresses nothing is either a difference somebody
+/// has since fixed or a case nobody wrote a scenario for, and leaving it in place quietly widens
+/// what the parity tests are allowed to miss.
+///
+/// Depends on both parity tests having run, so it reads the ledger they fill rather than repeating
+/// their work; if either has not reported yet it runs them itself.
+@Test func everyIgnoredPathStillEarnsItsPlace() throws {
+  if IgnoreLedger.shared.settled() == nil {
+    try swiftOutputMatchesTypeScriptSnapshots()
+    try swiftBuilderOutputMatchesTypeScriptSnapshots()
+  }
+  guard let used = IgnoreLedger.shared.settled() else {
+    Issue.record("both parity tests must run before the ignore ledger can be judged")
+    return
+  }
+  let dead = snapshotParityIgnoredPaths.filter { !used.contains($0) }.sorted()
+  let listing = "\(dead.count) ignored path(s) suppressed nothing on either corpus — delete them or"
+    + " add a scenario that needs them:\n" + dead.joined(separator: "\n")
+  #expect(dead.isEmpty, "\(listing)")
 }

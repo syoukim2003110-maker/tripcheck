@@ -18,6 +18,23 @@ import Foundation
 ///   far above `Double` round-tripping error.
 /// - **Nothing else.** String, bool, array order and array length are compared exactly.
 enum JSONDiff {
+  /// One disagreement: the field's path and a one-line rendering of the two values. Kept as a pair
+  /// rather than a formatted string so callers can group by path without parsing it back out —
+  /// a route-leg key such as `tk-a::tk-b` appears inside real paths, and splitting on `:` cut them
+  /// in half.
+  struct Difference {
+    var path: String
+    var detail: String
+  }
+
+  /// The diff plus the bookkeeping needed to keep the `ignoring` list honest.
+  struct Report {
+    var differences: [Difference]
+    /// The `ignoring` entries that actually suppressed a disagreement on this run. An entry absent
+    /// from this set earned nothing and should be deleted or given a scenario that needs it.
+    var ignoresThatSuppressedSomething: Set<String>
+  }
+
   /// Every field where `expected` (the TypeScript snapshot) and `actual` (this engine) disagree,
   /// deepest-first within each container, in the order the containers are walked.
   ///
@@ -26,25 +43,48 @@ enum JSONDiff {
   /// it, or when it equals the path with every array index collapsed to `[]` — so
   /// `plan.days[].stops[].stop.input` names one field across all array positions without
   /// swallowing its siblings, which a subtree-wide `plan.days` would.
+  static func compare(expected: JSONValue, actual: JSONValue, ignoring: [String] = []) -> Report {
+    var report = Report(differences: [], ignoresThatSuppressedSomething: [])
+    walk(expected: expected, actual: actual, path: "", ignored: Set(ignoring), into: &report)
+    return report
+  }
+
+  /// The formatted form, for callers that only want to read the list.
   static func paths(expected: JSONValue, actual: JSONValue, ignoring: [String] = []) -> [String] {
-    var diffs: [String] = []
-    let ignored = Set(ignoring)
-    walk(expected: expected, actual: actual, path: "", ignored: ignored, into: &diffs)
-    return diffs
+    compare(expected: expected, actual: actual, ignoring: ignoring)
+      .differences.map { "\($0.path): \($0.detail)" }
   }
 
   private static let numberTolerance = 1e-9
 
-  private static func isIgnored(_ path: String, _ ignored: Set<String>) -> Bool {
-    if ignored.isEmpty { return false }
+  /// The `ignoring` entry covering `path`, or `nil` when the path is not excluded.
+  private static func ignoreEntry(for path: String, in ignored: Set<String>) -> String? {
+    if ignored.isEmpty { return nil }
     for candidate in [path, normalize(path)] {
-      if ignored.contains(candidate) { return true }
+      if ignored.contains(candidate) { return candidate }
       for prefix in ignored where candidate.hasPrefix(prefix) {
         let rest = candidate.dropFirst(prefix.count)
-        if rest.first == "." || rest.first == "[" { return true }
+        if rest.first == "." || rest.first == "[" { return prefix }
       }
     }
-    return false
+    return nil
+  }
+
+  /// Whether two trees disagree at all, under the same equalities `walk` applies but with nothing
+  /// excluded. Used only to decide whether an `ignoring` entry earned its place on this run.
+  private static func differs(_ expected: JSONValue, _ actual: JSONValue) -> Bool {
+    switch (expected, actual) {
+    case (.object(let lhs), .object(let rhs)):
+      return Set(lhs.keys).union(rhs.keys).contains { differs(member(lhs, $0), member(rhs, $0)) }
+    case (.array(let lhs), .array(let rhs)):
+      if lhs.count != rhs.count { return true }
+      return zip(lhs, rhs).contains { differs($0, $1) }
+    case (.number(let lhs), .number(let rhs)): return !(abs(lhs - rhs) < numberTolerance)
+    case (.string(let lhs), .string(let rhs)): return lhs != rhs
+    case (.bool(let lhs), .bool(let rhs)): return lhs != rhs
+    case (.null, .null): return false
+    default: return true
+    }
   }
 
   /// `plan.days[3].stops[0].stop.input` -> `plan.days[].stops[].stop.input`.
@@ -83,9 +123,12 @@ enum JSONDiff {
     actual: JSONValue,
     path: String,
     ignored: Set<String>,
-    into diffs: inout [String]
+    into report: inout Report
   ) {
-    if isIgnored(path, ignored) { return }
+    if let entry = ignoreEntry(for: path, in: ignored) {
+      if differs(expected, actual) { report.ignoresThatSuppressedSomething.insert(entry) }
+      return
+    }
 
     switch (expected, actual) {
     case (.object(let lhs), .object(let rhs)):
@@ -95,13 +138,13 @@ enum JSONDiff {
           actual: member(rhs, key),
           path: child(path, key: key),
           ignored: ignored,
-          into: &diffs
+          into: &report
         )
       }
 
     case (.array(let lhs), .array(let rhs)):
       if lhs.count != rhs.count {
-        diffs.append("\(path): array length TS \(lhs.count) ≠ Swift \(rhs.count)")
+        report.differences.append(.init(path: path, detail: "array length TS \(lhs.count) ≠ Swift \(rhs.count)"))
       }
       for index in 0..<min(lhs.count, rhs.count) {
         walk(
@@ -109,27 +152,29 @@ enum JSONDiff {
           actual: rhs[index],
           path: "\(path)[\(index)]",
           ignored: ignored,
-          into: &diffs
+          into: &report
         )
       }
 
     case (.number(let lhs), .number(let rhs)):
-      if !(abs(lhs - rhs) < numberTolerance) {
-        diffs.append("\(path): TS \(describe(expected)) ≠ Swift \(describe(actual))")
-      }
+      if !(abs(lhs - rhs) < numberTolerance) { record(expected, actual, path, &report) }
 
     case (.string(let lhs), .string(let rhs)):
-      if lhs != rhs { diffs.append("\(path): TS \(describe(expected)) ≠ Swift \(describe(actual))") }
+      if lhs != rhs { record(expected, actual, path, &report) }
 
     case (.bool(let lhs), .bool(let rhs)):
-      if lhs != rhs { diffs.append("\(path): TS \(describe(expected)) ≠ Swift \(describe(actual))") }
+      if lhs != rhs { record(expected, actual, path, &report) }
 
     case (.null, .null):
       break
 
     default:
-      diffs.append("\(path): TS \(describe(expected)) ≠ Swift \(describe(actual))")
+      record(expected, actual, path, &report)
     }
+  }
+
+  private static func record(_ expected: JSONValue, _ actual: JSONValue, _ path: String, _ report: inout Report) {
+    report.differences.append(.init(path: path, detail: "TS \(describe(expected)) ≠ Swift \(describe(actual))"))
   }
 
   /// One short line per value — a whole subtree printed inline would bury the path that names it.
