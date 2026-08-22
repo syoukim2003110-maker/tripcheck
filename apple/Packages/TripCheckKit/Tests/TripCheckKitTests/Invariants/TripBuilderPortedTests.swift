@@ -378,3 +378,379 @@ Tokyo Skytree
   #expect(arrival.transferCount == 2)
   #expect(arrival.cityTime == "12:07")
 }
+
+// MARK: - :335 flags a day that runs past the airport departure deadline
+
+@Test func flagsADayThatRunsPastTheAirportDepartureDeadline() {
+  var context = PlannerContext()
+  context.hotelQuery = "Shinjuku hotel"
+  context.departureAirport = "HND"
+  context.departureTime = "14:00"
+  context.flightKind = .international
+  let built = plan("Ghibli Museum\nShibuya Sky\nSenso-ji\nTokyo Skytree", 1, .fast, .en, context)
+
+  #expect(built.days[0].deadline == "10:00")
+  #expect(built.days[0].deadlineOverrunMinutes > 0)
+  #expect(built.scheduleConflictCount == 1)
+}
+
+// MARK: - :348 keeps the requested trip length even when some days remain open
+
+@Test func keepsTheRequestedTripLengthEvenWhenSomeDaysRemainOpen() {
+  var context = PlannerContext()
+  context.departureAirport = "HND"
+  context.departureTime = "18:00"
+  let built = plan("Senso-ji\nTokyo Skytree", 5, .relaxed, .en, context)
+
+  #expect(built.days.count == 5)
+  #expect(built.days.filter { $0.stops.isEmpty }.count == 3)
+  #expect(built.days[4].deadline == "14:00")
+  #expect(built.days[4].theme == "Open day")
+  #expect(built.days[4].googleMapsUrl == nil)
+}
+
+// MARK: - :361 locks a booked stop to its requested day and time
+
+@Test func locksABookedStopToItsRequestedDayAndTime() throws {
+  let built = plan("""
+Senso-ji
+Ghibli Museum — Day 2 10:00 booked · must
+Shibuya Sky
+""", 3, .balanced)
+  let ghibli = try #require(built.days[1].stops.first { $0.stop.id == "ghibli-museum" })
+
+  #expect(ghibli.arrival == "10:00")
+  #expect(ghibli.fixedTime == "10:00")
+  #expect(ghibli.priority == .must)
+  #expect(ghibli.reservationLateMinutes == 0)
+  #expect(built.constraintCount == 1)
+}
+
+// MARK: - :375 reports lateness when airport arrival makes a reservation impossible
+
+@Test func reportsLatenessWhenAirportArrivalMakesAReservationImpossible() {
+  var context = PlannerContext()
+  context.arrivalAirport = "HND"
+  context.arrivalTime = "10:00"
+  context.flightKind = .international
+  let built = plan("teamLab Planets — Day 1 12:00 booked", 1, .balanced, .en, context)
+
+  #expect(built.days[0].stops[0].arrival == "12:30")
+  #expect(built.days[0].stops[0].reservationLateMinutes == 30)
+  #expect(built.days[0].reservationConflictCount == 1)
+  #expect(built.scheduleConflictCount == 1)
+}
+
+// MARK: - :388 moves optional places to a backup list before breaking the selected pace
+
+@Test func movesOptionalPlacesToABackupListBeforeBreakingTheSelectedPace() {
+  let built = plan("""
+Senso-ji
+Tokyo Skytree
+Akihabara
+Shibuya Sky — optional
+""", 1, .relaxed)
+
+  #expect(built.recognizedStopCount == 4)
+  #expect(built.scheduledStopCount == 3)
+  #expect(built.deferredOptionalStops.map(\.id) == ["shibuya-sky"])
+  #expect(built.overCapacityCount == 0)
+}
+
+// MARK: - :400 understands Japanese day, reservation and priority annotations
+
+@Test func understandsJapaneseDayReservationAndPriorityAnnotations() {
+  let built = plan("三鷹の森ジブリ美術館 — 2日目 10:00 予約 · 必須\n浅草寺", 2, .balanced, .ja)
+  let ghibli = built.days[1].stops.first { $0.stop.id == "ghibli-museum" }
+
+  #expect(ghibli?.arrival == "10:00")
+  #expect(ghibli?.priority == .must)
+}
+
+// MARK: - :408 recalculates the day from a user start time and stay duration
+
+@Test func recalculatesTheDayFromAUserStartTimeAndStayDuration() {
+  var context = PlannerContext()
+  context.dayStartTimes = [0: "10:30"]
+  context.durationOverrides = ["sensoji": 180]
+  let built = plan("Senso-ji", 1, .balanced, .en, context)
+  let stop = built.days[0].stops[0]
+
+  #expect(built.days[0].requestedStartTime == "10:30")
+  #expect(built.days[0].startTime == "10:30")
+  #expect(stop.arrival == "10:30")
+  #expect(stop.departure == "13:30")
+  #expect(stop.stop.planningDurationMinutes == 180)
+}
+
+// MARK: - :422 uses a per-day end time ahead of the trip-wide cutoff
+
+@Test func usesAPerDayEndTimeAheadOfTheTripWideCutoff() {
+  var context = PlannerContext()
+  context.dayEndTarget = "22:00"
+  context.dayEndTimes = [0: "11:00", 1: "20:30"]
+  context.dayStartTimes = [0: "09:00", 1: "10:00"]
+  let built = plan("Senso-ji\nTokyo Skytree", 2, .balanced, .en, context)
+
+  #expect(built.days[0].deadline == "11:00")
+  #expect(built.days[1].deadline == "20:30")
+}
+
+// MARK: - :433 uses 22:00 as the deterministic day-end target when none is supplied
+
+@Test func uses2200AsTheDeterministicDayEndTargetWhenNoneIsSupplied() {
+  var context = PlannerContext()
+  context.defaultDayStart = "09:00"
+  context.resolvedStops = [
+    resolvedStop(
+      id: "long-visit", input: "Long Visit", area: "Central", address: "1 Long Road",
+      latitude: 35.68, longitude: 139.76, minutes: 840, sourceUrl: "https://example.com/long-visit"
+    ),
+  ]
+  let built = plan("Long Visit", 1, .balanced, .en, context)
+
+  #expect(built.days[0].deadline == "22:00")
+  #expect(built.days[0].deadlineKind == .curfew)
+  #expect(built.days[0].deadlineOverrunMinutes == 60)
+}
+
+// MARK: - :457 rebalances ordinary visits after a booking moves onto a full fixed day
+
+@Test func rebalancesOrdinaryVisitsAfterABookingMovesOntoAFullFixedDayEndToEnd() {
+  let definitions: [(id: String, name: String, longitude: Double)] = [
+    ("west-a", "West A", 0),
+    ("east-b", "East B", 10),
+    ("west-c", "West C", 0.1),
+    ("east-d", "East D", 10.1),
+  ]
+  var context = PlannerContext()
+  context.resolvedStops = definitions.map { definition in
+    resolvedStop(
+      id: definition.id, input: definition.name, address: "\(definition.name) Road",
+      latitude: 35, longitude: definition.longitude, minutes: 30
+    )
+  }
+  let built = plan("West A\nEast B — Day 1 10:00 booked\nWest C\nEast D", 2, .balanced, .en, context)
+
+  #expect(built.days[0].stops.contains { $0.stop.id == "east-b" }, "the booked stop stays on Day 1")
+  #expect(built.days.map { $0.stops.count } == [2, 2])
+}
+
+// MARK: - :483 the bounded large-day optimiser preserves feasible booking and opening constraints deterministically
+
+@Test func theBoundedLargeDayOptimiserPreservesFeasibleBookingAndOpeningConstraints() throws {
+  let stops = (0..<8).map { index in
+    resolvedStop(
+      id: "large-\(index)", input: "Large Place \(index)", address: "\(index) Test Road",
+      latitude: 35, longitude: 139 + Double(index) * 0.0001, minutes: 15
+    )
+  }
+  var openingWindowsByDay: [String: IntKeyedDictionary<[VisitWindow]>] = [:]
+  for (index, stop) in stops.enumerated() {
+    openingWindowsByDay[stop.id] = [
+      0: [VisitWindow(openMinutes: 9 * 60, closeMinutes: index == 0 ? 9 * 60 + 20 : 18 * 60)],
+    ]
+  }
+  var context = PlannerContext()
+  context.defaultDayStart = "09:00"
+  context.resolvedStops = stops
+  context.openingWindowsByDay = openingWindowsByDay
+  context.transferBufferMinutes = 10
+
+  let raw = (["Large Place 0"] + (1...6).map { "Large Place \($0)" } + ["Large Place 7 — 09:45 booked"])
+    .joined(separator: "\n")
+  func build() -> BuiltPlanDay { plan(raw, 1, .fast, .en, context).days[0] }
+
+  let encoder = JSONEncoder()
+  encoder.outputFormatting = [.sortedKeys]
+  func signature(_ day: BuiltPlanDay) throws -> Data {
+    try encoder.encode(day.stops.map { [$0.stop.id, $0.arrival, $0.departure] })
+  }
+
+  let first = build()
+  let expected = try signature(first)
+
+  #expect(first.openingConflictCount == 0)
+  #expect(first.reservationConflictCount == 0)
+  #expect(first.stops[0].stop.id == "large-0")
+  for _ in 0..<100 { #expect(try signature(build()) == expected) }
+}
+
+// MARK: - :523 softly moves a stop with explicit early-cutoff evidence earlier without overriding reservations
+
+@Test func softlyMovesAStopWithExplicitEarlyCutoffEvidenceEarlier() {
+  var context = PlannerContext()
+  context.earlyVisitStopIds = ["tokyo-skytree"]
+  let built = plan("Senso-ji\nTokyo Skytree", 1, .balanced, .en, context)
+  let reserved = plan("Senso-ji — 09:00 booked\nTokyo Skytree", 1, .balanced, .en, context)
+
+  #expect(built.days[0].stops[0].stop.id == "tokyo-skytree")
+  #expect(reserved.days[0].stops[0].stop.id == "sensoji")
+}
+
+// MARK: - :535 keeps airport arrival as a hard lower bound when a user selects an earlier start
+
+@Test func keepsAirportArrivalAsAHardLowerBoundWhenAUserSelectsAnEarlierStart() {
+  var context = PlannerContext()
+  context.arrivalAirport = "HND"
+  context.arrivalTime = "10:00"
+  context.flightKind = .international
+  context.dayStartTimes = [0: "08:00"]
+  let built = plan("Senso-ji", 1, .balanced, .en, context)
+
+  #expect(built.days[0].requestedStartTime == "08:00")
+  #expect(built.days[0].startTime == "12:30")
+  #expect(built.days[0].startAdjustedByArrival == true)
+}
+
+// MARK: - :548 attaches real calendar dates to each planned day
+
+@Test func attachesRealCalendarDatesToEachPlannedDay() {
+  var context = PlannerContext()
+  context.tripStartDate = "2026-09-14"
+  let built = plan("Senso-ji\nTokyo Skytree", 3, .balanced, .en, context)
+
+  #expect(built.days.map(\.date) == ["2026-09-14", "2026-09-15", "2026-09-16"])
+}
+
+// MARK: - :556 keeps a missing calendar date as an empty itinerary day
+
+@Test func keepsAMissingCalendarDateAsAnEmptyItineraryDay() {
+  var context = PlannerContext()
+  context.tripStartDate = "2026-09-14"
+  let built = plan("""
+2026-09-14
+Senso-ji
+2026-09-16
+Tokyo Skytree
+""", 3, .balanced, .en, context)
+
+  #expect(built.inputMode == .existing_itinerary)
+  #expect(built.minimumPinnedDay == 3)
+  #expect(built.days.map { stopIds($0) } == [["sensoji"], [], ["tokyo-skytree"]])
+}
+
+// MARK: - :571 rolls a late arrival onto the next activity date and its opening hours
+
+@Test func rollsALateArrivalOntoTheNextActivityDateAndItsOpeningHours() throws {
+  var context = PlannerContext()
+  context.tripStartDate = "2026-09-14"
+  context.arrivalAirport = "HND"
+  context.arrivalTime = "23:30"
+  context.flightKind = .international
+  context.openingWindowsByDay = [
+    "sensoji": [
+      0: [],
+      1: [VisitWindow(openMinutes: 10 * 60, closeMinutes: 17 * 60)],
+    ],
+  ]
+  let built = plan("Senso-ji", 1, .balanced, .en, context)
+  let arrival = try #require(built.airportConstraints.first { $0.direction == .arrival })
+
+  #expect(arrival.cityTime == "02:00")
+  #expect(arrival.cityTimeDayOffset == 1)
+  #expect(built.days[0].date == "2026-09-15")
+  #expect(built.days[0].startTime == "09:00")
+  #expect(built.days[0].stops[0].arrival == "10:00")
+  #expect(built.days[0].stops[0].openingStatus == .verified_open)
+  #expect(built.deferredUnavailableStops.isEmpty)
+}
+
+// MARK: - :595 keeps an early departure cutoff on the previous calendar day
+
+@Test func keepsAnEarlyDepartureCutoffOnThePreviousCalendarDay() throws {
+  var context = PlannerContext()
+  context.tripStartDate = "2026-09-14"
+  context.departureAirport = "HND"
+  context.departureTime = "02:00"
+  context.flightKind = .international
+  let built = plan("Senso-ji", 1, .balanced, .en, context)
+  let departure = try #require(built.airportConstraints.first { $0.direction == .departure })
+
+  #expect(departure.cityTime == "22:00")
+  #expect(departure.cityTimeDayOffset == -1)
+  #expect(built.days[0].date == "2026-09-14")
+  #expect(built.days[0].deadline == "22:00")
+  #expect(built.days[0].deadlinePreviousDay == true)
+  #expect(built.days[0].deadlineOverrunMinutes > 0)
+}
+
+// MARK: - :612 uses fresh transit minutes when supplied while preserving estimated alternatives
+
+@Test func usesFreshTransitMinutesWhilePreservingEstimatedAlternatives() throws {
+  var context = PlannerContext()
+  context.liveTransitMinutes = [
+    routeLegKey("sensoji", "tokyo-skytree"): 41,
+    routeLegKey("tokyo-skytree", "sensoji"): 41,
+  ]
+  let built = plan("Senso-ji\nTokyo Skytree", 1, .balanced, .en, context)
+  let options = built.days[0].legs[0].comparison.options
+  let transit = try #require(options.first { $0.mode == .transit })
+
+  #expect(transit.minutes == 41)
+  #expect(transit.source == .live)
+  #expect(options.filter { $0.mode != .transit }.allSatisfy { $0.source == .estimate })
+}
+
+// MARK: - :626 uses live walking minutes when Google returns them
+
+@Test func usesLiveWalkingMinutesWhenGoogleReturnsThem() throws {
+  var context = PlannerContext()
+  context.liveWalkingMinutes = [routeLegKey("sensoji", "tokyo-skytree"): 7]
+  let built = plan("Senso-ji\nTokyo Skytree", 1, .balanced, .en, context)
+  let walking = try #require(built.days[0].legs[0].comparison.options.first { $0.mode == .walk })
+
+  #expect(walking.minutes == 7)
+  #expect(walking.source == .live)
+}
+
+// MARK: - :636 treats walking and transfer limits as visible soft mobility policy
+
+@Test func treatsWalkingAndTransferLimitsAsVisibleSoftMobilityPolicy() {
+  var limits = PlannerContext()
+  limits.maxWalkingMinutesPerLeg = 5
+  limits.maxTransfersPerLeg = 1
+  let baseline = plan("Senso-ji\nTokyo Skytree", 1, .balanced, .en, limits)
+  let firstLeg = baseline.days[0].legs[0]
+  let key = routeLegKey(firstLeg.from.id, firstLeg.to.id)
+
+  var lockedWalkContext = limits
+  lockedWalkContext.legModeOverrides = [key: .walk]
+  let lockedWalk = plan("Senso-ji\nTokyo Skytree", 1, .balanced, .en, lockedWalkContext)
+
+  #expect(baseline.days[0].legs[0].comparison.recommended.mode != .walk)
+  #expect(
+    lockedWalk.days[0].legs[0].comparison.recommended.mode == .walk,
+    "an explicit mode is never silently changed"
+  )
+  #expect(lockedWalk.days[0].legs[0].walkingLimitExceededMinutes > 0)
+  #expect(lockedWalk.mobilityPolicy == MobilityPolicy(
+    maxWalkingMinutesPerLeg: 5,
+    maxTransfersPerLeg: 1,
+    walkingLimitWasProvided: true,
+    transferLimitWasProvided: true
+  ))
+
+  let reverseKey = routeLegKey(firstLeg.to.id, firstLeg.from.id)
+  var transfersContext = PlannerContext()
+  transfersContext.maxTransfersPerLeg = 1
+  transfersContext.liveTransitMinutes = [key: 8, reverseKey: 8]
+  transfersContext.liveTransitTransferCounts = [key: 3, reverseKey: 3]
+  let avoidsTransfers = plan("Senso-ji\nTokyo Skytree", 1, .balanced, .en, transfersContext)
+
+  var lockedTransitContext = transfersContext
+  lockedTransitContext.lockedOrderByDay = [0: [firstLeg.from.id, firstLeg.to.id]]
+  lockedTransitContext.legModeOverrides = [key: .transit]
+  let lockedTransit = plan("Senso-ji\nTokyo Skytree", 1, .balanced, .en, lockedTransitContext)
+
+  #expect(
+    avoidsTransfers.days[0].legs[0].comparison.recommended.mode != .transit,
+    "an automatic choice may avoid a known transfer-limit violation"
+  )
+  #expect(
+    avoidsTransfers.days[0].legs[0].transferCount == nil,
+    "a non-transit selection does not inherit transit burden"
+  )
+  #expect(lockedTransit.days[0].legs[0].comparison.recommended.mode == .transit, "the user's fixed mode remains hard")
+  #expect(lockedTransit.days[0].legs[0].transferCount == 3)
+}
