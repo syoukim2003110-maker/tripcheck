@@ -1,12 +1,31 @@
 import SwiftUI
+import TripCheckAppCore
+import TripCheckKit
 
 /// アプリの入口。画面は常に明るい配色で出す —— 紙の上の旅程表という見立てなので、
 /// 端末の暗い配色に合わせて色を反転させない。
+///
+/// 状態はここで 1 つだけ作り、環境に置く(`RootView` から下は全部これを読む)。保存先は
+/// 端末の Application Support の下だが、**UI テストのときだけ使い捨ての場所に切り替える**
+/// —— テストが自分の旅程を残して、次のテストや旅行者本人の一覧に混ざらないように。
 @main
 struct TripCheckApp: App {
+  @State private var store: PlannerStore
+
+  init() {
+    let isUITesting = ProcessInfo.processInfo.arguments.contains("-uiTesting")
+    let directory = isUITesting
+      ? FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+      : URL.applicationSupportDirectory.appendingPathComponent("TripCheck")
+    // 解決器はカタログだけ。端末の地図を使う `ApplePlaceResolver` は Task 5 がこの列の先頭へ足す。
+    _store = State(initialValue: PlannerStore(resolvers: [CatalogResolver()], store: TripStore(directory: directory)))
+  }
+
   var body: some Scene {
     WindowGroup {
-      RootView().preferredColorScheme(.light)
+      RootView()
+        .environment(store)
+        .preferredColorScheme(.light)
     }
   }
 }

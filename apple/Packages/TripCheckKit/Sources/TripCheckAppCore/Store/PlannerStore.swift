@@ -32,6 +32,11 @@ public final class PlannerStore {
   /// 組み立ての世代。1 回組むごとに 1 つ進み、**進んだ後に返ってきた答えは捨てる**。
   public private(set) var buildGeneration = 0
 
+  /// 場所を調べている間だけ真(`requestBuildFromStart()` が立てて倒す)。CTA が「まだ場所が
+  /// 無い」と「いま調べている」を言い分けるために要る —— 見分けが付かないと、旅行者は
+  /// 同じボタンをもう一度押す。書くのは `PlannerStore+Start.swift` なので `internal(set)`。
+  public internal(set) var isResolvingPlaces = false
+
   // MARK: - 手持ちの道具(観測しない)
 
   @ObservationIgnored let resolvers: [any PlaceResolver]
