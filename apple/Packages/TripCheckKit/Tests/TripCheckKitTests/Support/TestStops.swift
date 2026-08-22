@@ -710,3 +710,70 @@ private func guardedDeadlineContext(_ overrides: [String: Int]) -> PlannerContex
   context.durationOverrides = overrides
   return context
 }
+
+// MARK: - Task 24(提示層)
+
+/// TS `now: () => tick++`(`tests/planner-copy.test.ts:29`)の Swift 版 —— 1 回読むごとに 1ms
+/// 進む決定的な時計。`TripScenariosTests` にも同じ形の private 実装があるが、そちらはファイル
+/// 内 private なのでここに置き直す。
+struct TestTickInstant: InstantProtocol {
+  var milliseconds: Int
+  func advanced(by duration: Duration) -> TestTickInstant {
+    TestTickInstant(milliseconds: milliseconds + TripScenarios.wholeMilliseconds(duration))
+  }
+  func duration(to other: TestTickInstant) -> Duration { .milliseconds(other.milliseconds - milliseconds) }
+  static func < (left: TestTickInstant, right: TestTickInstant) -> Bool { left.milliseconds < right.milliseconds }
+}
+
+final class TestTickClock: Clock, @unchecked Sendable {
+  typealias Instant = TestTickInstant
+  private let lock = NSLock()
+  private var tick = 0
+
+  var now: TestTickInstant {
+    lock.lock()
+    defer { lock.unlock() }
+    let value = tick
+    tick += 1
+    return TestTickInstant(milliseconds: value)
+  }
+  var minimumResolution: Duration { .milliseconds(1) }
+  func sleep(until deadline: TestTickInstant, tolerance: Duration?) async throws {}
+}
+
+extension TestStops {
+  /// TS `tests/planner-copy.test.ts:16-23` の `eightPlaces`。
+  static let eightPlaces = """
+  Ghibli Museum
+  Shibuya Sky
+  Senso-ji
+  Tokyo Skytree
+  teamLab Planets
+  Tsukiji Outer Market
+  Meiji Jingu
+  Akihabara
+  """
+
+  /// TS `timedOutResult()`(`tests/planner-copy.test.ts:25-42`)—— 8 か所を 1 日に入れ、1ms の
+  /// 予算でソルバを打ち切らせる。結果は必ず UNKNOWN / COMPUTATION_LIMIT。
+  static func timedOutTriple() -> (plan: BuiltTripPlan, fit: TripFitAssessment, result: FeasibilityResult) {
+    let request = tokyoRequest(eightPlaces, days: 1)
+    let plan = TripBuilder.build(request)
+    let fit = TripScenarios.assessTripFit(
+      request,
+      plan: plan,
+      options: .init(timeout: .milliseconds(1), clock: TestTickClock())
+    )
+    let evidence = Feasibility.snapshot(
+      plan: plan,
+      options: .init(
+        dateWasProvided: false,
+        baseWasProvided: false,
+        dayEndWasProvided: false,
+        capturedAt: "2026-08-09T00:00:00.000Z",
+        solverTimedOut: fit.solverTimedOut
+      )
+    )
+    return (plan, fit, Feasibility.derive(plan: plan, fit: fit, evidence: evidence))
+  }
+}
