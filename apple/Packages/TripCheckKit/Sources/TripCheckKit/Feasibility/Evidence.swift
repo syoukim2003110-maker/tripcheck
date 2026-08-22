@@ -69,7 +69,10 @@ extension Evidence: Codable {
 
   public init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
-    self.value = try container.decodeIfPresent(Value.self, forKey: .value)
+    // TS types `value` as `T | null` — required, never `undefined` — so a payload without the key
+    // is malformed and must throw rather than quietly become `nil`. `decode(Value?.self, forKey:)` throws
+    // `.keyNotFound` for a missing key and yields `nil` for an explicit `null`.
+    self.value = try container.decode(Value?.self, forKey: .value)
     self.status = try container.decode(EvidenceStatus.self, forKey: .status)
     self.source = try container.decode(EvidenceSource.self, forKey: .source)
     self.fetchedAt = try container.decodeIfPresent(String.self, forKey: .fetchedAt)

@@ -88,6 +88,97 @@ import Testing
   )
   #expect(r.primaryAttention?.code == .LOW_BUFFER || r.primaryAttention?.code == .UNVERIFIED_FACTS)
   #expect(r.conflicts.isEmpty || r.primaryAttention == nil)
+  // `tokyoLowBuffer` の営業時間は未取得なので、この場面で先に立つのは必ず UNVERIFIED_FACTS。
+  // LOW_BUFFER 自体は下の 2 本(すべて verified な証拠 + 手で組んだ日)が受け持つ。
+  #expect(r.primaryAttention?.code == .UNVERIFIED_FACTS)
+}
+
+/// 手で 1 日分の `TripFitDay` を作る。`Feasibility.derive` が読むのは
+/// `placeCount`/`slackMinutes`/`dayIndex`/`label` の 4 つだけ(TS `:818-820`, `:868-869`)なので、
+/// 残りは判定に効かない実在の値で埋める。
+private func fitDay(_ dayIndex: Int, _ label: String, slack: Int, placeCount: Int = 1) -> TripFitDay {
+  TripFitDay(
+    dayIndex: dayIndex,
+    label: label,
+    startTime: "09:00",
+    usableUntil: "22:00",
+    availableMinutes: 780,
+    plannedMinutes: 780 - slack,
+    slackMinutes: slack,
+    overrunMinutes: 0,
+    placeCount: placeCount,
+    placeCapacity: 4,
+    excessPlaceCount: 0,
+    hasScheduleConflict: false,
+    limitedBy: .curfew
+  )
+}
+
+/// 衝突が無く、証拠がすべて verified で、それでも余裕が 60 分を切る日がある —— 注意の梯子の
+/// **最後の段**(TS `:868-869`)。ここに来るまでに TRANSIT_NON_CONVERGED / WALKING /
+/// TRANSFER / UNVERIFIED_FACTS がすべて黙っていなければならない。
+/// 選ばれる日は TS `:818-820` の絞り込みと並びで決まる:
+/// `placeCount > 0` かつ `slackMinutes >= 0` の日だけを見て、余裕の小さい順 → 日の若い順。
+@Test func aVerifiedButTightDayReportsLowBufferWithItsOwnSlackAndDay() {
+  let plan = TripBuilder.build(TestStops.tokyoRequest("Senso-ji\nTokyo Skytree", days: 2))
+  #expect(plan.days.count == 2)
+  var fit = TestStops.fitStub(for: plan, requestedDays: 2)
+  fit.days = [
+    fitDay(0, "Day 1", slack: 45),
+    fitDay(1, "Day 2", slack: 20),
+  ]
+  let evidence = syntheticSnapshot([.verified])
+  let result = Feasibility.derive(plan: plan, fit: fit, evidence: evidence)
+
+  // 梯子が一番下まで降りた証拠。unknown も estimated も 0 でなければ LOW_BUFFER には届かない。
+  #expect(result.state == .VERIFIED_FEASIBLE)
+  #expect(result.conflicts.isEmpty)
+  #expect(result.criticalFacts.unknown == 0)
+  #expect(result.primaryAttention?.code == .LOW_BUFFER)
+  #expect(result.primaryAttention?.minutes == 20)
+  #expect(result.primaryAttention?.dayIndex == 1)
+  #expect(result.primaryAttention?.affectedItems == ["Day 2"])
+
+  // 予定の無い日(placeCount == 0)と、超過している日(余裕が負)は候補に入らない。
+  fit.days = [
+    fitDay(0, "Day 1", slack: 5, placeCount: 0),
+    fitDay(1, "Day 2", slack: -30),
+    fitDay(2, "Day 3", slack: 40),
+  ]
+  let filtered = Feasibility.derive(plan: plan, fit: fit, evidence: evidence)
+  #expect(filtered.primaryAttention?.code == .LOW_BUFFER)
+  #expect(filtered.primaryAttention?.minutes == 40)
+  #expect(filtered.primaryAttention?.dayIndex == 2)
+
+  // 余裕が同じなら若い日が勝つ。
+  fit.days = [fitDay(0, "Day 1", slack: 30), fitDay(1, "Day 2", slack: 30)]
+  let tied = Feasibility.derive(plan: plan, fit: fit, evidence: evidence)
+  #expect(tied.primaryAttention?.dayIndex == 0)
+}
+
+/// 同じ場面で余裕が 60 分以上あれば、注意は何も言わない(TS `:868` の `< 60`、
+/// `EngineConstants.tightBufferMinutes`)。境界そのものも押さえる。
+@Test func aVerifiedRoomyDayRaisesNoAttentionAtAll() {
+  let plan = TripBuilder.build(TestStops.tokyoRequest("Senso-ji\nTokyo Skytree", days: 2))
+  var fit = TestStops.fitStub(for: plan, requestedDays: 2)
+  let evidence = syntheticSnapshot([.verified])
+
+  fit.days = [fitDay(0, "Day 1", slack: 120), fitDay(1, "Day 2", slack: 60)]
+  #expect(Feasibility.derive(plan: plan, fit: fit, evidence: evidence).primaryAttention == nil)
+
+  // ちょうど 60 は「余裕あり」、59 は LOW_BUFFER。
+  fit.days = [fitDay(0, "Day 1", slack: EngineConstants.tightBufferMinutes)]
+  #expect(Feasibility.derive(plan: plan, fit: fit, evidence: evidence).primaryAttention == nil)
+  fit.days = [fitDay(0, "Day 1", slack: EngineConstants.tightBufferMinutes - 1)]
+  let tight = Feasibility.derive(plan: plan, fit: fit, evidence: evidence)
+  #expect(tight.primaryAttention?.code == .LOW_BUFFER)
+  #expect(tight.primaryAttention?.minutes == 59)
+
+  // 候補が 1 つも残らなければ、余裕が小さくても黙る。
+  fit.days = [fitDay(0, "Day 1", slack: 5, placeCount: 0)]
+  #expect(Feasibility.derive(plan: plan, fit: fit, evidence: evidence).primaryAttention == nil)
+  fit.days = []
+  #expect(Feasibility.derive(plan: plan, fit: fit, evidence: evidence).primaryAttention == nil)
 }
 
 @Test func snapshotHashIsStableAcrossKeyOrder() {
@@ -155,6 +246,29 @@ import Testing
   #expect(back == snapshot)
   #expect(back.solverTimedOut == true)
   #expect(FNV1a.hashEvidenceFacts(back.facts) == snapshot.providerSnapshotHash)
+  // 値の無い事実も `"value": null` として書かれる(TS の `T | null` は必須キー)。
+  let unknownFact = try #require(back.facts.first { $0.evidence.value == nil })
+  let text = try #require(String(data: try JSONEncoder().encode(unknownFact), encoding: .utf8))
+  #expect(text.contains("\"value\":null"))
+}
+
+/// `Evidence` の `value` は TS で `T | null` の**必須**キー。欠けている JSON は壊れているので、
+/// 黙って `nil` になるのではなく復号が失敗しなければならない。省略できるのは
+/// `fetchedAt`/`expiresAt`/`providerRef`/`explanation` の 4 つだけ(TS の `undefined`)。
+@Test func evidenceRequiresItsValueKeyButNotItsMetadata() throws {
+  let decoder = JSONDecoder()
+  let withNull = Data(#"{"value":null,"status":"unknown","source":"other"}"#.utf8)
+  #expect(try decoder.decode(Evidence<JSONValue>.self, from: withNull).value == nil)
+
+  let withValue = Data(#"{"value":"sensoji","status":"verified","source":"google"}"#.utf8)
+  let decoded = try decoder.decode(Evidence<JSONValue>.self, from: withValue)
+  #expect(decoded.value == .string("sensoji"))
+  #expect(decoded.fetchedAt == nil)
+
+  let missingValue = Data(#"{"status":"unknown","source":"other"}"#.utf8)
+  #expect(throws: DecodingError.self) {
+    try decoder.decode(Evidence<JSONValue>.self, from: missingValue)
+  }
 }
 
 // MARK: - tests/feasibility-result.test.ts の 20 本
@@ -190,6 +304,35 @@ private func cleanPlan() -> (raw: String, plan: BuiltTripPlan, fit: TripFitAsses
   let raw = "Senso-ji\nTokyo Skytree"
   let plan = TripBuilder.build(TestStops.tokyoRequest(raw, days: 1))
   return (raw, plan, TestStops.fitStub(for: plan, requestedDays: 1))
+}
+
+/// JS `encodeURIComponent` — `A-Za-z0-9` と `-_.!~*'()` 以外を UTF-8 の大文字 `%XX` に。
+/// TS のテストは `requestKey` をこれで組む(`tests/feasibility-result.test.ts:318` ほか)ので、
+/// レグ id の `::` は `%3A%3A` になる。`requestKey` は長さしか見られない(TS `:301`)が、
+/// 移植したフィクスチャは本物と同じ字面にしておく。
+private func encodeURIComponentForTest(_ value: String) -> String {
+  var result = ""
+  for byte in value.utf8 {
+    switch byte {
+    case 0x41...0x5A, 0x61...0x7A, 0x30...0x39,
+         0x2D, 0x5F, 0x2E, 0x21, 0x7E, 0x2A, 0x27, 0x28, 0x29:
+      result.unicodeScalars.append(Unicode.Scalar(byte))
+    default:
+      result += String(format: "%%%02X", byte)
+    }
+  }
+  return result
+}
+
+/// TS のテストが組む `requestKey`(`transit|<encodeURIComponent(legId)>|<bucket>`)。
+private func transitRequestKey(_ legId: String, _ departureBucket: String) -> String {
+  "transit|\(encodeURIComponentForTest(legId))|\(departureBucket)"
+}
+
+@Test func theTestRequestKeyMatchesJavaScriptPercentEncoding() {
+  #expect(encodeURIComponentForTest("sensoji::tokyo-skytree") == "sensoji%3A%3Atokyo-skytree")
+  #expect(encodeURIComponentForTest("a-b_c.d!e~f*g'h(i)") == "a-b_c.d!e~f*g'h(i)")
+  #expect(transitRequestKey("x::y", "2026-08-09T00:00:00.000Z") == "transit|x%3A%3Ay|2026-08-09T00:00:00.000Z")
 }
 
 /// tests/feasibility-result.test.ts:44-68
@@ -472,7 +615,7 @@ private func cleanPlan() -> (raw: String, plan: BuiltTripPlan, fit: TripFitAsses
     RouteFactEvidence(
       legId: key,
       departureBucket: "2026-08-09T00:00:00.000Z",
-      requestKey: "transit|\(key)|2026-08-09T00:00:00.000Z",
+      requestKey: transitRequestKey(key, "2026-08-09T00:00:00.000Z"),
       status: .verified,
       fetchedAt: "2026-08-09T00:00:00.000Z",
       providerRef: "google_maps",
@@ -591,7 +734,7 @@ private func cleanPlan() -> (raw: String, plan: BuiltTripPlan, fit: TripFitAsses
     routeEvidenceByFactId: [factId: RouteFactEvidence(
       legId: legId,
       departureBucket: "2026-08-09T00:00:00.000Z",
-      requestKey: "transit|\(legId)|2026-08-09T00:00:00.000Z",
+      requestKey: transitRequestKey(legId, "2026-08-09T00:00:00.000Z"),
       status: .failed,
       providerRef: "google_maps",
       minutes: nil
@@ -707,7 +850,7 @@ private func cleanPlan() -> (raw: String, plan: BuiltTripPlan, fit: TripFitAsses
   let exactRouteEvidence = RouteFactEvidence(
     legId: legId,
     departureBucket: "2026-09-14T00:00:00.000Z",
-    requestKey: "transit|\(legId)|2026-09-14T00:00:00.000Z",
+    requestKey: transitRequestKey(legId, "2026-09-14T00:00:00.000Z"),
     status: .verified,
     fetchedAt: "2026-08-09T00:00:00.000Z",
     providerRef: "google_maps",

@@ -45,6 +45,14 @@ public enum FNV1a {
 /// ever compared against another Swift-produced hash (it appears in no fixture and crosses no
 /// engine boundary), so the difference is unobservable; the property TS relies on — same facts ⇒
 /// same string ⇒ same hash — is preserved.
+///
+/// **Consequence for the G3 parity diff: exclude `providerSnapshotHash` from it.** Two inputs to
+/// this string differ from TS by construction — the `undefined`-valued keys described above, and
+/// the `dateSpecific`/`dateSpecificDates` that TS's `{ ...hoursEvidence }` spread
+/// (`lib/feasibility-result.ts:441`, `:556`) drags into an `Evidence<T>` that declares neither
+/// (see `EvidenceSnapshot.swift`). Every other field of a `FeasibilityResult` is expected to match
+/// TS byte for byte; this one field is expected **not** to, and a diff that flags it is reading a
+/// known divergence, not a bug.
 enum StableJSON {
   static func stringify(_ facts: [CriticalFact]) -> String {
     "[" + facts.map(stringify(_:)).joined(separator: ",") + "]"
