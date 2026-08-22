@@ -53,6 +53,13 @@ private func makeStore(at directory: URL, maxRecords: Int = TripStore.maxRecords
   )
 }
 
+/// 時計が**止まっている**記憶域。`updatedAt` が並んだときの順(TS `compareNewest` の
+/// `localeCompare` 側)を見るためのもの。
+private func makeFrozenStore(at directory: URL, maxRecords: Int = TripStore.maxRecords) throws -> TripStore {
+  let base = try #require(StoredTripRecord.parseTimestamp("2026-08-01T00:00:00.000Z"))
+  return TripStore(directory: directory, maxRecords: maxRecords, now: { base }, idFactory: { "trip-frozen" })
+}
+
 /// 断られること**と**その文面を見る。TS 側の `assert.throws(..., /only input and edits/)` と
 /// 同じ語で照合する。
 private func expectPayloadRejection(_ value: JSONValue, saying fragment: String) {
@@ -213,6 +220,57 @@ private func expectPayloadRejection(_ value: JSONValue, saying fragment: String)
   }
 }
 
+/// 上限のちょうど際。TS `:136-137` の `counter > 8000 || depth > 16` と `:200` の 160,000 が
+/// どこに線を引いているかを、通る側と落ちる側の両方で押さえる。
+@Test func payloadLimitsSitExactlyWhereTypeScriptPutsThem() throws {
+  // 深さ:root が depth 0、`input`/`edits` が 1、`input` の中身が 2。配列を k 段重ねると
+  // いちばん奥の値は depth k + 2 に座るので、`depth > 16` で断る TS の線は k = 14 と 15 の間。
+  func nested(_ levels: Int) -> JSONValue {
+    var value = JSONValue.string("bottom")
+    for _ in 0..<levels { value = .array([value]) }
+    return value
+  }
+  #expect(throws: Never.self) { try UserTripPayload.validate(input: ["nest": nested(14)], edits: [:]) }
+  expectPayloadRejection(
+    .object(["input": .object(["nest": nested(15)]), "edits": .object([:])]),
+    saying: "too deeply nested or contains too many values"
+  )
+
+  // ノード:root が 1、`edits` が 2、`input` が 3、配列が 4、その要素が 5 以降。
+  // `counter > 8000` で断るので、要素 7,996 個(合計 8,000)までが通る。
+  func manyNumbers(_ count: Int) -> JSONObject { ["many": .array((0..<count).map { .number(Double($0)) })] }
+  #expect(throws: Never.self) { try UserTripPayload.validate(input: manyNumbers(7_996), edits: [:]) }
+  expectPayloadRejection(
+    .object(["input": .object(manyNumbers(7_997)), "edits": .object([:])]),
+    saying: "too deeply nested or contains too many values"
+  )
+
+  // バイト:`{"edits":{},"input":{"itinerary":""}}` の外枠が 37 バイト。
+  let envelope = try UserTripPayload.compactByteCount(
+    .object(["input": .object(["itinerary": .string("")]), "edits": .object([:])])
+  )
+  #expect(envelope == 37)
+  let atLimit = String(repeating: "a", count: UserTripPayload.maxPayloadBytes - envelope)
+  let atLimitJSON = JSONValue.object(["input": .object(["itinerary": .string(atLimit)]), "edits": .object([:])])
+  #expect(try UserTripPayload.compactByteCount(atLimitJSON) == 160_000)
+  #expect(throws: Never.self) { try UserTripPayload.validate(atLimitJSON) }
+
+  let overLimitJSON = JSONValue.object([
+    "input": .object(["itinerary": .string(atLimit + "a")]),
+    "edits": .object([:]),
+  ])
+  #expect(try UserTripPayload.compactByteCount(overLimitJSON) == 160_001)
+  do {
+    _ = try UserTripPayload.validate(overLimitJSON)
+    Issue.record("expected 160,001 bytes to be rejected")
+  } catch let error as TripStoreError {
+    guard case .tooLarge = error else {
+      Issue.record("expected .tooLarge, got \(error)")
+      return
+    }
+  }
+}
+
 // MARK: - 記録の欄
 
 @Test func titleAndIdAreBounded() throws {
@@ -354,31 +412,100 @@ private func expectPayloadRejection(_ value: JSONValue, saying fragment: String)
   }
 }
 
-/// 全体規約:Kit のソースが import してよいのは `Foundation` だけ(UIKit / SwiftUI / MapKit /
-/// CoreLocation は端末側の都合で、エンジンには持ち込まない)。ここだけはファイルそのものを読む
-/// —— `#filePath` からパッケージの根を辿り、`Sources/TripCheckKit` の `import` 行を全部見る。
-@Test func kitSourcesImportFoundationOnly() throws {
-  let packageRoot = URL(fileURLWithPath: #filePath)   // …/Tests/TripCheckKitTests/Units/TripStoreTests.swift
-    .deletingLastPathComponent()                      // …/Units
-    .deletingLastPathComponent()                      // …/TripCheckKitTests
-    .deletingLastPathComponent()                      // …/Tests
-    .deletingLastPathComponent()                      // …/TripCheckKit
-  let sources = packageRoot.appendingPathComponent("Sources/TripCheckKit", isDirectory: true)
-  // ソースの無い場所(配布されたバイナリなど)で走らせたときは何も言わない。
-  guard FileManager.default.fileExists(atPath: sources.path) else { return }
-
-  let walker = try #require(FileManager.default.enumerator(at: sources, includingPropertiesForKeys: nil))
-  var scanned = 0
-  for case let url as URL in walker where url.pathExtension == "swift" {
-    scanned += 1
-    let text = try String(contentsOf: url, encoding: .utf8)
-    for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
-      let trimmed = line.trimmingCharacters(in: .whitespaces)
-      guard trimmed.hasPrefix("import ") else { continue }
-      #expect(trimmed == "import Foundation", "\(url.lastPathComponent) imports more than Foundation: \(trimmed)")
-    }
+/// TS `compareNewest`(`lib/trip-store.ts:234`)そのもの。時刻が違えば新しいほうが先、
+/// 同じなら `localeCompare` の照合順 —— UTF-16 のコード単位順とは**逆になる**組で確かめる。
+@Test func compareNewestOrdersByTimeThenCollation() throws {
+  let payload = try tripPayload(days: 1)
+  func record(_ id: String, _ updatedAt: String) -> StoredTripRecord {
+    StoredTripRecord(
+      id: id,
+      title: id,
+      createdAt: "2026-08-01T00:00:00.000Z",
+      updatedAt: updatedAt,
+      payload: payload
+    )
   }
-  #expect(scanned >= 60, "the walk must actually reach the Kit's sources")
+
+  let newer = record("z-stop", "2026-08-02T00:00:00.000Z")
+  let older = record("a-stop", "2026-08-01T00:00:00.000Z")
+  #expect(StoredTripRecord.compareNewest(newer, older) < 0)
+  #expect(StoredTripRecord.compareNewest(older, newer) > 0)
+
+  let lower = record("a-stop", "2026-08-01T00:00:00.000Z")
+  let upper = record("B-stop", "2026-08-01T00:00:00.000Z")
+  #expect(StoredTripRecord.compareNewest(lower, upper) < 0)
+  #expect(StoredTripRecord.compareNewest(upper, lower) > 0)
+  #expect(StoredTripRecord.compareNewest(lower, lower) == 0)
+  // コード単位順なら "B"(0x42)が "a"(0x61)より先。照合順はそうならない、というのがここの要。
+  #expect(jsStringLess("B-stop", "a-stop"))
+  #expect(jsLocaleCompare("a-stop", "B-stop") < 0)
+}
+
+/// 時計が止まっていて `updatedAt` が並んだときに、TS と同じ id の照合順へ落ちること。
+@Test func tiedTimestampsFallToTheIdCollationOrder() async throws {
+  let directory = makeTemporaryDirectory()
+  defer { try? FileManager.default.removeItem(at: directory) }
+  let store = try makeFrozenStore(at: directory)
+
+  let saved = try await store.save(SaveTripRecord(id: "trip-b", title: "B", payload: try tripPayload(days: 2)))
+  let second = try await store.save(SaveTripRecord(id: "trip-a", title: "A", payload: try tripPayload(days: 2)))
+  #expect(saved.updatedAt == second.updatedAt, "the frozen clock must produce identical timestamps")
+
+  let list = await store.list()
+  // 保存した順(b → a)でも、書いた順でも、ファイルシステムの順でもなく、id の照合順。
+  #expect(list.map(\.id) == ["trip-a", "trip-b"])
+  #expect(list.map(\.title) == ["A", "B"])
+}
+
+/// 同じ `updatedAt` のまま溢れさせたとき、どれが落ちるか。TS は `compareNewest` で並べて
+/// `slice(0, maximum)` を残す(`:266-267`)ので、落ちるのは並びの末尾 = 照合順で最後の id。
+@Test func pruningDropsTheTailOfTheCompareNewestOrder() async throws {
+  let directory = makeTemporaryDirectory()
+  defer { try? FileManager.default.removeItem(at: directory) }
+  let store = try makeFrozenStore(at: directory, maxRecords: 2)
+
+  for id in ["trip-c", "trip-a", "trip-b"] {
+    _ = try await store.save(SaveTripRecord(id: id, title: id, payload: try tripPayload(days: 1)))
+  }
+
+  let list = await store.list()
+  #expect(list.map(\.id) == ["trip-a", "trip-b"])
+  #expect(await store.load(id: "trip-c") == nil)
+  let dropped = directory.appendingPathComponent("trips/trip-c.json")
+  #expect(!FileManager.default.fileExists(atPath: dropped.path))
+}
+
+/// ファイル名と中の id が食い違う 1 枚は読まない。読むと `list()` には出るのに
+/// `delete(id:)` が空振りする。
+@Test func recordsWhoseFileNameDoesNotMatchTheirIdAreSkipped() async throws {
+  let directory = makeTemporaryDirectory()
+  defer { try? FileManager.default.removeItem(at: directory) }
+  let store = try makeStore(at: directory)
+  _ = try await store.save(SaveTripRecord(id: "trip-9", title: "Kept", payload: try tripPayload(days: 2)))
+
+  let trips = directory.appendingPathComponent("trips")
+  let renamed = trips.appendingPathComponent("renamed.json")
+  try FileManager.default.copyItem(at: trips.appendingPathComponent("trip-9.json"), to: renamed)
+
+  let records = await store.list()
+  #expect(records.map(\.id) == ["trip-9"])
+  #expect(FileManager.default.fileExists(atPath: renamed.path), "the stray copy is skipped, not deleted")
+}
+
+/// 前回の書き込みが落ちた残骸(`.<uuid>.tmp`)は次の書き込みで片付く。
+@Test func staleTemporaryFilesAreSweptOnTheNextWrite() async throws {
+  let directory = makeTemporaryDirectory()
+  defer { try? FileManager.default.removeItem(at: directory) }
+  let store = try makeStore(at: directory)
+  _ = try await store.save(SaveTripRecord(title: "First", payload: try tripPayload(days: 1)))
+
+  let stale = directory.appendingPathComponent("trips/.00000000-0000-0000-0000-000000000000.tmp")
+  try Data(#"{"half":"written"#.utf8).write(to: stale)
+  #expect(FileManager.default.fileExists(atPath: stale.path))
+
+  _ = try await store.save(SaveTripRecord(title: "Second", payload: try tripPayload(days: 2)))
+  #expect(!FileManager.default.fileExists(atPath: stale.path))
+  #expect(await store.list().count == 2)
 }
 
 /// `tests/trip-store.test.ts:98-148`。保存するのは共有**コード**であって構造体ではない

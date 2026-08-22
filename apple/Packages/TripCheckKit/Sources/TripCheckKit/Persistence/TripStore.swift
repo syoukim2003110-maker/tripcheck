@@ -91,10 +91,14 @@ public struct StoredTripRecord: Codable, Equatable, Sendable {
 
   /// TS `compareNewest`(`:234`)。新しいものが先、同じ時刻なら id の照合順。
   /// 負なら `left` が先。
+  ///
+  /// TS は `Date.parse(right.updatedAt) - Date.parse(left.updatedAt)` だが、記録に入る時刻は
+  /// `validTimestamp` が `YYYY-MM-DDTHH:mm:ss.SSSZ`(UTC・幅が固定)に直したものしかない。
+  /// 幅が同じ UTC の文字列は辞書順が時刻順とそのまま一致するので、比較のたびに書式器を作らず
+  /// 文字列で較べる。同じ時刻のときだけ TS と同じ `localeCompare`(照合順)へ落ちる。
   public static func compareNewest(_ left: StoredTripRecord, _ right: StoredTripRecord) -> Int {
-    let leftTime = parseTimestamp(left.updatedAt)?.timeIntervalSince1970 ?? 0
-    let rightTime = parseTimestamp(right.updatedAt)?.timeIntervalSince1970 ?? 0
-    if leftTime != rightTime { return rightTime > leftTime ? 1 : -1 }
+    let byTime = jsStringCompare(right.updatedAt, left.updatedAt)
+    if byTime != 0 { return byTime }
     return jsLocaleCompare(left.id, right.id)
   }
 
@@ -219,9 +223,13 @@ public actor TripStore {
     directory.appendingPathComponent("\(id).json", isDirectory: false)
   }
 
+  /// ファイル名と中の id が食い違う 1 枚(手で置かれた/名前を変えられたもの)は読まない。
+  /// 読んでしまうと `list()` には出るのに `delete(id:)` が `<id>.json` を探して空振りする。
   private func readRecord(at url: URL) -> StoredTripRecord? {
     guard let data = try? Data(contentsOf: url) else { return nil }
-    return try? JSONDecoder().decode(StoredTripRecord.self, from: data)
+    guard let record = try? JSONDecoder().decode(StoredTripRecord.self, from: data) else { return nil }
+    guard url.deletingPathExtension().lastPathComponent == record.id else { return nil }
+    return record
   }
 
   /// ディスクにある読める記録を、新しい順に。並べる前の入力順もファイル名で決めておく
@@ -247,6 +255,7 @@ public actor TripStore {
     let temporary = directory.appendingPathComponent(".\(UUID().uuidString).tmp", isDirectory: false)
     do {
       try manager.createDirectory(at: directory, withIntermediateDirectories: true)
+      sweepTemporaryFiles()
       let encoder = JSONEncoder()
       encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
       try encoder.encode(record).write(to: temporary, options: .atomic)
@@ -259,6 +268,18 @@ public actor TripStore {
     } catch {
       try? manager.removeItem(at: temporary)
       throw TripStoreError.ioFailure(error)
+    }
+  }
+
+  /// 前回の書き込みが途中で落ちたときの残り(`.<uuid>.tmp`)を片付ける。`list()` は `.json`
+  /// しか見ないので害は無いが、置いたままにすると溜まる一方になる。
+  private func sweepTemporaryFiles() {
+    guard let urls = try? FileManager.default.contentsOfDirectory(
+      at: directory,
+      includingPropertiesForKeys: nil
+    ) else { return }
+    for url in urls where url.pathExtension == "tmp" && url.lastPathComponent.hasPrefix(".") {
+      try? FileManager.default.removeItem(at: url)
     }
   }
 
