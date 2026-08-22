@@ -364,3 +364,34 @@ extension TestStops {
     return (plan, fitStub(for: plan, requestedDays: 1, slackMinutes: 30))
   }
 }
+
+// MARK: - Task 17(場面比較)
+
+extension TestStops {
+  /// 1 日に 6 件を詰め込んだ東京の旅程。うち `Ghibli Museum` が must、`Shibuya Sky` が 10:00 の
+  /// 予約(= 固定時刻)、`Tsukiji Outer Market` が optional。`cutCandidates`
+  /// (`lib/trip-scenarios.ts:227-277`)が must と予約・固定時刻を外し、optional を先頭に置くことを
+  /// 見るためのもの。カタログが 6 件すべてを解決するので `resolvedStops` は渡さない。
+  static func overloadedDay() -> (request: TripRequest, plan: BuiltTripPlan) {
+    let raw = """
+    Ghibli Museum — must
+    Shibuya Sky — 10:00 booked
+    Senso-ji
+    Tokyo Skytree
+    teamLab Planets
+    Tsukiji Outer Market — optional
+    """
+    var context = PlannerContext()
+    // 09:00–16:00 の窓。6 件は時計に入らない —— `assessTripFit` を過負荷の側で測るための条件で、
+    // TS の "the three-option shortlist retains a complete one-change repair" が
+    // `dayEndTarget: "18:00"` でやっているのと同じ作り方(`tests/trip-scenarios.test.ts`)。
+    context.dayEndTarget = "16:00"
+    let request = tokyoRequest(raw, days: 1, context: context)
+    return (request, TripBuilder.build(request))
+  }
+
+  /// TS `provisionalBaseAsResolved`(`lib/planner-app-state.ts:597-603`)を推薦拠点に当てる薄い包み。
+  static func asResolved(_ base: TripBase?) -> ResolvedStop? {
+    base.map(ProvisionalTripLength.provisionalBaseAsResolved)
+  }
+}
