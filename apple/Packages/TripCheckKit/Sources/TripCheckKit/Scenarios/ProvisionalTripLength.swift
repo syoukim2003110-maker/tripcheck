@@ -3,20 +3,16 @@ import Foundation
 /*
  * 「この旅は何日か」と「どこから出発するのか」を**一緒に**決める層。
  *
- * lib/provisional-trip-length.ts(93 行)全体。`clampTripDays`(`lib/planner-app-state.ts:198-200`)と
- * `provisionalBaseAsResolved`(`lib/planner-app-state.ts:597-603`)もここに置く —— TS ではアプリの
- * 状態モジュールにあるが、この不動点ループ以外から呼ばれていない。
+ * lib/provisional-trip-length.ts(93 行)全体。`provisionalBaseAsResolved`
+ * (`lib/planner-app-state.ts:597-603`)もここに置く —— TS ではアプリの状態モジュールにあるが、
+ * この不動点ループ以外から呼ばれていない。`clampTripDays`(`:198-200`)は Task 20 で
+ * `PlannerEdits`(`Edits/PlannerEditState.swift`)へ移した:TS と同じく編集状態の側の道具で、
+ * 日数を動かす編集からも呼ばれる。
  */
 public enum ProvisionalTripLength {
 
   /// TS `PROVISIONAL_TRIP_LENGTH_ROUNDS` (`lib/provisional-trip-length.ts:31`)
   public static let maxRounds = 3
-
-  /// TS `clampTripDays` (`lib/planner-app-state.ts:198-200`)。TS の `Math.round` は Swift の
-  /// `days: Int` では恒等。
-  public static func clampTripDays(_ value: Int) -> Int {
-    min(EngineConstants.tripDaysRange.upperBound, max(EngineConstants.tripDaysRange.lowerBound, value))
-  }
 
   /// TS `provisionalBaseAsResolved` (`lib/planner-app-state.ts:597-603`)。TS の `{ ...base }` は
   /// `TripBase` の `query` も運ぶが `ResolvedInputStop` は読まないので、`RouteStop` 部分だけを写す。
@@ -100,7 +96,7 @@ public enum ProvisionalTripLength {
         TripRequest(raw: request.raw, days: days, pace: request.pace, locale: request.locale, context: context(base))
       )
       let proposed = fit.minimumDays ?? fit.partialMinimumDays
-      let nextDays = proposed.map(clampTripDays) ?? days
+      let nextDays = proposed.map(PlannerEdits.clampTripDays) ?? days
       let nextBase = baseFor(build(nextDays, base))
       settled = nextDays == days && nextBase?.id == base?.id
       days = nextDays

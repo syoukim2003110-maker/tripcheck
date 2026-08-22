@@ -332,3 +332,258 @@ extension TestStops {
     base.map(ProvisionalTripLength.provisionalBaseAsResolved)
   }
 }
+
+// MARK: - Task 20(編集ガード・Undo 台帳)
+
+/*
+ * 編集ガードのフィクスチャ。名前のついたものは**実際に `TripBuilder.build` を 2 回通した**前後の
+ * 計画を返す(TS のテストが `buildTripFromWishlist` を 2 回呼ぶのと同じ)。締切だけを動かす TS の
+ * 4 本(`tests/planner-guarded-edits.test.ts:241-297`)は TS 自身が計画リテラルを組んでいる ——
+ * 「門限がちょうど 90 分良くなり空港がちょうど 30 分悪くなる 2 日計画は、数を探すのではなく述べる
+ * 必要がある」(TS :195-206)—— ので `deadlinePlan` も併せて置く。
+ *
+ * 実ビルドの滞在時間はすべて `durationOverrides` で与えてある。数字は逆算した値で、下のコメントに
+ * その日の時計を書いてある(9:00 開始・停留所間 35 分・門限 17:00・空港締切 15:30)。
+ */
+extension TestStops {
+  /// 東京 2 件の 1 日旅程で滞在時間だけを動かす。衝突は生まれないので `.apply` になり、
+  /// 余裕は伸ばした分だけちょうど減る(`from` → `to` が +30 分なら差は −30)。
+  static func stayEdit(from: Int, to: Int) -> (before: BuiltTripPlan, after: BuiltTripPlan, context: PlannerContext) {
+    let raw = "Senso-ji\nTokyo Skytree"
+    var context = PlannerContext()
+    context.durationOverrides = ["sensoji": from]
+    var candidate = context
+    candidate.durationOverrides = ["sensoji": to]
+    return (
+      TripBuilder.build(tokyoRequest(raw, days: 1, context: context)),
+      TripBuilder.build(tokyoRequest(raw, days: 1, context: candidate)),
+      context
+    )
+  }
+
+  /// `tests/planner-guarded-edits.test.ts:16-44` そのまま。貼られた順が利用者の制約なので、
+  /// 最適化は長くなった滞在を避けて予約を守ることができない。`stayMinutes: 360` で
+  /// teamLab Planets の 13:00 予約に 170 分遅れる。`100` なら誰も遅れない。
+  static func bookingLateEdit(stayMinutes: Int = 360) -> (before: BuiltTripPlan, after: BuiltTripPlan, context: PlannerContext) {
+    let raw = "Senso-ji\nteamLab Planets — Day 1 13:00 booked"
+    var context = PlannerContext()
+    context.lockedOrderByDay = IntKeyedDictionary([0: ["sensoji", "teamlab-planets"]])
+    var candidate = context
+    candidate.durationOverrides = ["sensoji": stayMinutes]
+    return (
+      TripBuilder.build(tokyoRequest(raw, days: 1, context: context)),
+      TripBuilder.build(tokyoRequest(raw, days: 1, context: candidate)),
+      context
+    )
+  }
+
+  /// 2 日旅程(1 日目は門限 17:00、2 日目は 18:00 発の便で空港締切 15:30)。
+  /// 前:1 日目 18:30 終了 = 門限 +90 分、2 日目 13:35 終了 = 締切内。
+  /// 後:1 日目 17:00 ちょうど(門限 −90 分の改善)、2 日目 16:00 = 空港締切 +30 分。
+  /// 合計では 60 分の改善だが、飛行機は算術平均を待たない。
+  static func airportWorseCurfewBetter() -> (before: BuiltTripPlan, after: BuiltTripPlan, context: PlannerContext) {
+    let context = guardedDeadlineContext(["sensoji": 270, "tokyo-skytree": 265, "ueno-park": 120, "akihabara": 120])
+    let candidate = guardedDeadlineContext(["sensoji": 180, "tokyo-skytree": 265, "ueno-park": 120, "akihabara": 265])
+    return (
+      TripBuilder.build(tokyoRequest(guardedTwoDayRaw, days: 2, context: context)),
+      TripBuilder.build(tokyoRequest(guardedTwoDayRaw, days: 2, context: candidate)),
+      context
+    )
+  }
+
+  /// 3 日旅程。前:[門限 0、門限 +120、空港 0]、後:[門限 +20、門限 0、空港 +15]。
+  /// 真ん中の日が 120 分良くなっても、1 日目と便の悪化は残る。
+  static func dayOneWorseDayTwoBetter() -> (before: BuiltTripPlan, after: BuiltTripPlan, context: PlannerContext) {
+    let context = guardedDeadlineContext([
+      "sensoji": 220, "tokyo-skytree": 225, "ueno-park": 285, "akihabara": 280, "meiji-jingu": 175, "shibuya-sky": 180,
+    ])
+    let candidate = guardedDeadlineContext([
+      "sensoji": 240, "tokyo-skytree": 225, "ueno-park": 165, "akihabara": 280, "meiji-jingu": 190, "shibuya-sky": 180,
+    ])
+    return (
+      TripBuilder.build(tokyoRequest(guardedThreeDayRaw, days: 3, context: context)),
+      TripBuilder.build(tokyoRequest(guardedThreeDayRaw, days: 3, context: candidate)),
+      context
+    )
+  }
+
+  /// `tests/planner-guarded-edits.test.ts:329-338`。営業時間の証拠が一切ない 2 件で、
+  /// 1 日目の開始を 09:00 から 11:00 へ動かす。`unknown` は `unknown` のまま。
+  static func dayStartPastUnknownHours() -> (before: BuiltTripPlan, after: BuiltTripPlan, context: PlannerContext) {
+    var context = PlannerContext()
+    context.defaultDayStart = "09:00"
+    var candidate = PlannerContext()
+    candidate.defaultDayStart = "11:00"
+    return (
+      TripBuilder.build(tokyoRequest(guardedOpeningRaw, days: 1, context: context)),
+      TripBuilder.build(tokyoRequest(guardedOpeningRaw, days: 1, context: candidate)),
+      context
+    )
+  }
+
+  /// `tests/planner-guarded-edits.test.ts:340-352`。浅草寺の窓は 09:00–11:00 だけで、
+  /// **両側とも** 11:00 開始 —— 既に破れている約束は、無関係な編集のたびに言い直さない。
+  static func sameViolationBothSides() -> (before: BuiltTripPlan, after: BuiltTripPlan, context: PlannerContext) {
+    var context = PlannerContext()
+    context.openingWindowsByDay = guardedMorningOnly
+    context.defaultDayStart = "11:00"
+    var candidate = context
+    candidate.durationOverrides = ["teamlab-planets": 100]
+    return (
+      TripBuilder.build(tokyoRequest(guardedOpeningRaw, days: 1, context: context)),
+      TripBuilder.build(tokyoRequest(guardedOpeningRaw, days: 1, context: candidate)),
+      context
+    )
+  }
+
+  /// `tests/planner-guarded-edits.test.ts:305-327`。同じ 2 件に検証済みの窓(09:00–11:00)を
+  /// 与えたうえで開始を 11:00 に動かすと、浅草寺は営業時間の外に出る。
+  static func dayStartPastVerifiedClosing() -> (before: BuiltTripPlan, after: BuiltTripPlan, context: PlannerContext) {
+    var context = PlannerContext()
+    context.openingWindowsByDay = guardedMorningOnly
+    context.defaultDayStart = "09:00"
+    var candidate = context
+    candidate.defaultDayStart = "11:00"
+    return (
+      TripBuilder.build(tokyoRequest(guardedOpeningRaw, days: 1, context: context)),
+      TripBuilder.build(tokyoRequest(guardedOpeningRaw, days: 1, context: candidate)),
+      context
+    )
+  }
+
+  /// 最終入場を動かす編集。`openingStatus` が `last_entry_conflict` に変わることで
+  /// `last_entry:{stopId}` の事実が新しく現れる。締切は日の開始(09:00)より前に置く ——
+  /// 10:00 だと日内順序が「締切の早い停留所を先に」で本当に回避してしまい(`DayOrdering.swift:234`)、
+  /// 測りたい遷移が起きない。
+  static func lastEntryMissedEdit() -> (before: BuiltTripPlan, after: BuiltTripPlan, context: PlannerContext) {
+    let raw = "Senso-ji\nTokyo Skytree"
+    var context = PlannerContext()
+    context.lastEntryTimes = ["tokyo-skytree": "18:00"]
+    var candidate = context
+    candidate.lastEntryTimes = ["tokyo-skytree": "08:00"]
+    return (
+      TripBuilder.build(tokyoRequest(raw, days: 1, context: context)),
+      TripBuilder.build(tokyoRequest(raw, days: 1, context: candidate)),
+      context
+    )
+  }
+
+  /// must の停留所が候補計画から消える編集(除外は `excludedStopIds`)。
+  static func mustStopDropped() -> (before: BuiltTripPlan, after: BuiltTripPlan, context: PlannerContext) {
+    let raw = "Senso-ji — must\nTokyo Skytree"
+    let context = PlannerContext()
+    var candidate = context
+    candidate.excludedStopIds = ["sensoji"]
+    return (
+      TripBuilder.build(tokyoRequest(raw, days: 1, context: context)),
+      TripBuilder.build(tokyoRequest(raw, days: 1, context: candidate)),
+      context
+    )
+  }
+
+  /// 履歴の拠点差し替えテスト用の解決済み拠点(東京駅前のホテル 1 件)。
+  static func resolvedBase() -> ResolvedStop {
+    ResolvedStop(
+      id: "hotel-tokyo-station",
+      providerRef: "provider-tokyo-station",
+      name: "Tokyo Station Hotel",
+      area: "Marunouchi",
+      latitude: 35.6812,
+      longitude: 139.7671,
+      sourceUrl: "https://example.com/hotel",
+      verifiedAt: "2026-08-09T00:00:00Z",
+      confidence: .medium,
+      planningDurationMinutes: 0,
+      isAnchor: false,
+      input: "Tokyo Station Hotel",
+      address: "1-9-1 Marunouchi, Tokyo"
+    )
+  }
+
+  /// TS `deadlinePlan`(`tests/planner-guarded-edits.test.ts:208-239`)。締切だけを述べた計画。
+  /// `plannerHardEditConflicts` はこれらの欄に対する純粋な比較なので、これが検出器の見る入力の全部。
+  static func deadlinePlan(_ days: [(kind: DeadlineKind?, overrun: Int)]) -> BuiltTripPlan {
+    BuiltTripPlan(
+      inputMode: .wishlist,
+      destination: .japan,
+      requestedDays: days.count,
+      recognizedStopCount: 0,
+      scheduledStopCount: 0,
+      mealBreakCount: 0,
+      unknownEntries: [],
+      deferredOptionalStops: [],
+      deferredUnavailableStops: [],
+      constraintCount: 0,
+      minimumPinnedDay: 0,
+      overCapacityCount: 0,
+      scheduleConflictCount: 0,
+      hotelQuery: "",
+      hotelResolved: false,
+      travelPreference: .auto,
+      mobilityPolicy: MobilityPolicy(
+        maxWalkingMinutesPerLeg: 20,
+        maxTransfersPerLeg: 2,
+        walkingLimitWasProvided: false,
+        transferLimitWasProvided: false
+      ),
+      baseRecommendations: [],
+      airportConstraints: [],
+      foodRecommendationSlots: [],
+      days: days.enumerated().map { index, day in
+        BuiltPlanDay(
+          label: "Day \(index + 1)",
+          theme: "",
+          stops: [],
+          legs: [],
+          totalMinutes: 0,
+          startTime: "09:00",
+          requestedStartTime: "09:00",
+          startAdjustedByArrival: false,
+          finishTime: "18:00",
+          deadline: "20:00",
+          deadlineKind: day.kind,
+          deadlineOverrunMinutes: day.overrun,
+          reservationConflictCount: 0,
+          openingConflictCount: 0
+        )
+      }
+    )
+  }
+}
+
+/// 浅草寺だけ午前中(09:00–11:00)しか開いていない 1 日目。
+private let guardedMorningOnly: [String: IntKeyedDictionary<[VisitWindow]>] = [
+  "sensoji": IntKeyedDictionary([0: [VisitWindow(openMinutes: 9 * 60, closeMinutes: 11 * 60)]]),
+]
+
+private let guardedOpeningRaw = "Senso-ji\nteamLab Planets"
+
+private let guardedTwoDayRaw = """
+Senso-ji — Day 1
+Tokyo Skytree — Day 1
+Ueno Park — Day 2
+Akihabara — Day 2
+"""
+
+private let guardedThreeDayRaw = """
+Senso-ji — Day 1
+Tokyo Skytree — Day 1
+Ueno Park — Day 2
+Akihabara — Day 2
+Meiji Jingu — Day 3
+Shibuya Sky — Day 3
+"""
+
+/// 門限 17:00・18:00 発の便(= 最終日の空港締切 15:30)。食事は入れない —— 測っているのは締切で
+/// あって、食事枠が日の算術に触れないことは Task 14 が既に固定している。
+private func guardedDeadlineContext(_ overrides: [String: Int]) -> PlannerContext {
+  var context = PlannerContext()
+  context.destination = .destination(.japan)
+  context.dayEndTarget = "17:00"
+  context.departureAirport = "HND"
+  context.departureTime = "18:00"
+  context.flightKind = .domestic
+  context.mealPlan = MealPlan.none
+  context.durationOverrides = overrides
+  return context
+}
