@@ -28,6 +28,10 @@ public struct WishlistStopConstraint: Equatable, Sendable, Codable {
     self.isReservation = isReservation
     self.stayMinutes = stayMinutes
   }
+
+  /// TS `defaultConstraint` (`lib/trip-builder.ts:986-994`) — 何も書かれなかった停留所が背負う
+  /// 制約。TS の `constraints.get(id) ?? defaultConstraint` の右辺そのもの。
+  public static let `default` = WishlistStopConstraint(priority: .normal, isReservation: false)
 }
 
 /// TS `TripPlannerContext` (`lib/trip-builder.ts:176-244`) — every field optional, exactly as the
