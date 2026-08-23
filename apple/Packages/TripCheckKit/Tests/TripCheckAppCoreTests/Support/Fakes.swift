@@ -60,3 +60,30 @@ struct SlowResolver: PlaceResolver {
     return titles.map { fakeSuggestion($0) }
   }
 }
+
+actor RouteCallLog {
+  private(set) var requests: [RouteRequest] = []
+  func record(_ request: RouteRequest) { requests.append(request) }
+}
+
+/// 経路の疑似提供元。鍵ごとの失敗・遅延・呼び出し記録を持つ。`swift test` は Apple を呼ばない。
+struct FakeRouteProvider: RouteProvider {
+  var walkMinutes = 9, taxiMinutes = 7, transitMinutes = 12
+  var failing: Set<String> = []      // legKey → .failed
+  var unroutable: Set<String> = []   // legKey → .unroutable
+  var delay: Duration = .milliseconds(20)
+  let log = RouteCallLog()
+
+  func route(_ request: RouteRequest, locale: PlannerLocale) async -> RouteOutcome {
+    await log.record(request)
+    try? await Task.sleep(for: delay)
+    if Task.isCancelled || failing.contains(request.legKey) { return .failed }
+    if unroutable.contains(request.legKey) { return .unroutable }
+    let mid = GeoPoint(latitude: (request.from.latitude + request.to.latitude) / 2 + 0.002, longitude: (request.from.longitude + request.to.longitude) / 2)
+    switch request.mode {
+    case .walk: return .measured(minutes: walkMinutes, distanceMeters: 700, geometry: [request.from, mid, request.to], expectedDeparture: nil)
+    case .taxi: return .measured(minutes: taxiMinutes, distanceMeters: 2100, geometry: [request.from, mid, request.to], expectedDeparture: request.departure)
+    case .transit: return .measured(minutes: transitMinutes, distanceMeters: nil, geometry: nil, expectedDeparture: request.departure)
+    }
+  }
+}
