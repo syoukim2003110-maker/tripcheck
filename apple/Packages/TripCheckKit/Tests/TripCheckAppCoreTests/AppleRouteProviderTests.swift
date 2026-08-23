@@ -1,4 +1,5 @@
 import Foundation
+import MapKit
 import Testing
 @testable import TripCheckAppCore
 import TripCheckKit
@@ -6,13 +7,23 @@ import TripCheckKit
 private let a = GeoPoint(latitude: 46.948, longitude: 7.447), b = GeoPoint(latitude: 46.96, longitude: 7.46)
 private func walk(_ key: String = "x::y") -> RouteRequest { RouteRequest(legKey: key, from: a, to: b, mode: .walk, departure: nil) }
 private func transit() -> RouteRequest { RouteRequest(legKey: "x::y", from: a, to: b, mode: .transit, departure: Date(timeIntervalSince1970: 1_800_000_000)) }
-private let tenMinutes = DirectionsAnswer(travelSeconds: 600, distanceMeters: nil, geometry: nil, expectedDeparture: nil)
+/// 出発時刻は**答えのほうにも**入る —— 尋ねた時刻(`transit()` の 1_800_000_000)と、
+/// 地図が「その次の便」として返した時刻(ここでは 10 分後)は別物で、旅程に載るのは後者。
+private let departureFound = Date(timeIntervalSince1970: 1_800_000_600)
+private let tenMinutes = DirectionsAnswer(travelSeconds: 600, distanceMeters: nil, geometry: nil, expectedDeparture: departureFound)
 
 @Test func aMeasuredWalkCarriesMinutesAndGeometryAndZeroMinutesIsAFailure() async {
   let fake = FakeDirecting(answers: ["walk|x::y": DirectionsAnswer(travelSeconds: 1_530, distanceMeters: 1_900.4, geometry: [a, b], expectedDeparture: nil)])
   #expect(await AppleRouteProvider(directing: fake).route(walk(), locale: .ja) == .measured(minutes: 26, distanceMeters: 1_900, geometry: [a, b], expectedDeparture: nil))
   let zero = FakeDirecting(answers: ["walk|x::y": DirectionsAnswer(travelSeconds: 20, distanceMeters: 10, geometry: [a, b], expectedDeparture: nil)])
   #expect(await AppleRouteProvider(directing: zero).route(walk(), locale: .en) == .failed)
+
+  // 数千点の線は提供元が間引いてから返す(アダプタの `@MainActor` の中ではなく、ここで)。
+  let line = (0...4000).map { GeoPoint(latitude: 46.0 + Double($0) * 0.00001, longitude: 7.0 + Double($0) * 0.00001) }
+  let long = FakeDirecting(answers: ["walk|x::y": DirectionsAnswer(travelSeconds: 600, distanceMeters: 4_000, geometry: line, expectedDeparture: nil)])
+  #expect(await AppleRouteProvider(directing: long).route(walk(), locale: .en) == .measured(minutes: 10, distanceMeters: 4_000, geometry: PolylineSimplifier.thinned(line), expectedDeparture: nil))
+  guard case .measured(_, _, let thinned, _) = await AppleRouteProvider(directing: long).route(walk(), locale: .en) else { return #expect(Bool(false), "a long walk must still measure") }
+  #expect(thinned?.count == 2)
 }
 
 /// 3 分類: notFound → unroutable、other → failed、throttled → 1/2/4 秒で 3 回まで再試行(ここでは短く注入)。
@@ -22,7 +33,7 @@ private let tenMinutes = DirectionsAnswer(travelSeconds: 600, distanceMeters: ni
   #expect(await AppleRouteProvider(directing: Broken()).route(walk(), locale: .en) == .failed)
   let fast: [Duration] = [.milliseconds(1), .milliseconds(2), .milliseconds(4)]
   let recovers = FakeDirecting(answers: ["transit|x::y": tenMinutes], throttleFirst: 3)
-  #expect(await AppleRouteProvider(directing: recovers, throttleDelays: fast).route(transit(), locale: .en) == .measured(minutes: 10, distanceMeters: nil, geometry: nil, expectedDeparture: nil))
+  #expect(await AppleRouteProvider(directing: recovers, throttleDelays: fast).route(transit(), locale: .en) == .measured(minutes: 10, distanceMeters: nil, geometry: nil, expectedDeparture: departureFound))
   let recoveredAfter = await recovers.log.calls
   #expect(recoveredAfter == 4)
   let givesUp = FakeDirecting(answers: ["transit|x::y": tenMinutes], throttleFirst: 4)
@@ -47,12 +58,33 @@ private let tenMinutes = DirectionsAnswer(travelSeconds: 600, distanceMeters: ni
   #expect(unwound == 2)
 }
 
+/// 端末の地図が投げるものを 3 分類へ写す表(spec §7)。**ここが唯一の置き場所** ——
+/// `swift test` は `MKDirections` を呼ばないので、この表を通る道はこのテストしかない。
+/// `@MainActor` なのは `classify` が `@MainActor` の `MKDirectionsAdapter` の中に居るから。
+@MainActor @Test func mapKitErrorsFallIntoThreeClasses() {
+  #expect(MKDirectionsAdapter.classify(MKError(.loadingThrottled)) == .throttled)
+  #expect(MKDirectionsAdapter.classify(MKError(.placemarkNotFound)) == .notFound)
+  #expect(MKDirectionsAdapter.classify(MKError(.directionsNotFound)) == .notFound)
+  // 表に無いものは全部 `.other`(= `.failed`)。「経路なし」に混ぜない —— 混ぜると、
+  // 通信が落ちただけの脚が「歩ける道が無い」として旅程から消える。
+  #expect(MKDirectionsAdapter.classify(MKError(.serverFailure)) == .other)
+  #expect(MKDirectionsAdapter.classify(MKError(.unknown)) == .other)
+  #expect(MKDirectionsAdapter.classify(MKError(.decodingFailed)) == .other)
+}
+
 @Test func douglasPeuckerKeepsEndpointsAndDropsNearlyCollinearPoints() {
   let line = (0...4000).map { GeoPoint(latitude: 46.0 + Double($0) * 0.00001, longitude: 7.0 + Double($0) * 0.00001) }
   let simplified = PolylineSimplifier.simplify(line, toleranceMeters: 5)
   #expect(simplified.first == line.first && simplified.last == line.last && simplified.count < 10)
   let bent = [GeoPoint(latitude: 46, longitude: 7), GeoPoint(latitude: 46.01, longitude: 7.02), GeoPoint(latitude: 46.02, longitude: 7)]
   #expect(PolylineSimplifier.simplify(bent, toleranceMeters: 5) == bent)
+  // 0 以下の物差しでは何も落とさない(public な入口なので、落ちずに返ること自体が答え)。
+  #expect(PolylineSimplifier.simplify(bent, toleranceMeters: -1) == bent)
+  #expect(PolylineSimplifier.simplify(line, toleranceMeters: 0) == line)
+  // 掛ける・掛けないの境目は `thinned` が 1 か所で決める: 2000 点以下はそのまま。
+  #expect(PolylineSimplifier.thinned(bent) == bent)
+  #expect(PolylineSimplifier.thinned(line) == simplified)
+  #expect(PolylineSimplifier.thinned(Array(line.prefix(PolylineSimplifier.simplifyAbovePoints))).count == PolylineSimplifier.simplifyAbovePoints)
 }
 
 /// 通信しない決定的な提供元。`-uiTesting` の画面が毎回同じ旅程を出せるのは、答えが

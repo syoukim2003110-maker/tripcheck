@@ -15,7 +15,9 @@ public struct CannedRouteProvider: RouteProvider {
     switch request.mode {
     case .walk: return .measured(minutes: max(1, Int((km * 12).rounded())), distanceMeters: meters, geometry: [request.from, mid, request.to], expectedDeparture: nil)
     case .taxi: return .measured(minutes: max(3, Int((km * 3).rounded())), distanceMeters: meters, geometry: [request.from, mid, request.to], expectedDeparture: request.departure)
-    // 公共交通は端末の地図でも ETA しか返らない(距離も線も無い)—— ここでも同じ形にする。
+    // 公共交通は端末の地図でも経路線が返らない(`calculateETA()` は所要と距離だけで、
+    // `MKPolyline` は無い)。距離はアダプタが素通しするが、ここでは伏せる —— 直線距離は
+    // 線路の長さではないので、それを距離として出すと画面に嘘の数字が乗る。
     case .transit: return .measured(minutes: max(5, Int((km * 4).rounded())), distanceMeters: nil, geometry: nil, expectedDeparture: request.departure)
     }
   }

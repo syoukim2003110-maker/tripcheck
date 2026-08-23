@@ -49,6 +49,10 @@ public final class MKDirectionsAdapter: Directing {
   nonisolated public init() {}
 
   public func directions(_ request: RouteRequest) async throws -> DirectionsAnswer {
+    // 入る前に取り消されていたら、何も立てずに返る。`CancelHandle` の一手は**一度しか引けない**
+    // ので、既に取り消された待ちに `relaying` を掛けると `onCancel` がその場で一手を使い切り、
+    // その後に走り出す `calculate()` を止める手が残らない(打ち切りの効かない問い合わせになる)。
+    try Task.checkCancellation()
     let mk = MKDirections.Request()
     mk.source = Self.mapItem(request.from)
     mk.destination = Self.mapItem(request.to)
@@ -87,11 +91,12 @@ public final class MKDirectionsAdapter: Directing {
   static func mapItem(_ point: GeoPoint) -> MKMapItem { MKMapItem(placemark: MKPlacemark(coordinate: point.clLocation)) }
 
   /// `MKPolyline` はアダプタの隔離内で `[GeoPoint]` に変換してから返す(MapKit の型を外に出さない)。
+  /// **間引きはここでしない** —— 数千点の走査は本線(MainActor)の外でやる仕事で、
+  /// `AppleRouteProvider.route` が答えを受け取ってから `PolylineSimplifier.thinned` を掛ける。
   static func geometry(_ polyline: MKPolyline) -> [GeoPoint] {
     var coordinates = [CLLocationCoordinate2D](repeating: kCLLocationCoordinate2DInvalid, count: polyline.pointCount)
     polyline.getCoordinates(&coordinates, range: NSRange(location: 0, length: polyline.pointCount))
-    let points = coordinates.map { GeoPoint(latitude: $0.latitude, longitude: $0.longitude) }
-    return points.count > PolylineSimplifier.simplifyAbovePoints ? PolylineSimplifier.simplify(points, toleranceMeters: 5) : points
+    return coordinates.map { GeoPoint(latitude: $0.latitude, longitude: $0.longitude) }
   }
 }
 
@@ -125,7 +130,8 @@ public struct AppleRouteProvider: RouteProvider {
       case .answered(let answer):
         let minutes = Int((answer.travelSeconds / 60).rounded())
         guard minutes >= 1 else { return .failed }   // 0 分は failed に読み替える(spec §5)
-        return .measured(minutes: minutes, distanceMeters: answer.distanceMeters.map { Int($0.rounded()) }, geometry: answer.geometry, expectedDeparture: answer.expectedDeparture)
+        // 長い線を間引くのはここ —— アダプタの `@MainActor` の外なので、数千点の走査で画面が待たない。
+        return .measured(minutes: minutes, distanceMeters: answer.distanceMeters.map { Int($0.rounded()) }, geometry: answer.geometry.map(PolylineSimplifier.thinned), expectedDeparture: answer.expectedDeparture)
       case .unroutable: return .unroutable
       case .throttled:
         // 3 回まで(1/2/4 秒)。使い切ったら諦める —— 待ち続けるより、次の組み立てで尋ね直す。

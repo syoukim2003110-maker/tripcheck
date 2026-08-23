@@ -10,9 +10,20 @@ import TripCheckKit
 public enum PolylineSimplifier {
   /// これ以下の点数には掛けない —— 短い線を間引いても描画は速くならず、形だけが変わる。
   public static let simplifyAbovePoints = 2000
+  /// 落としてよい膨らみの上限。5 m は歩道 1 本ぶんで、旅程の地図の縮尺では見分けが付かない。
+  public static let simplifyToleranceMeters = 5.0
+
+  /// 掛けるかどうかも含めた 1 つの入口。長い線だけ間引き、それ以外はそのまま返す ——
+  /// 閾値と物差しが 2 か所に分かれないように、呼び手はこちらを呼ぶ
+  /// (`AppleRouteProvider.route`、`@MainActor` の外)。
+  public static func thinned(_ points: [GeoPoint]) -> [GeoPoint] {
+    points.count > simplifyAbovePoints ? simplify(points, toleranceMeters: simplifyToleranceMeters) : points
+  }
 
   public static func simplify(_ points: [GeoPoint], toleranceMeters: Double) -> [GeoPoint] {
-    guard points.count > 2 else { return points }
+    // 物差しが 0 以下なら「落とせる点は無い」。負の値をそのまま通すと、始点が自分自身の
+    // 分割点になって空でない範囲を作れず(`(first + 1)..<first`)、public な入口で落ちる。
+    guard points.count > 2, toleranceMeters > 0 else { return points }
     var keep = [Bool](repeating: false, count: points.count)
     keep[0] = true
     keep[points.count - 1] = true
