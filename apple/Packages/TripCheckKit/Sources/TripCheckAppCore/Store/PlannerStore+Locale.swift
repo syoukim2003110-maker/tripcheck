@@ -21,6 +21,11 @@ extension PlannerStore {
 
   /// 一度も選んでいない旅行者の既定。`Locale.current.language.languageCode` は
   /// `Locale.LanguageCode?` で、文字列ではない。
+  ///
+  /// 呼ぶのは合成の根(`TripCheckApp.init`)だけ —— `PlannerStore.init` 自身はこれを読まず、
+  /// `initialLocale` 引数(既定 `.ja`)を受け取るだけになっている。ここで読んでいた頃は、
+  /// `defaults:` を省いた既定の入口(AppCore のテストが 152 か所使う)がまるごと走らせる
+  /// 機械の言語に化けていた。
   public static var systemLocale: PlannerLocale {
     Locale.current.language.languageCode?.identifier == "ja" ? .ja : .en
   }

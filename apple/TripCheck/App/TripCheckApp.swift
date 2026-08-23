@@ -50,7 +50,11 @@ struct TripCheckApp: App {
       resolvers: [ApplePlaceResolver(), CatalogResolver()],
       store: TripStore(directory: directory),
       storageDirectory: directory,
-      defaults: defaults
+      defaults: defaults,
+      // `Locale.current` を読むのはここだけ(合成の根)。`PlannerStore.init` 自身の既定は
+      // `.ja` に固定してあるので、AppCore のテストが作る 152 か所の store は機械の言語を
+      // 読まない。
+      initialLocale: PlannerStore.systemLocale
     ))
   }
 

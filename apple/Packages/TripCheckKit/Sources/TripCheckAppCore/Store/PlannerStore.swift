@@ -114,7 +114,8 @@ public final class PlannerStore {
     storageDirectory: URL? = nil,
     autosaveDebounce: Duration = .milliseconds(550),
     clock: any Clock<Duration> = ContinuousClock(),
-    defaults: UserDefaults = .standard
+    defaults: UserDefaults = .standard,
+    initialLocale: PlannerLocale = .ja
   ) {
     self.resolvers = resolvers
     self.store = store
@@ -122,8 +123,12 @@ public final class PlannerStore {
     self.autosaveDebounce = autosaveDebounce
     self.clock = clock
     self.defaults = defaults
-    // 言語は前に選んだものが勝ち、選んだことが無ければ端末の設定(`PlannerStore+Locale.swift`)。
-    self.request = TripRequestState.initial(locale: Self.storedLocale(in: defaults) ?? Self.systemLocale)
+    // 言語は前に選んだものが勝ち、選んだことが無ければ呼び出し元が渡した既定(`initialLocale`)。
+    // `Locale.current` はここでは読まない —— 読むのは合成の根(`TripCheckApp.init`)だけで、
+    // そこが `PlannerStore.systemLocale` を `initialLocale` として渡す。ここで読んでいた頃は、
+    // `defaults:` を省いた既定の入口(テストが 152 か所使う)がまるごと走らせる機械の言語に
+    // 化けていた。
+    self.request = TripRequestState.initial(locale: Self.storedLocale(in: defaults) ?? initialLocale)
     self.passportExpiry = defaults.string(forKey: PlannerStore.passportExpiryKey)
     self.storageUnavailable = Self.storageIsUnavailable(at: storageDirectory)
     // 入力と編集の変化を見張り始める。`view`(開閉・選択)は見張らない —— 旅程を眺めて

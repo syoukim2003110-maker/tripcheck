@@ -50,20 +50,27 @@ import TripCheckKit
   #expect(PlannerStore(resolvers: [], store: nil, defaults: suite).request.locale == .ja)
 }
 
-/// 選んだことが無ければ端末の言語。`Locale.current` は走らせる機械の設定なので、答えそのもの
-/// ではなく**引く道**を検査する —— 保存が無いときに `systemLocale` が答えになること、
-/// そして読めない値を保存が持っていても起動できること。
+/// 選んだことが無ければ**呼び出し元が渡した既定**(`initialLocale`)。`Locale.current` を
+/// 読むのは合成の根(`TripCheckApp.init`)だけで、`PlannerStore.init` 自身はそれを知らない ——
+/// ここが検査するのは合成そのもの:保存が無ければ `initialLocale` がそのまま答えになり、
+/// 保存があれば `initialLocale` に何を渡していても保存のほうが勝つこと。読めない値を保存が
+/// 持っていても起動できることも同じ 1 本で見る。
 @Test @MainActor func withoutAChoiceTheDeviceLanguageDecides() async {
   let suite = defaults("noChoice")
   #expect(PlannerStore.storedLocale(in: suite) == nil)
-  #expect([PlannerLocale.ja, .en].contains(PlannerStore.systemLocale))
-  #expect(PlannerStore(resolvers: [], store: nil, defaults: suite).request.locale == PlannerStore.systemLocale)
+  #expect(PlannerStore(resolvers: [], store: nil, defaults: suite, initialLocale: .en).request.locale == .en)
 
   suite.set("en", forKey: PlannerStore.localeKey)
   #expect(PlannerStore.storedLocale(in: suite) == .en)
   suite.set("klingon", forKey: PlannerStore.localeKey)
   #expect(PlannerStore.storedLocale(in: suite) == nil)   // 読めない値は無かったことにする
-  #expect(PlannerStore(resolvers: [], store: nil, defaults: suite).request.locale == PlannerStore.systemLocale)
+  #expect(PlannerStore(resolvers: [], store: nil, defaults: suite, initialLocale: .en).request.locale == .en)
+
+  suite.set("ja", forKey: PlannerStore.localeKey)
+  #expect(PlannerStore.storedLocale(in: suite) == .ja)
+  // 保存してある選択は、渡された既定が何であっても勝つ —— `initialLocale: .en` を渡しても
+  // 保存の `ja` が答えになる。
+  #expect(PlannerStore(resolvers: [], store: nil, defaults: suite, initialLocale: .en).request.locale == .ja)
 }
 
 /// 走っている組み立ては切り替えで捨てる —— 切り替える前の言葉で組んだ束が、切り替えた後の
@@ -87,29 +94,50 @@ import TripCheckKit
   #expect(store.request.locale == .en)
 }
 
-/// **この test target は日本語の機械を前提にしている。**
-///
-/// 既定の `PlannerStore(resolvers:store:)` は `defaults:` を渡されないと `UserDefaults.standard`
-/// を読み、そこに選択が無ければ `systemLocale`(= `Locale.current`)で立つ。AppCore の
-/// テストは 152 か所がその入口で store を作り、日本語の文言を名指しで表明している ——
-/// 英語の機械で `swift test` を回すと、そこが原因の分からない 20 本超の赤になる。
-///
-/// この 1 本はその赤に**名前を付ける**ためだけに在る。直すなら、152 か所へ言語を渡すか、
-/// test target 全体に効く Swift Testing の trait で `Locale` を固定する(どちらも Task 14 の
-/// 範囲を超えるので、README の「回す」節に前提として書いてある)。
-@Test @MainActor func theseTestsAssumeAJapaneseDevice() {
-  #expect(
-    PlannerStore.systemLocale == .ja,
-    "AppCore のテストは端末の言語が日本語であることを前提にしている（システム環境設定の優先言語を日本語にして回す）"
-  )
-}
-
 /// 言語は旅ではなく人に属する。新しい旅を始めても訊き直さない。
 @Test @MainActor func theLanguageSurvivesStartingANewTrip() async {
   let store = PlannerStore(resolvers: [], store: nil, defaults: defaults("survivesReset"))
   store.changeLocale(.en)
   store.reset()
   #expect(store.request.locale == .en)
+}
+
+/// 保存した旅を開き直しても同じ道理。旅は ja で保存してあっても、開く**人**が en を選んで
+/// いれば en のまま開く —— `openTrip` が保存してある `input.tripRequestState().locale`
+/// (旅の言語)をそのまま採用すると、開いた瞬間に人の選択を踏みつぶす(Important 2)。
+///
+/// 言語を選ぶ側は `store: nil` の別の `PlannerStore`(`defaults` だけ共有)で作る —— 旅を
+/// 保存した store で `changeLocale` まで呼ぶと、その変化がまた自動保存を起こして旅の記録
+/// 自体が en に書き換わり、「開き直しが人の選択を勝たせている」のか「そもそも旅が en で
+/// 保存されていた」のか見分けが付かなくなる。
+@Test @MainActor func openingASavedTripKeepsTheTravellersStoredLanguage() async throws {
+  let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+  let suite = defaults("openKeepsStored")
+
+  let saver = PlannerStore(
+    resolvers: [],
+    store: TripStore(directory: dir),
+    autosaveDebounce: .milliseconds(10),
+    defaults: suite
+  )
+  saver.loadSample(.switzerland)                  // ja のまま保存する
+  #expect(saver.request.locale == .ja)
+
+  var id: String?
+  for _ in 0..<250 {
+    await saver.loadRecent()
+    if let first = saver.recentTrips.first { id = first.id; break }
+    try? await Task.sleep(for: .milliseconds(20))
+  }
+  guard let tripId = id else { Issue.record("nothing saved"); return }
+
+  let chooser = PlannerStore(resolvers: [], store: nil, defaults: suite)
+  chooser.changeLocale(.en)                       // 人が en を選ぶ(保存には残るが旅は動かない)
+  #expect(suite.string(forKey: PlannerStore.localeKey) == "en")
+
+  let reopener = PlannerStore(resolvers: [], store: TripStore(directory: dir), defaults: suite)
+  await reopener.openTrip(id: tripId)             // 保存してあった旅は ja のまま
+  #expect(reopener.request.locale == .en)         // だが答えは人の選択
 }
 
 // MARK: - 支度

@@ -17,24 +17,30 @@ import TripCheckKit
  * `AppCopy.swift`(文言の表そのもの)。
  */
 
-@Test func noViewFileContainsJapaneseSentenceLiterals() throws {
+@Test func noViewFileContainsJapaneseOrEnglishSentenceLiterals() throws {
   let japanese = try JSRegex("[぀-ヿ㐀-鿿]")
-  let inline = try JSRegex("Text\\(\"([^\"]{12,})\"\\)")
   var scanned = 0
 
   for file in try SwiftSources.underScan() {
     scanned += 1
 
-    for literal in SwiftSource.stringLiterals(file.text) where japanese.test(literal.text) {
-      // 正規表現は文ではなく**文法**である。日本の住所を切る `AppleAddress` の 2 本
-      //(「北海道|東京都|…県」と「^[^\s,、市区町村]{1,8}[市区町村]」)は旅行者に見せる語では
-      // なく、MapKit が返した住所の形なので、文言の表には置けない。
-      guard !literal.isRegexSource else { continue }
-      Issue.record("\(file.name): 日本語のリテラル \"\(literal.text)\" —— AppCopy へ移すか Kit の Copy 鍵を使う")
-    }
+    for literal in SwiftSource.stringLiterals(file.text) {
+      if japanese.test(literal.text) {
+        // 正規表現は文ではなく**文法**である。日本の住所を切る `AppleAddress` の 2 本
+        //(「北海道|東京都|…県」と「^[^\s,、市区町村]{1,8}[市区町村]」)は旅行者に見せる語では
+        // なく、MapKit が返した住所の形なので、文言の表には置けない。
+        guard !literal.isRegexSource else { continue }
+        Issue.record("\(file.name): 日本語のリテラル \"\(literal.text)\" —— AppCopy へ移すか Kit の Copy 鍵を使う")
+      }
 
-    for match in inline.matches(in: SwiftSource.withoutComments(file.text)) {
-      Issue.record("\(file.name): inline Text literal \(match.groups[0] ?? "")")
+      // `Text("…")` に直接座った長い文だけを見る。差し込み(`\(…)`)は走査そのものが 1 文字の
+      // 空白へ畳むので数に入らない —— `Text("\(day.index + 1)")` のような数の埋め込みを、
+      // 引用符を数えるだけの正規表現(旧実装)は「12 文字の文」と誤って読み、`MapLegend` は
+      // それを避けるためだけに `.formatted()` へ書き換えられていた。字句の走査(`context` /
+      // `text`)自身の判定に置き換えれば、その誤検知は起きない。
+      if literal.context.hasSuffix("Text(") && literal.text.count >= 12 {
+        Issue.record("\(file.name): inline Text literal \(literal.text)")
+      }
     }
   }
 
@@ -63,7 +69,6 @@ import TripCheckKit
 /// 2 つは「1 件も見つからなかった」と「1 文字も読まなかった」を同じ緑で返す。
 @Test func theScanReadsLiteralsAndIgnoresComments() throws {
   let japanese = try JSRegex("[぀-ヿ㐀-鿿]")
-  let inline = try JSRegex("Text\\(\"([^\"]{12,})\"\\)")
 
   let planted = """
   // 「元に戻す」はトーストに乗る —— この行は文言ではない
@@ -75,7 +80,10 @@ import TripCheckKit
   #expect(literals.map(\.text) == ["この行は文言の表の外に居ます"])
   #expect(japanese.test(literals[0].text))
   #expect(!literals[0].isRegexSource)
-  #expect(!inline.matches(in: SwiftSource.withoutComments(planted)).isEmpty)
+  // inline の `Text(...)` 判定は文脈(直前が `Text(`)と長さ(12 文字以上)を字句の走査自身が
+  // 持つ情報だけで見る —— 正規表現で引用符を数え直さない。
+  #expect(literals[0].context.hasSuffix("Text("))
+  #expect(literals[0].text.count >= 12)
   // コメントの中の日本語はリテラルではないし、剥がした後の地の文にも残らない。
   #expect(!japanese.test(SwiftSource.withoutComments(planted)
     .replacingOccurrences(of: "この行は文言の表の外に居ます", with: "")))
@@ -87,6 +95,15 @@ import TripCheckKit
   // 差し込みの中の文字列で崩れない(`ApplePlaceResolver` の id はこの形)。
   let nested = "let id = \"apple-\\(index)-\\(hash(\"\\(name)|\\(lat)\"))\""
   #expect(SwiftSource.stringLiterals(nested).count == 2)
+
+  // 数の差し込みだけの `Text(...)` は違反ではない —— `\(day.index + 1)` は走査そのものが
+  // 1 文字の空白へ畳むので、12 文字の閾値に届かない。引用符を数えるだけの正規表現なら
+  // ここで誤って「12 文字の文」に見える(`MapLegend` が一度 `.formatted()` へ逃げた理由)。
+  let interpolationOnly = SwiftSource.stringLiterals("Text(\"\\(day.index + 1)\")")
+  #expect(interpolationOnly.count == 1)
+  #expect(interpolationOnly[0].context.hasSuffix("Text("))
+  #expect(interpolationOnly[0].text.count < 12)
+
   // 禁止語の検査そのものが効いている(この token 自体はテストのソースにも書かない ——
   // 「実」で始まる 2 字の語は `BannedTerms.rules` の 1 本目が持っている)。
   #expect(BannedTerms.violations(in: "この日の判定保留は解けていません").count == 1)

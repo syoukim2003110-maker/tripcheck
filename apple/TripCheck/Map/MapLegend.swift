@@ -75,7 +75,7 @@ struct MapLegend: View {
         let color = Tokens.Day.color(hex: day.colorHex)
         let isSelected = day.index == store.view.selectedDay
         Button { store.selectDay(day.index) } label: {
-          Text((day.index + 1).formatted())
+          Text("\(day.index + 1)")
             .tcFont(.label)
             .foregroundStyle(isSelected ? Tokens.Color.panel : color)
             .lineLimit(1)
@@ -126,7 +126,7 @@ struct MapLegend: View {
 
   /// 番号入りの丸(予定地点の見本)。選んでいる日の色で出す。
   private var numberSample: some View {
-    Text((store.view.selectedDay + 1).formatted())
+    Text("\(store.view.selectedDay + 1)")
       .tcFont(.label)
       .foregroundStyle(Tokens.Color.panel)
       .lineLimit(1)

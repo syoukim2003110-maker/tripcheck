@@ -128,6 +128,12 @@ extension PlannerStore {
     reset()
     currentTripId = record.id
     request = input.tripRequestState()
+    // 言語は旅ではなく人に属する(`reset()` のコメントのとおり)。`input.tripRequestState()`
+    // は保存してあった**旅の**言語を持ってくるので、そのままでは開いた瞬間に旅行者の選択を
+    // 踏みつぶす —— 人が選んで残してある言語(`storedLocale`)があればそちらが勝ち、旅の
+    // 言語は何も選んでいないとき(初めてのアプリでリンクから旅を受け取った、など)だけの
+    // 拠り所になる。
+    request.locale = Self.storedLocale(in: defaults) ?? request.locale
     edit = edits.editState()
     // 開き直している間にリンクが開いていたら、ここで止める —— そのまま組むと、いま画面に
     // 入ったばかりの旅程を、保存してあった別の旅の答えで上書きすることになる。

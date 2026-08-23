@@ -16,7 +16,7 @@ apple/tools/verify-kit.sh --filter Golden # そのほかの引数は swift test 
 
 並列を既定にしているのは、この suite が**並列で緑であること自体が検査対象**だから。実時計に触るテストが混ざると機械の忙しさで答えが変わる —— 照合系(G1/G3)は `Tests/TripCheckKitTests/Support/FrozenClock.swift` の止まった時計を使い、予算切れの側は `TestStops.timedOutTriple()` の刻む時計が受け持つ。
 
-`TripCheckAppCoreTests` は**端末の言語が日本語である機械**を前提にしている。`PlannerStore` は `UserDefaults["tripcheck-locale"]` に選択が無ければ `Locale.current` で立ち上がり(`Store/PlannerStore+Locale.swift`)、AppCore のテストは 152 か所がその既定の入口で store を作って日本語の文言を表明するため、英語の機械では 20 本超が落ちる。`theseTestsAssumeAJapaneseDevice` がその理由を名指しで落ちるので、赤の読み方に迷わない。
+`Locale.current` を読むのは `TripCheckApp.init`(合成の根)だけ —— `PlannerStore.init` は `initialLocale` 引数(既定 `.ja`)を受け取るだけで、走らせる機械の言語を読まない。`swift test` はどの機械の言語設定でも同じ緑になる。
 
 アプリ側は XcodeGen(`~/.local/xcodegen/bin/xcodegen`、2.46)が要る。
 
@@ -99,7 +99,6 @@ accessibility5 で見つけて直したものは 4 つ。時刻の列(`ActivityC
 
 - **紙の境目が行の途中に落ちると、その行が上下に割れる**(Task 13)。`PDFExporter` が `proposedSize` の高さで切るため。情報は両ページに揃うが見た目が悪い。直すなら塊単位で詰めるか、切り位置を空白の帯まで繰り上げる。
 - **`https://…#t=<code>` は Web でしか開かない。** アプリが受けるのは `tripcheck://t/<code>` だけで、Associated Domains(`applinks:`)は入れていない —— 有料アカウントのドメイン設定が要るので、配布の話と一緒に決める。
-- **AppCore のテストは日本語の機械を前提にしている**(上の「回す」節)。152 か所の store 生成に言語を渡すか、test target 全体に効く trait で `Locale` を固定すれば消える。
 - **食事の枠に店の候補は出ない**(枠そのものは事実なので行は残る)。次の spec。
 
 ## TS 側のフィクスチャを作り直す
