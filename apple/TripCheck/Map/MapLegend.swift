@@ -18,6 +18,8 @@ struct MapLegend: View {
   @Environment(PlannerStore.self) private var store
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var isOpen = true
+  /// 「全日程 | この日」の幅。札は字と一緒に伸びるので、枠も伸ばす。
+  @ScaledMetric(relativeTo: .caption2) private var scopeWidth: CGFloat = 190
 
   var body: some View {
     let text = Copy.for(store.request.locale)
@@ -53,7 +55,9 @@ struct MapLegend: View {
           groupLabel: app.mapScopeLabel,
           onSelect: { scope = $0 }
         )
-        .frame(maxWidth: 190)
+        // 190pt は既定の文字サイズでの幅。字と一緒に広げないと、accessibility5 で
+        // 「全日程」が 1 文字ずつ縦に折れた(シミュレータで撮った)。
+        .frame(maxWidth: scopeWidth)
       }
     }
     .padding(10)
@@ -71,9 +75,11 @@ struct MapLegend: View {
         let color = Tokens.Day.color(hex: day.colorHex)
         let isSelected = day.index == store.view.selectedDay
         Button { store.selectDay(day.index) } label: {
-          Text("\(day.index + 1)")
+          Text((day.index + 1).formatted())
             .tcFont(.label)
             .foregroundStyle(isSelected ? Tokens.Color.panel : color)
+            .lineLimit(1)
+            .minimumScaleFactor(0.5)
             .frame(width: 24, height: 24)
             .background(Circle().fill(isSelected ? color : Tokens.Color.panel))
             .overlay(Circle().stroke(color, lineWidth: 1.5))
@@ -120,9 +126,11 @@ struct MapLegend: View {
 
   /// 番号入りの丸(予定地点の見本)。選んでいる日の色で出す。
   private var numberSample: some View {
-    Text("\(store.view.selectedDay + 1)")
+    Text((store.view.selectedDay + 1).formatted())
       .tcFont(.label)
       .foregroundStyle(Tokens.Color.panel)
+      .lineLimit(1)
+      .minimumScaleFactor(0.5)
       .frame(width: 18, height: 18)
       .background(Circle().fill(Tokens.Day.color(index: store.view.selectedDay)))
   }

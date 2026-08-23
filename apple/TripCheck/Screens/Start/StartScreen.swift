@@ -134,15 +134,28 @@ private struct BrandHeader: View {
   let destination: DestinationChoice
 
   var body: some View {
-    let text = Copy.for(locale)
-    HStack(alignment: .firstTextBaseline, spacing: 8) {
-      Text(verbatim: "TripCheck")
-        .tcFont(.display)
-        .foregroundStyle(Tokens.Color.ink)
-      Text(text.brandNote(destinationName))
-        .tcFont(.meta)
-        .foregroundStyle(Tokens.Color.muted)
+    // 名札は**語の途中で折らない**。決め打ちの横並びのままだと、accessibility5 で
+    // 「TripChe / ck」と割れ、但し書きが 1 行目の右にぶら下がった(シミュレータで撮った)。
+    // 横に入らなければ 2 段に落とし、それでも入らなければ字のほうを縮める。
+    ViewThatFits(in: .horizontal) {
+      HStack(alignment: .firstTextBaseline, spacing: 8) { wordmark; note }
+      VStack(alignment: .leading, spacing: 4) { wordmark; note }
     }
+  }
+
+  private var wordmark: some View {
+    Text(verbatim: "TripCheck")
+      .tcFont(.display)
+      .foregroundStyle(Tokens.Color.ink)
+      .lineLimit(1)
+      .minimumScaleFactor(0.5)
+  }
+
+  private var note: some View {
+    Text(Copy.for(locale).brandNote(destinationName))
+      .tcFont(.meta)
+      .foregroundStyle(Tokens.Color.muted)
+      .fixedSize(horizontal: false, vertical: true)
   }
 
   /// `auto` と `worldwide` は国の名前を出さない —— Kit の `brandNote` は空文字を渡すと

@@ -16,6 +16,11 @@ struct StopInspector: View {
   @Environment(PlannerStore.self) private var store
   let stopId: String
 
+  /// 番号の丸は字と一緒に伸びる。決め打ちの 24pt のままだと、accessibility5 で中の数が
+  /// 欠ける(`ActivityCard` と同じ)—— 上限は 44pt。
+  @ScaledMetric(relativeTo: .caption2) private var rawBadgeSize: CGFloat = 24
+  private var badgeSize: CGFloat { min(rawBadgeSize, 44) }
+
   var body: some View {
     let text = Copy.for(store.request.locale)
     let app = AppCopy.for(store.request.locale)
@@ -59,7 +64,9 @@ struct StopInspector: View {
       Text(String(model.number))
         .tcFont(.label)
         .foregroundStyle(Tokens.Color.panel)
-        .frame(width: 24, height: 24)
+        .lineLimit(1)
+        .minimumScaleFactor(0.5)
+        .frame(width: badgeSize, height: badgeSize)
         .background(Circle().fill(Tokens.Day.color(index: model.dayIndex)))
       VStack(alignment: .leading, spacing: 2) {
         Text(model.name)

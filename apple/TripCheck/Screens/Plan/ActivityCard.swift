@@ -14,13 +14,23 @@ struct ActivityCard: View {
   @Environment(PlannerStore.self) private var store
   let model: ActivityModel
 
+  /// 時刻の列と番号の丸は**字と一緒に伸びる**。決め打ちの 44pt / 22pt のままだと、
+  /// accessibility5 で「09:00」が 1 文字ずつ縦に折れ、丸の中の数が欠ける(シミュレータで
+  /// 撮った)。上限を置くのは、伸ばしきると名前の欄が画面から押し出されるため。
+  @ScaledMetric(relativeTo: .footnote) private var rawTimeWidth: CGFloat = 44
+  @ScaledMetric(relativeTo: .caption2) private var rawMarkerSize: CGFloat = 22
+  private var timeWidth: CGFloat { min(rawTimeWidth, 96) }
+  private var markerSize: CGFloat { min(rawMarkerSize, 40) }
+
   var body: some View {
     Button { store.openInspector(.stop(model.stopId)) } label: {
       HStack(alignment: .top, spacing: 10) {
         Text(model.time)
           .tcFont(.meta)
           .foregroundStyle(Tokens.Color.muted)
-          .frame(width: 44, alignment: .leading)
+          .lineLimit(1)
+          .minimumScaleFactor(0.7)
+          .frame(width: timeWidth, alignment: .leading)
         marker
         VStack(alignment: .leading, spacing: 2) {
           Text(model.name)
@@ -66,9 +76,11 @@ struct ActivityCard: View {
         Text(model.number.formatted())
           .tcFont(.label)
           .foregroundStyle(Tokens.Color.panel)
+          .lineLimit(1)
+          .minimumScaleFactor(0.5)
       }
     }
-    .frame(width: 22, height: 22)
+    .frame(width: markerSize, height: markerSize)
   }
 
   /// 状態の旗(予約の時刻・遅れ・必須・その日休み・最終入場後)。数は 2 つまでしか立たない

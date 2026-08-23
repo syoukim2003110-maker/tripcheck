@@ -12,12 +12,18 @@ import TripCheckAppCore
 struct MealRow: View {
   let model: MealModel
 
+  /// 時刻の列は字と一緒に伸びる(`ActivityCard` と同じ理由・同じ上限)。
+  @ScaledMetric(relativeTo: .footnote) private var rawTimeWidth: CGFloat = 44
+  private var timeWidth: CGFloat { min(rawTimeWidth, 96) }
+
   var body: some View {
     HStack(spacing: 10) {
       Text(model.time)
         .tcFont(.meta)
         .foregroundStyle(Tokens.Color.muted)
-        .frame(width: 44, alignment: .leading)
+        .lineLimit(1)
+        .minimumScaleFactor(0.7)
+        .frame(width: timeWidth, alignment: .leading)
       IconView(.fork, size: 14, color: Tokens.Color.recommendation)
       Text(model.label)
         .tcFont(.body)

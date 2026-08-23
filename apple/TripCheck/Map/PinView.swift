@@ -52,9 +52,13 @@ struct PinView: View {
     switch pin.kind {
     case .anchor, .warning, .manual:
       filled(color) {
+        // 丸そのものは 32pt のまま(地図が点で埋まらないように)。字だけが Dynamic Type で
+        // 伸びるので、**縮めて中に収める** —— accessibility5 で番号が丸からはみ出した。
         Text(pin.label)
           .tcFont(.label)
           .foregroundStyle(Tokens.Color.panel)
+          .lineLimit(1)
+          .minimumScaleFactor(0.5)
       }
     case .hotel:
       // ホテルはどの日のものでもない —— 毎日そこから出て、そこへ帰る 1 点なので、
@@ -98,6 +102,8 @@ struct PinView: View {
     Text(verbatim: "!")
       .tcFont(.label)
       .foregroundStyle(Tokens.Color.panel)
+      .lineLimit(1)
+      .minimumScaleFactor(0.5)
       .frame(width: 14, height: 14)
       .background(Circle().fill(Tokens.Color.danger))
       .overlay(Circle().stroke(Tokens.Color.panel, lineWidth: 1.5))
@@ -117,19 +123,27 @@ struct PinView: View {
 }
 
 #Preview {
-  HStack(spacing: 12) {
+  // 読み上げの文は本物と同じ道で組む(`AppCopy.mapPinLabel` + Kit の凡例語)—— 見本のために
+  // 日本語を打ち込むと、その 1 行だけが文言の表の外で暮らすことになる。
+  let text = Copy.for(.ja)
+  let app = AppCopy.for(.ja)
+  func label(_ name: String, _ kind: String) -> String { app.mapPinLabel(name: name, kind: kind) }
+
+  return HStack(spacing: 12) {
     PinView(pin: MapPin(id: "a", stopId: "a", coordinate: .init(latitude: 0, longitude: 0), kind: .anchor(number: 3),
-                        dayIndex: 0, colorHex: "#2563EB", label: "3", a11y: "ツェルマット、予定地点"))
+                        dayIndex: 0, colorHex: "#2563EB", label: "3", a11y: label("Zermatt", text.legendAnchor)))
     PinView(pin: MapPin(id: "w", stopId: "w", coordinate: .init(latitude: 0, longitude: 0), kind: .warning,
-                        dayIndex: 1, colorHex: "#7C3AED", label: "2", a11y: "ベルン旧市街、注意地点"), highlighted: true)
+                        dayIndex: 1, colorHex: "#7C3AED", label: "2", a11y: label("Bern Old Town", app.mapPinWarning)), highlighted: true)
     PinView(pin: MapPin(id: "h", stopId: nil, coordinate: .init(latitude: 0, longitude: 0), kind: .hotel,
-                        dayIndex: 0, colorHex: "#2563EB", label: "", a11y: "ホテル、ホテル"))
+                        dayIndex: 0, colorHex: "#2563EB", label: "", a11y: label(app.mapPinHotel, app.mapPinHotel)))
     PinView(pin: MapPin(id: "f", stopId: "f", coordinate: .init(latitude: 0, longitude: 0), kind: .filler,
-                        dayIndex: 2, colorHex: "#C2410C", label: "", a11y: "おすすめ、おすすめ地点"))
+                        dayIndex: 2, colorHex: "#C2410C", label: "", a11y: label(text.legendSuggestion, text.legendSuggestion)))
     PinView(pin: MapPin(id: "m", stopId: nil, coordinate: .init(latitude: 0, longitude: 0), kind: .meal(.lunch),
-                        dayIndex: 2, colorHex: "#C2410C", label: "", a11y: "昼食、昼食のおすすめ"))
+                        dayIndex: 2, colorHex: "#C2410C", label: "",
+                        a11y: label(TimelinePresentation.fillerRowLabel(.lunch, locale: .ja),
+                                    TimelinePresentation.fillerRowLabel(.lunch, locale: .ja))))
     PinView(pin: MapPin(id: "p", stopId: "p", coordinate: .init(latitude: 0, longitude: 0), kind: .manual,
-                        dayIndex: 3, colorHex: "#15803D", label: "4", a11y: "自分の点、自分で指定した地点"))
+                        dayIndex: 3, colorHex: "#15803D", label: "4", a11y: label(app.mapPinManual, app.mapPinManual)))
   }
   .padding()
   .background(Tokens.Color.bg)
