@@ -85,11 +85,13 @@ extension PlannerStore {
   /// 取りに行くものは無いが、キャッシュをまだ旅程が消費していないときの置換。世代を進めて
   /// この task を `routeTask` の持ち主にする(連鎖の外側の task の末尾に畳まれないため)。
   private func scheduleRouteReplacement(chainDepth: Int) {
+    routeTask?.cancel()   // 上書きする前に畳む。持ち主が替わる合図は世代だが、走らせ続ける理由は無い
     routeGeneration += 1
     let generation = routeGeneration
     routeTask = Task { [weak self] in
-      await self?.replaceWithLiveRoutes(chainDepth: chainDepth)
-      guard let self, routeGeneration == generation else { return }
+      guard let self, routeGeneration == generation, !Task.isCancelled else { return }
+      await replaceWithLiveRoutes(chainDepth: chainDepth)
+      guard routeGeneration == generation else { return }
       routeTask = nil
     }
   }
@@ -107,7 +109,10 @@ extension PlannerStore {
   /// 再発火しない)。`history` にも触れない(編集ではない)。
   func replaceWithLiveRoutes(chainDepth: Int) async {
     guard let before = bundle else { return }
-    if pendingApply != nil { deferredRouteReplacement = chainDepth; return }
+    // 問いかけが開いている間は保留する。**旅行者が頼んだ組み直しが走っている間も同じ** ——
+    // あちらも「世代を進めてから待つ」形なので、ここで世代を進めると、返ってきた答えが
+    // あちらの世代ガードで落ちて、押した手が何も起こさずに消える(spec §4.5.2)。
+    if pendingApply != nil || rebuildsInFlight > 0 { deferredRouteReplacement = chainDepth; return }
     let req = tripRequest()
     buildGeneration += 1
     let generation = buildGeneration
@@ -124,10 +129,15 @@ extension PlannerStore {
     startRouteEnrichment(chainDepth: chainDepth + 1)   // 日割りが変わって新しいレグが出ていれば次の世代で
   }
 
-  /// ダイアログが閉じたときに呼ぶ(`confirmPendingEdit` の捨てる枝 / `cancelPendingEdit`)。
+  /// 保留した置換を通す。ダイアログが閉じたとき(`confirmPendingEdit` の捨てる枝 /
+  /// `cancelPendingEdit`)と、旅行者の組み直しが終わったとき(3 本の `defer`)に呼ぶ。
   func resumeDeferredRouteReplacement() {
     guard let depth = deferredRouteReplacement else { return }
     deferredRouteReplacement = nil
+    // 待っている間に済んでいることが多い —— 組み直しの `tripRequest()` は `liveRoutes` を
+    // 畳むので、待たせた相手が採用した旅程はもう測った分を消費している。同じものをもう一度
+    // 組んで「実経路で更新しました」を出す理由は無い(走っている取得を畳むのも無駄)。
+    guard !liveRoutesAreAdopted else { return }
     scheduleRouteReplacement(chainDepth: depth)
   }
 

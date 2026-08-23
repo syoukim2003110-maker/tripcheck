@@ -173,7 +173,7 @@ public protocol RecommendationSource: Sendable {
 ### 4.5 置換(静かな再ビルド)
 
 1. この世代の全リクエストが収束(回答・失敗・締切)したら、`liveRoutes` に新しい回答が 1 つでもある場合だけ進む。
-2. `pendingApply != nil`(確認ダイアログが開いている)なら保留し、ダイアログが閉じた時点で再開。
+2. `pendingApply != nil`(確認ダイアログが開いている)なら保留し、ダイアログが閉じた時点で再開。**旅行者が頼んだ組み直し(`build()` / `applyGuardedEdit` / `adoptHistoryPresent`)が走っている間も同様に保留し、その組み直しが終わった時点で再開する** —— どちらも `buildGeneration` を進めてから待つので、その間に置換が世代を進めると旅行者の一手が自分の世代ガードで落ち、押しても何も起きない(再開時に既に `liveRoutes` が反映済みなら、置換そのものを取り止める)。
 3. `buildGeneration` を進めて捕捉 → `Task.detached { BuildRunner.run(tripRequest()) }` → `buildGate` → 世代一致を確認 → `adopt`(**`build()` は呼ばない**: `.building` を挟まず、読み上げを再発火しない)。
 4. `history` には触れない(編集ではない)。`historyPointsAtTheCurrentEdit` は `edit` が不変なので真のまま。
 5. トースト: `AppCopy.routesUpdatedToast` + `VerdictCopy.bufferToastDetail(delta)`(`before.plan` と `after.plan` の最小余裕差)。`canUndo: false`。`view.announcement` は更新しない(ヒーローが変わる場合は既存の `.onChange` が拾う)。

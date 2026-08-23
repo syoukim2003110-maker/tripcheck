@@ -131,6 +131,16 @@ public final class PlannerStore {
   /// 確認ダイアログが開いていて置換を保留した連鎖の深さ。閉じたときに再開する。
   @ObservationIgnored var deferredRouteReplacement: Int?
 
+  /// 旅行者が頼んだ組み直しのうち、まだ答えが返っていない本数。
+  ///
+  /// **置換はこれが 0 のときしか始めない。** 組み直す 3 本(`build()` / `applyGuardedEdit` /
+  /// `adoptHistoryPresent`)はどれも「`buildGeneration` を進めてから待つ」形で、待っている間に
+  /// 置換が割り込んで世代を進めると、返ってきた答えが自分の世代ガードで落ちる —— 旅行者から
+  /// 見ると、押したのに何も起きない(トーストも問いかけも出ない)。世代を捕捉するだけでは
+  /// 直らない: 捕捉した世代で置換が採用すると、今度は間に入った編集を測る前の旅程で上書きする。
+  /// 先に始まった旅行者の一手が勝ち、置換はその後ろに並ぶ(`deferredRouteReplacement`)。
+  @ObservationIgnored var rebuildsInFlight = 0
+
   /// 置換した回数(テストが「1 回だけ」を数えるため)。
   @ObservationIgnored var routeReplacements = 0
 
@@ -251,6 +261,12 @@ public final class PlannerStore {
   /// 旅程を組む。組んでいる間に入力が変わったら、**先に始まったほうの答えは捨てる** ——
   /// そうしないと、遅く返ってきた古い旅程が新しい入力を上書きして、画面と入力がずれる。
   public func build() async {
+    // 旅行者が頼んだ組み直し。終わるまで置換は始まらず、終わったところで並んでいた置換を通す。
+    rebuildsInFlight += 1
+    defer {
+      rebuildsInFlight -= 1
+      resumeDeferredRouteReplacement()
+    }
     buildTask?.cancel()
     buildGeneration += 1
     // 走っている取得は、これから組む旅程のものではない。キャッシュは残す —— 同じレグを

@@ -97,6 +97,12 @@ extension PlannerStore {
     allowDropStopId: String?,
     sideEffects: GuardedEditSideEffects
   ) async {
+    // 旅行者が頼んだ組み直し。終わるまで置換は始まらず、終わったところで並んでいた置換を通す。
+    rebuildsInFlight += 1
+    defer {
+      rebuildsInFlight -= 1
+      resumeDeferredRouteReplacement()
+    }
     // 比べる相手が無ければ守りようがない。旅程が組み上がる前の変更は Start 画面の仕事。
     guard let before = bundle else { return }
     var candidate = edit
@@ -224,6 +230,10 @@ extension PlannerStore {
   /// 滞在時間と到着時刻が食い違う。
   public func undo() async {
     guard canUndo else { return }
+    // 並んでいた置換はここで捨てる。**戻す操作の後ろに置換を並べない** —— 下の組み直しは
+    // `tripRequest()` を通るので測った分は自分で畳み込むし、置換を通すと戻した直後に
+    // 「実経路で更新しました」が出て、開いていたシートを閉じる手当ても飛ばされる。
+    deferredRouteReplacement = nil
     // 訊きかけの問いは、その答えが指す旅程ごと消える。
     cancelPendingEdit()
     history = history.undo()
@@ -232,6 +242,7 @@ extension PlannerStore {
 
   public func redo() async {
     guard canRedo else { return }
+    deferredRouteReplacement = nil   // `undo()` と同じ理由
     cancelPendingEdit()
     history = history.redo()
     await adoptHistoryPresent()
@@ -242,6 +253,12 @@ extension PlannerStore {
   /// 押した側(ツールバーとシェイク)が出す:同じ状態へ 2 度戻ったときにも必ず鳴るように、
   /// 文の変化ではなく操作そのものに紐づける。
   private func adoptHistoryPresent() async {
+    // 旅行者が頼んだ組み直し。終わるまで置換は始まらず、終わったところで並んでいた置換を通す。
+    rebuildsInFlight += 1
+    defer {
+      rebuildsInFlight -= 1
+      resumeDeferredRouteReplacement()
+    }
     dismissToast()
     edit = history.present
     // 日数は `request` にも居る(R6)。片方だけ戻すと、旅程は 3 日なのに次の組み立てが
