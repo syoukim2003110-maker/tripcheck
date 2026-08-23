@@ -97,6 +97,14 @@ struct PlanScreen: View {
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
     }
+    // 紙にする 1 枚。**低い高さで足りる** —— この画面が持っているのは受け渡しだけで、
+    // 何を載せるかの選択が無い(紙には全部載る)。共有の 1 枚が全画面なのと対になる:
+    // あちらは 4 つの選択を先に見せなければならず、こちらは見せるものが 2 行しかない。
+    .sheet(isPresented: $store.view.printOpen) {
+      PrintSheet()
+        .presentationDetents([.fraction(0.3), .large])
+        .presentationDragIndicator(.visible)
+    }
     // 重い結果の出る編集は**先に訊く**(v1.1 TC-007)。題は Kit が決める —— 新しい損傷が
     // ちょうど 1 件の予約遅れなら「この変更で予約に N 分遅れます」、それ以外は編集ごとの
     // 問いかけがそのまま残る(`PlannerEdits.confirmTitle`)。

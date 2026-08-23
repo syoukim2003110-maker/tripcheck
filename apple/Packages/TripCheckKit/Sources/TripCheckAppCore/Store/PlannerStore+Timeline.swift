@@ -300,7 +300,10 @@ extension PlannerStore {
   /// 停留所 id → 滞在時間が誰の言い分か。物証の一覧(`duration:<id>`)が唯一の持ち主で、
   /// `edit.userStayMinutes` を直に見ない —— 見ると、指定を入れた直後で**まだ組み直して
   /// いない**旅程に「滞在」と書いてしまう(数はまだ前の見積もりのまま)。
-  private func durationEvidenceByStopId() -> [String: DurationEvidenceStatus] {
+  ///
+  /// 印刷の 1 枚(`PlannerStore+Print.swift`)も同じ表を読む —— 紙と画面で滞在の言い方が
+  /// 割れると、同じ場所が画面では「滞在の目安 1時間」、紙では「滞在 1時間」になる。
+  func durationEvidenceByStopId() -> [String: DurationEvidenceStatus] {
     guard let bundle else { return [:] }
     let prefix = "duration:"
     var out: [String: DurationEvidenceStatus] = [:]

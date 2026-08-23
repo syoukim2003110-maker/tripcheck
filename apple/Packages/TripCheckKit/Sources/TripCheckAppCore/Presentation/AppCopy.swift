@@ -277,6 +277,24 @@ public struct AppCopy: Sendable {
   /// 何も変わっていないので、直しかたを促す文にしない。
   public let shareImportFailed: String
 
+  // MARK: - 印刷(Task 13)
+
+  /// 紙の上の衝突の節の見出し。Web は印刷シートの中に直書きしていて(`TripPrintSheet.tsx:92`)、
+  /// Kit の `PlannerCopy` には対応する鍵が無い。
+  public let printConflictsHeading: String
+  /// 紙のいちばん下の 1 行。**Kit の `printFooter` は使わない** —— あちらは末尾に
+  /// 「Weather by Open-Meteo」を付ける。鍵ゼロのアプリは天気の提供元を 1 度も呼ばないので、
+  /// 呼んでいない出典を紙に刷れば、その名前を借りた嘘になる。前半のバイトは Kit のまま。
+  public let printFooter: String
+  /// 書き出した PDF を渡すボタン。**「印刷」とは呼ばない** —— 押した先に出るのは iOS の
+  /// 共有シートで、そこから印刷にも保存にも送れる。
+  public let printSaveAction: String
+  /// 書き出している最中の 1 行。
+  public let printPreparing: String
+  /// 書き出せなかったときの 1 行。**押せないボタンだけを残さない** —— 何も出ない画面は、
+  /// まだ作っている最中と区別が付かない。
+  public let printFailed: String
+
   private let pasteLimitToastText: @Sendable (Int) -> String
   private let daysValueText: @Sendable (Int) -> String
   private let priorityLabelText: @Sendable (String) -> String
@@ -461,6 +479,11 @@ public struct AppCopy: Sendable {
     shareCopyLink: String,
     shareAppLink: String,
     shareImportFailed: String,
+    printConflictsHeading: String,
+    printFooter: String,
+    printSaveAction: String,
+    printPreparing: String,
+    printFailed: String,
     pasteLimitToast: @escaping @Sendable (Int) -> String,
     daysValue: @escaping @Sendable (Int) -> String,
     priorityLabel: @escaping @Sendable (String) -> String,
@@ -644,6 +667,11 @@ public struct AppCopy: Sendable {
     self.shareCopyLink = shareCopyLink
     self.shareAppLink = shareAppLink
     self.shareImportFailed = shareImportFailed
+    self.printConflictsHeading = printConflictsHeading
+    self.printFooter = printFooter
+    self.printSaveAction = printSaveAction
+    self.printPreparing = printPreparing
+    self.printFailed = printFailed
     self.pasteLimitToastText = pasteLimitToast
     self.daysValueText = daysValue
     self.priorityLabelText = priorityLabel
@@ -983,6 +1011,13 @@ public struct AppCopy: Sendable {
     shareCopyLink: "この内容でリンクをコピー",
     shareAppLink: "アプリ用リンク",
     shareImportFailed: "リンクを読み取れませんでした。",
+    // Web `TripPrintSheet.tsx:92`。
+    printConflictsHeading: "変更が必要な条件",
+    // Kit の `printFooter` から天気の出典だけを落としたもの。
+    printFooter: "時間は計画用の目安です。移動と営業時間は現地で最終確認してください。",
+    printSaveAction: "PDFを保存・共有",
+    printPreparing: "PDFを作成しています",
+    printFailed: "PDFを作成できませんでした。",
     pasteLimitToast: { "\($0)件あります。1回に確認できるのは12か所までです。残りは別の旅として分けてください。" },
     daysValue: { "\($0)日" },
     priorityLabel: { "\($0)の優先度" },
@@ -1188,6 +1223,11 @@ public struct AppCopy: Sendable {
     shareCopyLink: "Copy scoped link",
     shareAppLink: "App link",
     shareImportFailed: "That link could not be read.",
+    printConflictsHeading: "Conflicts that need a change",
+    printFooter: "Times are planning estimates. Reconfirm travel and opening hours locally.",
+    printSaveAction: "Save or share the PDF",
+    printPreparing: "Preparing the PDF",
+    printFailed: "The PDF could not be created.",
     pasteLimitToast: { "\($0) places found. Up to 12 places at a time. Keep the rest for a second trip." },
     daysValue: { "\($0) day\($0 == 1 ? "" : "s")" },
     priorityLabel: { "\($0) priority" },

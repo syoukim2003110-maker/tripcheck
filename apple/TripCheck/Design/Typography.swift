@@ -44,6 +44,48 @@ enum Typography {
     return font
   }
 
+  /// 紙の上の字(`Screens/Print/TripPrintSheet.swift`)。
+  ///
+  /// **Dynamic Type に追随しない。** 紙の幅は 612pt で固定なので、読み手の端末の文字サイズを
+  /// 掛けると、同じ旅程が人によって行の途中で折れ、ページの割れる場所も変わる。画面の下限
+  /// (本文 12pt 未満禁止)もここには掛からない —— 腕の長さで読む画面と、手元で読む紙は
+  /// 事情が違うし、全日程を 1 枚に収めるにはこの大きさが要る。
+  static func printed(_ role: PrintRole) -> Font {
+    let spec = role.spec
+    var font = Font.system(size: spec.size, weight: spec.weight)
+    if spec.monospacedDigit { font = font.monospacedDigit() }
+    return font
+  }
+
+  /// 紙の上の 7 つの役。
+  enum PrintRole {
+    /// 旅の題。
+    case title
+    /// 節の見出し(前提・衝突・この地域の対応・フライト)。
+    case heading
+    /// 日の見出し。
+    case dayHeading
+    /// 「09:00–10:30」。**等幅の数字** —— 桁が揃わないと、時刻の列が読み下せない。
+    case clock
+    case stopName
+    /// 結論・前提・空港の 1 行など、文として読むもの。
+    case body
+    /// 住所・滞在・紙の下の但し書き。
+    case meta
+
+    var spec: (size: CGFloat, weight: Font.Weight, monospacedDigit: Bool) {
+      switch self {
+      case .title: (22, .bold, false)
+      case .heading: (11, .heavy, false)
+      case .dayHeading: (14, .heavy, false)
+      case .clock: (10.5, .semibold, true)
+      case .stopName: (11.5, .semibold, false)
+      case .body: (10, .regular, false)
+      case .meta: (9, .regular, false)
+      }
+    }
+  }
+
   /// 見出し用の Anton(`Design/Fonts/Anton-Regular.ttf`、`UIAppFonts` で登録)。
   /// 同梱に失敗した版では system の太字に落ちる。
   static let displayFaceName = "Anton-Regular"

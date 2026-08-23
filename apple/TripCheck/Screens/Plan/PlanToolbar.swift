@@ -2,10 +2,9 @@ import SwiftUI
 import TripCheckAppCore
 import TripCheckKit
 
-/// 結果画面のツールバー ——「入力にもどる」と、`•••` の中の Undo / Redo / 共有。
+/// 結果画面のツールバー ——「入力にもどる」と、`•••` の中の Undo / Redo / 共有 / 印刷。
 ///
-/// 印刷はまだ乗らない(Task 13)—— **押しても何も起きないボタンを先に置かない**。
-/// 結論の詳細もここには来ない:旅程の下に畳んである折り畳みそのものが入口で、警告の一手
+/// 結論の詳細はここには来ない:旅程の下に畳んである折り畳みそのものが入口で、警告の一手
 /// (「代替案を見る」)がそれを開く —— メニューにもう 1 つ入口を作ると、開いた先が画面の
 /// どこにあるのか分からないまま開くことになる。戻せる履歴が無いときは項目そのものを無効に
 /// する:消してしまうと、「元に戻す」がこのアプリに在ることを旅行者が知る機会が無くなる。
@@ -35,12 +34,16 @@ private struct EditInputButton: View {
   }
 }
 
-/// `•••`。中身は Undo と Redo と共有で、外付けキーボードからは ⌘Z / ⇧⌘Z でも同じ 2 つに
-/// 届く(メニューに乗せた `keyboardShortcut` は、長押しの一覧にも出る)。
+/// `•••`。中身は Undo と Redo と共有と印刷で、外付けキーボードからは ⌘Z / ⇧⌘Z でも
+/// 最初の 2 つに届く(メニューに乗せた `keyboardShortcut` は、長押しの一覧にも出る)。
 ///
 /// 共有が**メニューの中**にあるのは、押した先が配る動作ではなく「何を渡すか」を決める
 /// 画面だからである。ツールバーに置くと 1 手で配れるように見えるが、ホテルの名前や予約の
 /// 印が入るかどうかは、その 1 手の前に見せなければならない。
+///
+/// 印刷はその共有の**次**に置く。同じ「他の人・他の紙に渡す」仕事だが、リンクは相手の端末で
+/// 開くもの、紙は端末が要らないもの —— 並べておくと、電池の切れた旅先で何を持っていれば
+/// よかったのかが、選ぶ時点で目に入る。
 private struct HistoryMenu: View {
   @Environment(PlannerStore.self) private var store
 
@@ -70,6 +73,10 @@ private struct HistoryMenu: View {
 
       Button(app.shareAction) { store.view.shareOpen = true }
         .accessibilityIdentifier("plan.share")
+
+      // 文言は Kit の `print`(「印刷 / PDF」)—— Web のメニューと同じ 1 語で呼ぶ。
+      Button(Copy.for(store.request.locale).print) { store.view.printOpen = true }
+        .accessibilityIdentifier("plan.print")
     } label: {
       // `•••` は絵ではなく約物なので、`Design/Icons` の 24 種にも SF Symbols にも要らない。
       Text(verbatim: "•••")

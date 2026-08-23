@@ -41,7 +41,9 @@ import TripCheckKit
               c.shareAction, c.shareSheetTitle, c.shareSheetSubtitle, c.shareIncludeHeading,
               c.shareScopeDates, c.shareScopeHotel, c.shareScopeAirports, c.shareScopeReservations,
               c.shareReservationsIncluded, c.shareTooLong, c.shareNoPlaces, c.shareCopyLink,
-              c.shareAppLink, c.shareImportFailed] + c.diffLabels
+              c.shareAppLink, c.shareImportFailed,
+              c.printConflictsHeading, c.printFooter, c.printSaveAction, c.printPreparing,
+              c.printFailed] + c.diffLabels
               + [c.daysValue(1), c.daysValue(4), c.priorityLabel(name: "X"), c.removeStopQuestion(name: "X"), c.mustRemovalNote(name: "X"), c.reservationRemovalNote(name: "X"), c.removedStopToast(name: "X"), c.pasteLimitToast(count: 14)]
               + [c.resolveAllConfirmed(count: 1), c.resolveAllConfirmed(count: 4),
                  c.resolveCountryConflict(codes: ["CH", "JP"]), c.resolveCandidateQuestion(name: "X"),
@@ -77,8 +79,8 @@ import TripCheckKit
   // + Task 10 の 21 + 引数を取る 8 + Task 5 の引数つき 16 + Task 6 の引数つき 8
   // + Task 7 の引数つき 2 + Task 8 の引数つき 1 + Task 9 の引数つき 12
   // + Task 10 の引数つき 4(件数の 2 つは 1 と複数の両方を見る)+ Task 11 の 5 と引数つき 1
-  // + Task 12 の 14 と引数つき 4(件数の 2 つは 1 と複数の両方を見る)
-  #expect(checked == 408)
+  // + Task 12 の 14 と引数つき 4(件数の 2 つは 1 と複数の両方を見る)+ Task 13 の 5
+  #expect(checked == 418)
 }
 
 /// 英語の日数は 1 日だけ単数。旅の長さを名乗る 2 文にも同じ規則が要る("1 days" を出さない)。
