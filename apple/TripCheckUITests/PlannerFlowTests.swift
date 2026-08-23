@@ -1,11 +1,12 @@
 import XCTest
 
-/// 端末の上で本当に通る道を 3 本だけ。
+/// 端末の上で本当に通る道を 4 本だけ。
 ///
 /// 1. 見本 → 旅程 → 停留所の詳細 → 外す → 元に戻す(旅行者が最初にやる一巡り)
-/// 2. ファーストビュー契約:**最初の停留所が、既定の文字サイズでスクロール無しに見える**
+/// 2. 見本 → 経路の取得が終わる → 車を選ぶ → 地図が実経路の区間を数える
+/// 3. ファーストビュー契約:**最初の停留所が、既定の文字サイズでスクロール無しに見える**
 ///    (統合仕様 §10)
-/// 3. 旅程 ↔ 地図の往復
+/// 4. 旅程 ↔ 地図の往復
 ///
 /// `-uiTesting` で起動するのは、`TripCheckApp` がそのときだけ保存先と設定の箱を使い捨てに
 /// 切り替え、アニメーションを切るから —— 動いている札は掴めない。
@@ -54,6 +55,30 @@ final class PlannerFlowTests: XCTestCase {
     // 一瞬を掴むことがあるので、消えるところまで待つ。
     XCTAssertTrue(toast.waitForNonExistence(timeout: 10))
     XCTAssertTrue(app.staticTexts["plan.hero"].exists)
+  }
+
+  /// 見本 → 進捗が消える → 車を選ぶ → 地図に実経路の区間がある(`-uiTesting` は `CannedRouteProvider`)。
+  @MainActor
+  func testSampleFetchesRoutesAndTheMapShowsAMeasuredLeg() {
+    let app = launch()
+    app.buttons["start.seeExample"].tap()
+    XCTAssertTrue(app.staticTexts["plan.hero"].waitForExistence(timeout: 30))
+    // `RouteProgressLine` は `.combine` した 1 要素なので型(staticText / otherElement)を決め打ちしない。
+    let progress = app.descendants(matching: .any).matching(identifier: "plan.routeProgress").firstMatch
+    XCTAssertTrue(progress.waitForNonExistence(timeout: 30))
+    // 見本は日付未定で公共交通が使用中のまま(破線)。車を選ぶと、先に測ってあった車の経路が実線になる。
+    // `plan.movement` は `MovementCard` の外側の VStack に付いている(`MovementCard.swift:79`。ボタンではない)。
+    let movement = app.descendants(matching: .any).matching(identifier: "plan.movement").firstMatch
+    XCTAssertTrue(movement.waitForExistence(timeout: 5))
+    movement.tap()
+    let taxi = app.buttons["plan.movement.mode.taxi"]
+    XCTAssertTrue(taxi.waitForExistence(timeout: 5))
+    taxi.tap()
+    if app.alerts.firstMatch.waitForExistence(timeout: 2) { app.alerts.buttons.element(boundBy: 1).tap() }
+    XCTAssertTrue(app.otherElements["toast"].waitForExistence(timeout: 10))
+    app.buttons["plan.view.map"].tap()
+    XCTAssertTrue(app.otherElements["map"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["map.measuredCount"].waitForExistence(timeout: 10))
   }
 
   /// 統合仕様 §10 のファーストビュー契約。既定の文字サイズの iPhone 17 Pro で、**指を

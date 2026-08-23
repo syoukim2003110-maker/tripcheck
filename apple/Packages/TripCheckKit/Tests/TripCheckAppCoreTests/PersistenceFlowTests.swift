@@ -79,6 +79,21 @@ private func waitForPendingAutosave(_ store: PlannerStore) async {
   #expect(payload.edits["resolvedStops"] == nil); #expect(payload.edits["resolvedBase"] == nil)
 }
 
+/// 実測を持つ store でも、保存 payload に live* / ジオメトリ / routes の鍵は出ない。
+///
+/// 測った分は `PlannerStore.liveRoutes` に住んでいて `request` / `edit` / `view` のどこにも
+/// 置かれない(global constraints)。だから保存の荷物は測る前と同じ形のままである ——
+/// 誰かが「便利だから」と測った分を `edit` へ写した日に、ここが赤くなる。
+@Test @MainActor func aStoreWithMeasuredRoutesPersistsNoneOfThem() async throws {
+  let store = await enrichedSample(FakeRouteProvider())
+  #expect(!store.liveRoutes.isEmpty)
+  let payload = try store.persistedPayload()
+  func walk(_ v: JSONValue) -> [String] { if case .object(let o) = v { return o.keys.map { UserTripPayload.normalizedKey($0) } + o.values.flatMap(walk) }; if case .array(let a) = v { return a.flatMap(walk) }; return [] }
+  let keys = Set(walk(payload.jsonValue))
+  #expect(!keys.isEmpty && keys.isDisjoint(with: UserTripPayload.forbiddenKeys))
+  #expect(keys.allSatisfy { !$0.hasPrefix("live") && !$0.contains("geometry") && !$0.contains("polyline") && $0 != "routes" })
+}
+
 @Test @MainActor func autosaveWritesInputAndEditsOnly() async throws {
   let dir = temporaryDirectory()
   let store = PlannerStore(resolvers: [CatalogResolver()], store: TripStore(directory: dir), autosaveDebounce: .milliseconds(10))

@@ -120,9 +120,19 @@ private func walkRequest(_ key: String) -> RouteRequest {
       return .measured(minutes: 5, distanceMeters: nil, geometry: nil, expectedDeparture: nil)
     }
   }
+  /// 締切の側で数えるもの —— 何本が飛び立ち、何本が**取り消されて**降りたか。
+  actor Witness {
+    var started = 0
+    var cancelled = 0
+    func start() { started += 1 }
+    func cancel() { cancelled += 1 }
+  }
   struct Hanging: RouteProvider {
+    let witness: Witness
     func route(_ request: RouteRequest, locale: PlannerLocale) async -> RouteOutcome {
+      await witness.start()
       try? await Task.sleep(for: .seconds(300))
+      if Task.isCancelled { await witness.cancel() }
       return .failed
     }
   }
@@ -134,11 +144,16 @@ private func walkRequest(_ key: String) -> RouteRequest {
   let answers = await RouteFetcher.fetch(requests, provider: Counting(peak: peak), locale: .en, deadline: .seconds(600), onSettled: { _, _ in })
   let observed = await peak.peak
   #expect(answers.count == 12 && observed == 4)
-  // 締切が鳴れば、提供元が 300 秒抱え込んでいても待たずに閉じる(取り消しで解ける)。
-  // 上限を 30 秒に取るのは、忙しい機械の遅れを許しても「提供元を待っていない」が言えるため。
-  let clock = ContinuousClock(), start = clock.now
-  let late = await RouteFetcher.fetch(requests, provider: Hanging(), locale: .en, deadline: .milliseconds(50), onSettled: { _, _ in })
-  #expect(late.isEmpty && clock.now - start < .seconds(30))
+  // 締切が鳴れば、提供元が 300 秒抱え込んでいても待たずに閉じる。**実時計では測らない**
+  // ——「30 秒以内に帰ってきた」は `--parallel` の飢えでいくらでも赤くできるし、緑でも
+  // 「取り消した」ことは言えない。代わりに取り消しそのものを目撃する: 窓ぶんの 4 本が
+  // 飛び立ち、その 4 本が全部**取り消されて**降りたこと。`withTaskGroup` は本体を抜ける
+  // ときに残った子を必ず待つので、`fetch` が返った時点でこの数は確定している。
+  let witness = Witness()
+  let late = await RouteFetcher.fetch(requests, provider: Hanging(witness: witness), locale: .en, deadline: .milliseconds(50), onSettled: { _, _ in })
+  let started = await witness.started, cancelled = await witness.cancelled
+  #expect(late.isEmpty)
+  #expect(started == RouteFetcher.concurrency && cancelled == RouteFetcher.concurrency)
 }
 
 /// 取得中に旅が入れ替わったら古い回答は捨てる(キャッシュにも入れない)。
@@ -243,7 +258,12 @@ private actor RouteBuildGate {
 
 /// 置換は、旅行者が頼んだ組み直しの最中には始まらない。始めると、あちらの答えが世代の
 /// 食い違いで黙って落ちる —— 押したのに何も起きない編集になる。
-@Test @MainActor func aReplacementNeverSwallowsTheEditTheTravellerJustMade() async {
+///
+/// 制限時間を付けるのは、この 2 本が**関所で止めた組み立てを待つ**からである。並ばせる
+/// 規則(`replaceWithLiveRoutes` の `rebuildsInFlight > 0`)が壊れると、待ち合わせが
+/// 二度と成立せずに `await` がそのまま止まる —— 制限時間が無いと、赤ではなく「終わらない
+/// 検証」になる。
+@Test(.timeLimit(.minutes(1))) @MainActor func aReplacementNeverSwallowsTheEditTheTravellerJustMade() async {
   let store = PlannerStore(resolvers: [CatalogResolver()], store: nil, routeProvider: FakeRouteProvider(delay: .milliseconds(60)))
   store.loadSample(.switzerland)
   await store.build()   // 関所はまだ無い。ここで取得が走り出す
@@ -264,11 +284,14 @@ private actor RouteBuildGate {
   await editing
   #expect(store.edit.userStayMinutes[id] == 120)   // 編集は飲み込まれずに着地した
   #expect(store.canUndo)
+  // 6 秒の時計は止めておく(`theRoutesToastYieldsToAnUndoStillOnScreen` と同じ理由)。
+  // 止めないと、忙しい機械では**編集のトーストが自分で消えてから**置換が着き、道を譲る
+  // 相手が居なくなった実経路のトーストが正しく出る —— 見たいのは「まだ差し出されている
+  // 取り消しを上書きしないこと」なので、消えたかどうかで答えが変わってはいけない。
+  store.toastDismissTask?.cancel()
   await store.awaitRouteEnrichment()
   // 置換はちょうど 1 回。ただしトーストは出ない —— 編集の「元に戻す」がまだ画面にあるので、
   // 実経路のトーストはそれに道を譲る(`theRoutesToastYieldsToAnUndoStillOnScreen`)。
-  // ここで見るのは「譲ったこと」だけにする: 編集のトーストは自前の 6 秒で消えることがあり、
-  // 消えたかどうかは忙しさ次第で変わるが、**実経路のトーストが出ていないこと**は変わらない。
   #expect(store.routeReplacements == 1 && store.liveRoutesAreAdopted)
   #expect(store.view.toast?.canUndo != false)
   #expect(store.view.toast?.text.hasPrefix(AppCopy.for(store.request.locale).routesUpdatedToast) != true)
@@ -309,8 +332,8 @@ private actor RouteBuildGate {
 }
 
 /// 取得の最中に組み直しが始まったら、古い答えは誰の答えでもない —— キャッシュにも入らず、
-/// 遅れて届いた分で旅程が書き換わることもない。
-@Test @MainActor func aRebuildStartedMidFetchDropsTheAnswersInFlight() async {
+/// 遅れて届いた分で旅程が書き換わることもない。制限時間の理由は上の 1 本と同じ。
+@Test(.timeLimit(.minutes(1))) @MainActor func aRebuildStartedMidFetchDropsTheAnswersInFlight() async {
   let store = PlannerStore(resolvers: [CatalogResolver()], store: nil, routeProvider: FakeRouteProvider(delay: .milliseconds(60)))
   store.loadSample(.switzerland)
   await store.build()
@@ -357,4 +380,31 @@ private actor RouteBuildGate {
   #expect(store.deferredRouteReplacement == nil)
   #expect(store.routeReplacements == replacementsBefore)
   #expect(store.view.toast == nil)   // 戻す操作は自分のトーストも他人のトーストも出さない
+}
+
+// MARK: - Task 9: 日付が入ってから公共交通を測る
+
+/// 日付未定では公共交通を取りに行かず、日付を入れて組み直すと公共交通を 1 回だけ取って 1 回置換。
+///
+/// 公共交通の答えは**いつ出発するか**で変わる。日付の無い旅で取りに行くと、端末の地図は
+/// 「今日のこの時刻」の時刻表で答えるので、3 か月先の旅程に今日の終電が乗る。だから
+/// `RouteRequests.transitAllowed` は日付の付いたレグだけを通す(−7〜+100 日)——
+/// 旅行者が後から日付を入れたときに、その扉が本当に開くかをここで見る。
+@Test @MainActor func transitIsFetchedOnceTheDateIsKnown() async {
+  let provider = FakeRouteProvider()
+  let store = await enrichedSample(provider)
+  let undated = await provider.log.requests
+  #expect(!undated.isEmpty)
+  #expect(undated.allSatisfy { $0.mode != .transit } && store.routeReplacements == 1)
+
+  store.request.tripStartDate = Destinations.localDateIn(timeZone: Destinations.byId(.switzerland).timeZone).adding(days: 10).description
+  await store.build()
+  await store.awaitRouteEnrichment()
+
+  let transit = await provider.log.requests.filter { $0.mode == .transit }
+  #expect(!transit.isEmpty && transit.allSatisfy { $0.departure != nil } && Set(transit).count == transit.count)
+  #expect(store.routeReplacements == 2)
+  #expect(store.bundle!.plan.days.flatMap(\.legs).contains { $0.comparison.options.contains { $0.mode == .transit && $0.source == .live } })
+  // 測れなかった公共交通は absent に書かない(v1 の決め)。
+  #expect(store.tripRequest().context.liveTransitAbsentLegs == nil)
 }

@@ -26,7 +26,7 @@ apple/tools/verify-app.sh test     # 単体テスト(TripCheckTests)と UI テ�
 apple/tools/screenshot.sh boot     # 起動中のシミュレータを PNG に
 ```
 
-的は 2 つある。`TripCheckTests`(単体)は**アプリのソースそのものを読む走査**で、`IconShape` / `SVGPath` / `Icon` が App ターゲットの型なので AppCore 側には置けない。`TripCheckUITests` はシミュレータの上で 3 本の道を通す。`test` は `-only-testing:` で両方を名指しするので、片方が的から外れたまま緑になることがない。
+的は 2 つある。`TripCheckTests`(単体)は**アプリのソースそのものを読む走査**で、`IconShape` / `SVGPath` / `Icon` が App ターゲットの型なので AppCore 側には置けない。`TripCheckUITests` はシミュレータの上で 4 本の道を通す。`test` は `-only-testing:` で両方を名指しするので、片方が的から外れたまま緑になることがない。
 
 UI テストは `-uiTesting` を渡してアプリを起こす。この旗が立つと `TripCheckApp` は 3 つを切り替える —— 旅程の保存先を使い捨ての一時ディレクトリへ、`UserDefaults` を毎回消す専用の箱(`com.muraoshoki.tripcheck.uitest`)へ、そしてアニメーションを止める(UIKit 側は `UIView.setAnimationsEnabled(false)`、SwiftUI 側は根の `.transaction`)。動いている札は `XCUIElement` の位置が定まらないので掴めない。
 
@@ -49,12 +49,16 @@ xcrun simctl ui booted content_size large                    # 戻す
 | `Anton-Regular.ttf` | `a4ba3a92350ebb031da0cb47630ac49eb265082ca1bc0450442f4a83ab947cab` |
 | `OFL.txt` | `ee67e6ee22790b7929f1a3769ca2801d565c64b5a9096942c1adf5596de9c9e4` |
 
-## 検証値(engine、2026-08-23、`apple/tools/verify-kit.sh`)
+## 検証値(engine、2026-08-24、`apple/tools/verify-kit.sh`)
 
-**795 本すべて passed / `exit=0`**。`verify-kit.sh` はパッケージ全体を回すので、内訳は
-`TripCheckKitTests` 576 と `TripCheckAppCoreTests` 219。前者は Plan 1 の 563 本に Task 10 の
-`PreTripTimelineTests` 13 本が足されたもので、下の表(G1/G2/G3・共有・JSMath・境界)は
-その中身 —— Plan 2 は Kit の既存テストに一切触っていない。
+**838 本すべて passed / `exit=0`**(警告ゼロ)。`verify-kit.sh` はパッケージ全体を回すので、内訳は
+`TripCheckKitTests` 581 と `TripCheckAppCoreTests` 257。前者は Plan 1 の 563 本に Task 10 の
+`PreTripTimelineTests` 13 本と、Routes spec の `LiveRouteMergeTests` 3 本・`EvidenceSourceTests` 2 本を
+足したもので、下の表(G1/G2/G3・共有・JSMath・境界)はその中身。
+
+Routes spec(実経路)は **Kit の既存テストに 1 行も触っていない**。足したのは上の 2 ファイルだけで、
+フィクスチャも不変 —— G1 は 500/500 のまま、G3 の差分もゼロ
+(`git status -- Tests/TripCheckKitTests/Fixtures` が空であることを毎回確かめている)。
 
 Plan 1 のときの負荷試験もそのまま効く:3 回のうち 1 回は 15 コアを全部埋めた状態(load average 26 → 29)で回して passed / `exit=0` だった。以前 `--parallel` で照合が落ちたのは load average 7 台のときだったので、その 4 倍の負荷でも動かないことを見ている。
 
@@ -67,20 +71,20 @@ Plan 1 のときの負荷試験もそのまま効く:3 回のうち 1 回は 15 
 | JSMath | `Fixtures/js-math-vectors.v1.json`(`Units/JSMathTests.swift`) | V8 `12.4.254.21-node.27`(フィクスチャの `v8Version` そのまま。Node 22.18.0)と **86,510 標本がビット一致**(緯度の cos/sin 45,002、小引数 sin 20,001、asin 20,001、π/2 近傍 240、中規模還元 322、巨大引数 242、builder コーパスの全順序対 702 辺) |
 | Kit 境界 | `Invariants/ImportBoundaryTests.swift` | Kit のソースに `import Foundation` 以外が無い。`PlannerViewState` の名前も現れない(spec §5.1) |
 
-## 検証値(アプリ、2026-08-23、`apple/tools/verify-app.sh test` を 2 回)
+## 検証値(アプリ、2026-08-24、`apple/tools/verify-app.sh test` を 2 回)
 
-2 回とも `TEST SUCCEEDED` / `exit=0`。
+2 回とも `TEST SUCCEEDED` / `exit=0`(警告ゼロ)。
 
 | 的 | 本数 | 中身 |
 | --- | --- | --- |
 | `TripCheckTests`(単体) | 9 | `CopyBoundaryTests` 3 + `IconCoverageTests` 6 |
-| `TripCheckUITests` | 4 | `PlannerFlowTests` 3 + `LaunchUITests` 1 |
+| `TripCheckUITests` | 5 | `PlannerFlowTests` 4 + `LaunchUITests` 1 |
 
-`CopyBoundaryTests` は `apple/TripCheck` と AppCore の `Sources`(74 ファイル)を歩き、文字列リテラルに日本語の文が無いこと・`Text("…")` に長い文が直接座っていないこと・リテラルが `BannedTerms` を踏まないことを見る。除くのは `Design/` と `AppCopy.swift` の 2 つだけで、`JSRegex("…")` の引数だけは日本語を許す —— `AppleAddress` が日本の住所を切る 2 本は文ではなく**文法**である。植えたリテラルで落ちることを確かめてある(`SpareLine.swift` に 3 種類を順に植えて、3 種類とも赤になった)。
+`CopyBoundaryTests` は `apple/TripCheck` と AppCore の `Sources`(81 ファイル)を歩き、文字列リテラルに日本語の文が無いこと・`Text("…")` に長い文が直接座っていないこと・リテラルが `BannedTerms` を踏まないことを見る。除くのは `Design/` と `AppCopy.swift` の 2 つだけで、`JSRegex("…")` の引数だけは日本語を許す —— `AppleAddress` が日本の住所を切る 2 本は文ではなく**文法**である。植えたリテラルで落ちることを確かめてある(`SpareLine.swift` に 3 種類を順に植えて、3 種類とも赤になった)。
 
 `IconCoverageTests` は 24 種の線と塗り、枠からのはみ出し、拡縮、線の太さ、そして**円弧が弧として引かれていること**(`pin` / `signal` / `moon` / `cloud`)を見る。Task 1 が残していた「`SVGPath` に自動の検査が無い」穴はここで塞がった。
 
-`PlannerFlowTests` の 3 本 —— 見本 → 旅程 → 詳細 → 外す → 元に戻す、旅程 ↔ 地図の往復、そして**ファーストビュー契約**(統合仕様 §10:既定の文字サイズの iPhone 17 Pro で、最初の停留所がスクロール無しに見え、押せる)。
+`PlannerFlowTests` の 4 本 —— 見本 → 旅程 → 詳細 → 外す → 元に戻す、旅程 ↔ 地図の往復、**ファーストビュー契約**(統合仕様 §10:既定の文字サイズの iPhone 17 Pro で、最初の停留所がスクロール無しに見え、押せる)、そして**実経路が届くところ**(見本 → 進捗の行が消える → 移動カードで車を選ぶ → 地図に「実経路 N区間」が出る)。4 本目は `-uiTesting` の `CannedRouteProvider` を通るので通信しない —— 徒歩 12 分/km、車 max(3, 3 分/km)、公共交通 max(5, 4 分/km) の決定的な答えで、同じ 2 点には毎回同じ分が返る。
 
 ### 目で見たもの(シミュレータ、iPhone 17 Pro)
 
@@ -88,6 +92,17 @@ Plan 1 のときの負荷試験もそのまま効く:3 回のうち 1 回は 15 
 | --- | --- |
 | 既定(`large`) | 10 枚 —— Start 1・旅程を上から下まで 5・言語を EN にした旅程 1・日本語へ戻した旅程 1・地図 1・停留所の詳細 1 |
 | `accessibility-extra-extra-extra-large` | 同じ 10 枚 |
+
+実経路の 4 枚は別に撮ってある(既定の文字サイズ、`apple/tools/screenshot.sh`。出力は `${SCRATCHPAD:-/tmp}/tripcheck-<名前>.png`)。ホスト側に画面を押す手段が無いので、画面を進めるのは UI テスト(見本の 3 枚は `testSampleFetchesRoutesAndTheMapShowsAMeasuredLeg` が通る道の途中)と共有リンク(`xcrun simctl openurl booted "tripcheck://t/<code>"`、東京の 1 枚)の役で、撮る側は 1 秒ごとに `screenshot.sh` を呼ぶ。
+
+| 撮ったもの | 名前 | 何が写っているか |
+| --- | --- | --- |
+| スイス見本(日付未定・`-uiTesting`) | `tripcheck-routes-swiss-toast` | 静かな置換の直後。旅程は組み直っているのに `.building` の画面を挟まず、知らせは「実経路で更新しました」の 1 行だけ(元に戻すは付かない) |
+| 同じ旅程で移動カードを開き、車を選んだところ | `tripcheck-routes-swiss-evidence` | 手段の錠剤(徒歩 1000 分は選べないまま・電車 125 分・タクシー 224 分)と、その下の根拠行「Apple Maps の経路」 |
+| 同じ旅程の地図 | `tripcheck-routes-swiss-map` | 車のレグが**実線**。左下に「実経路 1区間」、凡例は実線=実経路 / 破線=推定 |
+| 東京 3 日・日付あり(2026-09-03、共有リンクで開いた**素のアプリ**) | `tripcheck-routes-tokyo-dated` | 日付が入ったので公共交通も測りに行き、「実経路で更新しました」が出たあとの電車 22 分・タクシー 18 分。提供元は本物の `AppleRouteProvider` |
+
+**「Wi-Fi なし: N区間は推定のまま」は撮れていない。** シミュレータはホストの回線をそのまま使い、`simctl` に回線を落とす口が無い(`simctl status_bar` が変えられるのは**アイコンだけ**で通信は生きている)。ホストの Wi-Fi を切るのはこの検証の範囲を超えるので、代わりに機械の側で押さえてある —— `RouteEnrichmentTests.failedLegsStayEstimatedAndAreCounted`(測れなかったレグは推定のまま・`estimatedRemaining` に数えられる)と `AppCopyTests` の `routesEstimatedRemaining` がその 1 行の文言を見ている。
 
 accessibility5 で見つけて直したものは 4 つ。時刻の列(`ActivityCard` / `MealRow` の 44pt 決め打ち)が 1 文字ずつ縦に折れていた、番号の丸(`ActivityCard` 22pt / `StopInspector` 24pt / 地図のピン)が中の数を欠いていた、地図の凡例の「全日程 | この日」が 190pt の枠で縦に折れていた、名札の `TripCheck` が語の途中で割れていた。どれも `@ScaledMetric`(上限つき)か `minimumScaleFactor` で直してある —— 直した後の 10 枚に横スクロールと重なりは無い。
 

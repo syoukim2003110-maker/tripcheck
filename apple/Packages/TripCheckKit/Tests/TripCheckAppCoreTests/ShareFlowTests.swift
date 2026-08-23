@@ -392,3 +392,18 @@ private func handMadeShareCode(
   }
   #expect(checked == ShareWarningCode.allCases.count * 2)
 }
+
+/// 共有コードは request と edit だけから作る。実測は 1 バイトも入らない。
+///
+/// 見比べるのは**測っていない store と測り終えた store**:同じ見本から組んだ 2 つの
+/// `ShareableTripInput` が等しければ、測った分はリンクの材料のどこにも紛れ込んでいない。
+/// 受け取った端末は自分の場所と自分の推定で組み直すので、送り主の端末が測れた分が
+/// リンクに乗ると、向こうでは確かめようのない数字が「事実」として着地する。
+@Test @MainActor func theShareCodeIgnoresMeasuredRoutes() async {
+  let plain = PlannerStore(resolvers: [CatalogResolver()], store: nil); plain.loadSample(.switzerland); await plain.build()
+  let measured = await enrichedSample(FakeRouteProvider())
+  #expect(!measured.liveRoutes.isEmpty)
+  #expect(plain.shareableInput() == measured.shareableInput())
+  let mirror = String(describing: measured.shareableInput()).lowercased()
+  #expect(!mirror.contains("live") && !mirror.contains("geometry"))
+}
