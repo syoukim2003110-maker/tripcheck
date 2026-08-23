@@ -3,13 +3,20 @@ import Testing
 @testable import TripCheckAppCore
 import TripCheckKit
 
-@MainActor private func builtSwitzerland(hotel: Bool = false) async -> (BuiltTripPlan, PlannerContext) {
+@MainActor private func builtSwitzerland(hotel: Bool = false, airports: Bool = false, startDate: CalendarDate? = nil) async -> (BuiltTripPlan, PlannerContext) {
   let store = PlannerStore(resolvers: [CatalogResolver()], store: nil)
   store.loadSample(.switzerland)
   if hotel {
     store.edit.hotelQuery = "Bern"
     store.edit.resolvedBase = ResolvedStop(id: "hotel-bern", name: "Hotel Bern", area: "Bern", latitude: 46.948, longitude: 7.44, sourceUrl: "", verifiedAt: "", confidence: .medium, planningDurationMinutes: 0, isAnchor: false, input: "Bern", inputIndex: 0, address: "", countryCode: "CH", provider: .apple)
   }
+  if airports {
+    store.request.arrivalAirport = "ZRH"
+    store.request.arrivalTime = "14:20"
+    store.request.departureAirport = "ZRH"
+    store.request.departureTime = "18:00"
+  }
+  if let startDate { store.request.tripStartDate = startDate.description }
   await store.build()
   return (store.bundle!.plan, store.bundle!.request.context)
 }
@@ -111,18 +118,54 @@ private func stop(_ id: String, _ lat: Double, _ lon: Double) -> RouteStop {
 /// 日付が入れば公共交通も要求する。窓(−7〜+100 日)の外にある旅は、同じ旅程でも 1 件も頼まない
 /// —— 出発は 30 分バケットの上に乗る。
 @Test @MainActor func aDatedPlanAsksForTransitOnTheHalfHour() async {
-  let store = PlannerStore(resolvers: [CatalogResolver()], store: nil)
-  store.loadSample(.switzerland)
-  store.request.tripStartDate = Destinations.localDateIn(timeZone: Destinations.byId(.switzerland).timeZone).adding(days: 20).description
-  await store.build()
-  let plan = store.bundle!.plan, context = store.bundle!.request.context
+  let (plan, context) = await builtSwitzerland(startDate: Destinations.localDateIn(timeZone: Destinations.byId(.switzerland).timeZone).adding(days: 20))
   let now = Date()
   let transit = RouteRequests.requests(plan: plan, context: context, overrides: [:], selectedDay: 0, now: now).filter { $0.mode == .transit }
   #expect(!transit.isEmpty)
   #expect(transit.allSatisfy { $0.departure.map { RouteRequests.bucket($0) == $0 } ?? false })
   let day = 86_400.0
-  // 同じ旅程を窓の外から見る: 200 日前の「今」からは先すぎ、30 日後の「今」からは過ぎている。
-  for shifted in [now.addingTimeInterval(-200 * day), now.addingTimeInterval(30 * day)] {
+  // 同じ旅程を窓の外から見る: 200 日前の「今」からは先すぎ、40 日後の「今」からは過ぎている
+  // (−7 日の境界に余裕を持たせる: 旅の 4 日分と、丸 1 日ぶんの時差の揺れを跨いでも外側)。
+  for shifted in [now.addingTimeInterval(-200 * day), now.addingTimeInterval(40 * day)] {
     #expect(RouteRequests.requests(plan: plan, context: context, overrides: [:], selectedDay: 0, now: shifted).allSatisfy { $0.mode != .transit })
   }
+}
+
+/// 空港レグ(spec §4.2): 鍵は往復とも `airport-<code>` ⇄ 拠点で、到着の出発は「便時刻 + 空港所要分」
+/// —— 入国と移送を済ませた `cityTime` から測り直さない。日付が未定でも空港レグは消えず、
+/// 消えるのは公共交通の要求だけ。
+@Test @MainActor func airportLegsLeaveAtTheFlightTimePlusProcessingAndSurviveAnUndatedTrip() async {
+  let zone = Destinations.byId(.switzerland).timeZone
+  let (plan, context) = await builtSwitzerland(hotel: true, airports: true, startDate: Destinations.localDateIn(timeZone: zone).adding(days: 20))
+  let base = plan.selectedBase!.id
+  let arrival = plan.airportConstraints.first { $0.direction == .arrival }!
+  let inbound = routeLegKey("airport-zrh", base), outbound = routeLegKey(base, "airport-zrh")
+  let legs = RouteRequests.legs(plan: plan, overrides: [:])
+  #expect(legs.contains { $0.legKey == inbound } && legs.contains { $0.legKey == outbound })
+  #expect(legs.filter { $0.legKey == inbound || $0.legKey == outbound }.allSatisfy { $0.dayIndex == nil })
+
+  let leg = legs.first { $0.legKey == inbound }!
+  let minutes = ClockTime(arrival.flightTime)!.minutes + arrival.airportMinutes
+  #expect(leg.clock == ClockTime(minutes: minutes).description)
+  // 街にいられる時刻から測り直すと、入国と移送をもう一度数えることになる。
+  #expect(ClockTime(arrival.cityTime)!.minutes > ClockTime(arrival.flightTime)!.minutes)
+  #expect(leg.clock != ClockTime(minutes: ClockTime(arrival.cityTime)!.minutes + arrival.airportMinutes).description)
+  #expect(leg.date == CalendarDate(plan.days.first!.date!)!.adding(days: minutes / 1440))
+
+  let requests = RouteRequests.requests(plan: plan, context: context, overrides: [:], selectedDay: 0, now: Date())
+  let expected = RouteRequests.bucket(Destinations.localDateTimeWithOffset(date: leg.date!.description, time: leg.clock, timeZone: zone)!)
+  #expect(requests.contains { $0.legKey == inbound })
+  #expect(requests.filter { $0.legKey == inbound }.allSatisfy { $0.mode == .walk ? $0.departure == nil : $0.departure == expected })
+  #expect(requests.first?.legKey == inbound)   // 空港は選択中の日より先
+
+  // 日付未定でも空港レグは残る。公共交通だけが落ち、車の要求は出発時刻を持たない。
+  let (undated, undatedContext) = await builtSwitzerland(hotel: true, airports: true)
+  #expect(undated.days.allSatisfy { $0.date == nil })
+  let undatedLegs = RouteRequests.legs(plan: undated, overrides: [:])
+  #expect(undatedLegs.contains { $0.legKey == inbound } && undatedLegs.contains { $0.legKey == outbound })
+  #expect(undatedLegs.filter { $0.dayIndex == nil }.allSatisfy { $0.date == nil })
+  let undatedRequests = RouteRequests.requests(plan: undated, context: undatedContext, overrides: [:], selectedDay: 0, now: Date())
+    .filter { $0.legKey == inbound || $0.legKey == outbound }
+  #expect(undatedRequests.contains { $0.mode == .taxi })
+  #expect(undatedRequests.allSatisfy { $0.mode != .transit && $0.departure == nil })
 }

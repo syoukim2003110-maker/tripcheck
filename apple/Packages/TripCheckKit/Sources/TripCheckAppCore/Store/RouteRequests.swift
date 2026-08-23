@@ -36,15 +36,20 @@ public enum RouteRequests {
       legs.append(Leg(legKey: key, from: from, to: to, dayIndex: dayIndex, date: date, clock: clock, modeInUse: overrides[key] ?? fallback))
     }
     // 空港: 到着 airport → base、出発 base → airport(鍵は `Builder/Airports.swift:52` と同じ)。
-    if let base = plan.selectedBase?.routeStop, let firstDate = plan.days.first?.date.flatMap({ CalendarDate($0) }) {
+    // 日付は空港レグの前提ではない: 日付未定の旅でも徒歩・車は測れる(spec §4.2)。
+    if let base = plan.selectedBase?.routeStop {
+      let firstDate = plan.days.first?.date.flatMap({ CalendarDate($0) })
       for constraint in plan.airportConstraints {
         guard let airport = Destinations.airport(destination, code: constraint.airport) else { continue }
         let airportStop = RouteStop(id: "airport-\(airport.code.lowercased())", name: airport.code, area: airport.code, latitude: airport.latitude, longitude: airport.longitude, sourceUrl: airport.sourceUrl, verifiedAt: "", confidence: .medium, planningDurationMinutes: 0, isAnchor: true)
         let mode: TransportMode = preferDriving ? .taxi : .transit
         if constraint.direction == .arrival {
-          // 到着便の出発時刻 = 便の街時刻 + 空港所要分(spec §4.2)。
-          let minutes = (ClockTime(constraint.cityTime)?.minutes ?? 0) + constraint.airportMinutes
-          add(airportStop, base, dayIndex: nil, date: firstDate.adding(days: constraint.cityTimeDayOffset + minutes / 1440), clock: ClockTime(minutes: minutes).description, fallback: mode)
+          // 到着便の出発時刻 = 便時刻 + 空港所要分(spec §4.2)。`cityTime` は入国も移送も済んだ
+          // 「街にいられる時刻」(`Builder/AirportComparison.swift:104-106`)なので、そこから空港を出る
+          // 道のりを測ると入国と移送を二重に数える。日跨ぎも同じで、深夜着の 1 日ずれは
+          // `plan.days` の日付が既に含んでいる(`Builder/TripBuilder.swift:268-270`)。
+          let minutes = (ClockTime(constraint.flightTime)?.minutes ?? 0) + constraint.airportMinutes
+          add(airportStop, base, dayIndex: nil, date: firstDate?.adding(days: minutes / 1440), clock: ClockTime(minutes: minutes).description, fallback: mode)
         } else if let last = plan.days.last {
           // 出発便のレグは最終日の終了時刻から(spec は定義していないので、ここで決める)。
           add(base, airportStop, dayIndex: nil, date: last.date.flatMap({ CalendarDate($0) }), clock: last.finishTime, fallback: mode)
@@ -70,8 +75,9 @@ public enum RouteRequests {
     let comparison = Legs.routeComparison(from: leg.from, to: leg.to, travel: TravelInputs(
       preference: plan.travelPreference, mobility: Destinations.byId(plan.destination).mobility, bufferMinutes: context.transferBufferMinutes,
       maxWalkingMinutesPerLeg: plan.mobilityPolicy.maxWalkingMinutesPerLeg, maxTransfersPerLeg: plan.mobilityPolicy.maxTransfersPerLeg))
-    func minutes(_ mode: TransportMode) -> Int { comparison.options.first { $0.mode == mode }?.minutes ?? Int.max }
-    let walk = minutes(.walk)
+    func minutes(_ mode: TransportMode) -> Int? { comparison.options.first { $0.mode == mode }?.minutes }
+    // 推定を持たないモード(アクセス方針で刈られたとき)は「遠すぎて選べない」と同じ扱いにする。
+    let walk = minutes(.walk) ?? Int.max
     var modes: [TransportMode]
     if plan.travelPreference == .car {
       modes = walk <= 15 ? [.taxi, .walk] : [.taxi]
@@ -79,7 +85,7 @@ public enum RouteRequests {
       modes = [.transit]
       if walk <= 35 { modes.append(.walk) }
       let km = straightLineDistanceKm(GeoPoint(latitude: leg.from.latitude, longitude: leg.from.longitude), GeoPoint(latitude: leg.to.latitude, longitude: leg.to.longitude))
-      if km >= 4 && minutes(.taxi) <= minutes(.transit) + 5 { modes.append(.taxi) }
+      if km >= 4, let taxi = minutes(.taxi), let transit = minutes(.transit), taxi <= transit + 5 { modes.append(.taxi) }
     }
     if !modes.contains(leg.modeInUse) { modes.append(leg.modeInUse) }
     if walk > walkHardCapMinutes { modes.removeAll { $0 == .walk } }
