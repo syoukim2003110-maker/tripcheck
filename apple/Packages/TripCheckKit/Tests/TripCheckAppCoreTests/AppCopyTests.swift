@@ -27,6 +27,7 @@ import TripCheckKit
               c.languageSwitchLabel, c.languageJa, c.languageEn,
               c.planErrorMessage,
               c.editedToast, c.revertedToast, c.baseClearedToast, c.clearBaseQuestion, c.openAppleMaps,
+              c.routesUpdatedToast,
               c.stopConditionsDisclosure, c.lastEntryLabel, c.daySettingsTitle,
               c.customTimeLabel, c.hardEditConfirm, c.hardEditCancel, c.undoAction, c.redoAction,
               c.moreActions, c.undoneAnnouncement, c.redoneAnnouncement, c.evidenceNoValue,
@@ -85,7 +86,8 @@ import TripCheckKit
   // + Task 10 の引数つき 4(件数の 2 つは 1 と複数の両方を見る)+ Task 11 の 5 と引数つき 1
   // + Task 12 の 14 と引数つき 4(件数の 2 つは 1 と複数の両方を見る)+ Task 13 の 5
   // + Task 13 fix round 1(外部レビュー)の 8 と引数つき 3 + Task 14 の 3
-  #expect(checked == 446)
+  // + 実経路 Task 6 の 1(`routesUpdatedToast`。残りの文言は実経路 Task 7)
+  #expect(checked == 448)
 }
 
 /// 英語の日数は 1 日だけ単数。旅の長さを名乗る 2 文にも同じ規則が要る("1 days" を出さない)。

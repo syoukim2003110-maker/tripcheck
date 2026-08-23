@@ -168,7 +168,10 @@ extension PlannerStore {
     view.pendingHardEdit = nil
     // 返事を待っている間に旅程が動いていたら、この候補は捨てる —— 端末を振って元に戻した
     // 直後に「進める」を押すと、戻す前の旅程から組んだ候補が採用されてしまう。
-    guard pending.generation == buildGeneration else { return }
+    guard pending.generation == buildGeneration else { resumeDeferredRouteReplacement(); return }
+    // 採用するなら、保留していた置換は要らない —— `adoptPending` → `startRouteEnrichment()` が
+    // 新しい旅程から測り直す。残すと置換が 2 本走る。
+    deferredRouteReplacement = nil
     adoptPending(pending)
   }
 
@@ -176,6 +179,7 @@ extension PlannerStore {
   public func cancelPendingEdit() {
     pendingApply = nil
     view.pendingHardEdit = nil
+    resumeDeferredRouteReplacement()
   }
 
   /// 候補を本物にする。順番に意味がある:編集状態 → 旅程(`adopt` が `edit.tripDays` を
@@ -189,6 +193,7 @@ extension PlannerStore {
     if let day = pending.sideEffects.selectDay { selectDay(day) }
     closeInspectorIfItPointsAtNothing()
     showEditToast(label: pending.label, bufferDeltaMinutes: pending.bufferDeltaMinutes)
+    startRouteEnrichment()
   }
 
   /// 開いているシートが指す先が旅程から消えていたら閉じる。
@@ -250,6 +255,7 @@ extension PlannerStore {
     guard generation == buildGeneration, !Task.isCancelled else { return }
     adopt(result)
     closeInspectorIfItPointsAtNothing()
+    startRouteEnrichment()
   }
 
   // MARK: - トースト

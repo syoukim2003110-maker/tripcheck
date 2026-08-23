@@ -123,6 +123,9 @@ public final class PlannerStore {
   /// `resolveGeneration` と同じ流儀。進んだ後に返ってきた回答は捨てる(キャッシュにも入れない)。
   @ObservationIgnored var routeGeneration = 0
 
+  /// 走っている取得(と、その後ろに続く静かな置換)。**`routeGeneration` を進めた者がこの欄を
+  /// 持ち、終わりに世代が変わっていなければ自分で畳む** —— 進めた者が別に居れば、この欄は
+  /// もうその者のものなので触らない。
   @ObservationIgnored var routeTask: Task<Void, Never>?
 
   /// 確認ダイアログが開いていて置換を保留した連鎖の深さ。閉じたときに再開する。
@@ -380,5 +383,7 @@ public final class PlannerStore {
     // 数が違う文になる(`FEASIBLE_IF_ASSUMPTIONS` で実際に起きた)。`self.bundle` は 2 行上で
     // 代入済みなので、この時点で `hero` はもう空文字列を返さない。
     view.announcement = hero.text
+    // 画面が出てから測りに行く。返事が揃えば `replaceWithLiveRoutes` が静かに差し替える。
+    startRouteEnrichment()
   }
 }

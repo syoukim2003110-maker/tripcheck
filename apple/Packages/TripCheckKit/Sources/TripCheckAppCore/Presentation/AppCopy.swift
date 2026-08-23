@@ -170,6 +170,10 @@ public struct AppCopy: Sendable {
 
   /// 停留所シートの外部リンク。Google 側は Kit の `openMaps` を使う(同じ文が Web にある)。
   public let openAppleMaps: String
+  /// 端末の地図から返ってきた経路で旅程を静かに差し替えたときのトースト。**編集ではない**ので
+  /// 「元に戻す」は付かず、余裕の差は `VerdictCopy.bufferToastDetail` が同じ行の後ろに足す。
+  /// 誰が測ったかは言わない —— 出典は根拠の行が持つ。
+  public let routesUpdatedToast: String
   /// 「この場所の条件を変える」——滞在時間と最終入場の折り畳み。
   public let stopConditionsDisclosure: String
   /// 最終入場の欄。Kit の `PlannerCopy` に対応する鍵が無い。
@@ -452,6 +456,7 @@ public struct AppCopy: Sendable {
     baseClearedToast: String,
     clearBaseQuestion: String,
     openAppleMaps: String,
+    routesUpdatedToast: String,
     stopConditionsDisclosure: String,
     lastEntryLabel: String,
     daySettingsTitle: String,
@@ -654,6 +659,7 @@ public struct AppCopy: Sendable {
     self.baseClearedToast = baseClearedToast
     self.clearBaseQuestion = clearBaseQuestion
     self.openAppleMaps = openAppleMaps
+    self.routesUpdatedToast = routesUpdatedToast
     self.stopConditionsDisclosure = stopConditionsDisclosure
     self.lastEntryLabel = lastEntryLabel
     self.daySettingsTitle = daySettingsTitle
@@ -1018,6 +1024,7 @@ public struct AppCopy: Sendable {
     baseClearedToast: "拠点の指定を外しました",
     clearBaseQuestion: "拠点の指定を外しますか？",
     openAppleMaps: "Apple Mapsで開く",
+    routesUpdatedToast: "実経路で更新しました",
     stopConditionsDisclosure: "この場所の条件を変える",
     lastEntryLabel: "最終入場",
     daySettingsTitle: "この日の設定",
@@ -1251,6 +1258,7 @@ public struct AppCopy: Sendable {
     baseClearedToast: "Base cleared",
     clearBaseQuestion: "Clear the base?",
     openAppleMaps: "Open in Apple Maps",
+    routesUpdatedToast: "Updated with measured routes",
     stopConditionsDisclosure: "Change the conditions here",
     lastEntryLabel: "Last entry",
     daySettingsTitle: "Day settings",
