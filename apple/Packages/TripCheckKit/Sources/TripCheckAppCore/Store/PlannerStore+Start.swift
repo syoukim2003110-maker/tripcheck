@@ -129,7 +129,11 @@ extension PlannerStore {
   /// 見出しを出す条件と、`TripBuilder` が `.existing_itinerary` を選ぶ条件は同じ 1 つの問い
   /// (日の付いた場所が 1 つでもあるか)なので、ここも同じ問いで決める —— 表示が手元の行と
   /// 食い違わない。正はあくまで `bundle.plan.inputMode`。
-  private func refreshInputMode() {
+  ///
+  /// `private` でないのは、リンクからの取り込み(`PlannerStore+Share.swift`)が 12 件へ
+  /// 詰めた**後**に同じ問いを立てるから —— パーサが数えたモードは切り落とす前の行を
+  /// 見ているので、13 件目だけに日が付いていた旅程で表示と手元の行が食い違う。
+  func refreshInputMode() {
     request.inputMode = request.entries.contains { $0.fixedDay != nil } ? .existing_itinerary : .wishlist
   }
 
@@ -229,14 +233,23 @@ extension PlannerStore {
   /// 確認が要れば確認画面へ回し、全部決まっていても場所が 2 か国に散っていれば
   /// (Web `usePlanBuild.tsx:1090-1105`)やはり回す —— どちらの国の旅かで営業時間も祝日も
   /// 変わるので、推測で組まない。
-  public func requestBuildFromStart() async {
-    guard !request.entries.isEmpty, !isResolvingPlaces, view.screen != .building else { return }
+  ///
+  /// 戻り値は「**この呼び出しが旅行者の画面まで届いたか**」:組んだか確認画面へ回したなら
+  /// 真、入る前のガードで引き返したか、待っている間に旅が入れ替わって答えを捨てたなら偽。
+  /// 押した本人(Start の CTA)は画面を見ているので気にしなくてよいが、リンクからの取り込み
+  /// (`PlannerStore+Share.swift`)は**組めたと言い切る前に**これを見る —— 見ないと、
+  /// 組まれていない旅程を「開きました」と報せることになる。
+  @discardableResult
+  public func requestBuildFromStart() async -> Bool {
+    guard !request.entries.isEmpty, !isResolvingPlaces, view.screen != .building else { return false }
 
     let queries = request.entries.enumerated().compactMap { index, entry in
       entry.pinned == nil ? PlaceQuery(inputIndex: index, input: entry.text) : nil
     }
     var answers: [Int: PlaceResolution] = [:]
     if !queries.isEmpty {
+      resolveGeneration += 1
+      let generation = resolveGeneration
       isResolvingPlaces = true
       answers = await ResolutionPipeline.resolve(
         queries,
@@ -244,6 +257,10 @@ extension PlannerStore {
         locale: request.locale,
         resolvers: resolvers
       )
+      // 待っている間に旅そのものが入れ替わっていたら(`reset()`)、この答えはもう
+      // 誰の答えでもない。`isResolvingPlaces` にも触らない —— 旗はいま走っている
+      // 新しい解決のものである。
+      guard generation == resolveGeneration else { return false }
       isResolvingPlaces = false
     }
 
@@ -273,9 +290,10 @@ extension PlannerStore {
 
     guard !needsAttention, request.mixedCountryCodes.isEmpty else {
       view.screen = .resolve
-      return
+      return true
     }
     await build()
+    return true
   }
 
   /// 決まった 1 件を、**どうやって決まったか**を残す形に畳む(保存した旅程を開き直すときに

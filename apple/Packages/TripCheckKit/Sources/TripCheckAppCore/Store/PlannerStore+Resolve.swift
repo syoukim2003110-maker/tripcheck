@@ -145,6 +145,8 @@ extension PlannerStore {
     guard let index = request.entries.firstIndex(where: { $0.id == entryId }) else { return }
     let entry = request.entries[index]
 
+    resolveGeneration += 1
+    let generation = resolveGeneration
     isResolvingPlaces = true
     let answers = await ResolutionPipeline.resolve(
       [PlaceQuery(inputIndex: index, input: entry.text)],
@@ -152,6 +154,8 @@ extension PlannerStore {
       locale: request.locale,
       resolvers: resolvers
     )
+    // 待っている間に旅そのものが入れ替わっていたら、この答えは捨てる(`resolveGeneration`)。
+    guard generation == resolveGeneration else { return }
     isResolvingPlaces = false
 
     // 待っている間に行が外れている・並びが動いていることがあるので、id で引き直す。
@@ -199,6 +203,8 @@ extension PlannerStore {
     // 場所を旅程へ入れるよりよい。
     guard !isResolvingPlaces, view.screen != .building else { return }
 
+    resolveGeneration += 1
+    let generation = resolveGeneration
     isResolvingPlaces = true
     let answers = await ResolutionPipeline.resolve(
       stale.map { PlaceQuery(inputIndex: $0.index, input: $0.input) },
@@ -206,6 +212,8 @@ extension PlannerStore {
       locale: request.locale,
       resolvers: resolvers
     )
+    // 待っている間に旅そのものが入れ替わっていたら、この答えは捨てる(`resolveGeneration`)。
+    guard generation == resolveGeneration else { return }
     isResolvingPlaces = false
 
     // 待っている間に行が外れている・並びが動いていることがあるので、id で書き戻す

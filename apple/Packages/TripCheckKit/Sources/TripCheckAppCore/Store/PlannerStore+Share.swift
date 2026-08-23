@@ -41,9 +41,11 @@ extension PlannerStore {
   /// 編集 → 共有の往復で場所が化けないことの根拠になる。
   ///
   /// **プロバイダの応答は入らない。** 座標も営業時間も口コミも入らず、渡るのは旅行者が
-  /// 書いた文と決めた条件だけで、場所は受け取った端末がもう一度決める。
+  /// 書いた文と決めた条件 —— そして**旅行者が地図に自分で置いた点**(`manualPinOverrides()`)
+  /// だけで、それ以外の場所は受け取った端末がもう一度決める。
   public func shareableInput() -> ShareableTripInput {
-    ShareableTripInput(
+    let overrides = manualPinOverrides()
+    return ShareableTripInput(
       destination: request.destination,
       itinerary: WishlistSerialization.raw(from: request.entries, locale: request.locale),
       // `tripRequest()` と同じ式(R6)。名乗った日数が勝ち、名乗っていなければ直近の
@@ -76,8 +78,39 @@ extension PlannerStore {
       dayOverrides: Self.shareRecord(edit.dayOverrides),
       lockedOrderByDay: edit.lockedOrderByDay.values.isEmpty ? nil : edit.lockedOrderByDay,
       removedStops: edit.removedStops,
-      resolutionOverrides: edit.resolutionOverrides.isEmpty ? nil : edit.resolutionOverrides
+      resolutionOverrides: overrides.isEmpty ? nil : overrides
     )
+  }
+
+  /// 旅行者が地図に自分で置いた点を、リンクに乗る形へ写す。
+  ///
+  /// **正は `entry.pinned` のほう。** `edit.resolutionOverrides` はリンクから受け取った決定の
+  /// 控えで、このアプリで点を置く道(`setManualPin`)はそこを書かず行に直接固定する ——
+  /// だから畳むときも行を読む。名前も座標も、旅行者がその場で決めたものがそのまま出る。
+  ///
+  /// **`.apple` の決定は乗せない。** `providerRef` の欄は Web にとって Google の Place ID で、
+  /// MapKit の識別子を入れると受け取った Web が**別の場所**を引く(引けなければ黙って
+  /// 落ちる)。端末の地図が決めた場所は名前だけを渡し、受け取った側がもう一度決める。
+  ///
+  /// 番号は行の番号(`inputIndex`)。落とした行があれば `ShareScope` が付け替え、対応する行が
+  /// 残っていなければその決定ごと落とす(`buildResolutionRemap`)。上限 12 は
+  /// `ShareCodec.maxResolutionOverrides` と同じ数で、行の上限(`placeLimit`)でもある。
+  ///
+  /// 住所の無い点は**リンクに乗らない**:`ShareCodec.cleanResolutionOverrides` が名前と住所の
+  /// 両方を要る物証として扱う(壊れた決定を旅行者の書いたものとして残さないため)。ここで
+  /// 間に合わせの住所を作れば乗せられるが、それは旅行者が書いていない文を旅行者の物証として
+  /// 送ることになる。乗らなかった点は、受け取った端末が名前から引き直す。
+  private func manualPinOverrides() -> [ResolutionOverride] {
+    request.entries.prefix(Self.placeLimit).enumerated().compactMap { index, entry in
+      guard case .manual(let stop) = entry.pinned else { return nil }
+      return .manual(
+        inputIndex: index,
+        name: stop.name,
+        address: stop.address,
+        latitude: stop.latitude,
+        longitude: stop.longitude
+      )
+    }
   }
 
   /// 選んだ範囲でリンクを作ってみた結果 —— 隠したもの、落とした行、警告、作れたかどうか。
@@ -153,6 +186,15 @@ extension PlannerStore {
     }
 
     let parsed = WishlistSerialization.entries(fromPasted: shared.itinerary)
+    // 場所が 1 つも読めないコードは、読めなかったコードと同じ扱い —— **`reset()` の前に**
+    // 引き返す。`ShareCodec.decode` が通すのは「行程の文字列が空でない」ところまでで、
+    // その中身が全部 URL の行(`aBlockedShareHasNoUrlAtAll` と同じ形)なら場所は 0 件に
+    // なる。先に消してしまうと、開いていた旅程が消えたうえに新しい旅程も無い。
+    guard !parsed.entries.isEmpty else {
+      showToast(Toast(text: AppCopy.for(request.locale).shareImportFailed, kind: .info))
+      return false
+    }
+
     reset()
 
     // 12 件の上限は手で足すときと同じ(`Store/PlannerStore+Start.swift`)。共有コードは
@@ -169,9 +211,18 @@ extension PlannerStore {
       showToast(Toast(text: AppCopy.for(request.locale).pasteLimitToast(count: parsed.entries.count), kind: .limit))
     }
     request.unparsedLines = parsed.unparsed
-    request.inputMode = parsed.mode
+    // モードは**切り落とした後の行**から立て直す(`importPasted` と同じ 1 行)。パーサが
+    // 数えたモードは 13 件目までを見ているので、日が付いていたのが切れた行だけだった旅程で
+    // 「既にある旅程」が残る。
+    refreshInputMode()
     request.tripDays = shared.tripDays
-    request.tripStartDate = shared.tripStartDate.isEmpty ? nil : shared.tripStartDate
+    // **仮置きの日付は日付ではない。** Web は入力欄に既定の日付を先に置き、旅行者が触ったか
+    // どうかを別の欄(`tripDateTouched` = リンクの `dateWasProvided`)で覚えている
+    // (`app/components/planner/hooks/useTripRequestState.tsx:35-36`)。触っていない日付を
+    // ここで採ると、この端末は `BuildRunner` の `dateWasProvided: ctx.tripStartDate != nil`
+    // 越しに「旅行者が決めた日」として読み、祝日や営業時間の根拠をその日に紐づけてしまう
+    // —— 送り主は日を決めていないのに。
+    request.tripStartDate = (shared.dateWasProvided && !shared.tripStartDate.isEmpty) ? shared.tripStartDate : nil
     request.destination = shared.destination
     request.dayStartDefault = shared.dayStartDefault
     request.dayEndTarget = shared.dayEndTarget.isEmpty ? nil : shared.dayEndTarget
@@ -203,7 +254,16 @@ extension PlannerStore {
     // Start の CTA をそのまま通す —— 決まっていない行は解決し、決まらなかった行があれば
     // 確認画面へ回し、全部決まっていれば組む。ここで別の道を作ると、受け取った旅程だけ
     // 「場所が決まらないまま黙って消える」経路ができる。
-    await requestBuildFromStart()
+    //
+    // **組めたかどうかを見てから返す。** リンクは指 1 本で 2 度開けるし、`.onOpenURL` は
+    // 前の解決が飛んでいる最中にも来る。追い越された取り込みは `requestBuildFromStart` が
+    // 偽を返す(世代が動いた・別の解決が走っている)ので、そのときは「開きました」と
+    // 言わずに読めなかったと同じ 1 文を出す —— 入力だけ入れ替わって画面が Start のまま
+    // 止まっているのに、呼んだ側が成功を受け取る形にしない。
+    guard await requestBuildFromStart() else {
+      showToast(Toast(text: AppCopy.for(request.locale).shareImportFailed, kind: .info))
+      return false
+    }
     return true
   }
 

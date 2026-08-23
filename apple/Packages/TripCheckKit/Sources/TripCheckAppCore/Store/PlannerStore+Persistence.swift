@@ -129,7 +129,9 @@ extension PlannerStore {
     currentTripId = record.id
     request = input.tripRequestState()
     edit = edits.editState()
-    await reopenResolutions(overrides: edits.resolutionOverrides)
+    // 開き直している間にリンクが開いていたら、ここで止める —— そのまま組むと、いま画面に
+    // 入ったばかりの旅程を、保存してあった別の旅の答えで上書きすることになる。
+    guard await reopenResolutions(overrides: edits.resolutionOverrides) else { return }
     await build()
   }
 
@@ -169,9 +171,14 @@ extension PlannerStore {
   /// 旅行者が選んだ覚えのない点へ拠点が変わり得た —— `.catalog` の pin で実機に出た不具合
   /// と同じ形。ビルダーの再解決に任せれば、セッション 1 と同じ拠点(同じ `hotelQuery` から
   /// 同じ手順で決まる)に必ず揃う。
-  private func reopenResolutions(overrides: [ResolutionOverride]) async {
-    await reresolveCatalogPins()
+  ///
+  /// 戻り値は「開き直しがまだこの旅のものか」。カタログを引き直している間にリンクが開けば
+  /// (`.onOpenURL` → `importShare` → `reset()`)、行はもう別の旅のもので、保存してあった
+  /// 決定を番号で貼る先が無い —— そこで止める。
+  private func reopenResolutions(overrides: [ResolutionOverride]) async -> Bool {
+    guard await reresolveCatalogPins() else { return false }
     applyReopenedOverrides(overrides)
+    return true
   }
 
   /// カタログの決定はカタログを引き直す —— 名前が同じなら座標も滞在時間も同梱の表から
@@ -182,13 +189,15 @@ extension PlannerStore {
   /// 流すと同じ名前に地図が別の点を答え、旅行者が選んだ覚えのない場所へ旅程が組み変わる
   /// —— 実機で実際に起きた(開き直した 1 日目の並びが変わった)。`.apple` の決定に手を
   /// 出さないのと同じ理由で、決定を出した相手だけがそれを引き直せる。
-  private func reresolveCatalogPins() async {
+  private func reresolveCatalogPins() async -> Bool {
     let queries = request.entries.enumerated().compactMap { index, entry -> PlaceQuery? in
       guard case .catalog = entry.pinned else { return nil }
       return PlaceQuery(inputIndex: index, input: entry.text)
     }
-    guard !queries.isEmpty else { return }
+    guard !queries.isEmpty else { return true }
 
+    resolveGeneration += 1
+    let generation = resolveGeneration
     isResolvingPlaces = true
     let answers = await ResolutionPipeline.resolve(
       queries,
@@ -196,6 +205,9 @@ extension PlannerStore {
       locale: request.locale,
       resolvers: [CatalogResolver()]
     )
+    // 待っている間に旅そのものが入れ替わっていたら、この答えは捨てる(`resolveGeneration`)
+    // —— 開き直している最中にリンクが開くことがある。
+    guard generation == resolveGeneration else { return false }
     isResolvingPlaces = false
 
     for (index, answer) in answers {
@@ -204,6 +216,7 @@ extension PlannerStore {
       fresh.id = PersistedTripInput.stopId(index)
       request.entries[index].pinned = .catalog(fresh)
     }
+    return true
   }
 
   /// 手入力の決定は pin より新しい —— 同じ出現に両方あれば手入力が勝つ(Kit の

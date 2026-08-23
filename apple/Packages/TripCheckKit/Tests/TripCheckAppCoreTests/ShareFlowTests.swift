@@ -137,6 +137,150 @@ import TripCheckKit
   #expect(s2.request.destination == .destination(.switzerland))
 }
 
+/// 仮置きの日付は日付ではない。Web は入力欄に既定の日付を先に置き、旅行者が触ったかどうかを
+/// `dateWasProvided` で別に覚えている —— 触っていない日付をこの端末が採ると、祝日も営業時間も
+/// 「旅行者が決めた日」の根拠として付いてしまう(`Store/BuildRunner.swift` の
+/// `dateWasProvided: ctx.tripStartDate != nil`)。
+@Test @MainActor func aPlaceholderDateFromTheWebNeverBecomesAChosenDate() async {
+  let s = PlannerStore(resolvers: [], store: nil)
+
+  #expect(await s.importShare(code: handMadeShareCode(
+    itinerary: "Chalet Bergblick",
+    tripStartDate: "2026-09-01",
+    dateWasProvided: false
+  )))
+  #expect(s.request.tripStartDate == nil)
+
+  #expect(await s.importShare(code: handMadeShareCode(
+    itinerary: "Chalet Bergblick",
+    tripStartDate: "2026-09-01",
+    dateWasProvided: true
+  )))
+  #expect(s.request.tripStartDate == "2026-09-01")
+}
+
+/// 旅行者が地図に自分で置いた点は**リンクに乗る**。乗らなければ、受け取った端末は名前から
+/// 引き直すしかなく、送り主が「ここだ」と言った 1 点が別の場所に化ける。乗るのは手入力の
+/// 決定だけ(端末の地図が答えた識別子は Web にとって別の提供元の番号なので送らない)。
+@Test @MainActor func aPinTheTravellerPlacedRidesInTheLink() async {
+  let s1 = PlannerStore(resolvers: [], store: nil)
+  let entryId = s1.addEntrySync(text: "Chalet Bergblick")
+  s1.setManualPin(
+    entryId: entryId,
+    name: "Chalet Bergblick",
+    address: "Dorfstrasse 12, Grindelwald",
+    latitude: 46.62405,
+    longitude: 8.03412
+  )
+  #expect(s1.shareableInput().resolutionOverrides == [
+    .manual(inputIndex: 0, name: "Chalet Bergblick", address: "Dorfstrasse 12, Grindelwald",
+            latitude: 46.62405, longitude: 8.03412)
+  ])
+
+  guard let code = s1.sharePreview(scope: ShareScopeOptions(dates: true, hotel: false, airports: false, reservations: false)).code else {
+    Issue.record("share was blocked")
+    return
+  }
+  let s2 = PlannerStore(resolvers: [], store: nil)
+  #expect(await s2.importShare(code: code))
+  guard case .manual(let stop)? = s2.request.entries.first?.pinned else {
+    Issue.record("the traveller's own pin must arrive as a pin, not as a name to look up again")
+    return
+  }
+  #expect(stop.latitude == 46.62405)
+  #expect(stop.longitude == 8.03412)
+  #expect(stop.name == "Chalet Bergblick")
+  #expect(stop.userProvidedCoordinates == true)
+}
+
+/// リンクは**解決の最中にも**開く(`.onOpenURL` は待ってくれない)。飛んでいた問い合わせが
+/// 返ってきたとき、その答えはもう誰の答えでもない —— 番号で新しい旅の行に貼り付けない。
+/// そして取り込みは、組めていないのに「開きました」と言わない。
+@Test @MainActor func aLinkOpenedDuringAResolveNeverInheritsTheOldAnswers() async {
+  let s1 = PlannerStore(resolvers: [CatalogResolver()], store: nil)
+  s1.loadSample(.switzerland)
+  await s1.build()
+  guard let code = s1.sharePreview(scope: ShareScopeOptions(dates: true, hotel: false, airports: false, reservations: false)).code else {
+    Issue.record("share was blocked")
+    return
+  }
+
+  let s2 = PlannerStore(resolvers: [SlowResolver()], store: nil)
+  s2.request.entries = [WishlistEntry(text: "Stale Place One"), WishlistEntry(text: "Stale Place Two")]
+  let stale = Task { await s2.requestBuildFromStart() }
+  // 本当に飛んでいるところへ割り込む(旗が立つまで待つ)—— 待たないと、機械の忙しさ次第で
+  // 「解決が始まる前の取り込み」を測ることになる。
+  while !s2.isResolvingPlaces { await Task.yield() }
+
+  let imported = await s2.importShare(code: code)
+  let staleLanded = await stale.value
+
+  #expect(imported)
+  #expect(!staleLanded)
+  #expect(s2.view.screen == .plan)
+  #expect(s2.bundle != nil)
+  #expect(s2.request.entries.count == 8)
+  // 貼り付いた場所は 1 つ残らず**その行自身の問い**の答え。前の旅の 2 件はどこにも居ない。
+  #expect(s2.request.entries.allSatisfy { $0.pinned?.stop.input == $0.text })
+  #expect(!s2.request.entries.contains { $0.text.hasPrefix("Stale Place") })
+}
+
+/// 場所が 1 つも読めないコードは、読めなかったコードと同じ扱い —— **開いていた旅程を
+/// 消さない**。復号は通るが中身が URL だけ、という形は Web でも作れる。
+@Test @MainActor func aCodeWithNoPlacesLeavesTheTripAlone() async {
+  let s = PlannerStore(resolvers: [CatalogResolver()], store: nil)
+  s.loadSample(.switzerland)
+  await s.build()
+  let before = s.request.entries.count
+
+  let imported = await s.importShare(code: handMadeShareCode(itinerary: "https://example.com/booking/12345"))
+  #expect(!imported)
+  #expect(s.request.entries.count == before)
+  #expect(s.view.screen == .plan)
+  #expect(s.bundle != nil)
+  #expect(s.view.toast?.text == AppCopy.for(s.request.locale).shareImportFailed)
+}
+
+/// 表示のモードは**12 件に詰めた後の行**から出す。日が付いていたのが切り落とされた行だけ
+/// だった旅程で「既にある旅程の確認」が残ると、画面が手元の行と食い違う。
+@Test @MainActor func theModeIsReadFromTheRowsThatSurvivedTheCap() async {
+  let itinerary = (1...12).map { "Place \($0)" }.joined(separator: "\n") + "\nDay 2\nPlace 13"
+  let s = PlannerStore(resolvers: [], store: nil)
+  #expect(await s.importShare(code: handMadeShareCode(itinerary: itinerary)))
+  #expect(s.request.entries.count == 12)
+  #expect(s.request.entries.allSatisfy { $0.fixedDay == nil })
+  #expect(s.request.inputMode == .wishlist)
+}
+
+/// 送信側の画面を通さずに 1 本のリンクを組む。`sharePreview` は `ShareScope` を通るので、
+/// そこで止まる形(場所の無い行程)や、Web だけが作る形(仮置きの日付)はテストに渡って
+/// こない —— このヘルパはその 2 つを作るためだけに在る。
+private func handMadeShareCode(
+  itinerary: String,
+  tripStartDate: String = "",
+  dateWasProvided: Bool = false
+) -> String {
+  ShareCodec.encode(ShareableTripInput(
+    destination: .destination(.switzerland),
+    itinerary: itinerary,
+    tripDays: 3,
+    tripStartDate: tripStartDate,
+    dateWasProvided: dateWasProvided,
+    hotelQuery: "",
+    pace: .balanced,
+    mealPlan: .all,
+    travelPreference: .auto,
+    arrivalAirport: "none",
+    arrivalTime: "",
+    departureAirport: "none",
+    departureTime: "",
+    flightKind: .international,
+    dayStartDefault: "09:00",
+    dayEndTarget: "",
+    transferBufferMinutes: 0
+  ))
+}
+
 /// 警告 1 件につき文が 1 つ。どれも空でなく、禁止語を踏まない —— 旅行者が最後に読む
 /// 「共有していいか」の判断材料そのものなので、機械語が混ざってはいけない。
 @Test @MainActor func everyShareWarningHasAReadableLine() async {

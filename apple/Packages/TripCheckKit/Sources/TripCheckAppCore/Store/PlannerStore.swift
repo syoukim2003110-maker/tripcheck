@@ -32,6 +32,17 @@ public final class PlannerStore {
   /// 組み立ての世代。1 回組むごとに 1 つ進み、**進んだ後に返ってきた答えは捨てる**。
   public internal(set) var buildGeneration = 0
 
+  /// 場所を尋ねる世代。`buildGeneration` と同じ仕掛けを、組み立ての手前(場所の解決)に
+  /// 掛ける —— 解決は通信で、返事は**数秒後**に来る。その間に旅が入れ替われば
+  /// (`reset()`:リンクを開いた・保存した旅程を開いた・見本を入れた)、返ってきた答えは
+  /// もう誰の答えでもない。世代が動いていたら黙って捨てる。
+  ///
+  /// 捨てないと何が起きるかは実際に踏める:`.onOpenURL` は解決の最中にも来るので、
+  /// さっきの旅の「○○駅」が、リンクで入ったばかりの別の旅の 1 行目に**番号で**貼り付く。
+  /// 進むのは `reset()` と、解決を始める 4 か所(`requestBuildFromStart` /
+  /// `retryResolve` / `changeDestinationFromResolve` / 開き直しのカタログ引き直し)。
+  public internal(set) var resolveGeneration = 0
+
   /// 場所を調べている間だけ真(`requestBuildFromStart()` が立てて倒す)。CTA が「まだ場所が
   /// 無い」と「いま調べている」を言い分けるために要る —— 見分けが付かないと、旅行者は
   /// 同じボタンをもう一度押す。書くのは `PlannerStore+Start.swift` なので `internal(set)`。
@@ -229,6 +240,12 @@ public final class PlannerStore {
   /// 最初から。ロケールだけは端末の設定なので引き継ぐ。
   public func reset() {
     cancelBuild()
+    // 飛んでいる問い合わせも同じように捨てる。世代を進めておけば、遅れて届いた場所は
+    // `requestBuildFromStart` などのガードで落ちる —— 落とさないと、さっきの旅の答えが
+    // 新しい旅の行へ番号で貼り付く。旗を倒すのはここ:返事は捨てるので、倒す役は
+    // もう帰って来ない。倒さないと CTA が「調べています」のまま押せなくなる。
+    resolveGeneration += 1
+    isResolvingPlaces = false
     pendingApply = nil
     toastDismissTask?.cancel()
     toastDismissTask = nil
