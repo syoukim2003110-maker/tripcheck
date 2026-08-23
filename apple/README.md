@@ -51,8 +51,8 @@ xcrun simctl ui booted content_size large                    # 戻す
 
 ## 検証値(engine、2026-08-23、`apple/tools/verify-kit.sh`)
 
-**788 本すべて passed / `exit=0`**。`verify-kit.sh` はパッケージ全体を回すので、内訳は
-`TripCheckKitTests` 576 と `TripCheckAppCoreTests` 212。前者は Plan 1 の 563 本に Task 10 の
+**795 本すべて passed / `exit=0`**。`verify-kit.sh` はパッケージ全体を回すので、内訳は
+`TripCheckKitTests` 576 と `TripCheckAppCoreTests` 219。前者は Plan 1 の 563 本に Task 10 の
 `PreTripTimelineTests` 13 本が足されたもので、下の表(G1/G2/G3・共有・JSMath・境界)は
 その中身 —— Plan 2 は Kit の既存テストに一切触っていない。
 

@@ -358,6 +358,12 @@ TDD: 各モジュールは**まず golden/不変条件のテストを赤にし�
 | 12 | golden オラクル(G1)に加えて **TS スナップショット照合(G3)** を追加 | オラクルは日割り・時刻の差を見ないため |
 | 13 | §3.1 の 6 つの自由関数は、名前空間付きの `static` として出荷した(`TripBuilder.build`、`TripScenarios.assessTripFit` / `.counterfactuals`、`Feasibility.snapshot` / `.derive`、`PlannerEdits.evaluate`) | 移植元のモジュール境界が呼び出し側にそのまま見える。トップレベルに 6 つの動詞を並べるより、どの TS ファイルの続きかが読める |
 | 14 | §4.2 の `resolve` は `[PlaceResolution]` ではなく **出現順で索く `[Int: PlaceResolution]`** を返す | 解決器は一部の問い合わせにしか答えないことがある。配列だと「答えなかった」を埋め草で表すことになり、`inputIndex` との対応が位置頼みになる |
+| 15 | §4.3 の「要求の言語を `locale` に合わせる」は**実装しない**。Apple の場所検索は端末の言語に従う | iOS 17 の `MKLocalSearch.Request` に言語を指定する口が無い(`naturalLanguageQuery` と `region` だけ)。旅程に出る文は `PlannerLocale` が決めるので揃うが、地図が返す場所の**名前と住所**は端末の言語で来る |
+| 16 | 拠点(ホテル)を旅行者が選び直しても、端末に保存した旅程を開き直すと**推薦の拠点に戻る**。開き直した旅程の拠点の住所は地区までしか出ない | R11 で端末に残すのは `hotelQuery`(旅行者が書いた文字列)だけで、そこから決まった `resolvedBase` は残さない —— Kit の `ResolvedStop` は `sourceUrl` / `verifiedAt` を必ず持ち、`UserTripPayload.validate` が撥ねる。開くたびに同じ文字列から同じ手順で決め直すので、旅程そのものは同じに戻る |
+| 17 | `https://…#t=<code>` の共有リンクは **Web でだけ開く**。端末で直に開くのは `tripcheck://t/<code>` | Associated Domains(`apple-app-site-association` の配信)を持たない。同じ 1 本のコードなので、どちらから入っても同じ旅程になる |
+| 18 | 旅行者が地図に置いた点は、**住所が無いとリンクに乗らない**(名前だけが渡り、受け取った端末が引き直す) | Kit の `ShareCodec.cleanResolutionOverrides` が名前と住所の両方を「旅行者の書いた物証」として要る。間に合わせの住所を作れば乗せられるが、それは旅行者が書いていない文を物証として送ることになる |
+| 19 | Google の `providerRef` 由来の決定は、web → アプリ → web の往復で**失われる**(名前だけが往復する) | `providerRef` は Web にとって Google の Place ID で、MapKit の識別子を入れると受け取った Web が別の場所を引く。端末の地図が決めた場所は名前だけを渡す |
+| 20 | エンジンへ渡す `inputIndex` は**毎回いまの並びから押し直す**。手入力の点の id(`manual-<番号>-<緯度5桁>-<経度5桁>`)も、行を外すたびに新しい番号で作り直し、その点に付いた編集の宛先を一緒に動かす | `ResolvedStop.inputIndex` は場所が決まった時刻の並びで凍り、`TripBuilder` は行と場所をまずその番号で突き合わせる —— 固定済みの行より前の行を外すと、以降の場所が 1 行ずつずれて貼り付く。Web は `resolutionOverrides` の番号を持ち回るだけで id を作り直さないので、ここだけ挙動が違う(アプリのほうが、外した後の編集を保つ) |
 
 ---
 
