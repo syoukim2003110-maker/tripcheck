@@ -24,7 +24,10 @@ public enum TimelineRow: Identifiable, Sendable {
   public var id: String {
     switch self {
     case .hotelLeg(let model): "hotel:\(model.direction.rawValue)"
-    case .movement(let model): "leg:\(model.legKey)"
+    // `legKey` は場所の組(A→B)だけを見るので、A→B→A→B のように同じ 2 地点を 1 日に
+    // 何度も行き来する旅程では 2 度目が 1 度目と同じ id になる(`ForEach` に未定義の挙動を
+    // 渡す)。訪問と同じく、区間が向かう先の番号まで入れて初めて一意になる。
+    case .movement(let model): "leg:\(model.legKey)#\(model.nextStopNumber)"
     // 同じ場所を 1 日に 2 度訪ねる旅程が書けるので、番号まで入れて初めて一意になる。
     case .activity(let model): "stop:\(model.stopId)#\(model.number)"
     case .meal(let model): "meal:\(model.slotId)"
@@ -64,8 +67,14 @@ public struct MovementModel: Identifiable, Sendable {
   /// 手段ピッカーの 1 つ。`selected` は今この区間で使われている手段、`enabled` は選んでよいか。
   public typealias Option = (mode: TransportMode, label: String, minutes: Int, selected: Bool, enabled: Bool)
 
-  /// `routeLegKey(from.id, to.id)`。手段の指定を引く鍵そのもの。
+  /// `routeLegKey(from.id, to.id)`。手段の指定を引く鍵そのもの。**場所の組だけ**を見るので、
+  /// 同じ 2 地点を 1 日に何度も行き来する旅程では複数の区間が同じ値を持つ——`TimelineRow.id`
+  /// が一意であるためには `nextStopNumber` も要る。
   public var legKey: String
+  /// この区間の直後に来る訪問の番号(`ActivityModel.number` と同じ、1 始まり)。行の役には
+  /// 立たない——`TimelineRow.id` が `legKey` だけでは一意になれない旅程(A→B→A→B)を、
+  /// 「どの回の A→B か」で区別するためだけに持つ。
+  public var nextStopNumber: Int
   /// 「電車 95分・乗換1回」。**「約」も時間の丸めも出ない**(`legHeadline`)——
   /// 推定であることは `evidenceLine` が別に言う。
   public var summary: String
@@ -139,7 +148,12 @@ extension PlannerStore {
     }
     for (index, built) in day.stops.enumerated() {
       if index > 0, day.legs.indices.contains(index - 1) {
-        rows.append(.movement(movementRow(day.legs[index - 1], preference: preference, locale: locale)))
+        rows.append(.movement(movementRow(
+          day.legs[index - 1],
+          nextStopNumber: index + 1,
+          preference: preference,
+          locale: locale
+        )))
       }
       rows.append(.activity(activityRow(
         built,
@@ -184,8 +198,16 @@ extension PlannerStore {
       areaAndStay: stop.area.isEmpty ? stay : "\(stop.area) · \(stay)",
       accessNote: PoiAccess.policy(for: stop).map { locale == .ja ? $0.note.ja : $0.note.en },
       flags: TimelinePresentation.activityFlags(built, locale: locale),
-      // 鍵ゼロのアプリが今のところ自分で挟むのは、ビルダーの食事休憩だけ(推薦の採用は
-      // 次の spec)。増えたときに絵が選べるよう、種類は別に持つ。
+      // 今日の鍵ゼロのアプリでは、`isFiller`/`fillerKind` が真になる停留所は 1 つも無い。
+      // ビルダーが作る `BuiltPlanStop` は常に `kind: .place, mealKind: nil`
+      // (`Sources/TripCheckKit/Builder/DayClock.swift:153-158`。移植元の TS も同じ)——
+      // この画面が読んでいるのはその事実そのままで、これは推測でも将来の話でもない。
+      //
+      // Web 版はウィッシュリストに刺した目印(`TRIPCHECK_FILLER_PREFIX`、
+      // `lib/presentation/recommendation-presentation.ts:26`)から `isFiller` を出す
+      // (`app/components/planner/hooks/useTripDomainModel.tsx:750-761`)が、その目印は
+      // Kit にまだ移植されていない。採用した推薦が入る次の spec で、この 2 行をその目印の
+      // 判定に差し替える —— それまでは `built.kind`/`mealKind` がここの唯一の出どころ。
       isFiller: built.kind == .meal,
       fillerKind: built.mealKind.map { $0 == .lunch ? .lunch : .dinner },
       colorHex: colorHex
@@ -194,7 +216,12 @@ extension PlannerStore {
 
   /// 移動の行。選ばれている手段は**旅行者の指定が常に勝つ**(`legModeOverrides`)——
   /// 指定が無ければエンジンの推薦。
-  private func movementRow(_ leg: BuiltPlanLeg, preference: TravelPreference, locale: PlannerLocale) -> MovementModel {
+  private func movementRow(
+    _ leg: BuiltPlanLeg,
+    nextStopNumber: Int,
+    preference: TravelPreference,
+    locale: PlannerLocale
+  ) -> MovementModel {
     let legKey = routeLegKey(leg.from.id, leg.to.id)
     let recommended = leg.comparison.recommended
     let selected = edit.legModeOverrides[legKey] ?? recommended.mode
@@ -205,6 +232,7 @@ extension PlannerStore {
     let boarding: TransitLegBoarding? = nil
     return MovementModel(
       legKey: legKey,
+      nextStopNumber: nextStopNumber,
       summary: TimelinePresentation.legHeadline(
         mode: recommended.mode,
         minutes: recommended.minutes,

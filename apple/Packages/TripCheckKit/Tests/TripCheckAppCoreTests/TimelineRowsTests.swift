@@ -57,3 +57,38 @@ import TripCheckKit
   }
   #expect(checked > 0)
 }
+
+/// 鍵ゼロの今のアプリでは Filler の停留所は 1 つも作れない —— ビルダーが作る
+/// `BuiltPlanStop` は常に `kind: .place, mealKind: nil`(`DayClock.swift:153-158`)。
+/// この表明が赤くなったら、それは「Filler が出るようになった」ではなく「実装が
+/// コメントの言う唯一の出どころ(`built.kind`/`mealKind`)から外れた」ことを疑う。
+@Test @MainActor func noStopIsEverAFillerInTheKeyZeroApp() async {
+  let store = PlannerStore(resolvers: [CatalogResolver()], store: nil); store.loadSample(.switzerland); await store.build()
+  let dayCount = store.bundle?.plan.days.count ?? 0
+  #expect(dayCount > 0)
+  var checked = 0
+  for day in 0..<dayCount {
+    for row in store.timelineRows(day) {
+      if case .activity(let m) = row {
+        checked += 1
+        #expect(!m.isFiller)
+        #expect(m.fillerKind == nil)
+      }
+    }
+  }
+  #expect(checked > 0)
+}
+
+/// `TimelineRow.id` は `ForEach` がそのまま使う。同じ 2 地点を 1 日に何度も行き来する
+/// 旅程では区間の id が `legKey` だけでは足りない(2 度目が 1 度目とかぶる)——
+/// サンプルの全ての日で、行 id に重複が無いことを刺しておく。
+@Test @MainActor func timelineRowIdsAreUniquePerDay() async {
+  let store = PlannerStore(resolvers: [CatalogResolver()], store: nil); store.loadSample(.switzerland); await store.build()
+  let dayCount = store.bundle?.plan.days.count ?? 0
+  #expect(dayCount > 0)
+  for day in 0..<dayCount {
+    let ids = store.timelineRows(day).map(\.id)
+    #expect(!ids.isEmpty)
+    #expect(Set(ids).count == ids.count)
+  }
+}
