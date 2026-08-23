@@ -382,6 +382,8 @@ public struct EvidenceSnapshotOptions: Equatable, Sendable, Codable {
   public var transitConvergence: TransitConvergenceEvidence?
   public var openingEvidenceByStop: [String: OpeningHoursFactEvidence]?
   public var lastEntryEvidenceByStop: [String: LastEntryFactEvidence]?
+  /// live の経路分の出典。**入力専用**(木には入らない)。`nil` = `google`(Web と既存フィクスチャの既定)。
+  public var liveRouteSource: EvidenceSource?
 
   public init(
     dateWasProvided: Bool,
@@ -396,7 +398,8 @@ public struct EvidenceSnapshotOptions: Equatable, Sendable, Codable {
     routeEvidenceByFactId: [String: RouteFactEvidence]? = nil,
     transitConvergence: TransitConvergenceEvidence? = nil,
     openingEvidenceByStop: [String: OpeningHoursFactEvidence]? = nil,
-    lastEntryEvidenceByStop: [String: LastEntryFactEvidence]? = nil
+    lastEntryEvidenceByStop: [String: LastEntryFactEvidence]? = nil,
+    liveRouteSource: EvidenceSource? = nil
   ) {
     self.dateWasProvided = dateWasProvided
     self.baseWasProvided = baseWasProvided
@@ -411,6 +414,7 @@ public struct EvidenceSnapshotOptions: Equatable, Sendable, Codable {
     self.transitConvergence = transitConvergence
     self.openingEvidenceByStop = openingEvidenceByStop
     self.lastEntryEvidenceByStop = lastEntryEvidenceByStop
+    self.liveRouteSource = liveRouteSource
   }
 }
 

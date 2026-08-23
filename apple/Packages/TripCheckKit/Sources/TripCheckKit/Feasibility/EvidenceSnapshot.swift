@@ -78,6 +78,7 @@ extension Feasibility {
     let durationOverrides = Set(options.userDurationStopIds ?? [])
     var seenStops = Set<String>()
     let nonConverged = options.transitConvergence?.nonConverged ?? false
+    let liveSource: EvidenceSource = options.liveRouteSource ?? .google
 
     /// TS `:263-291`
     func addStopCoreFacts(_ stop: RouteStop) -> Bool {
@@ -177,7 +178,7 @@ extension Feasibility {
           label,
           hasPlanningEstimate ? minutes.map { JSONValue.number(Double($0)) } : nil,
           hasPlanningEstimate ? .estimated : routeEvidence?.status.evidenceStatus ?? .unknown,
-          provisionallyMeasured || isTruthy(routeEvidence?.providerRef) ? .google : hasPlanningEstimate ? .derived : .other,
+          provisionallyMeasured || isTruthy(routeEvidence?.providerRef) ? liveSource : hasPlanningEstimate ? .derived : .other,
           fetchedAt: usesMetadata ? routeEvidence?.fetchedAt : nil,
           providerRef: usesMetadata ? routeEvidence?.providerRef : nil,
           explanation: provisionallyMeasured
@@ -195,7 +196,7 @@ extension Feasibility {
         label,
         minutes.map { JSONValue.number(Double($0)) },
         verified ? .verified : .estimated,
-        exactLiveValue ? .google : .derived,
+        exactLiveValue ? liveSource : .derived,
         fetchedAt: routeEvidence?.fetchedAt,
         providerRef: routeEvidence?.providerRef,
         explanation: metadataExplanation
@@ -227,7 +228,7 @@ extension Feasibility {
         label,
         status == .unknown || status == .failed ? nil : count.map { JSONValue.number(Double($0)) },
         status,
-        exactProviderValue ? .google : isTruthy(routeEvidence?.providerRef) ? .google : .other,
+        exactProviderValue ? liveSource : isTruthy(routeEvidence?.providerRef) ? liveSource : .other,
         fetchedAt: routeEvidence?.fetchedAt,
         providerRef: routeEvidence?.providerRef,
         explanation: exactProviderValue

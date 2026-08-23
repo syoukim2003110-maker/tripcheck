@@ -12,9 +12,10 @@ public enum EvidenceStatus: String, Codable, Sendable, CaseIterable {
   case user_provided, verified, estimated, unknown, failed
 }
 
-/// TS `EvidenceSource` (`lib/feasibility-result.ts:14-19`)
+/// TS `EvidenceSource` (`lib/feasibility-result.ts:14-19`) + Swift 限定の `apple`(spec §9-25)。
+/// 判定・表示は `status` しか読まないので、`apple` を足しても挙動は変わらない。
 public enum EvidenceSource: String, Codable, Sendable, CaseIterable {
-  case user, google, tripcheck_catalog, derived, other
+  case user, google, tripcheck_catalog, derived, other, apple
 }
 
 /// TS `Evidence<T>` (`lib/feasibility-result.ts:21-29`). `value` is `T | null` — a fact can exist
