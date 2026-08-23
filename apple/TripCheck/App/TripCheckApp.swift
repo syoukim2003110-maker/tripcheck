@@ -35,6 +35,13 @@ struct TripCheckApp: App {
       RootView()
         .environment(store)
         .preferredColorScheme(.light)
+        // 共有リンクで開かれたとき。Web の `https://…#t=<code>` も、アプリの
+        // `tripcheck://t/<code>` も、同じ 1 本のコードを運んでくる —— 読めなければ
+        // `importShare` が何も変えずにトーストで報せる(開いていた旅程を黙って捨てない)。
+        .onOpenURL { url in
+          guard let code = PlannerStore.shareCode(from: url) else { return }
+          Task { await store.importShare(code: code) }
+        }
     }
   }
 }

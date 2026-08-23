@@ -249,6 +249,34 @@ public struct AppCopy: Sendable {
   /// 何が起きたかではなく、この先どうなるか(アプリを閉じると消える)である。
   public let storageUnavailableNote: String
 
+  // MARK: - 共有(Task 12)
+
+  /// `•••` の中の 1 行。**Kit の `share`(「共有リンク」/ "Copy share link")は使わない**
+  /// —— あちらはリンクをコピーするボタンの文で、こちらは何を含めるかを選ぶ画面を開く。
+  public let shareAction: String
+  /// 共有の画面の題と、その上の小さな見出し(Web `ShareDialog.tsx:28`)。
+  public let shareSheetTitle: String
+  public let shareSheetSubtitle: String
+  /// 何を含めるかの 4 つの切り替えと、その囲みの見出し(Web `ShareDialog.tsx:36-43`)。
+  public let shareIncludeHeading: String
+  public let shareScopeDates: String
+  public let shareScopeHotel: String
+  public let shareScopeAirports: String
+  public let shareScopeReservations: String
+  /// 予約の中身まで含める設定にしたときの但し書き(Web `ShareDialog.tsx:49`)。
+  public let shareReservationsIncluded: String
+  /// リンクが作れなかった 2 つの理由(Web `ShareDialog.tsx:50-52`)。**空欄にしない** ——
+  /// 押せないボタンだけを出すと、なぜ配れないのかが画面のどこにも無くなる。
+  public let shareTooLong: String
+  public let shareNoPlaces: String
+  /// 配る 2 本のリンク。Web 用は誰の端末でも開き、アプリ用はこのアプリが入っている端末で
+  /// 直に開く。
+  public let shareCopyLink: String
+  public let shareAppLink: String
+  /// 開いたリンクが読めなかったときのトースト。**何が起きたかだけを言う** —— 手元の旅程は
+  /// 何も変わっていないので、直しかたを促す文にしない。
+  public let shareImportFailed: String
+
   private let pasteLimitToastText: @Sendable (Int) -> String
   private let daysValueText: @Sendable (Int) -> String
   private let priorityLabelText: @Sendable (String) -> String
@@ -286,6 +314,8 @@ public struct AppCopy: Sendable {
   private let issuesHeadingText: @Sendable (Int) -> String
   private let assumptionsHeadingText: @Sendable (Int) -> String
   private let deleteTripQuestionText: @Sendable (String) -> String
+  private let shareRedactedReservationsText: @Sendable (Int) -> String
+  private let shareOmittedLinesText: @Sendable (Int) -> String
 
   init(
     startTitle: String,
@@ -417,6 +447,20 @@ public struct AppCopy: Sendable {
     openTripAction: String,
     deleteTripAction: String,
     storageUnavailableNote: String,
+    shareAction: String,
+    shareSheetTitle: String,
+    shareSheetSubtitle: String,
+    shareIncludeHeading: String,
+    shareScopeDates: String,
+    shareScopeHotel: String,
+    shareScopeAirports: String,
+    shareScopeReservations: String,
+    shareReservationsIncluded: String,
+    shareTooLong: String,
+    shareNoPlaces: String,
+    shareCopyLink: String,
+    shareAppLink: String,
+    shareImportFailed: String,
     pasteLimitToast: @escaping @Sendable (Int) -> String,
     daysValue: @escaping @Sendable (Int) -> String,
     priorityLabel: @escaping @Sendable (String) -> String,
@@ -453,7 +497,9 @@ public struct AppCopy: Sendable {
     changeBaseQuestion: @escaping @Sendable (String) -> String,
     issuesHeading: @escaping @Sendable (Int) -> String,
     assumptionsHeading: @escaping @Sendable (Int) -> String,
-    deleteTripQuestion: @escaping @Sendable (String) -> String
+    deleteTripQuestion: @escaping @Sendable (String) -> String,
+    shareRedactedReservations: @escaping @Sendable (Int) -> String,
+    shareOmittedLines: @escaping @Sendable (Int) -> String
   ) {
     self.startTitle = startTitle
     self.startHelpShort = startHelpShort
@@ -584,6 +630,20 @@ public struct AppCopy: Sendable {
     self.openTripAction = openTripAction
     self.deleteTripAction = deleteTripAction
     self.storageUnavailableNote = storageUnavailableNote
+    self.shareAction = shareAction
+    self.shareSheetTitle = shareSheetTitle
+    self.shareSheetSubtitle = shareSheetSubtitle
+    self.shareIncludeHeading = shareIncludeHeading
+    self.shareScopeDates = shareScopeDates
+    self.shareScopeHotel = shareScopeHotel
+    self.shareScopeAirports = shareScopeAirports
+    self.shareScopeReservations = shareScopeReservations
+    self.shareReservationsIncluded = shareReservationsIncluded
+    self.shareTooLong = shareTooLong
+    self.shareNoPlaces = shareNoPlaces
+    self.shareCopyLink = shareCopyLink
+    self.shareAppLink = shareAppLink
+    self.shareImportFailed = shareImportFailed
     self.pasteLimitToastText = pasteLimitToast
     self.daysValueText = daysValue
     self.priorityLabelText = priorityLabel
@@ -621,7 +681,17 @@ public struct AppCopy: Sendable {
     self.issuesHeadingText = issuesHeading
     self.assumptionsHeadingText = assumptionsHeading
     self.deleteTripQuestionText = deleteTripQuestion
+    self.shareRedactedReservationsText = shareRedactedReservations
+    self.shareOmittedLinesText = shareOmittedLines
   }
+
+  /// 隠した予約の件数。**場所は残る**と言い切る —— 予約そのものを消したと読めると、
+  /// 受け取った人の旅程からその訪問ごと消えたように見える。
+  public func shareRedactedReservations(count: Int) -> String { shareRedactedReservationsText(count) }
+
+  /// リンクから落とした行の数。落としたことを黙っていると、受け取った旅程が短い理由が
+  /// どこにも無くなる。
+  public func shareOmittedLines(count: Int) -> String { shareOmittedLinesText(count) }
 
   /// 貼り付けが上限に当たったときのトースト。**件数を名指しする** —— 12 までですとだけ
   /// 言われても、旅行者は何件書いたのかを数え直すことになる(Web `PlacesStep.tsx:146`)。
@@ -895,6 +965,24 @@ public struct AppCopy: Sendable {
     openTripAction: "開く",
     deleteTripAction: "削除",
     storageUnavailableNote: "旅程をこの端末に保存できません。アプリを閉じると、組んだ旅程は消えます。",
+    shareAction: "共有",
+    // Web `ShareDialog.tsx:28`
+    shareSheetTitle: "リンクに含める情報",
+    shareSheetSubtitle: "共有する内容を選択",
+    // Web `ShareDialog.tsx:36-43`
+    shareIncludeHeading: "含める情報",
+    shareScopeDates: "旅行日",
+    shareScopeHotel: "ホテル・拠点",
+    shareScopeAirports: "空港とフライト時刻",
+    shareScopeReservations: "予約時刻・予約マーク",
+    // Web `ShareDialog.tsx:49-52`
+    shareReservationsIncluded: "予約情報を含める設定です。予約番号や氏名が入力文にないか確認してください。",
+    shareTooLong: "リンクが長すぎます。印刷/PDFまたは端末内保存を使ってください。",
+    shareNoPlaces: "安全に共有できる地点がありません。入力を確認してください。",
+    // Web `ShareDialog.tsx:56`
+    shareCopyLink: "この内容でリンクをコピー",
+    shareAppLink: "アプリ用リンク",
+    shareImportFailed: "リンクを読み取れませんでした。",
     pasteLimitToast: { "\($0)件あります。1回に確認できるのは12か所までです。残りは別の旅として分けてください。" },
     daysValue: { "\($0)日" },
     priorityLabel: { "\($0)の優先度" },
@@ -950,7 +1038,10 @@ public struct AppCopy: Sendable {
     changeBaseQuestion: { "拠点を「\($0)」に変更しますか？" },
     issuesHeading: { "確認したいこと \($0)" },
     assumptionsHeading: { "この結論の前提 \($0)件" },
-    deleteTripQuestion: { "「\($0)」を端末から削除しますか？" }
+    deleteTripQuestion: { "「\($0)」を端末から削除しますか？" },
+    // Web `ShareDialog.tsx:47-48`
+    shareRedactedReservations: { "予約\($0)件は場所だけ共有し、時刻を除外します。" },
+    shareOmittedLines: { "安全に判別できない\($0)行はリンクから除外します。" }
   )
 
   static let en = AppCopy(
@@ -1083,6 +1174,20 @@ public struct AppCopy: Sendable {
     openTripAction: "Open",
     deleteTripAction: "Delete",
     storageUnavailableNote: "Trips cannot be saved on this device. What you build disappears when the app closes.",
+    shareAction: "Share",
+    shareSheetTitle: "Information in the link",
+    shareSheetSubtitle: "Choose what to share",
+    shareIncludeHeading: "Include",
+    shareScopeDates: "Trip dates",
+    shareScopeHotel: "Hotel or base",
+    shareScopeAirports: "Airports and flight times",
+    shareScopeReservations: "Booking times and reservation markers",
+    shareReservationsIncluded: "Booking details are enabled. Check that the pasted text contains no booking reference or personal name.",
+    shareTooLong: "This trip is too long for a reliable URL. Use print/PDF or device storage instead.",
+    shareNoPlaces: "No safely shareable place remains. Review the input first.",
+    shareCopyLink: "Copy scoped link",
+    shareAppLink: "App link",
+    shareImportFailed: "That link could not be read.",
     pasteLimitToast: { "\($0) places found. Up to 12 places at a time. Keep the rest for a second trip." },
     daysValue: { "\($0) day\($0 == 1 ? "" : "s")" },
     priorityLabel: { "\($0) priority" },
@@ -1138,7 +1243,9 @@ public struct AppCopy: Sendable {
     changeBaseQuestion: { "Change the base to “\($0)”?" },
     issuesHeading: { "\($0) thing\($0 == 1 ? "" : "s") to check" },
     assumptionsHeading: { "\($0) assumption\($0 == 1 ? "" : "s") behind this result" },
-    deleteTripQuestion: { "Delete “\($0)” from this device?" }
+    deleteTripQuestion: { "Delete “\($0)” from this device?" },
+    shareRedactedReservations: { "\($0) booking time\($0 == 1 ? " is" : "s are") removed while keeping the places." },
+    shareOmittedLines: { "\($0) opaque line\($0 == 1 ? " is" : "s are") omitted because they cannot be safely redacted." }
   )
 
   /// 保存した旅程の題 —— **先頭 3 か所の名前**。一覧はこれで旅を見分けるので、名前を

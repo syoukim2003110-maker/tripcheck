@@ -89,6 +89,14 @@ struct PlanScreen: View {
           .presentationDragIndicator(.visible)
       }
     }
+    // 何を渡すかを決める 1 枚。**全画面の高さで出す** —— 4 つの選択と、その結果として何が
+    // 隠れるかの文と、配る 2 本のボタンは 1 つの判断で、途中で切れていると「何を渡すか」を
+    // 決める前に配るボタンが目に入る(半分の高さで実際にそうなった)。
+    .sheet(isPresented: $store.view.shareOpen) {
+      ShareSheet()
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
+    }
     // 重い結果の出る編集は**先に訊く**(v1.1 TC-007)。題は Kit が決める —— 新しい損傷が
     // ちょうど 1 件の予約遅れなら「この変更で予約に N 分遅れます」、それ以外は編集ごとの
     // 問いかけがそのまま残る(`PlannerEdits.confirmTitle`)。

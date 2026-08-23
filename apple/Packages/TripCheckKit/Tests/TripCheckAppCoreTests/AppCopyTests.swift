@@ -37,7 +37,11 @@ import TripCheckKit
               c.diffBefore, c.diffAfter, c.applyAlternative, c.assumptionsNone, c.attentionsHeading,
               c.passportUnsetShort,
               c.backToPlan, c.recentTripsTitle, c.openTripAction, c.deleteTripAction,
-              c.storageUnavailableNote] + c.diffLabels
+              c.storageUnavailableNote,
+              c.shareAction, c.shareSheetTitle, c.shareSheetSubtitle, c.shareIncludeHeading,
+              c.shareScopeDates, c.shareScopeHotel, c.shareScopeAirports, c.shareScopeReservations,
+              c.shareReservationsIncluded, c.shareTooLong, c.shareNoPlaces, c.shareCopyLink,
+              c.shareAppLink, c.shareImportFailed] + c.diffLabels
               + [c.daysValue(1), c.daysValue(4), c.priorityLabel(name: "X"), c.removeStopQuestion(name: "X"), c.mustRemovalNote(name: "X"), c.reservationRemovalNote(name: "X"), c.removedStopToast(name: "X"), c.pasteLimitToast(count: 14)]
               + [c.resolveAllConfirmed(count: 1), c.resolveAllConfirmed(count: 4),
                  c.resolveCountryConflict(codes: ["CH", "JP"]), c.resolveCandidateQuestion(name: "X"),
@@ -61,7 +65,9 @@ import TripCheckKit
                  c.extendTripQuestion(days: 6), c.changeBaseQuestion(name: "X")]
               + [c.issuesHeading(count: 1), c.issuesHeading(count: 3),
                  c.assumptionsHeading(count: 1), c.assumptionsHeading(count: 3)]
-              + [c.deleteTripQuestion(title: "X")] {
+              + [c.deleteTripQuestion(title: "X")]
+              + [c.shareRedactedReservations(count: 1), c.shareRedactedReservations(count: 2),
+                 c.shareOmittedLines(count: 1), c.shareOmittedLines(count: 3)] {
       #expect(BannedTerms.violations(in: s).isEmpty, "\(locale): \(s)")
       #expect(!s.isEmpty, "\(locale): empty copy")
       checked += 1
@@ -71,7 +77,8 @@ import TripCheckKit
   // + Task 10 の 21 + 引数を取る 8 + Task 5 の引数つき 16 + Task 6 の引数つき 8
   // + Task 7 の引数つき 2 + Task 8 の引数つき 1 + Task 9 の引数つき 12
   // + Task 10 の引数つき 4(件数の 2 つは 1 と複数の両方を見る)+ Task 11 の 5 と引数つき 1
-  #expect(checked == 372)
+  // + Task 12 の 14 と引数つき 4(件数の 2 つは 1 と複数の両方を見る)
+  #expect(checked == 408)
 }
 
 /// 英語の日数は 1 日だけ単数。旅の長さを名乗る 2 文にも同じ規則が要る("1 days" を出さない)。
@@ -93,6 +100,17 @@ import TripCheckKit
   #expect(AppCopy.en.assumptionsHeading(count: 4).contains("4 assumptions behind"))
   #expect(AppCopy.ja.issuesHeading(count: 2).contains("2"))
   #expect(AppCopy.ja.assumptionsHeading(count: 2).contains("2件"))
+}
+
+/// 共有の画面で数える 2 つの英文も 1 件だけ単数。「1 booking times are removed」は、
+/// 数えた側が数えていないことを白状する文になる。
+@Test func englishShareCountsAreSingularForOne() {
+  #expect(AppCopy.en.shareRedactedReservations(count: 1).contains("1 booking time is"))
+  #expect(AppCopy.en.shareRedactedReservations(count: 2).contains("2 booking times are"))
+  #expect(AppCopy.en.shareOmittedLines(count: 1).contains("1 opaque line is"))
+  #expect(AppCopy.en.shareOmittedLines(count: 3).contains("3 opaque lines are"))
+  #expect(AppCopy.ja.shareRedactedReservations(count: 2).contains("2件"))
+  #expect(AppCopy.ja.shareOmittedLines(count: 3).contains("3行"))
 }
 
 /// 差分表の 2 列と、比較の 3 枚の題は、**どれも別の言葉**でなければならない —— 同じ語が

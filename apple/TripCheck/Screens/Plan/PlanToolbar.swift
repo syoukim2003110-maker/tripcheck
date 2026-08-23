@@ -2,9 +2,9 @@ import SwiftUI
 import TripCheckAppCore
 import TripCheckKit
 
-/// 結果画面のツールバー ——「入力にもどる」と、`•••` の中の Undo / Redo。
+/// 結果画面のツールバー ——「入力にもどる」と、`•••` の中の Undo / Redo / 共有。
 ///
-/// 印刷・共有はまだ乗らない(Task 12 / 13)—— **押しても何も起きないボタンを先に置かない**。
+/// 印刷はまだ乗らない(Task 13)—— **押しても何も起きないボタンを先に置かない**。
 /// 結論の詳細もここには来ない:旅程の下に畳んである折り畳みそのものが入口で、警告の一手
 /// (「代替案を見る」)がそれを開く —— メニューにもう 1 つ入口を作ると、開いた先が画面の
 /// どこにあるのか分からないまま開くことになる。戻せる履歴が無いときは項目そのものを無効に
@@ -35,8 +35,12 @@ private struct EditInputButton: View {
   }
 }
 
-/// `•••`。中身は今のところ Undo と Redo の 2 つで、外付けキーボードからは ⌘Z / ⇧⌘Z でも
-/// 同じ 2 つに届く(メニューに乗せた `keyboardShortcut` は、長押しの一覧にも出る)。
+/// `•••`。中身は Undo と Redo と共有で、外付けキーボードからは ⌘Z / ⇧⌘Z でも同じ 2 つに
+/// 届く(メニューに乗せた `keyboardShortcut` は、長押しの一覧にも出る)。
+///
+/// 共有が**メニューの中**にあるのは、押した先が配る動作ではなく「何を渡すか」を決める
+/// 画面だからである。ツールバーに置くと 1 手で配れるように見えるが、ホテルの名前や予約の
+/// 印が入るかどうかは、その 1 手の前に見せなければならない。
 private struct HistoryMenu: View {
   @Environment(PlannerStore.self) private var store
 
@@ -63,6 +67,9 @@ private struct HistoryMenu: View {
       .keyboardShortcut("z", modifiers: [.command, .shift])
       .disabled(!store.canRedo)
       .accessibilityIdentifier("plan.redo")
+
+      Button(app.shareAction) { store.view.shareOpen = true }
+        .accessibilityIdentifier("plan.share")
     } label: {
       // `•••` は絵ではなく約物なので、`Design/Icons` の 24 種にも SF Symbols にも要らない。
       Text(verbatim: "•••")
