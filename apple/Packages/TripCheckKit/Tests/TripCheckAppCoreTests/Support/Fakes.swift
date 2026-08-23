@@ -47,7 +47,16 @@ struct SlowResolver: PlaceResolver {
   }
 }
 
+/// 候補を返す端末の地図の代わり。既定は 0 件で、`titles` を挙げるとその見出しの候補を返す
+/// —— 検索窓で選ぶ道(選んだ 1 件が行に固定される)をテストから通せるようにするため。
 @MainActor final class FakeCompleter: SuggestionCompleting {
   var calls = 0
-  func complete(_ query: String, region: GeoBounds?) async throws -> [PlaceSuggestion] { calls += 1; return [] }
+  var titles: [String] = []
+
+  init(titles: [String] = []) { self.titles = titles }
+
+  func complete(_ query: String, region: GeoBounds?) async throws -> [PlaceSuggestion] {
+    calls += 1
+    return titles.map { fakeSuggestion($0) }
+  }
 }

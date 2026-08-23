@@ -84,6 +84,11 @@ public struct PersistedPin: Codable, Equatable, Sendable {
   /// —— 端末の中の写しは、提供元が今も同じことを言っている証拠にはならない。確かさは
   /// `.medium` で、`.apple` の決定は座標ごとそのまま使う(尋ね直しても同じ点が返る保証は
   /// 無く、旅行者が見ていた地図の点はこれだから)。
+  ///
+  /// 手入力の点だけ `isAnchor` が偽なのは、Kit の `PlannerEdits.manualStop`(と Web)がそう
+  /// 作るからである。行に当たった写しはビルダーが行の制約で押し直す
+  /// (`TripBuilder.swift:147`)ので旅程は変わらず、変わるのは行に当たらなかった写しを読む側
+  /// —— そこで開き直した旅だけ錨の数が違う、ということが起きないようにする。
   func stop(inputIndex: Int, input: String) -> ResolvedStop {
     ResolvedStop(
       id: PersistedTripInput.stopId(inputIndex),
@@ -96,7 +101,7 @@ public struct PersistedPin: Codable, Equatable, Sendable {
       verifiedAt: "",
       confidence: .medium,
       planningDurationMinutes: planningDurationMinutes,
-      isAnchor: true,
+      isAnchor: kind != .manual,
       isUserEntered: kind == .manual ? true : nil,
       userProvidedCoordinates: userProvidedCoordinates,
       input: input,

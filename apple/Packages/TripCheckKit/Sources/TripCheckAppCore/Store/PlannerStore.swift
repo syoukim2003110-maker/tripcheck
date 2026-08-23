@@ -163,7 +163,23 @@ public final class PlannerStore {
     var ctx = PlannerContext()
     ctx.destination = request.destination
     ctx.tripStartDate = request.tripStartDate
-    ctx.resolvedStops = request.entries.compactMap { $0.pinned?.stop } + edit.resolvedStops
+    // 番号は**いまの並び**から押し直す。`ResolvedStop.inputIndex` は場所が決まった時刻の
+    // 並びで凍っており(`requestBuildFromStart` / `apply` / `loadSample` が押す)、
+    // `TripBuilder` は行と場所をまずその番号で突き合わせる(`Builder/TripBuilder.swift:105-145`
+    // の `indexedResolvedStops`)。だから固定された行より**前**の行を 1 つ外すと、以降の
+    // 場所は 1 つずつ隣の行に貼り付く —— 最初にずれた行は場所を失ってカタログ送り
+    // (`unknownEntries`)になり、最後の場所は旅程から黙って消え、行から読んだ制約
+    // (必須・日指定・予約)は別の場所に効く。外す道は Start の行・行編集シート・確認画面の
+    // 3 本あり、どれも旅行者が普通に押す。
+    //
+    // 直すのは渡す一点でよい。番号を持つ写しはここへ来る前に作られるものだけで、共有
+    // (`manualPinOverrides()`)も端末内保存(`PersistedTripInput`)も既に**いまの並び**を
+    // 数えている。
+    ctx.resolvedStops = request.entries.enumerated().compactMap { index, entry in
+      guard var stop = entry.pinned?.stop else { return nil }
+      stop.inputIndex = index
+      return stop
+    } + edit.resolvedStops
     ctx.resolvedBase = edit.resolvedBase
     ctx.hotelQuery = edit.hotelQuery
     ctx.travelPreference = edit.travelPreference

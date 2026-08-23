@@ -108,6 +108,20 @@ extension PlannerStore {
   /// 旅行者が地図で置いた 1 点。**`userProvidedCoordinates` が真**で、提供元が確かめた場所と
   /// 見分けが付く(統合仕様 §4.2)—— 証拠の欄は空のまま、`provider: .user` で運ぶ。
   ///
+  /// 停留所そのものは**組み立てない**。Kit の `PlannerEdits.manualStop`(TS
+  /// `manualStopFromResolutionOverride` の移植)に作らせる —— あの関数だけが
+  /// `manual-<番号>-<緯度5桁>-<経度5桁>` という id の綴りを持っており、**共有はその綴りしか
+  /// 読み戻せない**。`ShareScope.stopId` は手入力の id をこの形から組み直して付け替え、
+  /// 形の違う `manual-` の id には `nil` を返す(残った決定に対応しない id だから)。ここで
+  /// 独自の id を作っていた頃は、その点に貼った滞在時間・最終入場・外した記録・日の指定・
+  /// 区間の手段が、リンクを作る瞬間にまとめて落ちていた —— 点だけが渡り、点に付けた
+  /// 決めごとは渡らない。
+  ///
+  /// `isAnchor` も `confidence` も Kit の値のまま(`false` / `.low`)にする。Web の手入力の点と
+  /// 同じ物にするためで、`isAnchor` は行から読んだ制約でビルダーが押し直す
+  /// (`TripBuilder.swift:147`)ので旅程は変わらない —— 変わるのは行に当たらなかった写しを
+  /// 読む側(`deferredAnchorStops` と Kit の錨まわりの文)だけである。
+  ///
   /// 国コードは付けない。旅行者が置いた点に国の証拠は無く、国は座標から `DestinationVote`
   /// (ビルダー)が決める —— カタログ由来の停留所と同じ扱い。
   public func setManualPin(entryId: UUID, name: String, address: String, latitude: Double, longitude: Double) {
@@ -116,27 +130,93 @@ extension PlannerStore {
     let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
     let label = trimmedName.isEmpty ? entry.text : trimmedName
     let trimmedAddress = address.trimmingCharacters(in: .whitespacesAndNewlines)
-    let stop = ResolvedStop(
-      id: "manual-\(entryId.uuidString.lowercased())",
-      providerRef: nil,
-      name: label,
-      area: AppleAddress.area(from: trimmedAddress, fallback: label, countryCode: nil),
-      latitude: latitude,
-      longitude: longitude,
-      sourceUrl: "",
-      verifiedAt: "",
-      confidence: .medium,
-      planningDurationMinutes: entry.stayMinutes ?? StayEstimates.estimateStayMinutes(name: label),
-      isAnchor: true,
-      isUserEntered: true,
-      userProvidedCoordinates: true,
-      input: entry.text,
-      inputIndex: index,
-      address: trimmedAddress,
-      countryCode: nil,
-      provider: .user
-    )
+    guard var stop = PlannerEdits.manualStop(
+      from: .manual(
+        inputIndex: index,
+        name: label,
+        address: trimmedAddress,
+        latitude: latitude,
+        longitude: longitude
+      ),
+      // 引き当ての材料は旅行者が書いた行のまま(`manualStop` の既定は場所の名前)。同じ名前を
+      // 2 行に書いた旅で、どちらの行の点かは行の文字列でしか言えない。
+      input: entry.text
+    ) else { return }
+    // 行編集シートで滞在時間を決めてあれば、それが見積もりに勝つ。
+    if let stayMinutes = entry.stayMinutes { stop.planningDurationMinutes = stayMinutes }
     apply(.confirmed(stop), to: entryId)
+  }
+
+  /// 手入力の点の id を、**いまの並び**から作り直す(行を外した直後に呼ぶ)。
+  ///
+  /// `manual-<番号>-…` の番号は行の並びそのものなので、前の行が 1 つ消えれば綴りが変わる。
+  /// 共有はこの綴りで編集の宛先を組み直す(`ShareScope.manualStopId` は
+  /// `manualPinOverrides()` が数えた**いまの**番号で id を作る)ため、押し直さないと
+  /// 「点は渡るのに、その点に付けた決めごとだけが落ちる」に戻る。
+  ///
+  /// 押し直した分は、場所に貼り付いた編集の鍵も一緒に動かす —— 動かさなければ、鍵が
+  /// どこも指さなくなり、滞在時間も外した記録もその場で消える。
+  ///
+  /// リンクから受け取った決定(`edit.resolutionOverrides`)も同じ番号で貼るので、外れた行より
+  /// 後ろの番号を 1 つずつ詰める。詰めないと、保存した旅程を開き直したときに旅行者の座標が
+  /// 隣の行へ乗る(`applyReopenedOverrides` は番号で貼る)。
+  func restampManualPins(afterRemoving removedIndex: Int) {
+    edit.resolutionOverrides = edit.resolutionOverrides.compactMap { override in
+      Self.shifted(override, afterRemoving: removedIndex)
+    }
+
+    var renamed: [String: String] = [:]
+    for index in request.entries.indices {
+      guard case .manual(let stop)? = request.entries[index].pinned, stop.inputIndex != index else { continue }
+      guard var fresh = PlannerEdits.manualStop(
+        from: .manual(
+          inputIndex: index,
+          name: stop.name,
+          address: stop.address,
+          latitude: stop.latitude,
+          longitude: stop.longitude
+        ),
+        input: stop.input
+      ) else { continue }
+      fresh.planningDurationMinutes = stop.planningDurationMinutes
+      if fresh.id != stop.id { renamed[stop.id] = fresh.id }
+      request.entries[index].pinned = .manual(fresh)
+      // 確認画面が読む辞書も一緒に動かす(片方だけ動かすと、画面の行とエンジンへ渡る点がずれる)。
+      if case .confirmed? = request.resolutions[request.entries[index].id] {
+        request.resolutions[request.entries[index].id] = .confirmed(fresh)
+      }
+    }
+    guard !renamed.isEmpty else { return }
+    remapEditStopIds(renamed)
+  }
+
+  /// 1 行外れたときの、リンク由来の決定の番号。外れた行そのものの決定は落とす。
+  private static func shifted(_ override: ResolutionOverride, afterRemoving removedIndex: Int) -> ResolutionOverride? {
+    let index = override.inputIndex
+    guard index != removedIndex else { return nil }
+    guard index > removedIndex else { return override }
+    switch override {
+    case .provider(_, let providerRef):
+      return .provider(inputIndex: index - 1, providerRef: providerRef)
+    case .manual(_, let name, let address, let latitude, let longitude):
+      return .manual(inputIndex: index - 1, name: name, address: address, latitude: latitude, longitude: longitude)
+    }
+  }
+
+  /// 場所に貼り付いた編集の宛先を付け替える。`PersistedEdits` が端末内保存でしている
+  /// ことと同じ 6 か所(滞在時間・最終入場・日の指定・区間の手段・順の固定・外した場所)。
+  private func remapEditStopIds(_ renamed: [String: String]) {
+    func id(_ key: String) -> String { renamed[key] ?? key }
+    func remapLeg(_ key: String) -> String {
+      guard let separator = key.range(of: "::") else { return id(key) }
+      return routeLegKey(id(String(key[key.startIndex..<separator.lowerBound])), id(String(key[separator.upperBound...])))
+    }
+    edit.userStayMinutes = Dictionary(edit.userStayMinutes.map { (id($0.key), $0.value) }, uniquingKeysWith: { first, _ in first })
+    edit.lastEntryTimes = Dictionary(edit.lastEntryTimes.map { (id($0.key), $0.value) }, uniquingKeysWith: { first, _ in first })
+    edit.dayOverrides = Dictionary(edit.dayOverrides.map { (id($0.key), $0.value) }, uniquingKeysWith: { first, _ in first })
+    edit.legModeOverrides = Dictionary(edit.legModeOverrides.map { (remapLeg($0.key), $0.value) }, uniquingKeysWith: { first, _ in first })
+    edit.lockedOrderByDay = IntKeyedDictionary(edit.lockedOrderByDay.values.mapValues { $0.map(id) })
+    edit.removedStops = edit.removedStops.map { PlannerRemovedStop(id: id($0.id), name: $0.name) }
   }
 
   /// 「もう一度探す」。その 1 行だけを尋ね直す —— 隣の行で旅行者が既に選んだ答えを消さない。
@@ -167,36 +247,16 @@ extension PlannerStore {
 
   /// 確認画面で国を選んだとき。**選ぶだけでは片付かない。**
   ///
-  /// `setDestination` は「国が混ざっている」という報せを消すだけで、混ざる原因になった場所は
-  /// 行に固定されたまま残る —— 次の組み立ては固定済みの行を尋ね直さない
-  /// (`requestBuildFromStart` の `entry.pinned == nil`)し、「もう一度探す」は未解決の行に
-  /// しか出ないので、選ばなかったほうの国の場所が黙って旅程に入る。画面が約束しているのは
+  /// 箱の外に出た固定を外すところまでは `setDestination` が両方の画面に対してする(Start でも
+  /// 「入力にもどる」の後は行が固定されているので、外さなければ隣の国の場所がそのまま組まれる)。
+  /// 確認画面だけが違うのは**その場で尋ね直す**ところで、画面が約束しているのは
   /// 「国を選ぶと、いまの入力をその国の範囲で探し直します。」(`AppCopy.resolveCountryHint`)
-  /// なので、ここで本当に探し直す —— Web も同じ一手で
-  /// `reviewWishlistPlaces({ destinationOverride })` を掛ける
-  /// (`app/components/planner/TripPlannerShell.tsx:2058-2064`)。
-  ///
-  /// 外すのは**新しい箱の外に出た**固定だけ。`.auto` と `.worldwide` は箱を持たないので
-  /// 1 件も落ちない。旅行者が地図に自分で置いた点(`.manual`)は箱の外でも動かさない ——
-  /// 座標は旅行者のもので、尋ね直す相手が居ない(統合仕様 §4.2)。
+  /// だからである —— Web も同じ一手で `reviewWishlistPlaces({ destinationOverride })` を掛ける
+  /// (`app/components/planner/TripPlannerShell.tsx:2058-2064`)。Start は CTA という
+  /// 尋ね直しの機会が後ろに控えているので、外すところまででよい。
   public func changeDestinationFromResolve(_ choice: DestinationChoice) async {
-    setDestination(choice)
-    guard let bounds = destinationBounds else { return }
-
-    let stale = request.entries.enumerated().compactMap { index, entry -> (index: Int, id: UUID, input: String)? in
-      guard let pinned = entry.pinned else { return nil }
-      if case .manual = pinned { return nil }
-      let stop = pinned.stop
-      guard !Destinations.withinBounds(bounds, latitude: stop.latitude, longitude: stop.longitude) else { return nil }
-      return (index, entry.id, entry.text)
-    }
+    let stale = setDestination(choice)
     guard !stale.isEmpty else { return }
-
-    // 先に固定を外す。尋ね直している間、画面が隣の国の場所を「確認済み」として見せ続けない。
-    for item in stale {
-      request.entries[item.index].pinned = nil
-      request.resolutions[item.id] = nil
-    }
 
     // 問い合わせは 1 本ずつ。ほかの解決が走っている間は**外すところまでで止める** ——
     // その行は「見つかっていない」として残り、「もう一度探す」で拾い直せる。黙って別の国の

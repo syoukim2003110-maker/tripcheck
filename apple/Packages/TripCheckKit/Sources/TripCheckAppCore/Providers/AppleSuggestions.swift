@@ -26,8 +26,9 @@ import TripCheckKit
 
 /// `MKLocalSearchCompletion` を持ち歩くための包み。あの型は `Sendable` を名乗らないが、
 /// 中身は不変で、作るのも読むのも本線(delegate が本線で呼ばれる)なので、包んで運ぶ。
-/// **Task 5 の `ApplePlaceResolver.resolve(completion:)` が受け取るのがこれ**で、候補を
-/// 選んだときに座標と住所へ変えるための唯一の材料になる。
+/// **`ApplePlaceResolver.resolve(completion:)` が受け取るのがこれ**で、候補を選んだときに
+/// 座標と住所へ変えるための唯一の材料になる —— 名前で尋ね直すと、地図は同じ名前の
+/// 別の場所を返しうる。
 public struct CompletionToken: @unchecked Sendable {
   public let completion: MKLocalSearchCompletion
 

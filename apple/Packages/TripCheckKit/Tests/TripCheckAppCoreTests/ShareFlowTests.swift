@@ -193,6 +193,78 @@ import TripCheckKit
   #expect(stop.userProvidedCoordinates == true)
 }
 
+/// 点が渡るだけでは足りない。**その点に付けた決めごと**(滞在時間・最終入場・外した記録・
+/// 日の指定・区間の手段)も一緒に渡らなければ、受け取った側は同じ旅程を見ない。
+///
+/// 渡るかどうかは id の綴り 1 つで決まる:`ShareScope.stopId` は手入力の id を
+/// `manual-<番号>-<緯度5桁>-<経度5桁>` から組み直して付け替え、その形でない `manual-` の id
+/// には `nil` を返す(残った決定に対応しない id だから)。アプリが独自の綴り
+/// (`manual-<行の UUID>`)で作っていた頃は、点だけが渡って決めごとは全部落ちていた。
+@Test @MainActor func anEditOnTheTravellersOwnPinRidesInTheLinkToo() async {
+  let s1 = PlannerStore(resolvers: [], store: nil)
+  let entryId = s1.addEntrySync(text: "Chalet Bergblick")
+  s1.setManualPin(
+    entryId: entryId,
+    name: "Chalet Bergblick",
+    address: "Dorfstrasse 12, Grindelwald",
+    latitude: 46.62405,
+    longitude: 8.03412
+  )
+  s1.request.tripDays = 1
+  await s1.build()
+
+  guard let stopId = s1.request.entries.first?.pinned?.stop.id else {
+    Issue.record("手入力の点が行に固定されていない")
+    return
+  }
+  // Kit(と Web)と同じ綴り。共有はこの形しか読み戻せない。
+  #expect(stopId == "manual-0-46.62405-8.03412")
+
+  await s1.setStayMinutes(stopId: stopId, minutes: 120)
+  if s1.view.pendingHardEdit != nil { await s1.confirmPendingEdit() }
+  #expect(s1.edit.userStayMinutes[stopId] == 120)
+
+  guard let code = s1.sharePreview(scope: ShareScopeOptions(dates: true, hotel: false, airports: false, reservations: false)).code else {
+    Issue.record("share was blocked")
+    return
+  }
+  let s2 = PlannerStore(resolvers: [], store: nil)
+  #expect(await s2.importShare(code: code))
+  guard let arrived = s2.request.entries.first?.pinned?.stop.id else {
+    Issue.record("旅行者の点がリンクの向こう側に無い")
+    return
+  }
+  #expect(s2.edit.userStayMinutes[arrived] == 120)
+}
+
+/// 行を外すと手入力の点の id は綴りごと変わる(番号が並びそのものだから)。変わった先へ
+/// 決めごとの宛先も動かす —— 動かさないと、外したのは**別の行**なのに、点に付けた滞在時間が
+/// その場で消える(そしてリンクにも乗らない)。
+@Test @MainActor func removingARowAheadOfAManualPinCarriesItsEditsToTheNewId() async {
+  let s = PlannerStore(resolvers: [], store: nil)
+  let first = s.addEntrySync(text: "Bern")
+  let second = s.addEntrySync(text: "Chalet Bergblick")
+  s.setManualPin(
+    entryId: second,
+    name: "Chalet Bergblick",
+    address: "Dorfstrasse 12, Grindelwald",
+    latitude: 46.62405,
+    longitude: 8.03412
+  )
+  #expect(s.request.entries[1].pinned?.stop.id == "manual-1-46.62405-8.03412")
+  s.edit.userStayMinutes["manual-1-46.62405-8.03412"] = 120
+  s.edit.removedStops = [PlannerRemovedStop(id: "manual-1-46.62405-8.03412", name: "Chalet Bergblick")]
+
+  s.removeEntry(id: first)
+
+  #expect(s.request.entries[0].pinned?.stop.id == "manual-0-46.62405-8.03412")
+  #expect(s.edit.userStayMinutes["manual-0-46.62405-8.03412"] == 120)
+  #expect(s.edit.userStayMinutes["manual-1-46.62405-8.03412"] == nil)
+  #expect(s.edit.removedStops.first?.id == "manual-0-46.62405-8.03412")
+  // リンクに乗る決定の番号も、いまの並び。
+  #expect(s.shareableInput().resolutionOverrides?.first?.inputIndex == 0)
+}
+
 /// リンクは**解決の最中にも**開く(`.onOpenURL` は待ってくれない)。飛んでいた問い合わせが
 /// 返ってきたとき、その答えはもう誰の答えでもない —— 番号で新しい旅の行に貼り付けない。
 /// そして取り込みは、組めていないのに「開きました」と言わない。

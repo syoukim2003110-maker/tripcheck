@@ -148,3 +148,119 @@ import TripCheckKit
 
   #expect(Set([app.buildCTA, app.checkingPlacesCTA, app.buildingCTA]).count == 3)
 }
+
+// MARK: - 行を外した後の並び
+
+/*
+ * 固定された行より**前**の行を外すと、以降の場所は行 1 つぶんずれて貼り付いていた ——
+ * `ResolvedStop.inputIndex` が決まった時刻の並びで凍っており、`TripBuilder` は行と場所を
+ * まずその番号で突き合わせるからである。最初にずれた行は場所を失ってカタログ送りになり
+ * (`unknownEntries`)、最後の場所は旅程から黙って消え、行から読んだ制約は別の場所に効いた。
+ * 外す道は 3 本(Start の行・行編集シート・確認画面)あり、どれも普通に押される。
+ */
+
+/// 3 件決めてから 1 行目を外す。残った 2 件は残った 2 行のまま組み上がる。
+@Test @MainActor func removingTheFirstRowKeepsEveryRemainingPlaceOnItsOwnLine() async {
+  let store = PlannerStore(resolvers: [FakeResolver()], store: nil)
+  for name in ["Alpha Place", "Beta Place", "Gamma Place"] { await store.addEntry(text: name, suggestion: nil) }
+  store.request.tripDays = 1
+  await store.requestBuildFromStart()
+  #expect(store.request.entries.allSatisfy { $0.pinned != nil })
+
+  store.removeEntry(id: store.request.entries[0].id)
+  await store.build()
+
+  let planned = Set((store.bundle?.plan.days ?? []).flatMap { $0.stops.map(\.stop.name) })
+  #expect(planned.isSuperset(of: ["Beta Place", "Gamma Place"]))
+  #expect(planned.contains("Alpha Place") == false)
+  #expect(store.bundle?.plan.unknownEntries.isEmpty == true)
+  // エンジンへ渡る番号は、いまの並びそのもの。
+  #expect(store.tripRequest().context.resolvedStops?.compactMap(\.inputIndex) == [0, 1])
+}
+
+/// 見本(8 か所)の 1 行目を外して組む。残る 7 か所が全部旅程に入り、不明な行は 1 つも出ない
+/// —— 直す前は「リギ山」が不明になり、「ベルン旧市街」が旅程から消えていた。
+@Test @MainActor func theSampleMinusItsFirstRowStillPlansTheOtherSeven() async {
+  let store = PlannerStore(resolvers: [], store: nil)
+  store.loadSample(.switzerland)
+  let dropped = store.request.entries[0].text
+  store.removeEntry(id: store.request.entries[0].id)
+  #expect(store.request.entries.count == 7)
+
+  await store.build()
+
+  let planned = Set((store.bundle?.plan.days ?? []).flatMap { $0.stops.map(\.stop.name) })
+  #expect(store.bundle?.plan.unknownEntries.isEmpty == true)
+  #expect(planned.contains(dropped) == false)
+  #expect(planned.isSuperset(of: store.request.entries.map { $0.pinned?.stop.name ?? $0.text }))
+}
+
+// MARK: - 検索窓で選んだ 1 件
+
+/// 候補を選んで足した行は、その場で固定される(spec §5.2)。固定しないと、CTA の解決が
+/// 同じ文字列でもう一度地図に尋ね、旅行者が目で見て選んだ 1 件が別の場所に化けうる。
+@Test @MainActor func choosingASuggestionPinsThatVeryPlace() async {
+  let hit = LocalSearchHit(
+    name: "Bahnhof Bern", address: "Bahnhofplatz 10, 3011 Bern, Schweiz",
+    latitude: 46.9490, longitude: 7.4390, countryCode: "CH", category: "museum"
+  )
+  let store = PlannerStore(
+    resolvers: [ApplePlaceResolver(search: FakeSearch(hits: ["Bahnhof Bern": [hit]]))],
+    store: nil
+  )
+
+  await store.addEntry(text: "Bahnhof Bern", suggestion: fakeSuggestion("Bahnhof Bern", subtitle: "Bern"))
+
+  guard case .apple(let providerRef, let stop)? = store.request.entries.first?.pinned else {
+    Issue.record("選んだ候補が行に固定されていない")
+    return
+  }
+  #expect(providerRef == nil)          // MapKit の識別子は Web にとって別の提供元の番号なので持たない
+  #expect(stop.name == "Bahnhof Bern")
+  #expect(stop.latitude == 46.9490)
+  #expect(stop.id.hasPrefix("apple-"))
+  #expect(stop.sourceUrl.isEmpty)      // 「見つけた」であって「確かめた」ではない
+  #expect(stop.verifiedAt.isEmpty)
+  #expect(stop.confidence == .medium)
+  #expect(stop.provider == .apple)
+  #expect(store.resolveRows.first?.state == .confirmed)
+}
+
+/// 引き当てられなかったとき(打ち切り・通信の失敗)は、行が固定されないまま残るだけ ——
+/// 落ちないし、行も消えない。CTA の解決が普通に尋ね直す。
+@Test @MainActor func aSuggestionThatCannotBeLookedUpLeavesTheRowUnpinned() async {
+  let store = PlannerStore(resolvers: [ApplePlaceResolver(search: FailingSearch())], store: nil)
+
+  await store.addEntry(text: "Bahnhof Bern", suggestion: fakeSuggestion("Bahnhof Bern", subtitle: "Bern"))
+
+  #expect(store.request.entries.count == 1)
+  #expect(store.request.entries.first?.pinned == nil)
+  #expect(store.request.entries.first?.text == "Bahnhof Bern")
+}
+
+// MARK: - Start で国を選び直す
+
+/// 旅程を組んだ後に「入力にもどる」で帰ってくると、行は全部固定されている。そこで国を選び
+/// 直したら、新しい箱の外に出た場所の固定は外れる —— 外れないと、`requestBuildFromStart` は
+/// 固定済みの行を尋ね直さないので、日本の場所のままスイスの旅程が組み上がる(しかも跨ぎの
+/// 報せは「国を選んだ」ことで消えている)。旅行者が地図に自分で置いた点だけは動かさない。
+@Test @MainActor func choosingACountryOnStartDropsThePinsThatFellOutsideIt() async {
+  let store = PlannerStore(resolvers: [], store: nil)
+  store.request.entries = [
+    WishlistEntry(text: "浅草寺", pinned: .catalog(manualStop(id: "jp-1", name: "浅草寺", country: "JP", latitude: 35.7148, longitude: 139.7967))),
+    WishlistEntry(text: "東京駅", pinned: .apple(providerRef: nil, stop: manualStop(id: "jp-2", name: "東京駅", country: "JP", latitude: 35.6812, longitude: 139.7671))),
+    WishlistEntry(text: "山小屋", pinned: .manual(manualStop(id: "own", name: "山小屋", country: "JP", latitude: 35.36, longitude: 138.72))),
+  ]
+  store.request.resolutions[store.request.entries[0].id] = .confirmed(store.request.entries[0].pinned!.stop)
+
+  store.setDestination(.destination(.switzerland))
+
+  #expect(store.request.entries[0].pinned == nil)     // カタログの決定は箱の外なので外れる
+  #expect(store.request.entries[1].pinned == nil)     // 端末の地図の決定も同じ
+  #expect(store.request.resolutions[store.request.entries[0].id] == nil)
+  guard case .manual? = store.request.entries[2].pinned else {
+    Issue.record("旅行者が自分で置いた点は、箱の外でも動かさない")
+    return
+  }
+  #expect(store.request.mixedCountryCodes.isEmpty)
+}

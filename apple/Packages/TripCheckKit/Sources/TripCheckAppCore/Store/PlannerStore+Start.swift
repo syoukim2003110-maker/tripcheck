@@ -30,10 +30,20 @@ extension PlannerStore {
 
   /// 検索窓から 1 件足す。候補を選んで足したときは `suggestion` が付く。
   ///
-  /// いまは名前だけを持ち、場所そのものは CTA の解決で決める。**Task 5** で、候補つきの
-  /// 追加は `ApplePlaceResolver.resolve(completion:)` にその 1 件を引き当てさせ、
-  /// `pinned = .apple(providerRef:stop:)` にする —— 旅行者が選んだ 1 件が、後の解決で
-  /// 同名の別の場所に化けないように。
+  /// **候補を選んだら、その 1 件を行に固定する**(spec §5.2)。選ばれた候補は
+  /// `ApplePlaceResolver.resolve(completion:)` が座標と住所のある停留所に変え、
+  /// `pinned = .apple(providerRef: nil, stop:)` として行に載る —— 載せずに名前だけを
+  /// 持っていた頃は、CTA の解決が同じ文字列でもう一度地図に尋ねており、旅行者が目で見て
+  /// 選んだ「Bahnhof Bern」が別の街の駅や候補待ちに化けえた。選んだことが画面に残らない。
+  ///
+  /// 行は**先に**足す。地図の返事は数秒後に来るので、待ってから足すと、押した指と行が現れる
+  /// 瞬間の間が空く。引き当てられなかったとき(打ち切り・0 件)は固定しないまま残し、CTA の
+  /// 解決が普通に尋ね直す。
+  ///
+  /// 待っている間に旅が入れ替わったら(`reset()`:リンクを開いた・保存した旅程を開いた・
+  /// 見本を入れた)、この答えはもう誰の答えでもないので捨てる(`resolveGeneration`)。
+  /// `isResolvingPlaces` は立てない —— あの旗は CTA を押せなくするためのもので、1 行足した
+  /// だけで旅程を組む道を塞がない。
   public func addEntry(text: String, suggestion: PlaceSuggestion?) async {
     let name = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !name.isEmpty else { return }
@@ -41,12 +51,36 @@ extension PlannerStore {
       view.toast = Toast(text: AppCopy.for(request.locale).placeLimitToast, kind: .limit)
       return
     }
-    addEntrySync(text: name)
+    let entryId = addEntrySync(text: name)
+    guard let suggestion, let apple = resolvers.compactMap({ $0 as? ApplePlaceResolver }).first,
+          let index = request.entries.firstIndex(where: { $0.id == entryId })
+    else { return }
+
+    let generation = resolveGeneration
+    guard let stop = await apple.resolve(
+      completion: suggestion.token,
+      inputIndex: index,
+      input: name,
+      locale: request.locale
+    ) else { return }
+    guard generation == resolveGeneration,
+          let live = request.entries.firstIndex(where: { $0.id == entryId })
+    else { return }
+    var pinned = stop
+    // 待っている間に前の行が外れていることがある。番号は `tripRequest` が渡す一点でも
+    // 押し直すが、行に載せる写しも今の並びに合わせておく。
+    pinned.inputIndex = live
+    request.entries[live].pinned = .apple(providerRef: nil, stop: pinned)
   }
 
+  /// 1 行外す。**外した後の並びに、番号で貼るもの全部を合わせ直す** —— 手入力の点の id と、
+  /// リンクから受け取った決定の番号がそれで(`restampManualPins(afterRemoving:)`)。
+  /// エンジンへ渡す番号そのものは渡す一点(`tripRequest`)で押し直す。
   public func removeEntry(id: UUID) {
-    request.entries.removeAll { $0.id == id }
+    guard let index = request.entries.firstIndex(where: { $0.id == id }) else { return }
+    request.entries.remove(at: index)
     request.resolutions[id] = nil
+    restampManualPins(afterRemoving: index)
     // 日の付いた最後の 1 行を外したら、もう「既にある旅程」ではない。
     refreshInputMode()
   }
@@ -181,17 +215,58 @@ extension PlannerStore {
   /// ということなので、跨ぎの報せはその場で消す。`auto` に戻したときだけ、いま決まっている
   /// 場所からもう一度数え直す。
   ///
-  /// **記録するだけで、決まっている場所には触らない。** Start 画面ではまだ何も尋ねていない
-  /// ので、それで足りる —— CTA の `requestBuildFromStart` が新しい国で尋ねる。確認画面から
-  /// 呼ぶときは `changeDestinationFromResolve` のほうを使う: そちらは箱の外に出た場所の
-  /// 固定を外して尋ね直す(ここで止めると、報せだけ消えて場所が残る)。
-  public func setDestination(_ choice: DestinationChoice) {
+  /// **新しい箱の外に出た固定は、ここで外す。** Start の行は「まだ何も尋ねていない」とは
+  /// 限らない —— 旅程を組んだ後に「入力にもどる」で帰ってくれば、行は全部固定されている。
+  /// そのまま国だけ選ぶと、`requestBuildFromStart` は固定済みの行を尋ね直さない
+  /// (`entry.pinned == nil` の行しか尋ねない)ので、日本の場所のままスイスの旅程が組み上がる。
+  /// しかも跨ぎの報せは「国を選んだ」ことで消えているから、画面のどこにも書いていない。
+  ///
+  /// 外すのは箱の**外**に出た `.apple` / `.catalog` の固定だけ。`.auto` と `.worldwide` は箱を
+  /// 持たないので 1 件も落ちず、旅行者が地図に自分で置いた点(`.manual`)は箱の外でも動かさない
+  /// —— 座標は旅行者のもので、尋ね直す相手が居ない(統合仕様 §4.2)。
+  ///
+  /// 尋ね直しは**しない**(この setter は画面のピッカーから同期に呼ばれる)。外した行は
+  /// 「まだ決まっていない」として残り、次の CTA が新しい国で尋ねる。確認画面から呼ぶときは
+  /// `changeDestinationFromResolve` のほうを使う: そちらは外した行をその場で尋ね直す
+  /// —— 確認画面には CTA まで待つという道が無く、行が空のまま止まって見えるからである。
+  ///
+  /// 戻り値は外した行(番号・行の id・書いた文字列)。`changeDestinationFromResolve` が
+  /// 尋ね直す相手はこれで、Start の画面は読み捨ててよい。
+  @discardableResult
+  public func setDestination(_ choice: DestinationChoice) -> [StrayPin] {
     request.destination = choice
+    let stray = unpinStrays()
     guard choice == .auto else {
       request.mixedCountryCodes = []
-      return
+      return stray
     }
     request.mixedCountryCodes = ResolutionPipeline.mixedCountryCodes(request.entries.compactMap { $0.pinned?.stop })
+    return stray
+  }
+
+  /// 行き先の箱から出てしまった 1 行。
+  public struct StrayPin: Equatable, Sendable {
+    public var index: Int
+    public var id: UUID
+    public var input: String
+  }
+
+  /// いまの行き先の箱の外にある固定を外す。**先に外す**のは、尋ね直している間、画面が隣の国の
+  /// 場所を「確認済み」として見せ続けないため。
+  private func unpinStrays() -> [StrayPin] {
+    guard let bounds = destinationBounds else { return [] }
+    let stray = request.entries.enumerated().compactMap { index, entry -> StrayPin? in
+      guard let pinned = entry.pinned else { return nil }
+      if case .manual = pinned { return nil }
+      let stop = pinned.stop
+      guard !Destinations.withinBounds(bounds, latitude: stop.latitude, longitude: stop.longitude) else { return nil }
+      return StrayPin(index: index, id: entry.id, input: entry.text)
+    }
+    for item in stray {
+      request.entries[item.index].pinned = nil
+      request.resolutions[item.id] = nil
+    }
+    return stray
   }
 
   /// 候補検索を寄せる箱。`auto` と `worldwide` は箱を持たない(世界中が対象)。

@@ -51,6 +51,11 @@ public struct LocalSearchHit: Hashable, Sendable {
 /// 「この文字列の場所を探して」に答えられるもの。実物は端末の地図、テストはフェイク。
 public protocol LocalSearching: Sendable {
   func search(query: String, region: GeoBounds?, locale: PlannerLocale) async throws -> [LocalSearchHit]
+
+  /// 「検索窓で旅行者が選んだ**この 1 件**を探して」。文字列ではなく候補そのもの
+  /// (`MKLocalSearchCompletion`)を渡すので、同名の別の場所には化けない —— 文字列で
+  /// 尋ね直すと、地図は同じ名前の別の街の駅を返しうる。
+  func search(completion: CompletionToken, locale: PlannerLocale) async throws -> [LocalSearchHit]
 }
 
 /// 待っている最中に取り消しが来たら、待たせている相手へ「畳め」の一手だけを渡す 1 枚。
@@ -115,6 +120,16 @@ public final class MKLocalSearchAdapter: LocalSearching {
     // この問い合わせは MapKit の中で生き続ける。`cancel()` を掛けると `start()` は
     // エラーを投げて返り、`race` の `catch` が `.gaveUp` にする。
     let search = MKLocalSearch(request: request)
+    let response = try await CancelHandle { search.cancel() }.relaying { try await search.start() }
+    return response.mapItems.map(Self.hit(from:))
+  }
+
+  /// 候補 1 件を座標と住所のある 1 件に変える。`MKLocalSearch.Request(completion:)` は
+  /// 「この候補のことだ」を地図へそのまま渡す唯一の道で、文字列を組み立て直さない ——
+  /// 組み立て直せば、旅行者が選んだ行と地図が探す物の対応がこちらの綴り方に依ってしまう。
+  /// 取り消しの伝え方(`CancelHandle`)も証拠の扱いも、文字列で探すときと同じ。
+  public func search(completion token: CompletionToken, locale: PlannerLocale) async throws -> [LocalSearchHit] {
+    let search = MKLocalSearch(request: MKLocalSearch.Request(completion: token.completion))
     let response = try await CancelHandle { search.cancel() }.relaying { try await search.start() }
     return response.mapItems.map(Self.hit(from:))
   }
@@ -210,11 +225,42 @@ public struct ApplePlaceResolver: PlaceResolver {
     }
   }
 
+  /// 検索窓で旅行者が選んだ 1 件を、そのまま行に固定できる停留所に変える(spec §5.2)。
+  ///
+  /// 候補一覧は名前と地区だけで、座標も住所も持たない —— だから選んだ時点でもう一度地図に
+  /// 尋ねる必要がある。尋ねるのは**その候補そのもの**(`CompletionToken`)で、名前で尋ね直す
+  /// ことはしない:「Bahnhof Bern」を選んだ旅行者が、後の解決でチューリヒの駅を渡されない
+  /// ようにするための一手だからである。
+  ///
+  /// 答えないとき(打ち切り・通信の失敗・0 件)は `nil`。呼び手はその行を固定せずに残すので、
+  /// CTA の解決が普通に尋ね直す —— 選んだことが無駄になるだけで、旅程は組める。
+  ///
+  /// 証拠の規則は文字列で探したときと同じ(`candidate(_:query:)` を通る)—— `providerRef` は
+  /// 空、`sourceUrl` / `verifiedAt` は空、`confidence` は `.medium`、id は `apple-` で始まる。
+  public func resolve(
+    completion token: CompletionToken,
+    inputIndex: Int,
+    input: String,
+    locale: PlannerLocale
+  ) async -> ResolvedStop? {
+    let searcher = search
+    switch await race({ try await searcher.search(completion: token, locale: locale) }) {
+    case .found(let hits):
+      // 候補は既に 1 つの場所を指しているので、先頭が「その場所」である。箱では絞らない ——
+      // 旅行者が選んだのは箱の中の 1 件ではなく、目で見た 1 行だからである。
+      guard let hit = hits.first else { return nil }
+      return candidate(hit, query: PlaceQuery(inputIndex: inputIndex, input: input)).stop
+    case .gaveUp:
+      return nil
+    }
+  }
+
   // MARK: - 1 件ぶん
 
   private func answer(_ query: PlaceQuery, bounds: GeoBounds?, locale: PlannerLocale) async -> (Int, PlaceResolution) {
+    let searcher = search
     let hits: [LocalSearchHit]
-    switch await race(query.input, bounds: bounds, locale: locale) {
+    switch await race({ try await searcher.search(query: query.input, region: bounds, locale: locale) }) {
     case .found(let found): hits = found
     case .gaveUp: return (query.inputIndex, .unresolved(reason: Self.unavailableReason))
     }
@@ -266,12 +312,14 @@ public struct ApplePlaceResolver: PlaceResolver {
 
   /// 探す側と時計を**本当に競争させる**。どちらが先に着いたかで決めるので、地図が答えない
   /// 限り `resolve` が返らない、ということが起こらない。
-  private func race(_ input: String, bounds: GeoBounds?, locale: PlannerLocale) async -> SearchOutcome {
-    let searcher = search
+  ///
+  /// 尋ね方(文字列か、旅行者が選んだ候補か)は呼び手が閉包に畳んで渡す —— 打ち切りの
+  /// 秒数と負けた側の畳み方は、どちらの尋ね方でも 1 つでなければならない。
+  private func race(_ ask: @escaping @Sendable () async throws -> [LocalSearchHit]) async -> SearchOutcome {
     let limit = timeout
     return await withTaskGroup(of: SearchOutcome.self) { group in
       group.addTask {
-        do { return .found(try await searcher.search(query: input, region: bounds, locale: locale)) }
+        do { return .found(try await ask()) }
         catch { return .gaveUp }
       }
       group.addTask {

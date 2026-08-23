@@ -219,6 +219,12 @@ import TripCheckKit
 
 // MARK: - このファイルだけが使う相手
 
+/*
+ * ここの 3 つは**文字列で探す道**だけを見ている。候補で探す道(`search(completion:)`)は
+ * `Support/FakeSearch.swift` の `FakeSearch` / `FailingSearch` が受け持つので、こちらは
+ * 呼ばれない側を空で塞ぐ(黙って空を返すのが既定にならないよう、protocol には既定を置かない)。
+ */
+
 /// 1 つの文字列にだけ永久に答えない相手。ほかは即答する。
 private struct MixedSearch: LocalSearching {
   func search(query: String, region: GeoBounds?, locale: PlannerLocale) async throws -> [LocalSearchHit] {
@@ -228,11 +234,14 @@ private struct MixedSearch: LocalSearching {
     }
     return [LocalSearchHit(name: query, address: "Asakusa, Tokyo, Japan", latitude: 35.7148, longitude: 139.7967, countryCode: "JP", category: nil)]
   }
+
+  func search(completion: CompletionToken, locale: PlannerLocale) async throws -> [LocalSearchHit] { [] }
 }
 
 private struct ThrowingSearch: LocalSearching {
   struct Nope: Error {}
   func search(query: String, region: GeoBounds?, locale: PlannerLocale) async throws -> [LocalSearchHit] { throw Nope() }
+  func search(completion: CompletionToken, locale: PlannerLocale) async throws -> [LocalSearchHit] { throw Nope() }
 }
 
 /// 60 秒名乗っておいて、解かれた瞬間に「取り消されて解けたのか」を書き残す相手。
@@ -249,6 +258,8 @@ private struct WatchingSearch: LocalSearching {
     }
     return []
   }
+
+  func search(completion: CompletionToken, locale: PlannerLocale) async throws -> [LocalSearchHit] { [] }
 }
 
 private actor CancellationWatch {
