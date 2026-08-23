@@ -294,6 +294,20 @@ public struct AppCopy: Sendable {
   /// 書き出せなかったときの 1 行。**押せないボタンだけを残さない** —— 何も出ない画面は、
   /// まだ作っている最中と区別が付かない。
   public let printFailed: String
+  /// 紙の「旅の条件」節。拠点・移動余白・徒歩/乗換上限を画面と別に数え直さず、組み上がった
+  /// 旅程そのもの(`plan.selectedBase` / `edit.transferBufferMinutes` / `plan.mobilityPolicy`)
+  /// から出す(Web `TripPrintSheet.tsx:114-124`、外部レビュー Important 2)。
+  public let printConditionsHeading: String
+  public let printConditionsBase: String
+  public let printConditionsBuffer: String
+  public let printConditionsWalkingLimit: String
+  public let printConditionsTransferLimit: String
+  /// 紙の「旅程に入っていない場所」節。休業・ペース超過は Kit の `excludedClosed` /
+  /// `excludedPace` を借り(結論の「その他の注意」と同じ文)、未解決の入力と旅行者が外した
+  /// 場所だけがここの 2 鍵(Web `TripPrintSheet.tsx:138-156`、外部レビュー Important 2)。
+  public let printOmissionsHeading: String
+  public let printOmissionUnresolved: String
+  public let printOmissionRemoved: String
 
   private let pasteLimitToastText: @Sendable (Int) -> String
   private let daysValueText: @Sendable (Int) -> String
@@ -334,6 +348,12 @@ public struct AppCopy: Sendable {
   private let deleteTripQuestionText: @Sendable (String) -> String
   private let shareRedactedReservationsText: @Sendable (Int) -> String
   private let shareOmittedLinesText: @Sendable (Int) -> String
+  /// 日をまたぐ空港の時刻に添える 1 語(`airportNextDay` / `airportPreviousDay`)の囲み方。
+  /// 日本語は全角括弧を字と詰めて書くが、英語の単語を全角括弧で囲むと外来の記号に見える ——
+  /// 外部レビュー Important 1(`01:30（next day）`のような混植)。
+  private let airportDayOffsetNoteText: @Sendable (String) -> String
+  private let printWalkingLimitValueText: @Sendable (Int) -> String
+  private let printTransferLimitValueText: @Sendable (Int) -> String
 
   init(
     startTitle: String,
@@ -484,6 +504,14 @@ public struct AppCopy: Sendable {
     printSaveAction: String,
     printPreparing: String,
     printFailed: String,
+    printConditionsHeading: String,
+    printConditionsBase: String,
+    printConditionsBuffer: String,
+    printConditionsWalkingLimit: String,
+    printConditionsTransferLimit: String,
+    printOmissionsHeading: String,
+    printOmissionUnresolved: String,
+    printOmissionRemoved: String,
     pasteLimitToast: @escaping @Sendable (Int) -> String,
     daysValue: @escaping @Sendable (Int) -> String,
     priorityLabel: @escaping @Sendable (String) -> String,
@@ -522,7 +550,10 @@ public struct AppCopy: Sendable {
     assumptionsHeading: @escaping @Sendable (Int) -> String,
     deleteTripQuestion: @escaping @Sendable (String) -> String,
     shareRedactedReservations: @escaping @Sendable (Int) -> String,
-    shareOmittedLines: @escaping @Sendable (Int) -> String
+    shareOmittedLines: @escaping @Sendable (Int) -> String,
+    airportDayOffsetNote: @escaping @Sendable (String) -> String,
+    printWalkingLimitValue: @escaping @Sendable (Int) -> String,
+    printTransferLimitValue: @escaping @Sendable (Int) -> String
   ) {
     self.startTitle = startTitle
     self.startHelpShort = startHelpShort
@@ -672,6 +703,14 @@ public struct AppCopy: Sendable {
     self.printSaveAction = printSaveAction
     self.printPreparing = printPreparing
     self.printFailed = printFailed
+    self.printConditionsHeading = printConditionsHeading
+    self.printConditionsBase = printConditionsBase
+    self.printConditionsBuffer = printConditionsBuffer
+    self.printConditionsWalkingLimit = printConditionsWalkingLimit
+    self.printConditionsTransferLimit = printConditionsTransferLimit
+    self.printOmissionsHeading = printOmissionsHeading
+    self.printOmissionUnresolved = printOmissionUnresolved
+    self.printOmissionRemoved = printOmissionRemoved
     self.pasteLimitToastText = pasteLimitToast
     self.daysValueText = daysValue
     self.priorityLabelText = priorityLabel
@@ -711,6 +750,9 @@ public struct AppCopy: Sendable {
     self.deleteTripQuestionText = deleteTripQuestion
     self.shareRedactedReservationsText = shareRedactedReservations
     self.shareOmittedLinesText = shareOmittedLines
+    self.airportDayOffsetNoteText = airportDayOffsetNote
+    self.printWalkingLimitValueText = printWalkingLimitValue
+    self.printTransferLimitValueText = printTransferLimitValue
   }
 
   /// 隠した予約の件数。**場所は残る**と言い切る —— 予約そのものを消したと読めると、
@@ -851,6 +893,16 @@ public struct AppCopy: Sendable {
   /// 端末から 1 件消してよいかの問いかけ。**題を名指しする** —— 一覧の並びは更新のたびに
   /// 変わるので、「この旅程を削除しますか？」では、どれを消すのかが読めない。
   public func deleteTripQuestion(title: String) -> String { deleteTripQuestionText(title) }
+
+  /// 日をまたぐ空港の時刻に「翌日」「前日」を添える。`word` は `airportNextDay` /
+  /// `airportPreviousDay` を渡す(外部レビュー Important 1)。
+  public func airportDayOffsetNote(_ word: String) -> String { airportDayOffsetNoteText(word) }
+
+  /// 紙の「徒歩上限」の値(`Web TripPrintSheet.tsx:121` と同じバイト)。
+  public func printWalkingLimitValue(_ minutes: Int) -> String { printWalkingLimitValueText(minutes) }
+
+  /// 紙の「乗換上限」の値(`Web TripPrintSheet.tsx:122` と同じバイト)。
+  public func printTransferLimitValue(_ count: Int) -> String { printTransferLimitValueText(count) }
 
   public static func `for`(_ locale: PlannerLocale) -> AppCopy {
     locale == .ja ? ja : en
@@ -1018,6 +1070,16 @@ public struct AppCopy: Sendable {
     printSaveAction: "PDFを保存・共有",
     printPreparing: "PDFを作成しています",
     printFailed: "PDFを作成できませんでした。",
+    // Web `TripPrintSheet.tsx:115-122`。
+    printConditionsHeading: "旅の条件",
+    printConditionsBase: "拠点",
+    printConditionsBuffer: "移動余白",
+    printConditionsWalkingLimit: "徒歩上限",
+    printConditionsTransferLimit: "乗換上限",
+    // Web `TripPrintSheet.tsx:140-152`。
+    printOmissionsHeading: "旅程に入っていない場所",
+    printOmissionUnresolved: "場所を解決できないため未判定です",
+    printOmissionRemoved: "旅行者が旅程から外しました",
     pasteLimitToast: { "\($0)件あります。1回に確認できるのは12か所までです。残りは別の旅として分けてください。" },
     daysValue: { "\($0)日" },
     priorityLabel: { "\($0)の優先度" },
@@ -1076,7 +1138,11 @@ public struct AppCopy: Sendable {
     deleteTripQuestion: { "「\($0)」を端末から削除しますか？" },
     // Web `ShareDialog.tsx:47-48`
     shareRedactedReservations: { "予約\($0)件は場所だけ共有し、時刻を除外します。" },
-    shareOmittedLines: { "安全に判別できない\($0)行はリンクから除外します。" }
+    shareOmittedLines: { "安全に判別できない\($0)行はリンクから除外します。" },
+    // 全角括弧は字と詰めて書く(外部レビュー Important 1)。
+    airportDayOffsetNote: { "（\($0)）" },
+    printWalkingLimitValue: { "\($0)分/区間" },
+    printTransferLimitValue: { "\($0)回/区間" }
   )
 
   static let en = AppCopy(
@@ -1228,6 +1294,14 @@ public struct AppCopy: Sendable {
     printSaveAction: "Save or share the PDF",
     printPreparing: "Preparing the PDF",
     printFailed: "The PDF could not be created.",
+    printConditionsHeading: "Trip conditions",
+    printConditionsBase: "Base",
+    printConditionsBuffer: "Leg buffer",
+    printConditionsWalkingLimit: "Walking limit",
+    printConditionsTransferLimit: "Transfer limit",
+    printOmissionsHeading: "Places not in the schedule",
+    printOmissionUnresolved: "Unresolved, so it was not evaluated",
+    printOmissionRemoved: "Removed from the plan by the traveller",
     pasteLimitToast: { "\($0) places found. Up to 12 places at a time. Keep the rest for a second trip." },
     daysValue: { "\($0) day\($0 == 1 ? "" : "s")" },
     priorityLabel: { "\($0) priority" },
@@ -1285,7 +1359,12 @@ public struct AppCopy: Sendable {
     assumptionsHeading: { "\($0) assumption\($0 == 1 ? "" : "s") behind this result" },
     deleteTripQuestion: { "Delete “\($0)” from this device?" },
     shareRedactedReservations: { "\($0) booking time\($0 == 1 ? " is" : "s are") removed while keeping the places." },
-    shareOmittedLines: { "\($0) opaque line\($0 == 1 ? " is" : "s are") omitted because they cannot be safely redacted." }
+    shareOmittedLines: { "\($0) opaque line\($0 == 1 ? " is" : "s are") omitted because they cannot be safely redacted." },
+    // A word wrapped in full-width parentheses reads as a foreign mark in English text
+    // (external review Important 1: `01:30（next day）`).
+    airportDayOffsetNote: { " (\($0))" },
+    printWalkingLimitValue: { "\($0) min/leg" },
+    printTransferLimitValue: { "\($0)/leg" }
   )
 
   /// 保存した旅程の題 —— **先頭 3 か所の名前**。一覧はこれで旅を見分けるので、名前を

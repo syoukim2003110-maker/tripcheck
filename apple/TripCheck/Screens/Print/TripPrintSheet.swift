@@ -36,10 +36,17 @@ struct TripPrintSheet: View {
       // 祝日の出どころが入る日まで、この節は 1 度も出ない(`PrintModel.holidays`)。
       if !model.holidays.isEmpty { section(text.holidayBadge, lines: model.holidays) }
       if !model.coverage.isEmpty { section(app.coverageHeading, lines: [model.coverage]) }
+      // 結論の下・日程の上 —— 旅程を組んだ条件を、結果を読んだ直後に置く(Web の「旅の条件」
+      // 節と同じ位置。外部レビュー Important 2)。
+      if !model.conditions.isEmpty { section(app.printConditionsHeading, lines: model.conditions) }
 
       ForEach(Array(model.days.enumerated()), id: \.offset) { _, day in
         dayBlock(day)
       }
+
+      // 日程の下 —— 全日程を読み終えた旅行者に、載っていない場所があることを最後に言う
+      // (外部レビュー Important 2)。
+      if !model.omissions.isEmpty { section(app.printOmissionsHeading, lines: model.omissions) }
 
       Text(app.printFooter)
         .font(Typography.printed(.meta))
@@ -102,7 +109,12 @@ struct TripPrintSheet: View {
   /// 停留所 1 行。時刻は左の柱に固定幅で置く —— 桁が揃っていないと、上から下へ時刻だけを
   /// 追うことができない。
   private func stopRow(_ row: PrintModel.Row) -> some View {
-    HStack(alignment: .top, spacing: 10) {
+    let text = Copy.for(locale)
+    // 住所・滞在・予約の印を 1 行にまとめる(Web `TripPrintSheet.tsx:186` の
+    // `· ${text.printBooked}` と同じ並び。外部レビュー Important 2)。
+    var meta = row.address.isEmpty ? row.stay : "\(row.address) · \(row.stay)"
+    if row.booked { meta += " · \(text.printBooked)" }
+    return HStack(alignment: .top, spacing: 10) {
       Text(row.time)
         .font(Typography.printed(.clock))
         .frame(width: 88, alignment: .leading)
@@ -110,7 +122,7 @@ struct TripPrintSheet: View {
         Text(row.name)
           .font(Typography.printed(.stopName))
           .fixedSize(horizontal: false, vertical: true)
-        Text(row.address.isEmpty ? row.stay : "\(row.address) · \(row.stay)")
+        Text(meta)
           .font(Typography.printed(.meta))
           .foregroundStyle(Tokens.Color.ink2)
           .fixedSize(horizontal: false, vertical: true)

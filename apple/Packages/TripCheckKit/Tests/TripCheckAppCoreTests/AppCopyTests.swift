@@ -43,7 +43,9 @@ import TripCheckKit
               c.shareReservationsIncluded, c.shareTooLong, c.shareNoPlaces, c.shareCopyLink,
               c.shareAppLink, c.shareImportFailed,
               c.printConflictsHeading, c.printFooter, c.printSaveAction, c.printPreparing,
-              c.printFailed] + c.diffLabels
+              c.printFailed, c.printConditionsHeading, c.printConditionsBase, c.printConditionsBuffer,
+              c.printConditionsWalkingLimit, c.printConditionsTransferLimit, c.printOmissionsHeading,
+              c.printOmissionUnresolved, c.printOmissionRemoved] + c.diffLabels
               + [c.daysValue(1), c.daysValue(4), c.priorityLabel(name: "X"), c.removeStopQuestion(name: "X"), c.mustRemovalNote(name: "X"), c.reservationRemovalNote(name: "X"), c.removedStopToast(name: "X"), c.pasteLimitToast(count: 14)]
               + [c.resolveAllConfirmed(count: 1), c.resolveAllConfirmed(count: 4),
                  c.resolveCountryConflict(codes: ["CH", "JP"]), c.resolveCandidateQuestion(name: "X"),
@@ -69,7 +71,8 @@ import TripCheckKit
                  c.assumptionsHeading(count: 1), c.assumptionsHeading(count: 3)]
               + [c.deleteTripQuestion(title: "X")]
               + [c.shareRedactedReservations(count: 1), c.shareRedactedReservations(count: 2),
-                 c.shareOmittedLines(count: 1), c.shareOmittedLines(count: 3)] {
+                 c.shareOmittedLines(count: 1), c.shareOmittedLines(count: 3)]
+              + [c.airportDayOffsetNote(c.airportNextDay), c.printWalkingLimitValue(30), c.printTransferLimitValue(2)] {
       #expect(BannedTerms.violations(in: s).isEmpty, "\(locale): \(s)")
       #expect(!s.isEmpty, "\(locale): empty copy")
       checked += 1
@@ -80,7 +83,8 @@ import TripCheckKit
   // + Task 7 の引数つき 2 + Task 8 の引数つき 1 + Task 9 の引数つき 12
   // + Task 10 の引数つき 4(件数の 2 つは 1 と複数の両方を見る)+ Task 11 の 5 と引数つき 1
   // + Task 12 の 14 と引数つき 4(件数の 2 つは 1 と複数の両方を見る)+ Task 13 の 5
-  #expect(checked == 418)
+  // + Task 13 fix round 1(外部レビュー)の 8 と引数つき 3
+  #expect(checked == 440)
 }
 
 /// 英語の日数は 1 日だけ単数。旅の長さを名乗る 2 文にも同じ規則が要る("1 days" を出さない)。

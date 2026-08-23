@@ -34,14 +34,19 @@ public struct PrintModel: Equatable, Sendable {
     public var stay: String
     public var arrival: String
     public var departure: String
+    /// 予約済みの印(`built.isReservation`)。旅程には出てこない予約番号・氏名は運ばず、
+    /// 「ここは予約している」という 1 ビットだけを紙にも残す(Web `TripPrintSheet.tsx:186`、
+    /// 外部レビュー Important 2)。
+    public var booked: Bool
 
-    public init(time: String, name: String, address: String, stay: String, arrival: String, departure: String) {
+    public init(time: String, name: String, address: String, stay: String, arrival: String, departure: String, booked: Bool) {
       self.time = time
       self.name = name
       self.address = address
       self.stay = stay
       self.arrival = arrival
       self.departure = departure
+      self.booked = booked
     }
   }
 
@@ -76,6 +81,15 @@ public struct PrintModel: Equatable, Sendable {
   /// 「祝日ではない」と読める印を置かない)。欄そのものを残してあるのは、出どころが
   /// 入る日にこの 1 か所を埋めれば紙が変わるようにするため。
   public var holidays: [String]
+  /// 旅の条件。拠点(名前・決まっていれば住所)・移動余白・徒歩と乗換の上限(決めた旅だけ)
+  /// —— 電池の切れた端末の代わりになる紙は、旅程の行だけでなく**それを組んだ条件**も
+  /// 一緒に持ち歩く(Web `TripPrintSheet.tsx:114-124`、外部レビュー Important 2)。
+  public var conditions: [String]
+  /// 旅程に入っていない場所。休業・ペース超過・未解決の入力・旅行者が外した場所 ——
+  /// 紙は「全部載っている」と見えてはいけない。旅行者が自分で書いた場所が黙って消えている
+  /// 紙は、電池の切れた端末の代わりにならない(Web `TripPrintSheet.tsx:138-156`、
+  /// 外部レビュー Important 2)。
+  public var omissions: [String]
 
   public init(
     title: String,
@@ -85,7 +99,9 @@ public struct PrintModel: Equatable, Sendable {
     conflicts: [String],
     airportNotes: [String],
     days: [Day],
-    holidays: [String]
+    holidays: [String],
+    conditions: [String],
+    omissions: [String]
   ) {
     self.title = title
     self.verdict = verdict
@@ -95,6 +111,8 @@ public struct PrintModel: Equatable, Sendable {
     self.airportNotes = airportNotes
     self.days = days
     self.holidays = holidays
+    self.conditions = conditions
+    self.omissions = omissions
   }
 }
 
@@ -115,7 +133,9 @@ extension PlannerStore {
         conflicts: [],
         airportNotes: [],
         days: [],
-        holidays: []
+        holidays: [],
+        conditions: [],
+        omissions: []
       )
     }
     let plan = bundle.plan
@@ -155,13 +175,16 @@ extension PlannerStore {
                 locale: locale
               ),
               arrival: built.arrival,
-              departure: built.departure
+              departure: built.departure,
+              booked: built.isReservation
             )
           }
         )
       },
       // 祝日の出どころがまだ無い(`PrintModel.holidays` の注記)。
-      holidays: []
+      holidays: [],
+      conditions: conditions(plan, locale: locale),
+      omissions: omissions(plan, locale: locale)
     )
   }
 
@@ -200,12 +223,59 @@ extension PlannerStore {
           transferMinutes: constraint.transferMinutes
         )
       // 境界が別の日に落ちる便は、その日ずれを言う —— 言わないと 23:40 が同じ日の夜に見える。
+      // 括弧は `app.airportDayOffsetNote` に選ばせる —— 全角括弧は日本語の字と詰めて自然に
+      // 読めるが、英語の単語(`next day`)を全角括弧で囲むと外来の記号に見える
+      // (外部レビュー Important 1:`01:30（next day）` の混植)。
       let offset = constraint.cityTimeDayOffset > 0
-        ? "（\(app.airportNextDay)）"
-        : constraint.cityTimeDayOffset < 0 ? "（\(app.airportPreviousDay)）" : ""
+        ? app.airportDayOffsetNote(app.airportNextDay)
+        : constraint.cityTimeDayOffset < 0 ? app.airportDayOffsetNote(app.airportPreviousDay) : ""
       return "\(heading) \(constraint.airport) \(constraint.flightTime) · \(boundary) \(constraint.cityTime)\(offset) · \(breakdown)"
     }
     return notes + [app.airportDisclaimer]
+  }
+
+  /// 旅の条件。拠点(決まっていれば名前と住所)・移動余白・徒歩と乗換の上限(旅行者が
+  /// 決めた旅だけ)—— Web `TripPrintSheet.tsx:114-124` の「旅の条件」節と同じ 4 項目
+  /// (到着・出発は空港の節がすでに名乗るので、ここでは重ねない)。外部レビュー Important 2。
+  private func conditions(_ plan: BuiltTripPlan, locale: PlannerLocale) -> [String] {
+    let app = AppCopy.for(locale)
+    var lines: [String] = []
+    if let base = plan.selectedBase {
+      // `edit.resolvedBase` は拠点を解決したときの元の `ResolvedStop` —— 住所を持つのは
+      // ここだけ(`TripBase`/`RouteStop` に住所の欄が無いのは `resolvedAddressesByStopId`
+      // と同じ理由)。旅行者の入力から拠点が付かない旅(東京 5 拠点の定義済みエリア)は
+      // 地区名まで落ちる。
+      let resolvedAddress = TripPresentation.resolvedStopAddress(edit.resolvedBase)
+      let address = resolvedAddress.isEmpty ? TripPresentation.resolvedStopAddress(base.routeStop) : resolvedAddress
+      let value = address.isEmpty ? base.name : "\(base.name) · \(address)"
+      lines.append("\(app.printConditionsBase): \(value)")
+    }
+    lines.append("\(app.printConditionsBuffer): \(app.minutesShort(edit.transferBufferMinutes))")
+    if plan.mobilityPolicy.walkingLimitWasProvided {
+      lines.append("\(app.printConditionsWalkingLimit): \(app.printWalkingLimitValue(plan.mobilityPolicy.maxWalkingMinutesPerLeg))")
+    }
+    if plan.mobilityPolicy.transferLimitWasProvided {
+      lines.append("\(app.printConditionsTransferLimit): \(app.printTransferLimitValue(plan.mobilityPolicy.maxTransfersPerLeg))")
+    }
+    return lines
+  }
+
+  /// 旅程に入っていない場所。休業・ペース超過は Kit の `excludedClosed` / `excludedPace`
+  /// (結論の「その他の注意」— `PlannerStore+VerdictDetails.swift` — と同じ 1 文)、未解決の
+  /// 入力と旅行者が外した場所はこのアプリだけの理由文。Web `TripPrintSheet.tsx:138-156` と
+  /// 同じ 4 種・同じ順。外部レビュー Important 2:紙は旅行者が自分で書いた場所を黙って
+  /// 落としてはいけない。
+  private func omissions(_ plan: BuiltTripPlan, locale: PlannerLocale) -> [String] {
+    let text = Copy.for(locale)
+    let app = AppCopy.for(locale)
+    var lines: [String] = []
+    lines += plan.deferredUnavailableStops.map { "\($0.name) — \(text.excludedClosed)" }
+    lines += plan.deferredOptionalStops.map { "\($0.name) — \(text.excludedPace)" }
+    lines += plan.unknownEntries.map { "\($0) — \(app.printOmissionUnresolved)" }
+    // `edit.removedStops` の `name` はすでに `authoredName(for:)` を通した安全な名前
+    // (`removeStop(id:)` 参照)—— ここで書き換える必要はない。
+    lines += edit.removedStops.map { "\($0.name) — \(app.printOmissionRemoved)" }
+    return lines
   }
 
   /// 停留所 id → 住所。旅行者が決めた場所(`entry.pinned`)と、拠点などの追加解決

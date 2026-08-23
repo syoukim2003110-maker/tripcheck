@@ -153,6 +153,92 @@ import TripCheckKit
   #expect(model.verdict.isEmpty)
   #expect(model.conflicts.isEmpty)
   #expect(!model.title.isEmpty)
+  #expect(model.conditions.isEmpty)
+  #expect(model.omissions.isEmpty)
+}
+
+// MARK: - フィックスラウンド 1(外部レビュー)
+
+/// 日をまたぐ空港の時刻は、英語では ASCII の丸括弧で囲む。日本語の全角括弧を英単語に
+/// かぶせると(`01:30（next day）`)、外来の記号が混ざって見える —— Important 1。
+@Test @MainActor func theEnglishAirportNoteWrapsTheDayOffsetInAsciiParens() async {
+  let store = PlannerStore(resolvers: [CatalogResolver()], store: nil)
+  store.loadSample(.switzerland)
+  store.request.locale = .en
+  store.request.arrivalAirport = "ZRH"
+  // 空港内 90 分 + 市街地までの移動 60 分を足すと日をまたぐ(Kit
+  // `AirportsTests.midnightArrivalPushesActivityDayToNextDate` と同じ組み立て)。
+  store.request.arrivalTime = "23:30"
+  await store.build()
+  let notes = store.printModel.airportNotes
+  #expect(notes.contains { $0.contains("(next day)") }, "\(notes.joined(separator: " / "))")
+  #expect(!notes.contains { $0.contains("（") }, "\(notes.joined(separator: " / "))")
+}
+
+/// 旅の条件は、旅行者が決めた拠点を名指しする。`edit.resolvedBase` から出た拠点は、Web の
+/// 「旅の条件」節と同じく名前と住所を並べる —— Important 2(条件)。
+@Test @MainActor func conditionsNameTheBaseWhenOneIsSet() async {
+  let store = PlannerStore(resolvers: [CatalogResolver()], store: nil)
+  store.loadSample(.switzerland)
+  store.edit.resolvedBase = ResolvedStop(
+    id: "test-base",
+    name: "ルツェルン中央駅",
+    area: "ルツェルン",
+    latitude: 47.0502,
+    longitude: 8.3093,
+    sourceUrl: "",
+    verifiedAt: "2026-01-01",
+    confidence: .medium,
+    planningDurationMinutes: 0,
+    isAnchor: false,
+    input: "ルツェルン中央駅",
+    address: "Zentralstrasse 1, 6003 Luzern"
+  )
+  await store.build()
+  #expect(store.bundle?.plan.selectedBase?.name == "ルツェルン中央駅")
+  let conditions = store.printModel.conditions
+  #expect(conditions.contains { $0.contains("ルツェルン中央駅") }, "\(conditions.joined(separator: " / "))")
+  #expect(conditions.contains { $0.contains("Zentralstrasse 1") }, "\(conditions.joined(separator: " / "))")
+  // 移動余白は拠点の有無に関わらず必ず出る。
+  #expect(conditions.contains { $0.contains(AppCopy.for(.ja).printConditionsBuffer) }, "\(conditions.joined(separator: " / "))")
+}
+
+/// 旅程に入っていない場所は紙からも消えない。旅行者が外した場所は、Web と同じ理由文つきで
+/// 「旅程に入っていない場所」に載る —— Important 2(省略の正直さ)。
+@Test @MainActor func omissionsNameARemovedStop() async {
+  let store = PlannerStore(resolvers: [CatalogResolver()], store: nil)
+  store.loadSample(.switzerland)
+  await store.build()
+  guard let stopId = store.bundle?.plan.days.first?.stops.first?.stop.id else {
+    Issue.record("the sample must build with at least one stop"); return
+  }
+  await store.removeStop(id: stopId)
+  if store.view.pendingHardEdit != nil { await store.confirmPendingEdit() }
+  guard let removed = store.edit.removedStops.first(where: { $0.id == stopId }) else {
+    Issue.record("removing a stop must record it in edit.removedStops"); return
+  }
+  let omissions = store.printModel.omissions
+  #expect(
+    omissions.contains { $0.hasPrefix(removed.name) && $0.contains(AppCopy.for(.ja).printOmissionRemoved) },
+    "\(omissions.joined(separator: " / "))"
+  )
+}
+
+/// 予約した停留所は、その行にだけ印が付く。Kit の `printBooked`(「予約」)を借りる ——
+/// Important 2(行の予約マーカー)。
+@Test @MainActor func aReservedEntryPrintsAsBookedOnItsRow() async {
+  let store = PlannerStore(resolvers: [CatalogResolver()], store: nil)
+  store.loadSample(.switzerland)
+  let reservedName = store.request.entries[0].text
+  store.request.entries[0].isReservation = true
+  store.request.entries[0].fixedTime = "10:00"
+  await store.build()
+  let rows = store.printModel.days.flatMap(\.rows)
+  guard let bookedRow = rows.first(where: { $0.name == reservedName }) else {
+    Issue.record("the reserved stop must still be scheduled somewhere"); return
+  }
+  #expect(bookedRow.booked)
+  #expect(rows.filter { $0.name != reservedName }.allSatisfy { !$0.booked })
 }
 
 // MARK: - 内部
