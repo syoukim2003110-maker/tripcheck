@@ -148,6 +148,56 @@ public struct AppCopy: Sendable {
   /// 訪問数と日数を 1 行に詰めるが、iPhone の幅では 1 欄 1 行のほうが読める。
   public let diffLabels: [String]
 
+  // MARK: - 編集(Task 9)
+
+  /// 旅程を書き換えたときのトースト。**「何をしたか」だけを言う** —— どれだけ余裕が動いたかは
+  /// Kit の `VerdictCopy.bufferToastDetail` が同じ行の後ろに足すので、ここで数を語らない。
+  /// 出どころの違う編集(滞在時間・区間の手段・最終入場・日の窓)で別の文を用意しないのは、
+  /// どれも旅行者が今まさに開いている欄そのものを変えた直後で、何を変えたかは目の前にあるから。
+  public let editedToast: String
+  /// 指定を外して自動に戻したときのトースト。上と対になる 1 対で、「決めた」と「任せた」を
+  /// 言い分ける。
+  public let revertedToast: String
+  /// 拠点の指定を外したときのトーストと、その問いかけ。
+  public let baseClearedToast: String
+  public let clearBaseQuestion: String
+
+  /// 停留所シートの外部リンク。Google 側は Kit の `openMaps` を使う(同じ文が Web にある)。
+  public let openAppleMaps: String
+  /// 「この場所の条件を変える」——滞在時間と最終入場の折り畳み。
+  public let stopConditionsDisclosure: String
+  /// 最終入場の欄。Kit の `PlannerCopy` に対応する鍵が無い。
+  public let lastEntryLabel: String
+  /// 日の設定シートの見出しと、既定の 3 択に無い時刻を自分で選ぶ選択肢。
+  public let daySettingsTitle: String
+  public let customTimeLabel: String
+  /// 重い結果の出る編集を確かめるダイアログの 2 つのボタン。題は Kit の
+  /// `PlannerEdits.confirmTitle` が決めるので、ここにあるのは返事だけ。
+  public let hardEditConfirm: String
+  public let hardEditCancel: String
+  /// Undo / Redo と、それを収めるツールバーのメニュー。
+  public let undoAction: String
+  public let redoAction: String
+  public let moreActions: String
+  /// 元に戻した / やり直した後に読み上げる 1 文。**過去形**でなければならない ——
+  /// ボタンの名前をそのまま読み上げると、これから起きることの告知に聞こえる。
+  public let undoneAnnouncement: String
+  public let redoneAnnouncement: String
+  /// 根拠の行で、事実に中身が無いときに置く印。**空欄にしない** —— 空欄は「まだ読み込み中」
+  /// にも読めるが、この印は「調べたが分からなかった」を意味する。
+  public let evidenceNoValue: String
+  /// 根拠の行が何についての事実かを言う語。Kit の `CriticalFact.label` は 4 種のどれでも
+  /// 場所の名前なので、それだけでは同じ見出しが 2 度並ぶ。滞在時間は Kit の `stayLabel`、
+  /// 最終入場は上の `lastEntryLabel` を使い、残り 2 つがここ。
+  public let evidencePlaceLabel: String
+  public let evidenceHoursLabel: String
+  /// 訪問時刻が営業時間に収まっているときの 1 行。Kit の `opening*` は「ずれている」側の
+  /// 3 つしか持たない。
+  public let evidenceHoursOpen: String
+  /// 事実の確かさのうち、Kit の `durationSourceLabel` が言い分けない 2 つ(`unknown` /
+  /// `failed`)。**「推定」と呼ばない** —— 調べていない場所を見積もったことにしてしまう。
+  public let evidenceStatusUnknown: String
+
   private let pasteLimitToastText: @Sendable (Int) -> String
   private let daysValueText: @Sendable (Int) -> String
   private let priorityLabelText: @Sendable (String) -> String
@@ -173,6 +223,14 @@ public struct AppCopy: Sendable {
   private let hotelLegDepartText: @Sendable (String) -> String
   private let hotelLegReturnText: @Sendable (String) -> String
   private let mapPinLabelText: @Sendable (String, String) -> String
+  private let restoredStopToastText: @Sendable (String) -> String
+  private let movedToDayToastText: @Sendable (Int) -> String
+  private let tripDaysToastText: @Sendable (Int) -> String
+  private let baseSetToastText: @Sendable (String) -> String
+  private let moveStopQuestionText: @Sendable (String, Int) -> String
+  private let moveStopAutoQuestionText: @Sendable (String) -> String
+  private let shortenTripQuestionText: @Sendable (Int) -> String
+  private let changeBaseQuestionText: @Sendable (String) -> String
 
   init(
     startTitle: String,
@@ -257,6 +315,27 @@ public struct AppCopy: Sendable {
     viewSwitchLabel: String,
     planErrorMessage: String,
     diffLabels: [String],
+    editedToast: String,
+    revertedToast: String,
+    baseClearedToast: String,
+    clearBaseQuestion: String,
+    openAppleMaps: String,
+    stopConditionsDisclosure: String,
+    lastEntryLabel: String,
+    daySettingsTitle: String,
+    customTimeLabel: String,
+    hardEditConfirm: String,
+    hardEditCancel: String,
+    undoAction: String,
+    redoAction: String,
+    moreActions: String,
+    undoneAnnouncement: String,
+    redoneAnnouncement: String,
+    evidenceNoValue: String,
+    evidencePlaceLabel: String,
+    evidenceHoursLabel: String,
+    evidenceHoursOpen: String,
+    evidenceStatusUnknown: String,
     pasteLimitToast: @escaping @Sendable (Int) -> String,
     daysValue: @escaping @Sendable (Int) -> String,
     priorityLabel: @escaping @Sendable (String) -> String,
@@ -281,7 +360,15 @@ public struct AppCopy: Sendable {
     dayTimeBarLabel: @escaping @Sendable (String, String, String, String, Int, Int) -> String,
     hotelLegDepart: @escaping @Sendable (String) -> String,
     hotelLegReturn: @escaping @Sendable (String) -> String,
-    mapPinLabel: @escaping @Sendable (String, String) -> String
+    mapPinLabel: @escaping @Sendable (String, String) -> String,
+    restoredStopToast: @escaping @Sendable (String) -> String,
+    movedToDayToast: @escaping @Sendable (Int) -> String,
+    tripDaysToast: @escaping @Sendable (Int) -> String,
+    baseSetToast: @escaping @Sendable (String) -> String,
+    moveStopQuestion: @escaping @Sendable (String, Int) -> String,
+    moveStopAutoQuestion: @escaping @Sendable (String) -> String,
+    shortenTripQuestion: @escaping @Sendable (Int) -> String,
+    changeBaseQuestion: @escaping @Sendable (String) -> String
   ) {
     self.startTitle = startTitle
     self.startHelpShort = startHelpShort
@@ -365,6 +452,27 @@ public struct AppCopy: Sendable {
     self.viewSwitchLabel = viewSwitchLabel
     self.planErrorMessage = planErrorMessage
     self.diffLabels = diffLabels
+    self.editedToast = editedToast
+    self.revertedToast = revertedToast
+    self.baseClearedToast = baseClearedToast
+    self.clearBaseQuestion = clearBaseQuestion
+    self.openAppleMaps = openAppleMaps
+    self.stopConditionsDisclosure = stopConditionsDisclosure
+    self.lastEntryLabel = lastEntryLabel
+    self.daySettingsTitle = daySettingsTitle
+    self.customTimeLabel = customTimeLabel
+    self.hardEditConfirm = hardEditConfirm
+    self.hardEditCancel = hardEditCancel
+    self.undoAction = undoAction
+    self.redoAction = redoAction
+    self.moreActions = moreActions
+    self.undoneAnnouncement = undoneAnnouncement
+    self.redoneAnnouncement = redoneAnnouncement
+    self.evidenceNoValue = evidenceNoValue
+    self.evidencePlaceLabel = evidencePlaceLabel
+    self.evidenceHoursLabel = evidenceHoursLabel
+    self.evidenceHoursOpen = evidenceHoursOpen
+    self.evidenceStatusUnknown = evidenceStatusUnknown
     self.pasteLimitToastText = pasteLimitToast
     self.daysValueText = daysValue
     self.priorityLabelText = priorityLabel
@@ -390,6 +498,14 @@ public struct AppCopy: Sendable {
     self.hotelLegDepartText = hotelLegDepart
     self.hotelLegReturnText = hotelLegReturn
     self.mapPinLabelText = mapPinLabel
+    self.restoredStopToastText = restoredStopToast
+    self.movedToDayToastText = movedToDayToast
+    self.tripDaysToastText = tripDaysToast
+    self.baseSetToastText = baseSetToast
+    self.moveStopQuestionText = moveStopQuestion
+    self.moveStopAutoQuestionText = moveStopAutoQuestion
+    self.shortenTripQuestionText = shortenTripQuestion
+    self.changeBaseQuestionText = changeBaseQuestion
   }
 
   /// 貼り付けが上限に当たったときのトースト。**件数を名指しする** —— 12 までですとだけ
@@ -487,6 +603,28 @@ public struct AppCopy: Sendable {
   /// 区切りの記号が言語で違うので、組み立てをビューに置かずここへ持つ。
   public func mapPinLabel(name: String, kind: String) -> String { mapPinLabelText(name, kind) }
 
+  /// 外した場所を戻したときのトースト(Web `usePlannerEdits.tsx:534`)。
+  public func restoredStopToast(name: String) -> String { restoredStopToastText(name) }
+
+  /// 日をまたいで動かしたときのトースト。**1 始まりの日**を渡す(旅行者が読む番号)。
+  public func movedToDayToast(day: Int) -> String { movedToDayToastText(day) }
+
+  /// 旅の長さを変えたときのトースト。
+  public func tripDaysToast(days: Int) -> String { tripDaysToastText(days) }
+
+  /// 拠点を変えたときのトースト。
+  public func baseSetToast(name: String) -> String { baseSetToastText(name) }
+
+  /// 日をまたいで動かしてよいか、自動配置に戻してよいかの問いかけ。**1 始まりの日**。
+  public func moveStopQuestion(name: String, day: Int) -> String { moveStopQuestionText(name, day) }
+  public func moveStopAutoQuestion(name: String) -> String { moveStopAutoQuestionText(name) }
+
+  /// 旅を縮めてよいかの問いかけ。伸ばすほうは何も壊さないので問いかけない。
+  public func shortenTripQuestion(days: Int) -> String { shortenTripQuestionText(days) }
+
+  /// 拠点を変えてよいかの問いかけ。
+  public func changeBaseQuestion(name: String) -> String { changeBaseQuestionText(name) }
+
   public static func `for`(_ locale: PlannerLocale) -> AppCopy {
     locale == .ja ? ja : en
   }
@@ -581,6 +719,27 @@ public struct AppCopy: Sendable {
     viewSwitchLabel: "表示を切り替える",
     planErrorMessage: "この条件では1日も組めませんでした。場所か日数を見直してから、もう一度つくってください。",
     diffLabels: ["重大な衝突", "超過", "移動", "最小余白", "訪問数", "日数"],
+    editedToast: "変更しました",
+    revertedToast: "自動に戻しました",
+    baseClearedToast: "拠点の指定を外しました",
+    clearBaseQuestion: "拠点の指定を外しますか？",
+    openAppleMaps: "Apple Mapsで開く",
+    stopConditionsDisclosure: "この場所の条件を変える",
+    lastEntryLabel: "最終入場",
+    daySettingsTitle: "この日の設定",
+    customTimeLabel: "時刻を選ぶ",
+    hardEditConfirm: "このまま進める",
+    hardEditCancel: "やめる",
+    undoAction: "元に戻す",
+    redoAction: "やり直す",
+    moreActions: "その他の操作",
+    undoneAnnouncement: "元に戻しました",
+    redoneAnnouncement: "やり直しました",
+    evidenceNoValue: "—",
+    evidencePlaceLabel: "場所",
+    evidenceHoursLabel: "営業時間",
+    evidenceHoursOpen: "訪問時刻は営業時間内",
+    evidenceStatusUnknown: "未確認",
     pasteLimitToast: { "\($0)件あります。1回に確認できるのは12か所までです。残りは別の旅として分けてください。" },
     daysValue: { "\($0)日" },
     priorityLabel: { "\($0)の優先度" },
@@ -624,7 +783,15 @@ public struct AppCopy: Sendable {
     },
     hotelLegDepart: { headline in "ホテルから \(headline)" },
     hotelLegReturn: { headline in "ホテルへ \(headline)" },
-    mapPinLabel: { name, kind in "\(name)、\(kind)" }
+    mapPinLabel: { name, kind in "\(name)、\(kind)" },
+    restoredStopToast: { "「\($0)」を戻しました" },
+    movedToDayToast: { "\($0)日目に移動しました" },
+    tripDaysToast: { "\($0)日の旅程にしました" },
+    baseSetToast: { "拠点を「\($0)」にしました" },
+    moveStopQuestion: { name, day in "「\(name)」を\(day)日目へ移動しますか？" },
+    moveStopAutoQuestion: { "「\($0)」の日程を自動配置に戻しますか？" },
+    shortenTripQuestion: { "\($0)日に短縮しますか？" },
+    changeBaseQuestion: { "拠点を「\($0)」に変更しますか？" }
   )
 
   static let en = AppCopy(
@@ -710,6 +877,27 @@ public struct AppCopy: Sendable {
     viewSwitchLabel: "Switch view",
     planErrorMessage: "Nothing could be scheduled under these conditions. Revisit the places or the day count, then build again.",
     diffLabels: ["Hard conflicts", "Overrun", "Travel", "Minimum slack", "Visits", "Days"],
+    editedToast: "Updated",
+    revertedToast: "Back to automatic",
+    baseClearedToast: "Base cleared",
+    clearBaseQuestion: "Clear the base?",
+    openAppleMaps: "Open in Apple Maps",
+    stopConditionsDisclosure: "Change the conditions here",
+    lastEntryLabel: "Last entry",
+    daySettingsTitle: "Day settings",
+    customTimeLabel: "Pick a time",
+    hardEditConfirm: "Go ahead",
+    hardEditCancel: "Keep it",
+    undoAction: "Undo",
+    redoAction: "Redo",
+    moreActions: "More actions",
+    undoneAnnouncement: "Undone",
+    redoneAnnouncement: "Redone",
+    evidenceNoValue: "—",
+    evidencePlaceLabel: "Place",
+    evidenceHoursLabel: "Opening hours",
+    evidenceHoursOpen: "The visit falls inside opening hours",
+    evidenceStatusUnknown: "Unconfirmed",
     pasteLimitToast: { "\($0) places found. Up to 12 places at a time. Keep the rest for a second trip." },
     daysValue: { "\($0) day\($0 == 1 ? "" : "s")" },
     priorityLabel: { "\($0) priority" },
@@ -753,7 +941,15 @@ public struct AppCopy: Sendable {
     },
     hotelLegDepart: { headline in "From hotel · \(headline)" },
     hotelLegReturn: { headline in "To hotel · \(headline)" },
-    mapPinLabel: { name, kind in "\(name), \(kind)" }
+    mapPinLabel: { name, kind in "\(name), \(kind)" },
+    restoredStopToast: { "Restored “\($0)”" },
+    movedToDayToast: { "Moved to Day \($0)" },
+    tripDaysToast: { "Trip length set to \($0) \($0 == 1 ? "day" : "days")" },
+    baseSetToast: { "Base set to \($0)" },
+    moveStopQuestion: { name, day in "Move “\(name)” to day \(day)?" },
+    moveStopAutoQuestion: { "Return “\($0)” to automatic placement?" },
+    shortenTripQuestion: { "Shorten the trip to \($0) \($0 == 1 ? "day" : "days")?" },
+    changeBaseQuestion: { "Change the base to “\($0)”?" }
   )
 
   /// 名前を並べるときの共通の切り詰め —— 先頭 2 件だけを出し、残りは件数で言う。Kit の

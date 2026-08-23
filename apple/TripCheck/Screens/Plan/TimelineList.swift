@@ -21,7 +21,9 @@ struct TimelineList: View {
         case .hotelLeg(let model):
           HotelLegRow(model: model)
         case .movement(let model):
-          // Task 9 がガード付きの編集(聞いてから直す)に差し替える。
+          // 手段を選ぶ手は他の編集と同じ関所を通る(`PlannerStore+Edits.swift`)——
+          // タイムラインの錠剤を押したか、結論の詳細で代替案を採ったかで、予約が守られる
+          // かどうかが変わってはならない。
           MovementCard(model: model) { mode in
             Task { await store.setLegMode(legKey: model.legKey, mode: mode) }
           }

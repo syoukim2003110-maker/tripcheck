@@ -27,10 +27,10 @@ public final class PlannerStore {
 
   /// `init(initial:limit:)` しか無い。10(`PlannerEdits.undoLimit`)は 1...20 の
   /// `precondition` を通る。
-  public private(set) var history = PlannerHistory<PlannerEditState>(initial: .empty, limit: PlannerEdits.undoLimit)
+  public internal(set) var history = PlannerHistory<PlannerEditState>(initial: .empty, limit: PlannerEdits.undoLimit)
 
   /// 組み立ての世代。1 回組むごとに 1 つ進み、**進んだ後に返ってきた答えは捨てる**。
-  public private(set) var buildGeneration = 0
+  public internal(set) var buildGeneration = 0
 
   /// 場所を調べている間だけ真(`requestBuildFromStart()` が立てて倒す)。CTA が「まだ場所が
   /// 無い」と「いま調べている」を言い分けるために要る —— 見分けが付かないと、旅行者は
@@ -44,6 +44,16 @@ public final class PlannerStore {
   @ObservationIgnored let autosaveDebounce: Duration
   @ObservationIgnored let clock: any Clock<Duration>
   @ObservationIgnored private var buildTask: Task<Void, Never>?
+
+  /// 旅行者の返事を待っている編集の中身。**`view` には置かない** —— `PlannerViewState` は
+  /// `Equatable` かつ `Sendable` で、組み上がった旅程(`BuiltPlanBundle`)はそのどちらでも
+  /// ないから。あちらが持つのは「何を確認したいのか」だけで、確認が済んだときに実際に
+  /// 引き渡すものはここにある(`Store/PlannerStore+Edits.swift`)。
+  @ObservationIgnored var pendingApply: PendingGuardedEdit?
+
+  /// 出したトーストを 6 秒後に消す約束。次のトーストが出たら前の約束は破る ——
+  /// 破らないと、2 つ目のトーストが 1 つ目の時計で消える。
+  @ObservationIgnored var toastDismissTask: Task<Void, Never>?
 
   /// 組み立ての答えを `commit` へ渡す直前の関所。**テストだけが差す**(`internal` なので
   /// アプリからは見えず、既定の `nil` では 1 度の分岐すら挟まらない)。
@@ -76,6 +86,21 @@ public final class PlannerStore {
   /// 日数は `request.tripDays ?? edit.tripDays`:旅行者が名乗った日数が常に勝ち、名乗って
   /// いなければ直近の組み立てが落ち着いた日数を使う。
   public func tripRequest() -> TripRequest {
+    tripRequest(with: edit, days: request.tripDays ?? edit.tripDays)
+  }
+
+  /// 同じ畳み方を、**まだ採用していない編集**に対して行う。守られた編集(Task 9)は
+  /// これで候補の旅程を組み、今の旅程と比べてから旅行者に訊く。
+  ///
+  /// 日数が `candidate.tripDays` そのものなのは、`edit.tripDays` が組み立てのたびに
+  /// 「実際に組み上がった日数」へ追従するため(`adopt`)——つまり候補の日数を書き換え
+  /// なければ今の日数がそのまま来るし、書き換えればその日数で候補が組まれる。日数を変える
+  /// 編集は `request.tripDays` を**採用が決まった時に**同じ値へ揃える(R6)。
+  func tripRequest(with candidate: PlannerEditState) -> TripRequest {
+    tripRequest(with: candidate, days: candidate.tripDays)
+  }
+
+  private func tripRequest(with edit: PlannerEditState, days: Int) -> TripRequest {
     let raw = WishlistSerialization.raw(from: request.entries, locale: request.locale)
     var ctx = PlannerContext()
     ctx.destination = request.destination
@@ -105,7 +130,7 @@ public final class PlannerStore {
     ctx.mealPlan = request.mealPlan
     return TripRequest(
       raw: raw,
-      days: request.tripDays ?? edit.tripDays,
+      days: days,
       pace: edit.pace,
       locale: request.locale,
       context: ctx
@@ -163,6 +188,9 @@ public final class PlannerStore {
   /// 最初から。ロケールだけは端末の設定なので引き継ぐ。
   public func reset() {
     cancelBuild()
+    pendingApply = nil
+    toastDismissTask?.cancel()
+    toastDismissTask = nil
     request = TripRequestState.initial(locale: request.locale)
     edit = .empty
     view = PlannerViewState()
@@ -193,12 +221,20 @@ public final class PlannerStore {
 
   /// 組み上がったものを引き受ける。`edit.tripDays` を追従させるのは、次の組み立てで
   /// `request.tripDays` が `nil`(未定)でも、落ち着いた日数から続けられるようにするため。
-  private func commit(_ bundle: BuiltPlanBundle) {
+  ///
+  /// **画面には触らない。** 守られた編集と Undo/Redo(`PlannerStore+Edits.swift`)は
+  /// 結果画面に留まったまま旅程だけを差し替えるので、`.building` を挟む `commit` とは
+  /// ここで分かれる。
+  func adopt(_ bundle: BuiltPlanBundle) {
     self.bundle = bundle
     edit.tripDays = bundle.request.days
+    view.selectedDay = min(view.selectedDay, max(0, bundle.plan.days.count - 1))
+  }
+
+  private func commit(_ bundle: BuiltPlanBundle) {
+    adopt(bundle)
     // `"empty"` は機械が読む語で、旅行者に見せる文ではない(文言は画面側が引く)。
     view.screen = bundle.plan.days.isEmpty ? .error("empty") : .plan
-    view.selectedDay = min(view.selectedDay, max(0, bundle.plan.days.count - 1))
     // `hero` を直に読む(独自に `VerdictCopy.hero` を再度呼ばない) —— 読み上げの 1 文と
     // 画面に出す見出しが**同じ関数呼び出し**から来ないと、`checkCount` を渡し忘れた側だけ
     // 数が違う文になる(`FEASIBLE_IF_ASSUMPTIONS` で実際に起きた)。`self.bundle` は 2 行上で

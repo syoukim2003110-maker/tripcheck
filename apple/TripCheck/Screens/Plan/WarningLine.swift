@@ -52,9 +52,11 @@ struct WarningActionButton: View {
     // 代替案と「減らし方」はどちらも結論の詳細の中(Task 10 が中身を入れる)。
     case .openAlternatives, .removeOptional:
       store.view.verdictExpanded = true
-    // 営業時間を確かめる相手が 1 つに決まっているとき。シートは Task 9 が開く。
+    // 営業時間を確かめる相手が 1 つに決まっているとき。シートを開く唯一の入口を通す
+    // (高さを覗く位置へ戻し、地図の強調もそこへ寄せる)—— `view.inspector` を直に書くと、
+    // 開き方ごとに高さの規則が割れる。
     case .openStop(let stopId):
-      store.view.inspector = .stop(stopId)
+      store.openInspector(.stop(stopId))
     case .retryBuild:
       Task { await store.build() }
     }

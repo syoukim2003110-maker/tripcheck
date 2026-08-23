@@ -17,8 +17,10 @@ import TripCheckKit
 /// 同じ数が 2 か所で割れないことを型で守っている。
 struct PlanScreen: View {
   @Environment(PlannerStore.self) private var store
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
+    @Bindable var store = store
     let app = AppCopy.for(store.request.locale)
     let selectedDay = store.view.selectedDay
 
@@ -52,18 +54,54 @@ struct PlanScreen: View {
       .navigationBarTitleDisplayMode(.inline)
       .toolbar { PlanToolbar() }
     }
-    // 旅程と地図は iPhone では同時に出さない。切替は画面の下、親指の届くところ。
+    // 旅程と地図は iPhone では同時に出さない。切替は画面の下、親指の届くところ。トーストは
+    // その真上 —— 押した指がまだ画面の下にあるうちに「元に戻す」へ届く。
     .safeAreaInset(edge: .bottom) {
-      SegmentedPills(
-        options: [(MobileView.timeline, app.timelineTab), (MobileView.map, app.mapTab)],
-        selection: store.view.mobileView,
-        groupLabel: app.viewSwitchLabel,
-        onSelect: { store.view.mobileView = $0 }
-      )
-      .padding(.horizontal, 16)
+      VStack(spacing: 8) {
+        if let toast = store.view.toast { ToastView(toast: toast) }
+        SegmentedPills(
+          options: [(MobileView.timeline, app.timelineTab), (MobileView.map, app.mapTab)],
+          selection: store.view.mobileView,
+          groupLabel: app.viewSwitchLabel,
+          onSelect: { store.view.mobileView = $0 }
+        )
+        .padding(.horizontal, 16)
+        .accessibilityIdentifier("plan.view")
+      }
       .padding(.bottom, 8)
       .background(.ultraThinMaterial)
-      .accessibilityIdentifier("plan.view")
+      .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: store.view.toast)
+    }
+    // 詳細シート。3 段の高さで、いちばん低い「覗く」から始まる(`openInspector` が毎回
+    // そこへ戻す)—— 前に全画面まで引き上げたことが、次に軽く覗きたいときの邪魔にならない。
+    .sheet(item: $store.view.inspector) { target in
+      switch target {
+      case .stop(let stopId):
+        StopInspector(stopId: stopId)
+          .presentationDetents([.fraction(0.3), .medium, .large], selection: detent)
+          .presentationDragIndicator(.visible)
+      case .daySettings(let day):
+        DaySettingsSheet(day: day)
+          .presentationDetents([.medium, .large])
+          .presentationDragIndicator(.visible)
+      }
+    }
+    // 重い結果の出る編集は**先に訊く**(v1.1 TC-007)。題は Kit が決める —— 新しい損傷が
+    // ちょうど 1 件の予約遅れなら「この変更で予約に N 分遅れます」、それ以外は編集ごとの
+    // 問いかけがそのまま残る(`PlannerEdits.confirmTitle`)。
+    .alert(hardEditTitle, isPresented: hardEditPresented) {
+      Button(app.hardEditCancel, role: .cancel) { store.cancelPendingEdit() }
+      Button(app.hardEditConfirm, role: .destructive) { Task { await store.confirmPendingEdit() } }
+    } message: {
+      Text(hardEditBody)
+    }
+    // 端末を振ると 1 つ前へ。iOS の作法どおり `UIWindow.motionEnded` から届く。
+    .onReceive(NotificationCenter.default.publisher(for: .tripCheckShakeToUndo)) { _ in
+      guard store.canUndo else { return }
+      Task {
+        await store.undo()
+        AccessibilityNotification.Announcement(app.undoneAnnouncement).post()
+      }
     }
     // 組み上がるたびに結論の見出しを 1 度だけ読み上げる(`commit` が置く 1 文)。割り込まない
     // 優先度なので、旅行者が読んでいる途中の文を切らない。
@@ -78,6 +116,54 @@ struct PlanScreen: View {
       guard let announcement, !announcement.isEmpty else { return }
       AccessibilityNotification.Announcement(announcement).post()
     }
+  }
+
+  // MARK: - シートの高さ
+
+  /// `SheetDetent`(AppCore の 3 値)と SwiftUI の高さの往復。AppCore は SwiftUI を知らない
+  /// ので、対応表はここに置く。
+  private var detent: Binding<PresentationDetent> {
+    @Bindable var store = store
+    return Binding(
+      get: {
+        switch store.view.sheetDetent {
+        case .peek: .fraction(0.3)
+        case .half: .medium
+        case .full: .large
+        }
+      },
+      set: { value in
+        store.view.sheetDetent = value == .large ? .full : value == .medium ? .half : .peek
+      }
+    )
+  }
+
+  // MARK: - 確認ダイアログ
+
+  /// 出ているかどうか。**`.edit` だけを見る** —— `.mustUnresolved` は確認画面(Task 5)の
+  /// ダイアログで、こちらが横取りすると同じ問いが 2 枚出る。
+  private var hardEditPresented: Binding<Bool> {
+    Binding(
+      get: { if case .edit = store.view.pendingHardEdit { true } else { false } },
+      set: { shown in if !shown { store.cancelPendingEdit() } }
+    )
+  }
+
+  private var hardEditTitle: String {
+    guard case .edit(let conflicts, let extra, let fallback)? = store.view.pendingHardEdit else { return "" }
+    return PlannerEdits.confirmTitle(
+      conflicts: conflicts,
+      extraConflicts: extra,
+      fallback: fallback,
+      locale: store.request.locale
+    )
+  }
+
+  /// 本文は壊れる約束を 1 行ずつ。Kit の判定文が先、アプリ側の但し書き(必須指定・予約済み)が
+  /// 後 —— 旅程そのものが壊れる話を、指定の話より先に読ませる。
+  private var hardEditBody: String {
+    guard case .edit(let conflicts, let extra, _)? = store.view.pendingHardEdit else { return "" }
+    return (conflicts.map(\.message) + extra).joined(separator: "\n")
   }
 }
 

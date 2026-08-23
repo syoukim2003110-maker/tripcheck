@@ -24,7 +24,12 @@ import TripCheckKit
               c.airportEstimate, c.airportUse, c.airportSelected, c.airportDisclaimer,
               c.mustUnresolvedTitle, c.mustUnresolvedContinue, c.mustUnresolvedBack,
               c.chooseCountryAction, c.chooseCandidateAction, c.retryBuildAction, c.viewSwitchLabel,
-              c.planErrorMessage] + c.diffLabels
+              c.planErrorMessage,
+              c.editedToast, c.revertedToast, c.baseClearedToast, c.clearBaseQuestion, c.openAppleMaps,
+              c.stopConditionsDisclosure, c.lastEntryLabel, c.daySettingsTitle,
+              c.customTimeLabel, c.hardEditConfirm, c.hardEditCancel, c.undoAction, c.redoAction,
+              c.moreActions, c.undoneAnnouncement, c.redoneAnnouncement, c.evidenceNoValue,
+              c.evidencePlaceLabel, c.evidenceHoursLabel, c.evidenceHoursOpen, c.evidenceStatusUnknown] + c.diffLabels
               + [c.daysValue(1), c.daysValue(4), c.priorityLabel(name: "X"), c.removeStopQuestion(name: "X"), c.mustRemovalNote(name: "X"), c.reservationRemovalNote(name: "X"), c.removedStopToast(name: "X"), c.pasteLimitToast(count: 14)]
               + [c.resolveAllConfirmed(count: 1), c.resolveAllConfirmed(count: 4),
                  c.resolveCountryConflict(codes: ["CH", "JP"]), c.resolveCandidateQuestion(name: "X"),
@@ -40,15 +45,39 @@ import TripCheckKit
                  c.dayTimeBarLabel(visit: "1", travel: "2", slack: "3", available: "4", reservations: 0, conflicts: 0),
                  c.dayTimeBarLabel(visit: "1", travel: "2", slack: "3", available: "4", reservations: 1, conflicts: 2)]
               + [c.hotelLegDepart("徒歩 5分"), c.hotelLegReturn("徒歩 5分")]
-              + [c.mapPinLabel(name: "ツェルマット", kind: c.mapPinWarning)] {
+              + [c.mapPinLabel(name: "ツェルマット", kind: c.mapPinWarning)]
+              + [c.restoredStopToast(name: "X"), c.movedToDayToast(day: 2), c.tripDaysToast(days: 1),
+                 c.tripDaysToast(days: 4), c.baseSetToast(name: "X"), c.moveStopQuestion(name: "X", day: 2),
+                 c.moveStopAutoQuestion(name: "X"), c.shortenTripQuestion(days: 1),
+                 c.shortenTripQuestion(days: 3), c.changeBaseQuestion(name: "X")] {
       #expect(BannedTerms.violations(in: s).isEmpty, "\(locale): \(s)")
       #expect(!s.isEmpty, "\(locale): empty copy")
       checked += 1
     }
   }
-  // ja/en それぞれ 30 + Task 5 の 42 + Task 6 の 5 + Task 8 の 4 + diffLabels 6 + 引数を取る 8
-  // + Task 5 の引数つき 16 + Task 6 の引数つき 8 + Task 7 の引数つき 2 + Task 8 の引数つき 1
-  #expect(checked == 244)
+  // ja/en それぞれ 30 + Task 5 の 42 + Task 6 の 5 + Task 8 の 4 + Task 9 の 21 + diffLabels 6
+  // + 引数を取る 8 + Task 5 の引数つき 16 + Task 6 の引数つき 8 + Task 7 の引数つき 2
+  // + Task 8 の引数つき 1 + Task 9 の引数つき 10(日数の 2 つは 1 と複数の両方を見る)
+  #expect(checked == 306)
+}
+
+/// 英語の日数は 1 日だけ単数。旅の長さを名乗る 2 文にも同じ規則が要る("1 days" を出さない)。
+@Test func englishTripLengthCopyIsSingularForOneDay() {
+  #expect(AppCopy.en.tripDaysToast(days: 1).contains("1 day"))
+  #expect(!AppCopy.en.tripDaysToast(days: 1).contains("1 days"))
+  #expect(AppCopy.en.tripDaysToast(days: 4).contains("4 days"))
+  #expect(!AppCopy.en.shortenTripQuestion(days: 1).contains("1 days"))
+}
+
+/// 編集の確認と取り消しは**別の言葉**でなければならない。同じ語が 2 つ並ぶダイアログは、
+/// どちらを押すと変わるのか読めない。
+@Test func theHardEditAnswersAreTwoDistinctWords() {
+  for locale in [PlannerLocale.ja, .en] {
+    let c = AppCopy.for(locale)
+    #expect(c.hardEditConfirm != c.hardEditCancel, "\(locale)")
+    #expect(c.undoAction != c.redoAction, "\(locale)")
+    #expect(c.editedToast != c.revertedToast, "\(locale)")
+  }
 }
 
 /// 帯の読み上げは 4 つの分数を**別々の節**に置く —— 入れ替わると「訪問30分・移動6時間」が
