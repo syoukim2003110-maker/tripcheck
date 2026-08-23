@@ -68,6 +68,7 @@ struct TripMapView: View {
             Text(app.mapMeasuredRoutesValue(count: model.measuredCount))
               .tcFont(.label)
               .foregroundStyle(Tokens.Color.ink2)
+              .fixedSize(horizontal: false, vertical: true)
               .accessibilityIdentifier("map.measuredCount")
           }
           MapLegend(days: model.legendDays, scope: $store.view.mapScope)

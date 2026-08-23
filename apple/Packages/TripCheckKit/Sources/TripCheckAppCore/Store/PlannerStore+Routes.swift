@@ -140,9 +140,13 @@ extension PlannerStore {
   func resumeDeferredRouteReplacement() {
     guard let depth = deferredRouteReplacement else { return }
     deferredRouteReplacement = nil
-    // 待っている間に済んでいることが多い —— 組み直しの `tripRequest()` は `liveRoutes` を
-    // 畳むので、待たせた相手が採用した旅程はもう測った分を消費している。同じものをもう一度
-    // 組んで「実経路で更新しました」を出す理由は無い(走っている取得を畳むのも無駄)。
+    // 待っている間に済んでいることがある —— この関所が捕まえるのは**組み直しが始まる前に
+    // 積まれた保留**で、その旅程はもう測った分を消費している。同じものをもう一度組んで
+    // 「実経路で更新しました」を出す理由は無い(走っている取得を畳むのも無駄)。
+    //
+    // 組み直しの `await` の最中に着いた答えはここでは拾わない —— 3 本の組み直しはどれも
+    // 待つ前に `req` を掴むので、その `tripRequest()` に後から来た測定は入らない。そちらは
+    // 組み直しの末尾の `startRouteEnrichment()` が改めて拾う。
     guard !liveRoutesAreAdopted else { return }
     scheduleRouteReplacement(chainDepth: depth)
   }

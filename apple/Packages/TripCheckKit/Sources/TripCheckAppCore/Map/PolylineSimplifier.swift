@@ -1,7 +1,7 @@
 import Foundation
 import TripCheckKit
 
-/// Douglas–Peucker。2000 点を超える経路線だけに約 5 m で掛ける(`MKDirectionsAdapter.geometry`)。
+/// Douglas–Peucker。2000 点を超える経路線だけに約 5 m で掛ける(`AppleRouteProvider.route` が `thinned(_:)` を呼ぶ)。
 ///
 /// 端末の地図が返す 1 本の線は、長い車の経路だと数千点になる —— そのまま `PlannerContext` に
 /// 持たせると、描くたびに同じ形を何千点で組み直すことになる。落とすのは「線の形を約 5 m 以上
