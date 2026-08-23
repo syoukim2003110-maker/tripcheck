@@ -232,12 +232,22 @@ public final class PlannerStore {
   }
 
   private func commit(_ bundle: BuiltPlanBundle) {
+    // ずれているかどうかは、**採用する前の `edit`** に対して見る —— 直後の `adopt` が
+    // `edit.tripDays` を書き換えるので、後から見ると「ずれていない組み直し」まで
+    // ずれて見えてしまう。
+    let driftedBeforeAdopt = !historyPointsAtTheCurrentEdit
     adopt(bundle)
-    // **台帳はここで畳む。** `build()` は関所(`applyGuardedEdit`)を通らない採用で、走るのは
-    // 入力そのものが変わった後 —— 「入力にもどる」で歩く速さを変えて組み直した旅程には、
-    // 積んである「1 つ前」がもう存在しない。畳まないと、その Undo は**歩く速さの変更ごと**
-    // 捨てて、旅行者が見ていない旅程へ跳ぶ。`reset()` が同じことをしている。
-    history = PlannerHistory(initial: edit, limit: PlannerEdits.undoLimit)
+    // **台帳を畳むのは、入力が台帳の現在地からずれていたときだけ。** `build()` は関所
+    // (`applyGuardedEdit`)を通らない道からも呼ばれる —— ひとつは入力そのものが変わった後
+    // (「入力にもどる」で歩く速さを変えて組み直す)、もうひとつは入力を変えずにもう一度
+    // 組むだけの再試行(計算量オーバーの警告行「もう一度試す」)。前者は積んである
+    // 「1 つ前」がもう存在しないので畳む —— 畳まないと、その Undo は**歩く速さの変更ごと**
+    // 捨てて、旅行者が見ていない旅程へ跳ぶ。`reset()` が同じことをしている。後者は `edit` が
+    // 1 ミリも動いていないので、守られた編集が積んだ Undo をここで捨てる理由が無い
+    // (`applyGuardedEdit` の同じ判定と対になる)。
+    if driftedBeforeAdopt {
+      history = PlannerHistory(initial: edit, limit: PlannerEdits.undoLimit)
+    }
     // `"empty"` は機械が読む語で、旅行者に見せる文ではない(文言は画面側が引く)。
     view.screen = bundle.plan.days.isEmpty ? .error("empty") : .plan
     // `hero` を直に読む(独自に `VerdictCopy.hero` を再度呼ばない) —— 読み上げの 1 文と

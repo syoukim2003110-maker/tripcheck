@@ -157,6 +157,22 @@ import TripCheckKit
   #expect(store.edit.userStayMinutes[id] == 120)
 }
 
+/// 一方、`edit` を 1 ミリも動かさない再組み立て(計算量オーバーの警告行「もう一度試す」、
+/// `WarningLine.swift` の `.retryBuild` → `store.build()`)は台帳をそのまま残す —— 畳むと、
+/// 計算が重かっただけの旅程で守られた編集の「元に戻す」が急に効かなくなる。
+@Test @MainActor func aRetryBuildWithoutDriftKeepsTheUndoHistory() async {
+  let store = PlannerStore(resolvers: [CatalogResolver()], store: nil); store.loadSample(.switzerland); await store.build()
+  let id = store.bundle!.plan.days[0].stops[0].stop.id
+  await store.setStayMinutes(stopId: id, minutes: 120)
+  #expect(store.canUndo)
+
+  await store.build()   // edit は動いていない(退避先が無い再試行)
+  #expect(store.canUndo)
+
+  await store.undo()
+  #expect(store.edit.userStayMinutes[id] == nil)
+}
+
 /// Undo は**組み直す**。数だけ戻して旅程を古いままにすると、画面の滞在時間と到着時刻が
 /// 食い違う(統合仕様 §5.1)。
 @Test @MainActor func undoRebuildsThePlanAndSaysNothingInAToast() async {
