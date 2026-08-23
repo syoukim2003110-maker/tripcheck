@@ -189,7 +189,7 @@ public protocol RecommendationSource: Sendable {
 - 手段ごとの呼び分け: `.walk` → `transportType = .walking`, `calculate()`;`.taxi` → `.automobile`, `calculate()`;`.transit` → `.transit`, **`calculateETA()` のみ**(`calculate()` は失敗する)。`requestsAlternateRoutes = false`。`departureDate` は `.transit` と `.taxi` にだけ設定、`arrivalDate` は使わない。
 - 座標 → `MKMapItem` は 1 か所のヘルパに閉じる(iOS 26 で初期化子が変わる)。
 - `MKRoute.polyline` は `getCoordinates(_:range:)` でアダプタの隔離内で `[GeoPoint]` に変換してから返す(2000 点超は約 5 m の Douglas–Peucker で間引く)。MapKit の型を AppCore の外に出さない。
-- エラー分類: `loadingThrottled` → `.failed`(コーディネータが再試行)/ `directionsNotFound`, `placemarkNotFound` → `.unroutable` / その他・タイムアウト → `.failed`。**0 分の回答は `.failed` に読み替える**(Kit は 0 を根拠なしとして扱うが、ここで揃えておく)。
+- エラー分類: `loadingThrottled` → プロバイダ内で 1/2/4 秒の再試行(×3)、尽きたら `.failed` / `directionsNotFound`, `placemarkNotFound` → `.unroutable` / その他・タイムアウト → `.failed`。**0 分の回答は `.failed` に読み替える**(Kit は 0 を根拠なしとして扱うが、ここで揃えておく)。
 - テスト用 `FakeDirecting`(`Tests/TripCheckAppCoreTests/Support/FakeDirecting.swift`): 鍵ごとの回答・遅延・スロットル回数を指定できる。`swift test` は Apple を呼ばない。
 
 ---

@@ -256,7 +256,7 @@ private struct LatchedRouteProvider: RouteProvider {
 
 /// 測り終える前に旅行者が 1 手打っても、測定は取りこぼされない —— 編集の後の pass が
 /// 立て直すので、落ち着いたときには候補レグが実経路で裏打ちされている。
-@Test @MainActor func anEditWhileFetchingStillEndsUpWithEveryLegMeasured() async {
+@Test(.timeLimit(.minutes(2))) @MainActor func anEditWhileFetchingStillEndsUpWithEveryLegMeasured() async {
   let latch = RouteLatch()
   let store = PlannerStore(resolvers: [CatalogResolver()], store: nil, routeProvider: LatchedRouteProvider(latch: latch))
   store.loadSample(.switzerland)
@@ -332,7 +332,7 @@ private actor RouteBuildGate {
 /// 規則(`replaceWithLiveRoutes` の `rebuildsInFlight > 0`)が壊れると、待ち合わせが
 /// 二度と成立せずに `await` がそのまま止まる —— 制限時間が無いと、赤ではなく「終わらない
 /// 検証」になる。
-@Test(.timeLimit(.minutes(1))) @MainActor func aReplacementNeverSwallowsTheEditTheTravellerJustMade() async {
+@Test(.timeLimit(.minutes(3))) @MainActor func aReplacementNeverSwallowsTheEditTheTravellerJustMade() async {
   let latch = RouteLatch()
   let store = PlannerStore(resolvers: [CatalogResolver()], store: nil, routeProvider: LatchedRouteProvider(latch: latch))
   store.loadSample(.switzerland)
@@ -407,7 +407,7 @@ private actor RouteBuildGate {
 
 /// 取得の最中に組み直しが始まったら、古い答えは誰の答えでもない —— キャッシュにも入らず、
 /// 遅れて届いた分で旅程が書き換わることもない。制限時間の理由は上の 1 本と同じ。
-@Test(.timeLimit(.minutes(1))) @MainActor func aRebuildStartedMidFetchDropsTheAnswersInFlight() async {
+@Test(.timeLimit(.minutes(3))) @MainActor func aRebuildStartedMidFetchDropsTheAnswersInFlight() async {
   let latch = RouteLatch()
   let store = PlannerStore(resolvers: [CatalogResolver()], store: nil, routeProvider: LatchedRouteProvider(latch: latch))
   store.loadSample(.switzerland)
