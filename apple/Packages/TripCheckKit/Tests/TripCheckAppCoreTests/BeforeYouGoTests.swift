@@ -15,7 +15,7 @@ import TripCheckKit
 // Task 10 brief §Step 1 tests (verbatim, R13 のとおり書き直したもの)。
 
 @Test @MainActor func passportRuleOnlyJudgesJapanesePassports() async {
-  let store = PlannerStore(resolvers: [], store: nil); store.loadSample(.switzerland)
+  let store = PlannerStore(resolvers: [], store: nil, defaults: defaults("passportRuleOnlyJapanese")); store.loadSample(.switzerland)
   store.request.tripStartDate = "2026-10-13"   // tripDays = 4 は loadSample が置く。build() 無しでも request から start/end を導く
   store.setPassportCountry(.other); #expect(store.beforeYouGo.items.isEmpty)   // Web と同じ: JP 以外は判定しない(空)
   store.setPassportCountry(.jp); store.setPassportExpiry("2027-01-01")
@@ -26,10 +26,10 @@ import TripCheckKit
 }
 
 @Test @MainActor func etiasIsNotRequiredYetAndKEtaExpiresEndOf2026() async {
-  let fr = PlannerStore(resolvers: [], store: nil); fr.setPassportCountry(.jp)
+  let fr = PlannerStore(resolvers: [], store: nil, defaults: defaults("etiasFrance")); fr.setPassportCountry(.jp)
   fr.request.destination = .destination(.france); fr.request.tripStartDate = "2026-10-13"; fr.request.tripDays = 3
   #expect(fr.beforeYouGo.items.first { $0.label.contains("ETIAS") }?.urgency == .info)
-  let kr = PlannerStore(resolvers: [], store: nil); kr.setPassportCountry(.jp)
+  let kr = PlannerStore(resolvers: [], store: nil, defaults: defaults("etiasKorea")); kr.setPassportCountry(.jp)
   kr.request.destination = .destination(.korea); kr.request.tripStartDate = "2027-02-01"; kr.request.tripDays = 3
   let keta = kr.beforeYouGo.items.first { $0.label.contains("K-ETA") }
   #expect(keta?.urgency == .info)
@@ -126,8 +126,23 @@ import TripCheckKit
   #expect(labels.contains(Copy.for(.ja).essentialsPass))          // スイストラベルパス
   #expect(!labels.contains(Copy.for(.ja).essentialsEntry))        // 入国は日本の旅券のときだけ
   store.setPassportCountry(.jp)
-  #expect(store.beforeYouGo.essentials.map(\.label).contains(Copy.for(.ja).essentialsEntry))
-  #expect(store.beforeYouGo.essentials.allSatisfy { !$0.value.isEmpty })
+  let jpEssentials = store.beforeYouGo.essentials
+  #expect(jpEssentials.map(\.label).contains(Copy.for(.ja).essentialsEntry))
+  #expect(jpEssentials.allSatisfy { !$0.value.isEmpty })
+}
+
+/// 国ごとの基本のうち、`DestinationEssentials` が公式ページを持つ行(入国・交通パス)には
+/// `url` が付く。プラグ・緊急通報は Kit にそもそも URL が無いので `nil` のまま —— 壊れた
+/// リンクが行に残らない。
+@Test @MainActor func essentialsCarryOfficialLinksWhereTheKitHasThem() async {
+  let store = PlannerStore(resolvers: [], store: nil, defaults: defaults("essentialsLinks"))
+  store.request.destination = .destination(.switzerland)
+  store.setPassportCountry(.jp)
+  let essentials = store.beforeYouGo.essentials
+  #expect(essentials.first { $0.label == Copy.for(.ja).essentialsEntry }?.url?.scheme == "https")
+  #expect(essentials.first { $0.label == Copy.for(.ja).essentialsPass }?.url?.scheme == "https")   // スイストラベルパス
+  #expect(essentials.first { $0.label == Copy.for(.ja).essentialsPlug }?.url == nil)
+  #expect(essentials.first { $0.label == Copy.for(.ja).essentialsEmergency }?.url == nil)
 }
 
 /// 国内旅行に薬の持ち込みの話は要らない(Web と同じ門)。
@@ -146,6 +161,48 @@ import TripCheckKit
   #expect(store.request.destination == .auto)
   #expect(store.beforeYouGo.items.isEmpty)
   #expect(store.beforeYouGo.essentials.isEmpty)
+}
+
+// MARK: - PassportExpiryDate(`DatePicker` の往復、端末の暦で)
+
+/// `BeforeYouGoCard` の `DatePicker` が使う往復そのもの。実機の時間帯に頼らず同じ条件を
+/// 再現するため、+9(JST)の暦を明示的に注入する —— 深夜寄りの 2 つの時刻で往復しても、
+/// 同じ暦で読み書きする限り暦日は動かない。
+@Test func passportExpiryDateRoundTripsAt2330LocalInAPlusNineTimeZone() {
+  var jst = Calendar(identifier: .gregorian)
+  jst.timeZone = TimeZone(identifier: "Asia/Tokyo")!
+  let original = CalendarDate(year: 2026, month: 8, day: 23)!
+  guard let midnight = PassportExpiryDate.date(from: original, calendar: jst),
+        let lateNight = jst.date(bySettingHour: 23, minute: 30, second: 0, of: midnight) else {
+    Issue.record("could not build the fixture instant"); return
+  }
+  #expect(PassportExpiryDate.calendarDate(from: lateNight, calendar: jst) == original)
+}
+
+@Test func passportExpiryDateRoundTripsAt0030LocalInAPlusNineTimeZone() {
+  var jst = Calendar(identifier: .gregorian)
+  jst.timeZone = TimeZone(identifier: "Asia/Tokyo")!
+  let original = CalendarDate(year: 2026, month: 8, day: 23)!
+  guard let midnight = PassportExpiryDate.date(from: original, calendar: jst),
+        let justAfterMidnight = jst.date(bySettingHour: 0, minute: 30, second: 0, of: midnight) else {
+    Issue.record("could not build the fixture instant"); return
+  }
+  #expect(PassportExpiryDate.calendarDate(from: justAfterMidnight, calendar: jst) == original)
+}
+
+/// 直したのは「片方だけ別の暦で読む」ことそのもの。UTC 相手に読み戻すと実際に 1 日
+/// 失われる、という壊れる側も固定しておく(でなければ、往復が緑なだけで何を守っているのか
+/// 分からない)。2026-08-23 00:00 JST == 2026-08-22 15:00 UTC。
+@Test func mixingTheCalendarBetweenTheTwoDirectionsLosesADay() {
+  var jst = Calendar(identifier: .gregorian)
+  jst.timeZone = TimeZone(identifier: "Asia/Tokyo")!
+  var utc = Calendar(identifier: .gregorian)
+  utc.timeZone = TimeZone(identifier: "UTC")!
+  let picked = CalendarDate(year: 2026, month: 8, day: 23)!
+  guard let midnightJst = PassportExpiryDate.date(from: picked, calendar: jst) else {
+    Issue.record("could not build the fixture instant"); return
+  }
+  #expect(PassportExpiryDate.calendarDate(from: midnightJst, calendar: utc) == CalendarDate(year: 2026, month: 8, day: 22))
 }
 
 /// テストごとに空の `UserDefaults` を配る。既定の suite を共有すると、並列で走る別の

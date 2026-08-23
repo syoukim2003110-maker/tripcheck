@@ -47,8 +47,9 @@ public struct BeforeYouGoModel: Equatable, Sendable {
   public var items: [BeforeYouGoItem]
   /// 薬の持ち込み。国内の旅には出さない(Web と同じ門)。
   public var medicineLines: [String]
-  /// 国ごとの基本(プラグ・緊急通報・交通パス・スト情報・入国条件)。
-  public var essentials: [(label: String, value: String)]
+  /// 国ごとの基本(プラグ・緊急通報・交通パス・スト情報・入国条件)。`url` は
+  /// `DestinationEssentials` がその行に公式ページを持つときだけ(プラグ・緊急通報は無い)。
+  public var essentials: [(label: String, value: String, url: URL?)]
 
   public static func == (lhs: BeforeYouGoModel, rhs: BeforeYouGoModel) -> Bool {
     lhs.passportCountry == rhs.passportCountry
@@ -56,7 +57,7 @@ public struct BeforeYouGoModel: Equatable, Sendable {
       && lhs.items == rhs.items
       && lhs.medicineLines == rhs.medicineLines
       && lhs.essentials.count == rhs.essentials.count
-      && zip(lhs.essentials, rhs.essentials).allSatisfy { $0.label == $1.label && $0.value == $1.value }
+      && zip(lhs.essentials, rhs.essentials).allSatisfy { $0.label == $1.label && $0.value == $1.value && $0.url == $1.url }
   }
 }
 
@@ -106,16 +107,21 @@ extension PlannerStore {
       today: Self.todayUTC()
     )
 
-    var rows: [(label: String, value: String)] = []
+    var rows: [(label: String, value: String, url: URL?)] = []
     if let essentials {
-      rows.append((text.essentialsPlug, essentials.plug))
-      if let emergency = essentials.emergency[locale] { rows.append((text.essentialsEmergency, emergency)) }
+      // プラグと緊急通報は `DestinationEssentials` に公式ページを持たない — リンクは無い。
+      rows.append((text.essentialsPlug, essentials.plug, nil))
+      if let emergency = essentials.emergency[locale] { rows.append((text.essentialsEmergency, emergency, nil)) }
       // 入国条件は日本の旅券に向けて書かれた 1 行なので、名乗った人にだけ出す。
       if isJapanese {
-        rows.append((text.essentialsEntry, locale == .ja ? essentials.entry.ja : essentials.entry.en))
+        rows.append((text.essentialsEntry, locale == .ja ? essentials.entry.ja : essentials.entry.en, URL(string: essentials.entry.sourceUrl)))
       }
-      if let pass = essentials.pass { rows.append((text.essentialsPass, locale == .ja ? pass.ja : pass.en)) }
-      if let strike = essentials.strikeInfo { rows.append((text.beforeStrike, locale == .ja ? strike.ja : strike.en)) }
+      if let pass = essentials.pass {
+        rows.append((text.essentialsPass, locale == .ja ? pass.ja : pass.en, URL(string: pass.url)))
+      }
+      if let strike = essentials.strikeInfo {
+        rows.append((text.beforeStrike, locale == .ja ? strike.ja : strike.en, URL(string: strike.url)))
+      }
     }
 
     return BeforeYouGoModel(
@@ -166,11 +172,35 @@ extension PlannerStore {
   }
 
   /// 今日(UTC の暦日)。Kit の `PreTripTimeline` は締切をこの 1 日と比べるだけで、
-  /// 時刻は見ない —— 端末の時計が何時であっても、同じ日なら同じ答えになる。
-  nonisolated static func todayUTC(_ instant: Date = Date()) -> CalendarDate {
+  /// 時刻は見ない —— 端末の時計が何時であっても、同じ日なら同じ答えになる。`public` なのは
+  /// 旅券期限のピッカーが「まだ入れていない」ときの初期値をここから取るため
+  /// (`BeforeYouGoCard.PassportExpiryField`。`Date()` だとピッカーの暦(端末)とこの店の暦(UTC)
+  /// が食い違う日がある)。
+  public nonisolated static func todayUTC(_ instant: Date = Date()) -> CalendarDate {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = TimeZone(identifier: "UTC")!
     let parts = calendar.dateComponents([.year, .month, .day], from: instant)
     return CalendarDate(year: parts.year!, month: parts.month!, day: parts.day!)!
+  }
+}
+
+/// `CalendarDate`(暦日。瞬間を持たない)と `Date`(瞬間)の往復を、渡された 1 つの暦だけで行う
+/// 純関数。`BeforeYouGoCard` の `DatePicker` はこれを常に `Calendar.current`(端末の暦)で呼ぶ
+/// —— 一方の向きだけ別の暦(例えば UTC)で読むと、暦日には無いはずの「瞬間のずれ」(時差)が
+/// そのまま日付 1 日分のずれになる(JST の端末で 0 時台に選んだ日が、UTC で読むと前日になる、
+/// など)。`AppCore` に置くのは、`TripCheckKit` の `CalendarDate` が `Calendar`/`Date` を知らない
+/// 純粋な暦算術のままでいるため(ここは端末時間帯という Foundation の関心事を持ち込む側)。
+public enum PassportExpiryDate {
+  /// 暦日 → 指定した暦での 0 時の瞬間。
+  public static func date(from calendarDate: CalendarDate, calendar: Calendar) -> Date? {
+    calendar.date(from: DateComponents(year: calendarDate.year, month: calendarDate.month, day: calendarDate.day))
+  }
+
+  /// 瞬間 → 指定した暦で読んだ暦日。`date(from:calendar:)` で作った瞬間を読み戻すときは、
+  /// **必ず同じ暦を渡す**こと(でなければ何のために暦を注入したのか意味が無い)。
+  public static func calendarDate(from date: Date, calendar: Calendar) -> CalendarDate? {
+    let parts = calendar.dateComponents([.year, .month, .day], from: date)
+    guard let year = parts.year, let month = parts.month, let day = parts.day else { return nil }
+    return CalendarDate(year: year, month: month, day: day)
   }
 }

@@ -71,6 +71,8 @@ struct BeforeYouGoCard: View {
         }
 
         // 5. 国ごとの基本。旅券の国とは無関係に読める(プラグの形も救急番号も同じ)。
+        // 入国・交通パス・スト情報には Kit が公式ページを持つので、あれば `Link` を出す
+        // (プラグ・緊急通報は `DestinationEssentials` にそもそも URL が無い)。
         if !model.essentials.isEmpty {
           VStack(alignment: .leading, spacing: 8) {
             ForEach(Array(model.essentials.enumerated()), id: \.offset) { _, row in
@@ -82,9 +84,23 @@ struct BeforeYouGoCard: View {
                   .tcFont(.meta)
                   .foregroundStyle(Tokens.Color.ink2)
                   .fixedSize(horizontal: false, vertical: true)
+                if let url = row.url {
+                  Link(destination: url) {
+                    HStack(spacing: 4) {
+                      Text(text.essentialsOfficial).tcFont(.label)
+                      IconView(.external, size: 11, color: Tokens.Color.accentDeep)
+                    }
+                    .foregroundStyle(Tokens.Color.accentDeep)
+                    .frame(minHeight: Tokens.Hit.primary, alignment: .leading)
+                    .contentShape(Rectangle())
+                  }
+                  .accessibilityLabel(text.essentialsOfficial)
+                }
               }
               .frame(maxWidth: .infinity, alignment: .leading)
-              .accessibilityElement(children: .combine)
+              // `.contain`(`.combine` ではない):行にリンクがあるとき、VoiceOver が
+              // 独立した操作可能な要素として読めるように(`BeforeYouGoRow` と同じ)。
+              .accessibilityElement(children: .contain)
             }
           }
           .accessibilityIdentifier("plan.beforeyougo.essentials")
@@ -195,30 +211,22 @@ private struct PassportExpiryField: View {
     }
   }
 
-  /// `YYYY-MM-DD` と `Date` の往復。暦は Kit と同じ UTC のグレゴリオ暦で持つ —— 端末の
-  /// 時間帯で日付が 1 日ずれると、残存期間の判定も 1 日ずれる。
+  /// `YYYY-MM-DD` と `Date` の往復。`DatePicker` は端末の暦(`Calendar.current`)で `Date`
+  /// を作って返すので、読むときも書くときも同じ端末の暦を使う —— 暦日(`CalendarDate`)は
+  /// 瞬間を持たないので、片方だけ別の暦(UTC など)で読むと、時差の分だけ日付がずれる
+  /// (JST の端末で日付を選んでも、UTC で読めば前日の 15 時台になる)。往復そのものは
+  /// `PassportExpiryDate`(AppCore)の純関数で、テストはそこにある。
   private var expiry: Binding<Date> {
     Binding(
-      get: { store.passportExpiry.flatMap(Self.date) ?? Date() },
-      set: { store.setPassportExpiry(Self.calendarDate(from: $0)) }
+      get: {
+        let calendarDate = store.passportExpiry.flatMap { CalendarDate($0) } ?? PlannerStore.todayUTC()
+        return PassportExpiryDate.date(from: calendarDate, calendar: .current) ?? Date()
+      },
+      set: { newValue in
+        guard let calendarDate = PassportExpiryDate.calendarDate(from: newValue, calendar: .current) else { return }
+        store.setPassportExpiry(calendarDate.description)
+      }
     )
-  }
-
-  private static var utc: Calendar {
-    var calendar = Calendar(identifier: .gregorian)
-    calendar.timeZone = TimeZone(identifier: "UTC")!
-    return calendar
-  }
-
-  private static func date(_ text: String) -> Date? {
-    guard let parsed = CalendarDate(text) else { return nil }
-    return utc.date(from: DateComponents(year: parsed.year, month: parsed.month, day: parsed.day))
-  }
-
-  private static func calendarDate(from date: Date) -> String? {
-    let parts = utc.dateComponents([.year, .month, .day], from: date)
-    guard let year = parts.year, let month = parts.month, let day = parts.day else { return nil }
-    return CalendarDate(year: year, month: month, day: day)?.description
   }
 }
 
