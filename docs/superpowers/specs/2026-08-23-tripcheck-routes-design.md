@@ -168,15 +168,15 @@ public protocol RecommendationSource: Sendable {
 - 同時 4 件。優先: 空港 → 選択中の日 → 残りの日。各レグ内は 公共交通 → 徒歩 → 車。
 - タイムアウト: 徒歩/車の `calculate()` 8 秒、公共交通の `calculateETA()` 12 秒。ビルド全体の締切 40 秒(残りは推定のまま)。
 - 1 ビルドの上限 120 リクエスト(超える入力は 12 か所 × 14 日でも起きないが、暴走防止)。
-- `loadingThrottled` は 1 / 2 / 4 秒で 3 回まで再試行、それでも駄目ならこのビルドでは諦める。
+- `loadingThrottled` は 1 / 2 / 4 秒で 3 回まで再試行、それでも駄目ならこのビルドでは諦める。**再試行するのは `AppleRouteProvider.route` の中**で、コーディネータ(`RouteFetcher`)は再試行しない —— そこから見た `.failed` は既に待ち終えた答えである。だから 40 秒の締切は待って諦めるのではなく、走っている問い合わせを取り消して閉じる(公共交通 1 件は再試行を挟むと締切より長く占有しうる)。
 
 ### 4.5 置換(静かな再ビルド)
 
-1. この世代の全リクエストが収束(回答・失敗・締切)したら、`liveRoutes` に新しい回答が 1 つでもある場合だけ進む。
+1. この世代の全リクエストが収束(回答・失敗・締切)したら、**旅程がキャッシュを消費していない場合**に進む(新しい測定が 1 つでもあるか、`liveRoutesAreAdopted` が偽)。「新しい回答があるとき」だけでは足りない —— 日付や開始時刻が動いて鍵が振り直された直後は、古いバケットの回答が捨てられたのに新しいバケットが 1 件も測れないことがあり、そのとき旅程は既に消えた値を畳んだままになる。`.failed` は `liveRoutes` に入れない(答えではないので、次のビルドで尋ね直せる)。
 2. `pendingApply != nil`(確認ダイアログが開いている)なら保留し、ダイアログが閉じた時点で再開。**旅行者が頼んだ組み直し(`build()` / `applyGuardedEdit` / `adoptHistoryPresent`)が走っている間も同様に保留し、その組み直しが終わった時点で再開する** —— どちらも `buildGeneration` を進めてから待つので、その間に置換が世代を進めると旅行者の一手が自分の世代ガードで落ち、押しても何も起きない(再開時に既に `liveRoutes` が反映済みなら、置換そのものを取り止める)。
 3. `buildGeneration` を進めて捕捉 → `Task.detached { BuildRunner.run(tripRequest()) }` → `buildGate` → 世代一致を確認 → `adopt`(**`build()` は呼ばない**: `.building` を挟まず、読み上げを再発火しない)。
 4. `history` には触れない(編集ではない)。`historyPointsAtTheCurrentEdit` は `edit` が不変なので真のまま。
-5. トースト: `AppCopy.routesUpdatedToast` + `VerdictCopy.bufferToastDetail(delta)`(`before.plan` と `after.plan` の最小余裕差)。`canUndo: false`。`view.announcement` は更新しない(ヒーローが変わる場合は既存の `.onChange` が拾う)。**「元に戻す」を差し出しているトースト(`view.toast?.canUndo == true`)が画面に出ている間は、このトーストを出さない** —— 上書きすると旅行者が今まさに押した一手の取り消しが消える。置換そのもの(`adopt`)は知らせの有無に関わらず行う。
+5. トースト: `AppCopy.routesUpdatedToast` + `VerdictCopy.bufferToastDetail(delta)`(`before.plan` と `after.plan` の最小余裕差)。`canUndo: false`。`view.announcement` は更新しない —— 置換が旅行者に向けて出す知らせはこのトースト 1 つだけである(読み上げも同文)。**「元に戻す」を差し出しているトースト(`view.toast?.canUndo == true`)が画面に出ている間は、このトーストを出さない** —— 上書きすると旅行者が今まさに押した一手の取り消しが消える。置換そのもの(`adopt`)は知らせの有無に関わらず行う。
 6. 置換後に新しいレグが生まれた場合(日割りが変わった等)は次の世代で追加取得する。連鎖は 2 世代まで(3 世代目以降は取りに行かない。暴走防止)。
 
 `routeGeneration` を進める事象: `reset()`、`cancelBuild()`、`build()`、ガード付き編集の確定、Undo/Redo、`openTrip`、`importShare`、目的地の変更。古い世代の回答は捨てる(キャッシュには入れない)。
@@ -204,7 +204,7 @@ public protocol RecommendationSource: Sendable {
 - **Detail**: 移動の根拠は「推定」のまま(正しい)。出典 `apple` は内部記録のみ。
 
 ### 6.2 地図
-- `mapModel(scope:)` で、各レグの使用中手段(`legModeOverrides[legKey] ?? recommended.mode`)の回答にジオメトリがあれば `MapRoute(points: polyline, measured: true)`、無ければ今までの 2 点破線。公共交通はジオメトリが無いので常に破線。
+- `mapModel(scope:)` で、各レグの使用中手段(`legModeOverrides[legKey] ?? recommended.mode`)の回答にジオメトリがあり、**かつ旅程がその手段の live 値を消費済み**なら `MapRoute(points: polyline, measured: true)`、無ければ今までの 2 点破線。消費済みを条件に入れるのは、実線が「この線の上を歩いた時間で組んである」という意味だから —— 測っただけでまだ畳まれていない回答は実線を名乗らない。公共交通はジオメトリが無いので常に破線。
 - 実測経路の始点/終点が地点から 300 m 以上離れていれば、その区間を短い破線で橋渡し(Web と同じ)。
 - `TripMapView` は無変更(`measured` で実線/破線を切替済み)。凡例の「実経路 / 推定」(Kit の `legendMeasured/legendEstimated`)がそのまま実態に一致する。
 

@@ -105,11 +105,21 @@ public enum RouteRequests {
 
   public static func departure(date: CalendarDate?, clock: String, timeZone: String, now: Date) -> Date? {
     guard let date, let planned = Destinations.localDateTimeWithOffset(date: date.description, time: clock, timeZone: timeZone) else { return nil }
-    return max(planned, now)
+    guard planned < now else { return planned }
+    // 予定の時刻が過ぎていたら「今」に寄せる。**寄せた値は切り上げる** —— 呼び手はこの後
+    // `bucket` で切り捨てるので、そのまま渡すと最大 29 分前の出発を尋ねることになり、
+    // 地図はもう出てしまった便の時刻表で答える。切り上げた値は既にバケットの境目なので、
+    // 呼び手の切り捨てを通しても動かない。
+    return bucketUp(now)
   }
 
   public static func bucket(_ date: Date) -> Date {
     Date(timeIntervalSince1970: (date.timeIntervalSince1970 / bucketSeconds).rounded(.down) * bucketSeconds)
+  }
+
+  /// 次のバケットの境目(既に境目ならそのまま)。過ぎた出発を「今」へ寄せるときだけ使う。
+  static func bucketUp(_ date: Date) -> Date {
+    Date(timeIntervalSince1970: (date.timeIntervalSince1970 / bucketSeconds).rounded(.up) * bucketSeconds)
   }
 
   /// 優先順: 空港 → 選択中の日 → 残りの日(同順位は列挙順)、各レグ内は transit → walk → taxi。`limit` で切る。

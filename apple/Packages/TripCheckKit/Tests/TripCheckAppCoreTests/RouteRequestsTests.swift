@@ -88,7 +88,12 @@ private func stop(_ id: String, _ lat: Double, _ lon: Double) -> RouteStop {
 
   let zone = "Asia/Tokyo"
   let at = Destinations.localDateTimeWithOffset(date: "2027-03-10", time: "10:17", timeZone: zone)!
-  #expect(RouteRequests.departure(date: CalendarDate("2027-03-10"), clock: "09:00", timeZone: zone, now: at) == at)
+  // 過ぎた出発は「今」に寄せる。**寄せた値は次のバケットへ切り上げる** —— 呼び手はこの後
+  // `bucket` で床丸めするので、10:17 をそのまま返すと 10:00 発、つまり 17 分前の便を尋ねる
+  // ことになる。切り上げた 10:30 は既に境目なので、床丸めを通しても動かない。
+  let clamped = RouteRequests.departure(date: CalendarDate("2027-03-10"), clock: "09:00", timeZone: zone, now: at)
+  #expect(clamped == Destinations.localDateTimeWithOffset(date: "2027-03-10", time: "10:30", timeZone: zone))
+  #expect(clamped.map { $0 >= at && RouteRequests.bucket($0) == $0 } == true)
   #expect(RouteRequests.departure(date: CalendarDate("2027-03-11"), clock: "09:05", timeZone: zone, now: at) == Destinations.localDateTimeWithOffset(date: "2027-03-11", time: "09:05", timeZone: zone))
   #expect(RouteRequests.departure(date: nil, clock: "09:00", timeZone: zone, now: at) == nil)
   #expect(RouteRequests.bucket(at) == Destinations.localDateTimeWithOffset(date: "2027-03-10", time: "10:00", timeZone: zone))

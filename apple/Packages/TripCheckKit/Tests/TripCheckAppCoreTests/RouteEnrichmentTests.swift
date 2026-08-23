@@ -200,15 +200,84 @@ private func walkRequest(_ key: String) -> RouteRequest {
 
 /// 走っている取得を畳んだ後に取りに行くものが無かったら、数え終わっていない進捗は消える
 /// —— 残すと二度と進まない行が画面に居座る。
-@Test @MainActor func anAbandonedFetchLeavesNoProgressRowBehind() async {
-  let store = PlannerStore(resolvers: [CatalogResolver()], store: nil, routeProvider: FakeRouteProvider(delay: .seconds(30)))
+@Test @MainActor func anAbandonedFetchIsStartedOverRatherThanLeftHalfDone() async {
+  let store = PlannerStore(resolvers: [CatalogResolver()], store: nil, routeProvider: FakeRouteProvider(delay: .milliseconds(60)))
   store.loadSample(.switzerland)
   await store.build()
   #expect(store.routeProgress?.isComplete == false)
-  // 2 度目は取りに行くものが無い(1 度目で全部 `attemptedRoutes` に入った)。走っている
-  // 取得はここで畳まれるので、その進捗はもう誰も数えない。
+  // 深さ 0 の pass は測り直しの宣言。走っている取得を畳んだうえで**印も捨てる**ので、
+  // 畳んだぶんは「試したが答えが無い」ではなく、もう一度立て直される。
   store.startRouteEnrichment()
-  #expect(store.routeProgress == nil && store.routeTask == nil)
+  #expect(store.routeTask != nil && store.routeProgress?.isComplete == false)
+  await store.awaitRouteEnrichment()
+  #expect(store.routeReplacements == 1 && store.liveRoutesAreAdopted)
+  #expect(store.routeProgress == nil)   // 全部測れたので行そのものが消える
+}
+
+/// 掴んだ問い合わせを `release()` まで離さない提供元。「取得の**最中**」を機械の速さに
+/// 依らず作る —— 単に遅らせるだけでは、編集自身の組み直しのほうが遅くて取得が先に
+/// 終わってしまい、取りこぼしの場面が起きない(実際に緑のまま通り抜けた)。
+private actor RouteLatch {
+  private var released = false
+  private var held: [CheckedContinuation<Void, Never>] = []
+  private var arrivals: [CheckedContinuation<Void, Never>] = []
+  private var calls = 0
+
+  /// 提供元側。着いたことを知らせ、`release()` が来るまで待つ。
+  func hold() async {
+    calls += 1
+    for waiter in arrivals { waiter.resume() }
+    arrivals.removeAll()
+    guard !released else { return }
+    await withCheckedContinuation { held.append($0) }
+  }
+
+  /// テスト側。最初の 1 件が提供元に届くまで待つ(= 取得が本当に始まった)。
+  func waitUntilCalled() async {
+    guard calls == 0 else { return }
+    await withCheckedContinuation { arrivals.append($0) }
+  }
+
+  func release() {
+    released = true
+    for waiter in held { waiter.resume() }
+    held.removeAll()
+  }
+}
+
+private struct LatchedRouteProvider: RouteProvider {
+  let latch: RouteLatch
+  let inner = FakeRouteProvider(delay: .zero)
+  func route(_ request: RouteRequest, locale: PlannerLocale) async -> RouteOutcome {
+    await latch.hold()
+    return await inner.route(request, locale: locale)
+  }
+}
+
+/// 測り終える前に旅行者が 1 手打っても、測定は取りこぼされない —— 編集の後の pass が
+/// 立て直すので、落ち着いたときには候補レグが実経路で裏打ちされている。
+@Test @MainActor func anEditWhileFetchingStillEndsUpWithEveryLegMeasured() async {
+  let latch = RouteLatch()
+  let store = PlannerStore(resolvers: [CatalogResolver()], store: nil, routeProvider: LatchedRouteProvider(latch: latch))
+  store.loadSample(.switzerland)
+  await store.build()
+  await latch.waitUntilCalled()   // 取得は始まり、1 件も答えを持たずに止まっている
+  #expect(store.routeTask != nil)   // まだ測っている最中
+
+  let id = store.bundle!.plan.days[0].stops[0].stop.id
+  await store.setStayMinutes(stopId: id, minutes: 120)   // 取得の途中で 1 手。走っていた取得はここで畳まれる
+  await latch.release()                                  // 立て直した取得を通す
+  await store.awaitRouteEnrichment()
+
+  #expect(store.edit.userStayMinutes[id] == 120)
+  #expect(store.routeProgress == nil)          // 測り残しは無い
+  #expect(store.liveRoutesAreAdopted)          // 旅程は測った分を消費している
+  // 立てた要求はすべて答えを持ち、旅程のレグは live で裏打ちされている。
+  let requests = RouteRequests.requests(
+    plan: store.bundle!.plan, context: store.bundle!.request.context,
+    overrides: store.edit.legModeOverrides, selectedDay: store.view.selectedDay, now: Date())
+  #expect(!requests.isEmpty && requests.allSatisfy { store.liveRoutes[$0] != nil })
+  #expect(store.bundle!.plan.days.flatMap(\.legs).contains { $0.comparison.options.contains { $0.source == .live } })
 }
 
 /// 連鎖は 2 世代まで。3 世代目は取りに行かない。
@@ -264,17 +333,22 @@ private actor RouteBuildGate {
 /// 二度と成立せずに `await` がそのまま止まる —— 制限時間が無いと、赤ではなく「終わらない
 /// 検証」になる。
 @Test(.timeLimit(.minutes(1))) @MainActor func aReplacementNeverSwallowsTheEditTheTravellerJustMade() async {
-  let store = PlannerStore(resolvers: [CatalogResolver()], store: nil, routeProvider: FakeRouteProvider(delay: .milliseconds(60)))
+  let latch = RouteLatch()
+  let store = PlannerStore(resolvers: [CatalogResolver()], store: nil, routeProvider: LatchedRouteProvider(latch: latch))
   store.loadSample(.switzerland)
   await store.build()   // 関所はまだ無い。ここで取得が走り出す
+  await latch.waitUntilCalled()
   let fetching = store.routeTask
   let id = store.bundle!.plan.days[0].stops[0].stop.id
   let gate = RouteBuildGate()
   store.buildGate = { await gate.hold() }
 
-  // 旅行者の編集を、答えが出来て commit する手前で止める。その間に取得が settle する。
+  // 旅行者の編集を、答えが出来て commit する手前で止める。**その後で**取得を解く ——
+  // 遅らせるだけでは、編集自身の組み直しのほうが遅くて取得が先に終わり、並ばせる場面が
+  // 起きない機械がある(そして遅らせたぶんだけ、この 1 本が制限時間に近づく)。
   async let editing: Void = store.setStayMinutes(stopId: id, minutes: 120)
   await gate.waitUntilHeld()
+  await latch.release()
   await fetching?.value
   // 割り込まずに並んだ。置換はまだ 1 度も起きていない。
   #expect(store.routeReplacements == 0 && store.deferredRouteReplacement != nil)
@@ -334,9 +408,11 @@ private actor RouteBuildGate {
 /// 取得の最中に組み直しが始まったら、古い答えは誰の答えでもない —— キャッシュにも入らず、
 /// 遅れて届いた分で旅程が書き換わることもない。制限時間の理由は上の 1 本と同じ。
 @Test(.timeLimit(.minutes(1))) @MainActor func aRebuildStartedMidFetchDropsTheAnswersInFlight() async {
-  let store = PlannerStore(resolvers: [CatalogResolver()], store: nil, routeProvider: FakeRouteProvider(delay: .milliseconds(60)))
+  let latch = RouteLatch()
+  let store = PlannerStore(resolvers: [CatalogResolver()], store: nil, routeProvider: LatchedRouteProvider(latch: latch))
   store.loadSample(.switzerland)
   await store.build()
+  await latch.waitUntilCalled()
   let fetching = store.routeTask
   #expect(fetching != nil)
   let gate = RouteBuildGate()
@@ -344,6 +420,9 @@ private actor RouteBuildGate {
 
   async let rebuilding: Void = store.build()   // 取得の最中に組み直す。commit の手前で止まる
   await gate.waitUntilHeld()
+  // 止めていた取得を解く。**取り消しでは解けない**(`hold()` は取り消しを見ないので、
+  // 解かずに `value` を待つとそのまま止まる)。世代はもう違うので答えは捨てられる。
+  await latch.release()
   await fetching?.value                        // 古い取得はここで答えを持って帰る
   #expect(store.liveRoutes.isEmpty)            // 世代が違うのでキャッシュにも入らない
   #expect(store.routeReplacements == 0 && store.routeProgress == nil)

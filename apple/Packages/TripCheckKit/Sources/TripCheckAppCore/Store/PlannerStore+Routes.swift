@@ -38,9 +38,24 @@ extension PlannerStore {
   /// キャッシュに無く未試行のものだけ取りに行く。全部揃っていて未反映なら即置換。
   func startRouteEnrichment(chainDepth: Int = 0) {
     guard let routeProvider, let bundle, chainDepth < Self.maximumRouteChain else { return }
-    if chainDepth == 0 { routeTask?.cancel() }   // 連鎖は自分の中から呼ばれるので自分を畳まない
+    if chainDepth == 0 {
+      // 深さ 0 は「この旅程を一から測り直す」宣言。走っている取得を畳み(連鎖は自分の中から
+      // 呼ばれるので自分は畳まない)、**印も保留も捨てる**。
+      //
+      // 印を残すと実際に起きるのは:12/38 まで測ったところで旅行者が滞在時間を変える →
+      // ここが走る → 残り 26 件は「試したが答えが無い」ままなので `pending` が空 → 行が消えて、
+      // 旅程は推定のまま「N 区間は推定のまま」すら出さない。次の `build()` まで直らない。
+      // 印の役目は 1 回の取得の中で同じ要求を二度立てないことで、旅程が変わった後まで効かせない。
+      routeTask?.cancel()
+      attemptedRoutes.removeAll()
+      // 並んでいた置換もここで捨てる。この pass 自体が測り直して置換するか、下の
+      // `pending.isEmpty` の枝でその場で置換を積むので、古い保留は二重に走るだけになる。
+      deferredRouteReplacement = nil
+    }
     routeGeneration += 1
     let generation = routeGeneration
+    // 連鎖の前の世代が残した「1 本も測れなかったレグ」の数。深さ 0 は数え直しなので 0 から。
+    let carriedEstimates = chainDepth == 0 ? 0 : (routeProgress?.estimatedRemaining ?? 0)
     let requests = RouteRequests.requests(
       plan: bundle.plan, context: bundle.request.context, overrides: edit.legModeOverrides,
       selectedDay: view.selectedDay, now: Date())
@@ -50,9 +65,9 @@ extension PlannerStore {
     let pending = requests.filter { liveRoutes[$0] == nil && !attemptedRoutes.contains($0) }
     guard !pending.isEmpty else {
       // 数え終わる前に畳んだ取得の進捗は消す。**残すと二度と進まない行が居座る** ——
-      // 守られた編集を採用すると走っている取得を畳むが(上の `cancel()`)、新しい旅程の要求が
-      // 全部 `attemptedRoutes` に入っていれば取りに行くものが無く、`settled < requested` の
-      // まま誰も数えなくなる。数え終わった行(「N 区間は推定のまま」)は次のビルドまで残す。
+      // 取りに行くものが無いのに `settled < requested` の行が出ていたら、それは今しがた
+      // 畳んだ取得のもので、もう誰も数えない。数え終わった行(「N 区間は推定のまま」)は
+      // 次のビルドまで残す。
       if routeProgress?.isComplete == false { routeProgress = nil }
       // 取りに行くものは無い。旅程がキャッシュを既に消費していれば仕事そのものが無い ——
       // 世代はもう進めてあるので、外側の task の末尾は触らない。ここで自分で畳む。
@@ -60,7 +75,7 @@ extension PlannerStore {
       return
     }
     attemptedRoutes.formUnion(pending)
-    routeProgress = RouteProgress(requested: pending.count, settled: 0, estimatedRemaining: 0)
+    routeProgress = RouteProgress(requested: pending.count, settled: 0, estimatedRemaining: carriedEstimates)
     let locale = request.locale
     routeTask = Task { [weak self] in
       let answers = await RouteFetcher.fetch(pending, provider: routeProvider, locale: locale) { [weak self] _, _ in
@@ -68,16 +83,28 @@ extension PlannerStore {
         routeProgress?.settled += 1
       }
       guard let self, routeGeneration == generation, !Task.isCancelled else { return }
-      for (request, outcome) in answers { liveRoutes[request] = outcome }
+      for (request, outcome) in answers {
+        // **`.failed` は覚えない。** それは「答えが無かった」であって答えではない ——
+        // 機内モードの間に全部落ちたものを溜め込むと、`build()` はキャッシュを残すので
+        // (`invalidateRoutes(keepCache: true)`)、電波が戻った後も二度と尋ね直さない
+        // (spec §4.4「このビルドでは諦める」)。1 回の取得の中で二度立てないほうは
+        // `attemptedRoutes` が見ている。
+        if case .failed = outcome { continue }
+        liveRoutes[request] = outcome
+      }
       let measured = Set(answers.compactMap { entry -> String? in
         if case .measured = entry.value { return entry.key.legKey }
         return nil
       })
-      let remaining = Set(pending.map(\.legKey)).subtracting(measured).count
       // 全部測れたら進捗そのものを消す(行が消える)。残れば「N 区間は推定のまま」の材料として
-      // 次のビルドまで残る。
+      // 次のビルドまで残る。連鎖の先で測れたぶんが前の世代の失敗を消してはいけないので、
+      // 持ち越した数と大きいほうを採る —— 消すと「N 区間は推定のまま」が実際より少なく名乗る。
+      let remaining = max(Set(pending.map(\.legKey)).subtracting(measured).count, carriedEstimates)
       routeProgress = remaining == 0 ? nil : RouteProgress(requested: pending.count, settled: pending.count, estimatedRemaining: remaining)
-      if !measured.isEmpty { await replaceWithLiveRoutes(chainDepth: chainDepth) }
+      // 新しい測定があるか、**旅程がまだキャッシュを消費していない**なら組み直す。後者が要るのは、
+      // 日付や開始時刻が動いて鍵が振り直された直後 —— 古いバケットの分は上の filter で消えたのに、
+      // 新しいバケットが 1 件も測れないと、旅程は消えた値を畳んだままになる(spec §4.5.1)。
+      if !measured.isEmpty || !liveRoutesAreAdopted { await replaceWithLiveRoutes(chainDepth: chainDepth) }
       if routeGeneration == generation { routeTask = nil }
     }
   }

@@ -117,7 +117,10 @@ public final class PlannerStore {
   /// 置かない。** `tripRequest(with:days:)` が `LiveRouteMerge.apply` で折り込む。
   @ObservationIgnored var liveRoutes: [RouteRequest: RouteOutcome] = [:]
 
-  /// 1 ビルド内で再試行しないための印(`build()` / `reset()` / `cancelBuild()` で空になる)。
+  /// 1 回の取得の中で同じ要求を二度立てないための印(`build()` / `reset()` / `cancelBuild()` と、
+  /// **深さ 0 の `startRouteEnrichment` すべて**で空になる)。旅程が動いた後まで効かせない ——
+  /// 効かせると、測り終える前の編集で残りの要求が「試したが答えが無い」ままになり、
+  /// 旅程は推定のまま、進捗の行だけが消える。
   @ObservationIgnored var attemptedRoutes: Set<RouteRequest> = []
 
   /// `resolveGeneration` と同じ流儀。進んだ後に返ってきた回答は捨てる(キャッシュにも入れない)。
