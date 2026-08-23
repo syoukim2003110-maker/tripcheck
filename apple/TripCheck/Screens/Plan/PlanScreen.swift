@@ -58,7 +58,10 @@ struct PlanScreen: View {
     // その真上 —— 押した指がまだ画面の下にあるうちに「元に戻す」へ届く。
     .safeAreaInset(edge: .bottom) {
       VStack(spacing: 8) {
-        if let toast = store.view.toast { ToastView(toast: toast) }
+        // `.id(toast.id)` が要る。付けないと 2 つ目のトーストは同じビューの中身を
+        // 差し替えるだけになり、`ToastView` の `.onAppear` が二度と走らない ——
+        // 6 秒の間に別の編集をした旅行者に、読み上げは**何も告げなくなる**。
+        if let toast = store.view.toast { ToastView(toast: toast).id(toast.id) }
         SegmentedPills(
           options: [(MobileView.timeline, app.timelineTab), (MobileView.map, app.mapTab)],
           selection: store.view.mobileView,

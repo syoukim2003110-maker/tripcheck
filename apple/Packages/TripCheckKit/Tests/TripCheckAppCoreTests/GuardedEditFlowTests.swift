@@ -41,6 +41,21 @@ import TripCheckKit
   #expect(store.bundle?.plan.days.count == 5); #expect(store.bundle?.request.days == 5); #expect(store.request.tripDays == 5)
 }
 
+/// 日数の問いかけは**向き**で変わる。伸ばすほうも関所を通る(日が増えると日ごとの締切の
+/// 位置が付け替わり、予約や最終入場が新たに割れる)が、片方の文で済ませると、4 日を 6 日に
+/// した旅行者が「6日に短縮しますか？」と訊かれ、押した覚えのない操作を確かめさせられる。
+///
+/// 選ぶところだけを直に踏むのは、伸ばす向きで**必ず**問いかけが出る旅程を見本から作れない
+/// ため —— 出ない日に何も表明しないテストになるより、選択そのものを毎回踏むほうがよい。
+@Test @MainActor func theTripLengthQuestionFollowsTheDirection() {
+  for locale in [PlannerLocale.ja, .en] {
+    let app = AppCopy.for(locale)
+    #expect(PlannerStore.tripDaysQuestion(next: 6, current: 4, locale: locale) == app.extendTripQuestion(days: 6))
+    #expect(PlannerStore.tripDaysQuestion(next: 3, current: 4, locale: locale) == app.shortenTripQuestion(days: 3))
+    #expect(app.extendTripQuestion(days: 6) != app.shortenTripQuestion(days: 6), "\(locale)")
+  }
+}
+
 /// 日数は `request` と `edit` の**両方**に居る(R6:`tripRequest()` は
 /// `request.tripDays ?? edit.tripDays`)。片方だけ戻す Undo は、旅程は 4 日なのに次の
 /// 組み立てが 5 日で走る画面を作る。
@@ -117,6 +132,29 @@ import TripCheckKit
   await store.redo()
   #expect(store.edit.userStayMinutes[second] == 45)
   #expect(!store.canRedo)
+}
+
+/// 関所を通らない変更が `edit` に入ったら、そこまでの台帳は畳む。「入力にもどる」で歩く
+/// 速さを変えて組み直した旅程には、積んである「1 つ前」がもう存在しない —— 畳まないと、
+/// その「元に戻す」は**歩く速さの変更ごと**捨てて、旅行者が一度も見ていない旅程へ跳ぶ。
+@Test @MainActor func aRebuildOutsideTheGuardClosesTheOldHistory() async {
+  let store = PlannerStore(resolvers: [CatalogResolver()], store: nil); store.loadSample(.switzerland); await store.build()
+  let id = store.bundle!.plan.days[0].stops[0].stop.id
+  await store.setStayMinutes(stopId: id, minutes: 120)
+  #expect(store.canUndo)
+
+  store.setPace(.relaxed)   // Start 画面の設定は関所を通らない
+  #expect(!store.canUndo)   // 組み直す前から、もう戻れる先は無い
+
+  await store.build()
+  #expect(!store.canUndo)
+  #expect(!store.canRedo)
+
+  let settled = store.edit
+  await store.undo()        // 押しても何も起きない
+  #expect(store.edit == settled)
+  #expect(store.edit.pace == .relaxed)
+  #expect(store.edit.userStayMinutes[id] == 120)
 }
 
 /// Undo は**組み直す**。数だけ戻して旅程を古いままにすると、画面の滞在時間と到着時刻が

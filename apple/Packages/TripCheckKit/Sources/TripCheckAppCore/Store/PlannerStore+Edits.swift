@@ -104,9 +104,10 @@ extension PlannerStore {
     guard candidate != edit else { return }   // 無操作は履歴に積まない(Undo が空振りする)
 
     // 台帳の現在地が `edit` からずれていたら、そこを新しい出発点にする。ずれるのは、守られた
-    // 編集を通らない変更(Start 画面での作り直しなど)が `edit` に入ったときで、そのときの
+    // 編集を通らない変更(Start 画面の `setPace` など)が `edit` に入ったときで、そのときの
     // 「1 つ前」はもう存在しない旅程である —— 戻せない場所を指した Undo を残さない。
-    if history.present != edit {
+    // 組み直しを挟んだ道は `commit` が同じことをしている(こちらは組み直さずに関所へ来た道)。
+    if !historyPointsAtTheCurrentEdit {
       history = PlannerHistory(initial: edit, limit: PlannerEdits.undoLimit)
     }
 
@@ -205,13 +206,19 @@ extension PlannerStore {
 
   // MARK: - 元に戻す・やり直す
 
-  public var canUndo: Bool { history.canUndo }
-  public var canRedo: Bool { history.canRedo }
+  /// 台帳の現在地が `edit` を指しているか。ずれるのは、関所を通らない変更(Start 画面の
+  /// `setPace` など)が `edit` に直接入ったとき —— そのとき台帳の「1 つ前」は、旅行者が
+  /// 一度も見ていない旅程を指す。**ずれている間は戻せない**と答える(組み直しが走れば
+  /// `commit` が台帳を畳み直すので、この形になるのは組み直す前の一瞬だけ)。
+  var historyPointsAtTheCurrentEdit: Bool { history.present == edit }
+
+  public var canUndo: Bool { historyPointsAtTheCurrentEdit && history.canUndo }
+  public var canRedo: Bool { historyPointsAtTheCurrentEdit && history.canRedo }
 
   /// 1 つ前の編集状態へ。**旅程は組み直す** —— 数だけ戻して旅程を古いままにすると、画面の
   /// 滞在時間と到着時刻が食い違う。
   public func undo() async {
-    guard history.canUndo else { return }
+    guard canUndo else { return }
     // 訊きかけの問いは、その答えが指す旅程ごと消える。
     cancelPendingEdit()
     history = history.undo()
@@ -219,7 +226,7 @@ extension PlannerStore {
   }
 
   public func redo() async {
-    guard history.canRedo else { return }
+    guard canRedo else { return }
     cancelPendingEdit()
     history = history.redo()
     await adoptHistoryPresent()
@@ -343,12 +350,22 @@ extension PlannerStore {
     )
   }
 
+  /// 旅の長さを変えたときの問いかけ。**向きで文が違う。** 伸ばすほうも関所を通る —— 日が
+  /// 増えると日ごとの締切の位置が付け替わり、予約や最終入場が新たに割れることがあるので、
+  /// 問いかけ自体は両方向にある。片方の文で済ませると、4 日を 6 日にした旅行者が
+  /// 「6日に短縮しますか？」と訊かれ、押した覚えのない操作を確かめさせられる。
+  static func tripDaysQuestion(next: Int, current: Int, locale: PlannerLocale) -> String {
+    let app = AppCopy.for(locale)
+    return next > current ? app.extendTripQuestion(days: next) : app.shortenTripQuestion(days: next)
+  }
+
   /// 旅の長さを変える。`request.tripDays` と候補の `edit.tripDays` は**同時に**書かれる
   /// (R6)—— `tripRequest()` は `request.tripDays ?? edit.tripDays` なので、片方だけでは
   /// 次の組み立てが古い日数で走る。日ごとの時刻指定のうち、消える日のぶんは一緒に落とす。
   public func changeTripDays(_ days: Int) async {
     let next = PlannerEdits.clampTripDays(days)
-    guard next != edit.tripDays else { return }
+    let current = edit.tripDays
+    guard next != current else { return }
     await applyGuardedEdit(
       { candidate in
         candidate.tripDays = next
@@ -356,7 +373,7 @@ extension PlannerStore {
         candidate.dayEndTimes = IntKeyedDictionary(candidate.dayEndTimes.values.filter { $0.key < next })
       },
       label: AppCopy.for(request.locale).tripDaysToast(days: next),
-      fallbackTitle: AppCopy.for(request.locale).shortenTripQuestion(days: next),
+      fallbackTitle: Self.tripDaysQuestion(next: next, current: current, locale: request.locale),
       extraConflicts: [],
       allowDropStopId: nil,
       sideEffects: GuardedEditSideEffects(requestTripDays: next)

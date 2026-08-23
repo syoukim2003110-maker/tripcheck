@@ -49,7 +49,8 @@ import TripCheckKit
               + [c.restoredStopToast(name: "X"), c.movedToDayToast(day: 2), c.tripDaysToast(days: 1),
                  c.tripDaysToast(days: 4), c.baseSetToast(name: "X"), c.moveStopQuestion(name: "X", day: 2),
                  c.moveStopAutoQuestion(name: "X"), c.shortenTripQuestion(days: 1),
-                 c.shortenTripQuestion(days: 3), c.changeBaseQuestion(name: "X")] {
+                 c.shortenTripQuestion(days: 3), c.extendTripQuestion(days: 1),
+                 c.extendTripQuestion(days: 6), c.changeBaseQuestion(name: "X")] {
       #expect(BannedTerms.violations(in: s).isEmpty, "\(locale): \(s)")
       #expect(!s.isEmpty, "\(locale): empty copy")
       checked += 1
@@ -57,8 +58,8 @@ import TripCheckKit
   }
   // ja/en それぞれ 30 + Task 5 の 42 + Task 6 の 5 + Task 8 の 4 + Task 9 の 21 + diffLabels 6
   // + 引数を取る 8 + Task 5 の引数つき 16 + Task 6 の引数つき 8 + Task 7 の引数つき 2
-  // + Task 8 の引数つき 1 + Task 9 の引数つき 10(日数の 2 つは 1 と複数の両方を見る)
-  #expect(checked == 306)
+  // + Task 8 の引数つき 1 + Task 9 の引数つき 12(日数の 3 つは 1 と複数の両方を見る)
+  #expect(checked == 310)
 }
 
 /// 英語の日数は 1 日だけ単数。旅の長さを名乗る 2 文にも同じ規則が要る("1 days" を出さない)。
@@ -67,6 +68,8 @@ import TripCheckKit
   #expect(!AppCopy.en.tripDaysToast(days: 1).contains("1 days"))
   #expect(AppCopy.en.tripDaysToast(days: 4).contains("4 days"))
   #expect(!AppCopy.en.shortenTripQuestion(days: 1).contains("1 days"))
+  #expect(AppCopy.en.extendTripQuestion(days: 6).contains("6 days"))
+  #expect(!AppCopy.en.extendTripQuestion(days: 1).contains("1 days"))
 }
 
 /// 編集の確認と取り消しは**別の言葉**でなければならない。同じ語が 2 つ並ぶダイアログは、

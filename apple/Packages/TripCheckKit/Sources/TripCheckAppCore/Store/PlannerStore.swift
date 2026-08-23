@@ -233,6 +233,11 @@ public final class PlannerStore {
 
   private func commit(_ bundle: BuiltPlanBundle) {
     adopt(bundle)
+    // **台帳はここで畳む。** `build()` は関所(`applyGuardedEdit`)を通らない採用で、走るのは
+    // 入力そのものが変わった後 —— 「入力にもどる」で歩く速さを変えて組み直した旅程には、
+    // 積んである「1 つ前」がもう存在しない。畳まないと、その Undo は**歩く速さの変更ごと**
+    // 捨てて、旅行者が見ていない旅程へ跳ぶ。`reset()` が同じことをしている。
+    history = PlannerHistory(initial: edit, limit: PlannerEdits.undoLimit)
     // `"empty"` は機械が読む語で、旅行者に見せる文ではない(文言は画面側が引く)。
     view.screen = bundle.plan.days.isEmpty ? .error("empty") : .plan
     // `hero` を直に読む(独自に `VerdictCopy.hero` を再度呼ばない) —— 読み上げの 1 文と

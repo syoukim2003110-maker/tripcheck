@@ -230,6 +230,7 @@ public struct AppCopy: Sendable {
   private let moveStopQuestionText: @Sendable (String, Int) -> String
   private let moveStopAutoQuestionText: @Sendable (String) -> String
   private let shortenTripQuestionText: @Sendable (Int) -> String
+  private let extendTripQuestionText: @Sendable (Int) -> String
   private let changeBaseQuestionText: @Sendable (String) -> String
 
   init(
@@ -368,6 +369,7 @@ public struct AppCopy: Sendable {
     moveStopQuestion: @escaping @Sendable (String, Int) -> String,
     moveStopAutoQuestion: @escaping @Sendable (String) -> String,
     shortenTripQuestion: @escaping @Sendable (Int) -> String,
+    extendTripQuestion: @escaping @Sendable (Int) -> String,
     changeBaseQuestion: @escaping @Sendable (String) -> String
   ) {
     self.startTitle = startTitle
@@ -505,6 +507,7 @@ public struct AppCopy: Sendable {
     self.moveStopQuestionText = moveStopQuestion
     self.moveStopAutoQuestionText = moveStopAutoQuestion
     self.shortenTripQuestionText = shortenTripQuestion
+    self.extendTripQuestionText = extendTripQuestion
     self.changeBaseQuestionText = changeBaseQuestion
   }
 
@@ -619,8 +622,12 @@ public struct AppCopy: Sendable {
   public func moveStopQuestion(name: String, day: Int) -> String { moveStopQuestionText(name, day) }
   public func moveStopAutoQuestion(name: String) -> String { moveStopAutoQuestionText(name) }
 
-  /// 旅を縮めてよいかの問いかけ。伸ばすほうは何も壊さないので問いかけない。
+  /// 旅の長さを変えてよいかの問いかけ。**向きで文が違う** —— 伸ばすほうも問いかけは出る
+  /// (日が増えると締切の位置が付け替わり、予約や最終入場が新たに割れることがある)ので、
+  /// 「短縮しますか？」を両方向で使い回すと、伸ばした旅行者に押した覚えのない操作を
+  /// 確かめさせることになる。
   public func shortenTripQuestion(days: Int) -> String { shortenTripQuestionText(days) }
+  public func extendTripQuestion(days: Int) -> String { extendTripQuestionText(days) }
 
   /// 拠点を変えてよいかの問いかけ。
   public func changeBaseQuestion(name: String) -> String { changeBaseQuestionText(name) }
@@ -791,6 +798,7 @@ public struct AppCopy: Sendable {
     moveStopQuestion: { name, day in "「\(name)」を\(day)日目へ移動しますか？" },
     moveStopAutoQuestion: { "「\($0)」の日程を自動配置に戻しますか？" },
     shortenTripQuestion: { "\($0)日に短縮しますか？" },
+    extendTripQuestion: { "\($0)日に延ばしますか？" },
     changeBaseQuestion: { "拠点を「\($0)」に変更しますか？" }
   )
 
@@ -949,6 +957,7 @@ public struct AppCopy: Sendable {
     moveStopQuestion: { name, day in "Move “\(name)” to day \(day)?" },
     moveStopAutoQuestion: { "Return “\($0)” to automatic placement?" },
     shortenTripQuestion: { "Shorten the trip to \($0) \($0 == 1 ? "day" : "days")?" },
+    extendTripQuestion: { "Extend the trip to \($0) \($0 == 1 ? "day" : "days")?" },
     changeBaseQuestion: { "Change the base to “\($0)”?" }
   )
 

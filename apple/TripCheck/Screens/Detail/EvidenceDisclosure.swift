@@ -9,64 +9,34 @@ import TripCheckKit
 /// 開くと、滞在時間が誰の言い分か(v3.1 §2.1 はこの印をタイムラインではなくここに置く)と、
 /// 場所ごとの事実が 1 行ずつ並ぶ。
 ///
+/// 開閉そのものは `DisclosureCard` に任せる —— 折り畳みの見た目と `reduceMotion` の扱いを
+/// ここにもう一組持つと、片方だけ直された日に、同じアプリの中で開き方が 2 通りになる。
+/// ここに残るのは**中身**だけである。
+///
 /// 文は 1 つも作らない —— 題は `TimelinePresentation.evidenceDisclosureLabel`、滞在の 1 行と
 /// その根拠は `stayLine` / `stayBasisLine`、印の語は `durationSourceLabel` から来る。
 struct EvidenceDisclosure: View {
   @Environment(PlannerStore.self) private var store
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let model: StopInspectorModel
 
-  @State private var isOpen = false
-
   var body: some View {
-    let title = TimelinePresentation.evidenceDisclosureLabel(store.request.locale)
-
-    VStack(alignment: .leading, spacing: 0) {
-      Button {
-        if reduceMotion {
-          isOpen.toggle()
-        } else {
-          withAnimation(.easeInOut(duration: 0.2)) { isOpen.toggle() }
-        }
-      } label: {
-        HStack(spacing: 10) {
-          Text(title)
+    DisclosureCard(title: TimelinePresentation.evidenceDisclosureLabel(store.request.locale)) {
+      VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 2) {
+          Text(model.stayHeadline)
             .tcFont(.body)
-            .foregroundStyle(Tokens.Color.ink2)
-            .frame(maxWidth: .infinity, alignment: .leading)
-          IconView(.arrow, size: 14, color: Tokens.Color.muted)
-            .rotationEffect(.degrees(isOpen ? 90 : 0))
+            .foregroundStyle(Tokens.Color.ink)
+            .fixedSize(horizontal: false, vertical: true)
+          Text(model.stayBasisLine)
+            .tcFont(.meta)
+            .foregroundStyle(Tokens.Color.muted)
+            .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.horizontal, 14)
-        .frame(minHeight: Tokens.Hit.primary)
-        .contentShape(Rectangle())
-      }
-      .buttonStyle(.plain)
-      .accessibilityLabel(title)
-      .accessibilityAddTraits(isOpen ? [.isButton, .isSelected] : .isButton)
-
-      if isOpen {
-        VStack(alignment: .leading, spacing: 10) {
-          VStack(alignment: .leading, spacing: 2) {
-            Text(model.stayHeadline)
-              .tcFont(.body)
-              .foregroundStyle(Tokens.Color.ink)
-              .fixedSize(horizontal: false, vertical: true)
-            Text(model.stayBasisLine)
-              .tcFont(.meta)
-              .foregroundStyle(Tokens.Color.muted)
-              .fixedSize(horizontal: false, vertical: true)
-          }
-          ForEach(model.evidenceLines) { line in
-            factRow(line)
-          }
+        ForEach(model.evidenceLines) { line in
+          factRow(line)
         }
-        .padding(.horizontal, 14)
-        .padding(.bottom, 14)
       }
     }
-    .background(RoundedRectangle(cornerRadius: Tokens.Radius.card).fill(Tokens.Color.panel))
-    .overlay(RoundedRectangle(cornerRadius: Tokens.Radius.card).stroke(Tokens.Color.line, lineWidth: 1))
     .accessibilityIdentifier("detail.evidence")
   }
 
