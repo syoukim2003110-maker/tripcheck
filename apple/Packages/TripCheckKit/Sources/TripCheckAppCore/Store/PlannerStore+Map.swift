@@ -46,18 +46,21 @@ extension PlannerStore {
         pins.append(basePin(base, dayIndex: dayIndex, colorHex: colorHex))
       }
       for (index, leg) in day.legs.enumerated() {
-        routes.append(MapRoute(
-          id: "leg:\(dayIndex):\(index)",
-          dayIndex: dayIndex,
-          points: [
-            GeoPoint(latitude: leg.from.latitude, longitude: leg.from.longitude),
-            GeoPoint(latitude: leg.to.latitude, longitude: leg.to.longitude),
-          ],
-          // 鍵ゼロ: 区間の形を運ぶ欄が `BuiltPlanLeg` にそもそも無い。経路の提供元が入る次の
-          // spec まで、ここが真になる道は 1 本も無い(`Map/MapModel.swift` の頭を見よ)。
-          measured: false,
-          selected: selected
-        ))
+        let id = "leg:\(dayIndex):\(index)"
+        let from = GeoPoint(latitude: leg.from.latitude, longitude: leg.from.longitude)
+        let to = GeoPoint(latitude: leg.to.latitude, longitude: leg.to.longitude)
+        if let geometry = measuredGeometry(for: leg), let head = geometry.first, let tail = geometry.last, geometry.count >= 2 {
+          // 実測経路の端が地点から遠ければ、その区間は「知らない」ので破線で橋渡しする(Web と同じ)。
+          if straightLineDistanceKm(from, head) * 1000 >= Self.bridgeThresholdMeters {
+            routes.append(MapRoute(id: id + ":bridge-start", dayIndex: dayIndex, points: [from, head], measured: false, selected: selected))
+          }
+          routes.append(MapRoute(id: id, dayIndex: dayIndex, points: geometry, measured: true, selected: selected))
+          if straightLineDistanceKm(tail, to) * 1000 >= Self.bridgeThresholdMeters {
+            routes.append(MapRoute(id: id + ":bridge-end", dayIndex: dayIndex, points: [tail, to], measured: false, selected: selected))
+          }
+        } else {
+          routes.append(MapRoute(id: id, dayIndex: dayIndex, points: [from, to], measured: false, selected: selected))
+        }
       }
     }
 
@@ -177,5 +180,21 @@ extension PlannerStore {
     case .manual: return app.mapPinManual
     case .warning: return app.mapPinWarning
     }
+  }
+}
+
+extension PlannerStore {
+  static let bridgeThresholdMeters = 300.0
+
+  /// 使用中の手段の回答にジオメトリがあり、**プランがその手段の live 値を既に消費している**レグだけ。
+  /// 取得が終わっただけで置換前の地図が実線になることはない。
+  func measuredGeometry(for leg: BuiltPlanLeg) -> [GeoPoint]? {
+    let key = routeLegKey(leg.from.id, leg.to.id)
+    let mode = edit.legModeOverrides[key] ?? leg.comparison.recommended.mode
+    guard leg.comparison.options.first(where: { $0.mode == mode })?.source == .live else { return nil }
+    for (request, outcome) in liveRoutes where request.legKey == key && request.mode == mode {
+      if case .measured(_, _, let geometry?, _) = outcome { return geometry }
+    }
+    return nil
   }
 }

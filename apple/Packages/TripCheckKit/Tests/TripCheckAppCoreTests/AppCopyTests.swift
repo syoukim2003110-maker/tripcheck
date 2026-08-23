@@ -27,7 +27,7 @@ import TripCheckKit
               c.languageSwitchLabel, c.languageJa, c.languageEn,
               c.planErrorMessage,
               c.editedToast, c.revertedToast, c.baseClearedToast, c.clearBaseQuestion, c.openAppleMaps,
-              c.routesUpdatedToast,
+              c.routesUpdatedToast, c.appleRouteEvidence,
               c.stopConditionsDisclosure, c.lastEntryLabel, c.daySettingsTitle,
               c.customTimeLabel, c.hardEditConfirm, c.hardEditCancel, c.undoAction, c.redoAction,
               c.moreActions, c.undoneAnnouncement, c.redoneAnnouncement, c.evidenceNoValue,
@@ -74,7 +74,9 @@ import TripCheckKit
               + [c.deleteTripQuestion(title: "X")]
               + [c.shareRedactedReservations(count: 1), c.shareRedactedReservations(count: 2),
                  c.shareOmittedLines(count: 1), c.shareOmittedLines(count: 3)]
-              + [c.airportDayOffsetNote(c.airportNextDay), c.printWalkingLimitValue(30), c.printTransferLimitValue(2)] {
+              + [c.airportDayOffsetNote(c.airportNextDay), c.printWalkingLimitValue(30), c.printTransferLimitValue(2)]
+              + [c.routesFetching(settled: 3, total: 12), c.routesEstimatedRemaining(count: 1), c.routesEstimatedRemaining(count: 2),
+                 c.mapMeasuredRoutesValue(count: 1), c.mapMeasuredRoutesValue(count: 2)] {
       #expect(BannedTerms.violations(in: s).isEmpty, "\(locale): \(s)")
       #expect(!s.isEmpty, "\(locale): empty copy")
       checked += 1
@@ -86,8 +88,10 @@ import TripCheckKit
   // + Task 10 の引数つき 4(件数の 2 つは 1 と複数の両方を見る)+ Task 11 の 5 と引数つき 1
   // + Task 12 の 14 と引数つき 4(件数の 2 つは 1 と複数の両方を見る)+ Task 13 の 5
   // + Task 13 fix round 1(外部レビュー)の 8 と引数つき 3 + Task 14 の 3
-  // + 実経路 Task 6 の 1(`routesUpdatedToast`。残りの文言は実経路 Task 7)
-  #expect(checked == 448)
+  // + 実経路 Task 6 の 1(`routesUpdatedToast`)+ 実経路 Task 7 の 1(`appleRouteEvidence`)と
+  // 引数つき 5(`routesFetching` と件数ものの `routesEstimatedRemaining`/`mapMeasuredRoutesValue`
+  // は 1 と複数の両方を見る)
+  #expect(checked == 460)
 }
 
 /// 英語の日数は 1 日だけ単数。旅の長さを名乗る 2 文にも同じ規則が要る("1 days" を出さない)。

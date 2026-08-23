@@ -92,3 +92,18 @@ import TripCheckKit
     #expect(Set(ids).count == ids.count)
   }
 }
+
+/// 測れたレグの根拠行は「Apple Maps の経路」、推定のままのレグは「所要時間は目安です」。
+@Test @MainActor func measuredLegsNameAppleMapsAndEstimatedLegsSayEstimated() async {
+  let store = await enrichedSample(FakeRouteProvider(), taxiOnFirstLeg: true)
+  var measured = 0, estimated = 0
+  for day in 0..<4 {
+    for case .movement(let m) in store.timelineRows(day) {
+      if m.evidenceLine == AppCopy.for(store.request.locale).appleRouteEvidence { measured += 1 }
+      else if m.evidenceLine == Copy.for(store.request.locale).estimated { estimated += 1 }
+      else { Issue.record("unexpected evidence line \(String(describing: m.evidenceLine))") }
+    }
+  }
+  #expect(measured > 0 && estimated > 0)   // 山のレグは推定のまま
+  #expect(store.routeProgressLine == nil)
+}

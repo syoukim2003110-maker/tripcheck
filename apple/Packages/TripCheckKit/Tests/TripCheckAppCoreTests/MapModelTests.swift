@@ -13,16 +13,55 @@ import TripCheckKit
  * ピンが耳にも名乗ること。
  */
 
-/// 区間の形を知らないなら、2 点を結ぶ破線しか描けない。実線は「ここを通る」と言い切る絵で、
-/// 今日そう言い切れる区間は 1 つも無い。
-@Test @MainActor func unmeasuredLegsAreDashedStraightLines() async {
+/// 提供元が無ければ、2 点を結ぶ破線しか描けない。実線は「ここを通る」と言い切る絵。
+@Test @MainActor func legsWithoutAProviderAreDashedStraightLines() async {
   let store = PlannerStore(resolvers: [CatalogResolver()], store: nil); store.loadSample(.switzerland); await store.build()
   let m = store.mapModel(scope: .all)
-  #expect(!m.routes.isEmpty)
-  #expect(m.routes.allSatisfy { !$0.measured })          // 鍵ゼロ: 計測済みの経路は無い
-  #expect(m.routes.allSatisfy { $0.points.count == 2 })
+  #expect(!m.routes.isEmpty && m.measuredCount == 0)
+  #expect(m.routes.allSatisfy { !$0.measured && $0.points.count == 2 })
   #expect(m.pins.filter { if case .anchor = $0.kind { return true }; return false }.count == 8)
   #expect(m.pins.allSatisfy { !$0.a11y.isEmpty })
+}
+
+/// 使用中の手段が測れたレグだけ実線(3 点以上)。公共交通が使用中のレグは答えがあっても破線。
+@Test @MainActor func onlyLegsWhoseModeInUseWasMeasuredBecomeSolid() async {
+  let store = await enrichedSample(FakeRouteProvider(), taxiOnFirstLeg: true)
+  let m = store.mapModel(scope: .all)
+  #expect(m.measuredCount >= 1 && m.measuredCount == m.routes.filter(\.measured).count)
+  var checked = 0
+  for (dayIndex, day) in store.bundle!.plan.days.enumerated() {
+    for (index, leg) in day.legs.enumerated() {
+      let key = routeLegKey(leg.from.id, leg.to.id)
+      let mode = store.edit.legModeOverrides[key] ?? leg.comparison.recommended.mode
+      let route = m.routes.first { $0.id == "leg:\(dayIndex):\(index)" }!
+      var geometry = false
+      for (r, o) in store.liveRoutes where r.legKey == key && r.mode == mode { if case .measured(_, _, let g?, _) = o { geometry = g.count >= 2 } }
+      let live = leg.comparison.options.first { $0.mode == mode }?.source == .live
+      #expect(route.measured == (geometry && live))
+      #expect(route.measured ? route.points.count >= 3 : route.points.count == 2)
+      checked += 1
+    }
+  }
+  #expect(checked > 0)
+}
+
+/// 実測経路の端が地点から 300 m 以上離れていれば、短い破線で橋渡しする。
+@Test @MainActor func aFarStartingPointGetsADashedBridge() async {
+  struct Offset: RouteProvider {
+    func route(_ request: RouteRequest, locale: PlannerLocale) async -> RouteOutcome {
+      let start = GeoPoint(latitude: request.from.latitude + 0.01, longitude: request.from.longitude)   // 約 1.1 km 北
+      return .measured(minutes: request.mode == .transit ? 20 : 4, distanceMeters: 1000, geometry: request.mode == .transit ? nil : [start, request.to], expectedDeparture: nil)
+    }
+  }
+  let store = await enrichedSample(Offset(), taxiOnFirstLeg: true)
+  let m = store.mapModel(scope: .all)
+  let solid = m.routes.filter(\.measured)
+  #expect(!solid.isEmpty)
+  for route in solid {
+    let bridge = m.routes.first { $0.id == route.id + ":bridge-start" }
+    #expect(bridge?.measured == false && bridge?.points.count == 2)
+    #expect(m.routes.first { $0.id == route.id + ":bridge-end" } == nil)
+  }
 }
 
 /// 2 点が近すぎる日でも、地図は最小の広さを持つ。クランプが無いと、隣り合う 2 か所の日が

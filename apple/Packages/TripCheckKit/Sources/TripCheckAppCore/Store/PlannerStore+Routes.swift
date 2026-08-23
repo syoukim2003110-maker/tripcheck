@@ -149,3 +149,14 @@ extension PlannerStore {
     }
   }
 }
+
+extension PlannerStore {
+  /// 統計行の横の 1 行。取得中は「実経路を取得中 12/38」、完了して推定が残れば「N 区間は推定のまま」
+  /// (次のビルドまで残る)、全部測れたら nil(行そのものが消える)。
+  public var routeProgressLine: String? {
+    guard let progress = routeProgress else { return nil }
+    let app = AppCopy.for(request.locale)
+    if !progress.isComplete { return app.routesFetching(settled: progress.settled, total: progress.requested) }
+    return progress.estimatedRemaining > 0 ? app.routesEstimatedRemaining(count: progress.estimatedRemaining) : nil
+  }
+}

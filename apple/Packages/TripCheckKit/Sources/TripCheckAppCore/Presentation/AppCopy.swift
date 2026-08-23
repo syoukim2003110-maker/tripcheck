@@ -319,6 +319,12 @@ public struct AppCopy: Sendable {
   public let printOmissionUnresolved: String
   public let printOmissionRemoved: String
 
+  // MARK: - 実経路(Routes spec §6)
+
+  /// 移動の行の根拠。選ばれている手段が Apple Maps で測れているレグに出る。誰が測ったかは
+  /// ここが言い、余裕の差は `VerdictCopy.bufferToastDetail` が別の行で言う。
+  public let appleRouteEvidence: String
+
   private let pasteLimitToastText: @Sendable (Int) -> String
   private let daysValueText: @Sendable (Int) -> String
   private let priorityLabelText: @Sendable (String) -> String
@@ -364,6 +370,12 @@ public struct AppCopy: Sendable {
   private let airportDayOffsetNoteText: @Sendable (String) -> String
   private let printWalkingLimitValueText: @Sendable (Int) -> String
   private let printTransferLimitValueText: @Sendable (Int) -> String
+  /// 取得の進み具合の 1 行(`PlannerStore.routeProgressLine`)。取得中は「N/M」の分数、
+  /// 完了して推定が残れば区間数だけ。
+  private let routesFetchingText: @Sendable (Int, Int) -> String
+  private let routesEstimatedRemainingText: @Sendable (Int) -> String
+  /// 地図の統計行の値(「実経路 N区間」)。
+  private let mapMeasuredRoutesValueText: @Sendable (Int) -> String
 
   init(
     startTitle: String,
@@ -526,6 +538,7 @@ public struct AppCopy: Sendable {
     printOmissionsHeading: String,
     printOmissionUnresolved: String,
     printOmissionRemoved: String,
+    appleRouteEvidence: String,
     pasteLimitToast: @escaping @Sendable (Int) -> String,
     daysValue: @escaping @Sendable (Int) -> String,
     priorityLabel: @escaping @Sendable (String) -> String,
@@ -567,7 +580,10 @@ public struct AppCopy: Sendable {
     shareOmittedLines: @escaping @Sendable (Int) -> String,
     airportDayOffsetNote: @escaping @Sendable (String) -> String,
     printWalkingLimitValue: @escaping @Sendable (Int) -> String,
-    printTransferLimitValue: @escaping @Sendable (Int) -> String
+    printTransferLimitValue: @escaping @Sendable (Int) -> String,
+    routesFetching: @escaping @Sendable (Int, Int) -> String,
+    routesEstimatedRemaining: @escaping @Sendable (Int) -> String,
+    mapMeasuredRoutesValue: @escaping @Sendable (Int) -> String
   ) {
     self.startTitle = startTitle
     self.startHelpShort = startHelpShort
@@ -729,6 +745,7 @@ public struct AppCopy: Sendable {
     self.printOmissionsHeading = printOmissionsHeading
     self.printOmissionUnresolved = printOmissionUnresolved
     self.printOmissionRemoved = printOmissionRemoved
+    self.appleRouteEvidence = appleRouteEvidence
     self.pasteLimitToastText = pasteLimitToast
     self.daysValueText = daysValue
     self.priorityLabelText = priorityLabel
@@ -771,6 +788,9 @@ public struct AppCopy: Sendable {
     self.airportDayOffsetNoteText = airportDayOffsetNote
     self.printWalkingLimitValueText = printWalkingLimitValue
     self.printTransferLimitValueText = printTransferLimitValue
+    self.routesFetchingText = routesFetching
+    self.routesEstimatedRemainingText = routesEstimatedRemaining
+    self.mapMeasuredRoutesValueText = mapMeasuredRoutesValue
   }
 
   /// 隠した予約の件数。**場所は残る**と言い切る —— 予約そのものを消したと読めると、
@@ -921,6 +941,13 @@ public struct AppCopy: Sendable {
 
   /// 紙の「乗換上限」の値(`Web TripPrintSheet.tsx:122` と同じバイト)。
   public func printTransferLimitValue(_ count: Int) -> String { printTransferLimitValueText(count) }
+
+  /// 取得の進み具合(`PlannerStore.routeProgressLine`)。「実経路を取得中 3/12」。
+  public func routesFetching(settled: Int, total: Int) -> String { routesFetchingText(settled, total) }
+  /// 取得が終わっても測れなかったレグの数。「N区間は推定のまま」。
+  public func routesEstimatedRemaining(count: Int) -> String { routesEstimatedRemainingText(count) }
+  /// 地図の統計行の値。「実経路 N区間」。
+  public func mapMeasuredRoutesValue(count: Int) -> String { mapMeasuredRoutesValueText(count) }
 
   public static func `for`(_ locale: PlannerLocale) -> AppCopy {
     locale == .ja ? ja : en
@@ -1102,6 +1129,7 @@ public struct AppCopy: Sendable {
     printOmissionsHeading: "旅程に入っていない場所",
     printOmissionUnresolved: "場所を解決できないため未判定です",
     printOmissionRemoved: "旅行者が旅程から外しました",
+    appleRouteEvidence: "Apple Maps の経路",
     pasteLimitToast: { "\($0)件あります。1回に確認できるのは12か所までです。残りは別の旅として分けてください。" },
     daysValue: { "\($0)日" },
     priorityLabel: { "\($0)の優先度" },
@@ -1164,7 +1192,10 @@ public struct AppCopy: Sendable {
     // 全角括弧は字と詰めて書く(外部レビュー Important 1)。
     airportDayOffsetNote: { "（\($0)）" },
     printWalkingLimitValue: { "\($0)分/区間" },
-    printTransferLimitValue: { "\($0)回/区間" }
+    printTransferLimitValue: { "\($0)回/区間" },
+    routesFetching: { "実経路を取得中 \($0)/\($1)" },
+    routesEstimatedRemaining: { "\($0)区間は推定のまま" },
+    mapMeasuredRoutesValue: { "実経路 \($0)区間" }
   )
 
   static let en = AppCopy(
@@ -1328,6 +1359,7 @@ public struct AppCopy: Sendable {
     printOmissionsHeading: "Places not in the schedule",
     printOmissionUnresolved: "Unresolved, so it was not evaluated",
     printOmissionRemoved: "Removed from the plan by the traveller",
+    appleRouteEvidence: "Apple Maps route",
     pasteLimitToast: { "\($0) places found. Up to 12 places at a time. Keep the rest for a second trip." },
     daysValue: { "\($0) day\($0 == 1 ? "" : "s")" },
     priorityLabel: { "\($0) priority" },
@@ -1390,7 +1422,10 @@ public struct AppCopy: Sendable {
     // (external review Important 1: `01:30（next day）`).
     airportDayOffsetNote: { " (\($0))" },
     printWalkingLimitValue: { "\($0) min/leg" },
-    printTransferLimitValue: { "\($0)/leg" }
+    printTransferLimitValue: { "\($0)/leg" },
+    routesFetching: { "Fetching routes \($0)/\($1)" },
+    routesEstimatedRemaining: { "\($0) leg\($0 == 1 ? "" : "s") still estimated" },
+    mapMeasuredRoutesValue: { "\($0) measured leg\($0 == 1 ? "" : "s")" }
   )
 
   /// 保存した旅程の題 —— **先頭 3 か所の名前**。一覧はこれで旅を見分けるので、名前を

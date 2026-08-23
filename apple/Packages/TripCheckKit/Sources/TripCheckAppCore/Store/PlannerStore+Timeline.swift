@@ -225,10 +225,9 @@ extension PlannerStore {
     let legKey = routeLegKey(leg.from.id, leg.to.id)
     let recommended = leg.comparison.recommended
     let selected = edit.legModeOverrides[legKey] ?? recommended.mode
+    let shown = leg.comparison.options.first { $0.mode == selected } ?? recommended
     let offersWalking = leg.comparison.options.contains { $0.mode == .walk }
-    // 乗車の 1 行はプロバイダの経路情報からしか作れない。鍵ゼロのアプリはまだ経路の提供元を
-    // 持たない(R15 —— 端末内 `MKDirections` は次の spec)ので、いまは必ず nil に落ちて
-    // 「所要時間は目安です」が残る。経路が入ったらここへ渡す。
+    // 乗車の 1 行は提供元の経路情報からしか作れない。Apple の transit は ETA だけなので常に nil。
     let boarding: TransitLegBoarding? = nil
     return MovementModel(
       legKey: legKey,
@@ -256,7 +255,7 @@ extension PlannerStore {
       },
       walkMinutes: offersWalking ? leg.walkingMinutes : nil,
       evidenceLine: TimelinePresentation.transitBoardingText(boarding, locale: locale)
-        ?? (recommended.source == .live ? nil : Copy.for(locale).estimated)
+        ?? (shown.source == .live ? AppCopy.for(locale).appleRouteEvidence : Copy.for(locale).estimated)
     )
   }
 

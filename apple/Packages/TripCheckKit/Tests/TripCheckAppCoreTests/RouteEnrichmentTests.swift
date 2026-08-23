@@ -61,8 +61,9 @@ private func walkRequest(_ key: String) -> RouteRequest {
 
 // MARK: - Task 6: 取得コーディネータ
 
-/// 見本を組んで、取得(と連鎖)が落ち着くまで待った store を返す。
-@MainActor private func enrichedSample(_ provider: some RouteProvider, taxiOnFirstLeg: Bool = false) async -> PlannerStore {
+/// 見本を組んで、取得(と連鎖)が落ち着くまで待った store を返す。**`private` を付けない** ——
+/// `MapModelTests.swift` / `TimelineRowsTests.swift`(Task 7)も同じテストターゲットから呼ぶ。
+@MainActor func enrichedSample(_ provider: some RouteProvider, taxiOnFirstLeg: Bool = false) async -> PlannerStore {
   let store = PlannerStore(resolvers: [CatalogResolver()], store: nil, routeProvider: provider)
   store.loadSample(.switzerland)
   if taxiOnFirstLeg {

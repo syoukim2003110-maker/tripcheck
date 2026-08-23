@@ -9,10 +9,9 @@ import TripCheckKit
  * `TripMapView` は受け取った値を `MapKit` の形に直すだけになる。
  *
  * いちばん重い規則は線の側にある。**通った道を知らない区間を、通った道のように描かない**
- * (統合仕様 §9、spec §5.4)。鍵ゼロのアプリには経路の提供元が無い —— `BuiltPlanLeg` は
- * 分数と手段は持つが、形(ポリライン)を持つ欄そのものが無い。だから `MapRoute.measured` は
- * どこでも `false` で、線は 2 点の破線にしかならない。実線は、プロバイダの経路が入る次の
- * spec で初めて描けるようになる(R15 —— 端末内 `MKDirections` が最初の候補)。
+ * (統合仕様 §9、spec §5.4)。実線は `MapRoute.measured` が真の区間だけ。真にできるのは
+ * `PlannerStore.measuredGeometry(for:)` —— 使用中の手段が Apple Maps で測れ、プランがその値を
+ * 消費している区間だけで、残りは全部 2 点の破線になる。
  */
 
 /// 地図の点 1 つ。
@@ -80,7 +79,7 @@ public struct MapRoute: Identifiable, Equatable, Sendable {
   public let dayIndex: Int
   /// 描く点の列。`measured` が偽なら**必ず 2 点**(端から端への直線)。
   public let points: [GeoPoint]
-  /// 提供元の経路そのものを描いているか。**鍵ゼロでは常に偽。**
+  /// 提供元の経路そのものを描いているか。**提供元が無いビルドでは常に偽。**
   ///
   /// `let` なのは偶然ではない。この 1 つが真になると線は実線になり、地図は「ここを通る」と
   /// 言い切る —— 作った後で誰かがひっくり返せる欄であってはならない。
@@ -118,6 +117,9 @@ public struct MapModel: Sendable {
   public var region: MapRegion
   /// 凡例に並ぶ日。**地図に出ている日だけ** —— 押しても何も指さない日ボタンを置かない。
   public var legendDays: [(index: Int, colorHex: String)]
+
+  /// 実線になっている区間の数。「実経路 N区間」(`AppCopy.mapMeasuredRoutesValue`)の材料。
+  public var measuredCount: Int { routes.filter(\.measured).count }
 
   public init(pins: [MapPin], routes: [MapRoute], region: MapRegion, legendDays: [(index: Int, colorHex: String)]) {
     self.pins = pins
