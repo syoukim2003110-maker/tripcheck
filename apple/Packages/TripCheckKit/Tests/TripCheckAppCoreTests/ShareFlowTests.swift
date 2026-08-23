@@ -265,6 +265,29 @@ import TripCheckKit
   #expect(s.shareableInput().resolutionOverrides?.first?.inputIndex == 0)
 }
 
+/// `shareableInput().resolutionOverrides` は生きた固定(`entry.pinned`)から毎回組み直す
+/// (`manualPinOverrides()`)ので、上のテストの最後の 1 行は `edit.resolutionOverrides` の
+/// 押し直しを検査しない。`edit.resolutionOverrides` は別の実体 —— **リンクから受け取った
+/// 決定の控え**で、端末内保存から旅程を開き直すとき(`PersistedEdits`)や、届いた直後で
+/// まだ尋ね直していない間はここだけが正である。ここを押し直さなければ、外したのは
+/// 隣の行なのに、控えに残った座標が押し直されないままの番号で**別の行へ**貼り付く。
+@Test @MainActor func removingARowShiftsAReceivedResolutionOverrideToo() async {
+  let s = PlannerStore(resolvers: [], store: nil)
+  let first = s.addEntrySync(text: "Bern")
+  _ = s.addEntrySync(text: "Chalet Bergblick")
+  s.edit.resolutionOverrides = [
+    .manual(inputIndex: 1, name: "Chalet Bergblick", address: "Dorfstrasse 12, Grindelwald",
+            latitude: 46.62405, longitude: 8.03412)
+  ]
+
+  s.removeEntry(id: first)
+
+  #expect(s.edit.resolutionOverrides == [
+    .manual(inputIndex: 0, name: "Chalet Bergblick", address: "Dorfstrasse 12, Grindelwald",
+            latitude: 46.62405, longitude: 8.03412)
+  ])
+}
+
 /// リンクは**解決の最中にも**開く(`.onOpenURL` は待ってくれない)。飛んでいた問い合わせが
 /// 返ってきたとき、その答えはもう誰の答えでもない —— 番号で新しい旅の行に貼り付けない。
 /// そして取り込みは、組めていないのに「開きました」と言わない。

@@ -238,6 +238,75 @@ import TripCheckKit
   #expect(store.request.entries.first?.text == "Bahnhof Bern")
 }
 
+/// 行き先の国が決まっているのに、検索窓の候補が答えた先はその箱の外だった。文字列で探す道
+/// (`ApplePlaceResolver.answer(_:bounds:locale:)`)と同じ規則を候補の道にもかける ——
+/// `region` は寄せるだけの助言で、旅行者が見た見出しがドイツ語でも、地図はドイツの同名の駅を
+/// 返しうる。行は消えず、固定もされない —— CTA の解決が普通に尋ね直す(Web も選んだ候補が
+/// 箱の外なら unresolved のまま進む、`lib/google-place-resolver.ts:181,270-271`)。
+@Test @MainActor func choosingASuggestionOutsideTheChosenCountryLeavesTheRowUnpinned() async {
+  let hit = LocalSearchHit(
+    name: "Bahnhof Berneck", address: "10115 Berlin, Deutschland",
+    latitude: 52.52, longitude: 13.405, countryCode: "DE", category: nil
+  )
+  let store = PlannerStore(
+    resolvers: [ApplePlaceResolver(search: FakeSearch(hits: ["Bahnhof Berneck": [hit]]))],
+    store: nil
+  )
+  store.request.destination = .destination(.switzerland)
+
+  await store.addEntry(text: "Bahnhof Berneck", suggestion: fakeSuggestion("Bahnhof Berneck", subtitle: "ドイツ"))
+
+  #expect(store.request.entries.count == 1)
+  #expect(store.request.entries.first?.pinned == nil)
+  #expect(store.request.entries.first?.text == "Bahnhof Berneck")
+}
+
+/// 同じ場所でも、行き先の箱の**中**なら変わらず固定する。
+@Test @MainActor func choosingASuggestionInsideTheChosenCountryStillPins() async {
+  let hit = LocalSearchHit(
+    name: "Bahnhof Bern", address: "Bahnhofplatz 10, 3011 Bern, Schweiz",
+    latitude: 46.9490, longitude: 7.4390, countryCode: "CH", category: "museum"
+  )
+  let store = PlannerStore(
+    resolvers: [ApplePlaceResolver(search: FakeSearch(hits: ["Bahnhof Bern": [hit]]))],
+    store: nil
+  )
+  store.request.destination = .destination(.switzerland)
+
+  await store.addEntry(text: "Bahnhof Bern", suggestion: fakeSuggestion("Bahnhof Bern", subtitle: "Bern"))
+
+  guard case .apple(_, let stop)? = store.request.entries.first?.pinned else {
+    Issue.record("箱の中の候補が固定されていない")
+    return
+  }
+  #expect(stop.name == "Bahnhof Bern")
+}
+
+/// `.auto` と `.worldwide` は箱を持たない(`ApplePlaceResolver.bounds(for:)` と同じ規則)ので、
+/// 同じドイツの候補でも両方とも固定する —— 箱を外して初めて「箱の外」が言える。
+@Test @MainActor func choosingASuggestionPinsRegardlessOfCountryWhenNoBoxIsChosen() async {
+  let hit = LocalSearchHit(
+    name: "Bahnhof Berneck", address: "10115 Berlin, Deutschland",
+    latitude: 52.52, longitude: 13.405, countryCode: "DE", category: nil
+  )
+  let destinations: [DestinationChoice] = [.auto, .destination(.worldwide)]
+  for destination in destinations {
+    let store = PlannerStore(
+      resolvers: [ApplePlaceResolver(search: FakeSearch(hits: ["Bahnhof Berneck": [hit]]))],
+      store: nil
+    )
+    store.request.destination = destination
+
+    await store.addEntry(text: "Bahnhof Berneck", suggestion: fakeSuggestion("Bahnhof Berneck", subtitle: "ドイツ"))
+
+    guard case .apple(_, let stop)? = store.request.entries.first?.pinned else {
+      Issue.record("\(destination) では固定されるはず")
+      continue
+    }
+    #expect(stop.name == "Bahnhof Berneck")
+  }
+}
+
 // MARK: - Start で国を選び直す
 
 /// 旅程を組んだ後に「入力にもどる」で帰ってくると、行は全部固定されている。そこで国を選び

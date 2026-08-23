@@ -37,8 +37,8 @@ extension PlannerStore {
   /// 選んだ「Bahnhof Bern」が別の街の駅や候補待ちに化けえた。選んだことが画面に残らない。
   ///
   /// 行は**先に**足す。地図の返事は数秒後に来るので、待ってから足すと、押した指と行が現れる
-  /// 瞬間の間が空く。引き当てられなかったとき(打ち切り・0 件)は固定しないまま残し、CTA の
-  /// 解決が普通に尋ね直す。
+  /// 瞬間の間が空く。引き当てられなかったとき(打ち切り・0 件・行き先の箱の外)は固定しない
+  /// まま残し、CTA の解決が普通に尋ね直す。
   ///
   /// 待っている間に旅が入れ替わったら(`reset()`:リンクを開いた・保存した旅程を開いた・
   /// 見本を入れた)、この答えはもう誰の答えでもないので捨てる(`resolveGeneration`)。
@@ -61,6 +61,7 @@ extension PlannerStore {
       completion: suggestion.token,
       inputIndex: index,
       input: name,
+      destination: request.destination,
       locale: request.locale
     ) else { return }
     guard generation == resolveGeneration,

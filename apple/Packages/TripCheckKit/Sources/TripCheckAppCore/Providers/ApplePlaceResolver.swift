@@ -232,8 +232,9 @@ public struct ApplePlaceResolver: PlaceResolver {
   /// ことはしない:「Bahnhof Bern」を選んだ旅行者が、後の解決でチューリヒの駅を渡されない
   /// ようにするための一手だからである。
   ///
-  /// 答えないとき(打ち切り・通信の失敗・0 件)は `nil`。呼び手はその行を固定せずに残すので、
-  /// CTA の解決が普通に尋ね直す —— 選んだことが無駄になるだけで、旅程は組める。
+  /// 答えないとき(打ち切り・通信の失敗・0 件・行き先の箱の外)は `nil`。呼び手はその行を
+  /// 固定せずに残すので、CTA の解決が普通に尋ね直す —— 選んだことが無駄になるだけで、
+  /// 旅程は組める。
   ///
   /// 証拠の規則は文字列で探したときと同じ(`candidate(_:query:)` を通る)—— `providerRef` は
   /// 空、`sourceUrl` / `verifiedAt` は空、`confidence` は `.medium`、id は `apple-` で始まる。
@@ -241,14 +242,23 @@ public struct ApplePlaceResolver: PlaceResolver {
     completion token: CompletionToken,
     inputIndex: Int,
     input: String,
+    destination: DestinationChoice,
     locale: PlannerLocale
   ) async -> ResolvedStop? {
     let searcher = search
     switch await race({ try await searcher.search(completion: token, locale: locale) }) {
     case .found(let hits):
-      // 候補は既に 1 つの場所を指しているので、先頭が「その場所」である。箱では絞らない ——
-      // 旅行者が選んだのは箱の中の 1 件ではなく、目で見た 1 行だからである。
+      // 候補は既に 1 つの場所を指しているので、先頭が「その場所」である。地図への問い合わせ
+      // は箱で絞らない —— 旅行者が選んだのは箱の中の 1 件ではなく、目で見た 1 行だからである。
       guard let hit = hits.first else { return nil }
+      // だが行き先の国が決まっているなら、返ってきた 1 件はその箱の中でなければならない
+      // (文字列で探す `answer(_:bounds:locale:)` と同じ規則、TS `withinBounds`,
+      // `lib/google-place-resolver.ts:181,270-271`)。`region` は寄せるだけの助言なので、
+      // 候補の見出しがドイツ語でも、地図がその名前で答えた先はドイツの同名の駅でありうる ——
+      // 箱の外なら固定せず未解決のまま残し、CTA の解決に任せる。Web は選んだ候補が箱の外
+      // なら unresolved のまま進む(この行と対称)。
+      let bounds = Self.bounds(for: destination)
+      guard Destinations.withinBounds(bounds, latitude: hit.latitude, longitude: hit.longitude) else { return nil }
       return candidate(hit, query: PlaceQuery(inputIndex: inputIndex, input: input)).stop
     case .gaveUp:
       return nil
