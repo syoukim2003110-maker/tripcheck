@@ -198,6 +198,45 @@ public struct AppCopy: Sendable {
   /// `failed`)。**「推定」と呼ばない** —— 調べていない場所を見積もったことにしてしまう。
   public let evidenceStatusUnknown: String
 
+  // MARK: - 課題カード・結論の詳細(Task 10)
+
+  /// 「結論の詳細」の折り畳みの見出し。Web `VerdictDetails.tsx:71` と同じ 1 語。
+  public let verdictDetailsTitle: String
+  /// 重要情報の 3 つの数に添える語。Kit の `durationSourceLabel` は滞在時間の出どころを
+  /// 言う語で、この 3 つは**事実の確かさ**なので別の表に置く。
+  public let factVerified: String
+  public let factEstimated: String
+  public let factUnknown: String
+  /// この地域をどこまで確かめてあるかの折り畳み。地域の名前と評価は Kit の
+  /// `CoverageProfile` が持つので、ここにあるのは見出しだけ。
+  public let coverageHeading: String
+  /// 貼り付けた旅程だけが出す 3 枚の比較。**「元の案」は旅行者が書いたもの**で、
+  /// 残る 2 枚がこちらの提案である。
+  public let comparisonHeading: String
+  public let comparisonOriginal: String
+  public let comparisonOriginalDetail: String
+  /// 2 枚目の題は結果で変わる —— 1 回の変更で成立するなら「最小修正版」、成立まで届かない
+  /// なら「最小の改善案」。同じ題で両方を出すと、直りきらない案が直った案に見える。
+  public let comparisonMinimalRepair: String
+  public let comparisonMinimalImprovement: String
+  public let comparisonShortest: String
+  /// 提案が無いときの 1 行。**空欄にしない** —— 空欄は「まだ計算中」に読める。
+  public let comparisonNoRepair: String
+  public let comparisonNoRepairNeeded: String
+  public let comparisonNoShortest: String
+  /// 代替案の一覧の見出しと、差分表の 2 列の名前、適用のボタン。
+  public let alternativesHeading: String
+  public let diffBefore: String
+  public let diffAfter: String
+  public let applyAlternative: String
+  /// 前提が 1 つも無いときの 1 行。
+  public let assumptionsNone: String
+  /// 旅程に入り切らなかったもの・1 日に収まらない日の見出し。
+  public let attentionsHeading: String
+  /// 旅券の国の錠剤に出す「未選択」。Kit の `passportUnset` は括弧書きの理由まで含む 1 文で、
+  /// 3 つ並ぶ錠剤には長すぎる —— 錠剤には短い名前を出し、**理由の 1 文は錠剤の下に**残す。
+  public let passportUnsetShort: String
+
   private let pasteLimitToastText: @Sendable (Int) -> String
   private let daysValueText: @Sendable (Int) -> String
   private let priorityLabelText: @Sendable (String) -> String
@@ -232,6 +271,8 @@ public struct AppCopy: Sendable {
   private let shortenTripQuestionText: @Sendable (Int) -> String
   private let extendTripQuestionText: @Sendable (Int) -> String
   private let changeBaseQuestionText: @Sendable (String) -> String
+  private let issuesHeadingText: @Sendable (Int) -> String
+  private let assumptionsHeadingText: @Sendable (Int) -> String
 
   init(
     startTitle: String,
@@ -337,6 +378,27 @@ public struct AppCopy: Sendable {
     evidenceHoursLabel: String,
     evidenceHoursOpen: String,
     evidenceStatusUnknown: String,
+    verdictDetailsTitle: String,
+    factVerified: String,
+    factEstimated: String,
+    factUnknown: String,
+    coverageHeading: String,
+    comparisonHeading: String,
+    comparisonOriginal: String,
+    comparisonOriginalDetail: String,
+    comparisonMinimalRepair: String,
+    comparisonMinimalImprovement: String,
+    comparisonShortest: String,
+    comparisonNoRepair: String,
+    comparisonNoRepairNeeded: String,
+    comparisonNoShortest: String,
+    alternativesHeading: String,
+    diffBefore: String,
+    diffAfter: String,
+    applyAlternative: String,
+    assumptionsNone: String,
+    attentionsHeading: String,
+    passportUnsetShort: String,
     pasteLimitToast: @escaping @Sendable (Int) -> String,
     daysValue: @escaping @Sendable (Int) -> String,
     priorityLabel: @escaping @Sendable (String) -> String,
@@ -370,7 +432,9 @@ public struct AppCopy: Sendable {
     moveStopAutoQuestion: @escaping @Sendable (String) -> String,
     shortenTripQuestion: @escaping @Sendable (Int) -> String,
     extendTripQuestion: @escaping @Sendable (Int) -> String,
-    changeBaseQuestion: @escaping @Sendable (String) -> String
+    changeBaseQuestion: @escaping @Sendable (String) -> String,
+    issuesHeading: @escaping @Sendable (Int) -> String,
+    assumptionsHeading: @escaping @Sendable (Int) -> String
   ) {
     self.startTitle = startTitle
     self.startHelpShort = startHelpShort
@@ -475,6 +539,27 @@ public struct AppCopy: Sendable {
     self.evidenceHoursLabel = evidenceHoursLabel
     self.evidenceHoursOpen = evidenceHoursOpen
     self.evidenceStatusUnknown = evidenceStatusUnknown
+    self.verdictDetailsTitle = verdictDetailsTitle
+    self.factVerified = factVerified
+    self.factEstimated = factEstimated
+    self.factUnknown = factUnknown
+    self.coverageHeading = coverageHeading
+    self.comparisonHeading = comparisonHeading
+    self.comparisonOriginal = comparisonOriginal
+    self.comparisonOriginalDetail = comparisonOriginalDetail
+    self.comparisonMinimalRepair = comparisonMinimalRepair
+    self.comparisonMinimalImprovement = comparisonMinimalImprovement
+    self.comparisonShortest = comparisonShortest
+    self.comparisonNoRepair = comparisonNoRepair
+    self.comparisonNoRepairNeeded = comparisonNoRepairNeeded
+    self.comparisonNoShortest = comparisonNoShortest
+    self.alternativesHeading = alternativesHeading
+    self.diffBefore = diffBefore
+    self.diffAfter = diffAfter
+    self.applyAlternative = applyAlternative
+    self.assumptionsNone = assumptionsNone
+    self.attentionsHeading = attentionsHeading
+    self.passportUnsetShort = passportUnsetShort
     self.pasteLimitToastText = pasteLimitToast
     self.daysValueText = daysValue
     self.priorityLabelText = priorityLabel
@@ -509,6 +594,8 @@ public struct AppCopy: Sendable {
     self.shortenTripQuestionText = shortenTripQuestion
     self.extendTripQuestionText = extendTripQuestion
     self.changeBaseQuestionText = changeBaseQuestion
+    self.issuesHeadingText = issuesHeading
+    self.assumptionsHeadingText = assumptionsHeading
   }
 
   /// 貼り付けが上限に当たったときのトースト。**件数を名指しする** —— 12 までですとだけ
@@ -632,6 +719,12 @@ public struct AppCopy: Sendable {
   /// 拠点を変えてよいかの問いかけ。
   public func changeBaseQuestion(name: String) -> String { changeBaseQuestionText(name) }
 
+  /// 課題カードの見出し。**件数は行の数ではなく確かめる対象の数**(`PlannerStore.issueCount`)。
+  public func issuesHeading(count: Int) -> String { issuesHeadingText(count) }
+
+  /// 前提の折り畳みの見出し。件数を出すのは、開く前に「何件あるか」が読めるようにするため。
+  public func assumptionsHeading(count: Int) -> String { assumptionsHeadingText(count) }
+
   public static func `for`(_ locale: PlannerLocale) -> AppCopy {
     locale == .ja ? ja : en
   }
@@ -747,6 +840,27 @@ public struct AppCopy: Sendable {
     evidenceHoursLabel: "営業時間",
     evidenceHoursOpen: "訪問時刻は営業時間内",
     evidenceStatusUnknown: "未確認",
+    verdictDetailsTitle: "結論の詳細",
+    factVerified: "確認済み",
+    factEstimated: "推定",
+    factUnknown: "未確認",
+    coverageHeading: "この地域の対応",
+    comparisonHeading: "3つの見方を比較",
+    comparisonOriginal: "元の案",
+    comparisonOriginalDetail: "入力した日別割当と順番",
+    comparisonMinimalRepair: "最小修正版",
+    comparisonMinimalImprovement: "最小の改善案",
+    comparisonShortest: "移動を減らす案",
+    comparisonNoRepair: "1回の変更で成立する案はまだありません",
+    comparisonNoRepairNeeded: "必要な修正はありません",
+    comparisonNoShortest: "固定条件内で、より移動の少ない案は見つかりませんでした",
+    alternativesHeading: "比較できる変更案",
+    diffBefore: "現在の案",
+    diffAfter: "変更案",
+    applyAlternative: "この変更を適用",
+    assumptionsNone: "重要な前提はすべて確認済みです。",
+    attentionsHeading: "その他の注意",
+    passportUnsetShort: "未選択",
     pasteLimitToast: { "\($0)件あります。1回に確認できるのは12か所までです。残りは別の旅として分けてください。" },
     daysValue: { "\($0)日" },
     priorityLabel: { "\($0)の優先度" },
@@ -799,7 +913,9 @@ public struct AppCopy: Sendable {
     moveStopAutoQuestion: { "「\($0)」の日程を自動配置に戻しますか？" },
     shortenTripQuestion: { "\($0)日に短縮しますか？" },
     extendTripQuestion: { "\($0)日に延ばしますか？" },
-    changeBaseQuestion: { "拠点を「\($0)」に変更しますか？" }
+    changeBaseQuestion: { "拠点を「\($0)」に変更しますか？" },
+    issuesHeading: { "確認したいこと \($0)" },
+    assumptionsHeading: { "この結論の前提 \($0)件" }
   )
 
   static let en = AppCopy(
@@ -906,6 +1022,27 @@ public struct AppCopy: Sendable {
     evidenceHoursLabel: "Opening hours",
     evidenceHoursOpen: "The visit falls inside opening hours",
     evidenceStatusUnknown: "Unconfirmed",
+    verdictDetailsTitle: "Result details",
+    factVerified: "confirmed",
+    factEstimated: "estimated",
+    factUnknown: "unknown",
+    coverageHeading: "Coverage in this region",
+    comparisonHeading: "Compare three views",
+    comparisonOriginal: "Original",
+    comparisonOriginalDetail: "Pasted days and order",
+    comparisonMinimalRepair: "Minimal revision",
+    comparisonMinimalImprovement: "Smallest improvement",
+    comparisonShortest: "Lower-travel order",
+    comparisonNoRepair: "No one-change repair is available yet",
+    comparisonNoRepairNeeded: "No corrective change needed",
+    comparisonNoShortest: "No lower-travel alternative was found within the fixed constraints",
+    alternativesHeading: "Comparable changes",
+    diffBefore: "Current plan",
+    diffAfter: "Proposed plan",
+    applyAlternative: "Apply this change",
+    assumptionsNone: "All critical assumptions are confirmed.",
+    attentionsHeading: "Other notices",
+    passportUnsetShort: "Not set",
     pasteLimitToast: { "\($0) places found. Up to 12 places at a time. Keep the rest for a second trip." },
     daysValue: { "\($0) day\($0 == 1 ? "" : "s")" },
     priorityLabel: { "\($0) priority" },
@@ -958,7 +1095,9 @@ public struct AppCopy: Sendable {
     moveStopAutoQuestion: { "Return “\($0)” to automatic placement?" },
     shortenTripQuestion: { "Shorten the trip to \($0) \($0 == 1 ? "day" : "days")?" },
     extendTripQuestion: { "Extend the trip to \($0) \($0 == 1 ? "day" : "days")?" },
-    changeBaseQuestion: { "Change the base to “\($0)”?" }
+    changeBaseQuestion: { "Change the base to “\($0)”?" },
+    issuesHeading: { "\($0) thing\($0 == 1 ? "" : "s") to check" },
+    assumptionsHeading: { "\($0) assumption\($0 == 1 ? "" : "s") behind this result" }
   )
 
   /// 名前を並べるときの共通の切り詰め —— 先頭 2 件だけを出し、残りは件数で言う。Kit の

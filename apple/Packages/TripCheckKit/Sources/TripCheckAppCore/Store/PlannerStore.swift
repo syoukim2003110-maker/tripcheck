@@ -37,12 +37,24 @@ public final class PlannerStore {
   /// 同じボタンをもう一度押す。書くのは `PlannerStore+Start.swift` なので `internal(set)`。
   public internal(set) var isResolvingPlaces = false
 
+  /// 旅券の国。**端末に保存しない**(Web と同じ)—— 保存するのは有効期限だけで、国は
+  /// 「入国判定を出してよいか」の合図にすぎない。書くのは `setPassportCountry(_:)`。
+  public internal(set) var passportCountry: PassportCountry = .unset
+
+  /// 旅券の有効期限(`YYYY-MM-DD`)。正は `UserDefaults`(`tripcheck.passportExpiry`)で、
+  /// ここはそれを画面に映すための写し —— `UserDefaults` は観測できないので、写しが無いと
+  /// 日付を選んでも残存期間の判定が更新されない。書くのは `setPassportExpiry(_:)`。
+  public internal(set) var passportExpiry: String?
+
   // MARK: - 手持ちの道具(観測しない)
 
   @ObservationIgnored let resolvers: [any PlaceResolver]
   @ObservationIgnored let store: TripStore?
   @ObservationIgnored let autosaveDebounce: Duration
   @ObservationIgnored let clock: any Clock<Duration>
+  /// 旅券の有効期限だけを置く箱。テストは自分の suite を差す(既定の suite を共有すると、
+  /// 並列で走る別のテストが置いた期限をこちらが読む)。
+  @ObservationIgnored let defaults: UserDefaults
   @ObservationIgnored private var buildTask: Task<Void, Never>?
 
   /// 旅行者の返事を待っている編集の中身。**`view` には置かない** —— `PlannerViewState` は
@@ -69,13 +81,16 @@ public final class PlannerStore {
     resolvers: [any PlaceResolver],
     store: TripStore?,
     autosaveDebounce: Duration = .milliseconds(550),
-    clock: any Clock<Duration> = ContinuousClock()
+    clock: any Clock<Duration> = ContinuousClock(),
+    defaults: UserDefaults = .standard
   ) {
     self.resolvers = resolvers
     self.store = store
     self.autosaveDebounce = autosaveDebounce
     self.clock = clock
+    self.defaults = defaults
     self.request = TripRequestState.initial(locale: .ja)
+    self.passportExpiry = defaults.string(forKey: PlannerStore.passportExpiryKey)
   }
 
   // MARK: - エンジンへの引き渡し
@@ -196,6 +211,8 @@ public final class PlannerStore {
     view = PlannerViewState()
     bundle = nil
     history = PlannerHistory(initial: .empty, limit: PlannerEdits.undoLimit)
+    // 旅券は**旅ではなく人**に属する。次の旅を作り始めただけで、さっき入れた有効期限を
+    // 訊き直さない(`passportCountry` / `passportExpiry` はここで消さない)。
   }
 
   /// 見本の旅程を入れる。プロバイダの鍵が 1 つも無くても組み上がるように、行きたい場所の

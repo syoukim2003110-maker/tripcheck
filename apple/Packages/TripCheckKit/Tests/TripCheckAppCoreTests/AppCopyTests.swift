@@ -29,7 +29,13 @@ import TripCheckKit
               c.stopConditionsDisclosure, c.lastEntryLabel, c.daySettingsTitle,
               c.customTimeLabel, c.hardEditConfirm, c.hardEditCancel, c.undoAction, c.redoAction,
               c.moreActions, c.undoneAnnouncement, c.redoneAnnouncement, c.evidenceNoValue,
-              c.evidencePlaceLabel, c.evidenceHoursLabel, c.evidenceHoursOpen, c.evidenceStatusUnknown] + c.diffLabels
+              c.evidencePlaceLabel, c.evidenceHoursLabel, c.evidenceHoursOpen, c.evidenceStatusUnknown,
+              c.verdictDetailsTitle, c.factVerified, c.factEstimated, c.factUnknown, c.coverageHeading,
+              c.comparisonHeading, c.comparisonOriginal, c.comparisonOriginalDetail, c.comparisonMinimalRepair,
+              c.comparisonMinimalImprovement, c.comparisonShortest, c.comparisonNoRepair,
+              c.comparisonNoRepairNeeded, c.comparisonNoShortest, c.alternativesHeading,
+              c.diffBefore, c.diffAfter, c.applyAlternative, c.assumptionsNone, c.attentionsHeading,
+              c.passportUnsetShort] + c.diffLabels
               + [c.daysValue(1), c.daysValue(4), c.priorityLabel(name: "X"), c.removeStopQuestion(name: "X"), c.mustRemovalNote(name: "X"), c.reservationRemovalNote(name: "X"), c.removedStopToast(name: "X"), c.pasteLimitToast(count: 14)]
               + [c.resolveAllConfirmed(count: 1), c.resolveAllConfirmed(count: 4),
                  c.resolveCountryConflict(codes: ["CH", "JP"]), c.resolveCandidateQuestion(name: "X"),
@@ -50,16 +56,19 @@ import TripCheckKit
                  c.tripDaysToast(days: 4), c.baseSetToast(name: "X"), c.moveStopQuestion(name: "X", day: 2),
                  c.moveStopAutoQuestion(name: "X"), c.shortenTripQuestion(days: 1),
                  c.shortenTripQuestion(days: 3), c.extendTripQuestion(days: 1),
-                 c.extendTripQuestion(days: 6), c.changeBaseQuestion(name: "X")] {
+                 c.extendTripQuestion(days: 6), c.changeBaseQuestion(name: "X")]
+              + [c.issuesHeading(count: 1), c.issuesHeading(count: 3),
+                 c.assumptionsHeading(count: 1), c.assumptionsHeading(count: 3)] {
       #expect(BannedTerms.violations(in: s).isEmpty, "\(locale): \(s)")
       #expect(!s.isEmpty, "\(locale): empty copy")
       checked += 1
     }
   }
   // ja/en それぞれ 30 + Task 5 の 42 + Task 6 の 5 + Task 8 の 4 + Task 9 の 21 + diffLabels 6
-  // + 引数を取る 8 + Task 5 の引数つき 16 + Task 6 の引数つき 8 + Task 7 の引数つき 2
-  // + Task 8 の引数つき 1 + Task 9 の引数つき 12(日数の 3 つは 1 と複数の両方を見る)
-  #expect(checked == 310)
+  // + Task 10 の 21 + 引数を取る 8 + Task 5 の引数つき 16 + Task 6 の引数つき 8
+  // + Task 7 の引数つき 2 + Task 8 の引数つき 1 + Task 9 の引数つき 12
+  // + Task 10 の引数つき 4(件数の 2 つは 1 と複数の両方を見る)
+  #expect(checked == 360)
 }
 
 /// 英語の日数は 1 日だけ単数。旅の長さを名乗る 2 文にも同じ規則が要る("1 days" を出さない)。
@@ -70,6 +79,28 @@ import TripCheckKit
   #expect(!AppCopy.en.shortenTripQuestion(days: 1).contains("1 days"))
   #expect(AppCopy.en.extendTripQuestion(days: 6).contains("6 days"))
   #expect(!AppCopy.en.extendTripQuestion(days: 1).contains("1 days"))
+}
+
+/// 件数を名乗る英語の見出しも 1 件だけ単数。「1 things to check」は、数えた側が数えて
+/// いないことを白状する文になる。
+@Test func englishCountHeadingsAreSingularForOne() {
+  #expect(AppCopy.en.issuesHeading(count: 1).contains("1 thing to check"))
+  #expect(AppCopy.en.issuesHeading(count: 3).contains("3 things to check"))
+  #expect(AppCopy.en.assumptionsHeading(count: 1).contains("1 assumption behind"))
+  #expect(AppCopy.en.assumptionsHeading(count: 4).contains("4 assumptions behind"))
+  #expect(AppCopy.ja.issuesHeading(count: 2).contains("2"))
+  #expect(AppCopy.ja.assumptionsHeading(count: 2).contains("2件"))
+}
+
+/// 差分表の 2 列と、比較の 3 枚の題は、**どれも別の言葉**でなければならない —— 同じ語が
+/// 2 か所に立つ表は、どちらの列を読んでいるのか分からなくなる。
+@Test func theComparisonLabelsAreAllDistinct() {
+  for locale in [PlannerLocale.ja, .en] {
+    let c = AppCopy.for(locale)
+    #expect(c.diffBefore != c.diffAfter, "\(locale)")
+    #expect(Set([c.comparisonOriginal, c.comparisonMinimalRepair, c.comparisonMinimalImprovement, c.comparisonShortest]).count == 4, "\(locale)")
+    #expect(Set(c.diffLabels).count == 6, "\(locale)")
+  }
 }
 
 /// 編集の確認と取り消しは**別の言葉**でなければならない。同じ語が 2 つ並ぶダイアログは、
