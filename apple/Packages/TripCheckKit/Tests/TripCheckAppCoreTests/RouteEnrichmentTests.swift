@@ -177,6 +177,19 @@ private func walkRequest(_ key: String) -> RouteRequest {
   #expect(failedLeg != nil && failedLeg?.comparison.options.allSatisfy { $0.source != .live } == true)
 }
 
+/// 走っている取得を畳んだ後に取りに行くものが無かったら、数え終わっていない進捗は消える
+/// —— 残すと二度と進まない行が画面に居座る。
+@Test @MainActor func anAbandonedFetchLeavesNoProgressRowBehind() async {
+  let store = PlannerStore(resolvers: [CatalogResolver()], store: nil, routeProvider: FakeRouteProvider(delay: .seconds(30)))
+  store.loadSample(.switzerland)
+  await store.build()
+  #expect(store.routeProgress?.isComplete == false)
+  // 2 度目は取りに行くものが無い(1 度目で全部 `attemptedRoutes` に入った)。走っている
+  // 取得はここで畳まれるので、その進捗はもう誰も数えない。
+  store.startRouteEnrichment()
+  #expect(store.routeProgress == nil && store.routeTask == nil)
+}
+
 /// 連鎖は 2 世代まで。3 世代目は取りに行かない。
 @Test @MainActor func theChainStopsAtTheSecondGeneration() async {
   let provider = FakeRouteProvider()

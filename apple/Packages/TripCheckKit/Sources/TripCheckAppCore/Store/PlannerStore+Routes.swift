@@ -49,6 +49,11 @@ extension PlannerStore {
     liveRoutes = liveRoutes.filter { current.contains($0.key) }
     let pending = requests.filter { liveRoutes[$0] == nil && !attemptedRoutes.contains($0) }
     guard !pending.isEmpty else {
+      // 数え終わる前に畳んだ取得の進捗は消す。**残すと二度と進まない行が居座る** ——
+      // 守られた編集を採用すると走っている取得を畳むが(上の `cancel()`)、新しい旅程の要求が
+      // 全部 `attemptedRoutes` に入っていれば取りに行くものが無く、`settled < requested` の
+      // まま誰も数えなくなる。数え終わった行(「N 区間は推定のまま」)は次のビルドまで残す。
+      if routeProgress?.isComplete == false { routeProgress = nil }
       // 取りに行くものは無い。旅程がキャッシュを既に消費していれば仕事そのものが無い ——
       // 世代はもう進めてあるので、外側の task の末尾は触らない。ここで自分で畳む。
       if liveRoutesAreAdopted { routeTask = nil } else { scheduleRouteReplacement(chainDepth: chainDepth) }
