@@ -3,7 +3,7 @@ import Testing
 @testable import TripCheckAppCore
 import TripCheckKit
 
-@MainActor private func builtSwitzerland(hotel: Bool = false, airports: Bool = false, startDate: CalendarDate? = nil) async -> (BuiltTripPlan, PlannerContext) {
+@MainActor private func builtSwitzerland(hotel: Bool = false, airports: Bool = false, arrivalTime: String = "14:20", startDate: CalendarDate? = nil) async -> (BuiltTripPlan, PlannerContext) {
   let store = PlannerStore(resolvers: [CatalogResolver()], store: nil)
   store.loadSample(.switzerland)
   if hotel {
@@ -12,7 +12,7 @@ import TripCheckKit
   }
   if airports {
     store.request.arrivalAirport = "ZRH"
-    store.request.arrivalTime = "14:20"
+    store.request.arrivalTime = arrivalTime
     store.request.departureAirport = "ZRH"
     store.request.departureTime = "18:00"
   }
@@ -150,7 +150,9 @@ private func stop(_ id: String, _ lat: Double, _ lon: Double) -> RouteStop {
   // 街にいられる時刻から測り直すと、入国と移送をもう一度数えることになる。
   #expect(ClockTime(arrival.cityTime)!.minutes > ClockTime(arrival.flightTime)!.minutes)
   #expect(leg.clock != ClockTime(minutes: ClockTime(arrival.cityTime)!.minutes + arrival.airportMinutes).description)
-  #expect(leg.date == CalendarDate(plan.days.first!.date!)!.adding(days: minutes / 1440))
+  // 14:20 + 90 分は日を跨がないので、レグの日付は便の日 = tripStartDate そのもの。
+  #expect(arrival.cityTimeDayOffset == 0 && plan.days.first!.date == context.tripStartDate)
+  #expect(leg.date == CalendarDate(context.tripStartDate!)!)
 
   let requests = RouteRequests.requests(plan: plan, context: context, overrides: [:], selectedDay: 0, now: Date())
   let expected = RouteRequests.bucket(Destinations.localDateTimeWithOffset(date: leg.date!.description, time: leg.clock, timeZone: zone)!)
@@ -168,4 +170,19 @@ private func stop(_ id: String, _ lat: Double, _ lon: Double) -> RouteStop {
     .filter { $0.legKey == inbound || $0.legKey == outbound }
   #expect(undatedRequests.contains { $0.mode == .taxi })
   #expect(undatedRequests.allSatisfy { $0.mode != .transit && $0.departure == nil })
+}
+
+/// 深夜着: 便は tripStartDate に着き、活動 1 日目は翌日になる(`Builder/TripBuilder.swift:268-271`)。
+/// 空港を出るのは 01:00 —— 便の日の翌日であって、活動 1 日目の翌日ではない。
+@Test @MainActor func aRedEyeArrivalLeavesTheAirportOnTheFlightsOwnDayPlusMidnight() async {
+  let zone = Destinations.byId(.switzerland).timeZone
+  let start = Destinations.localDateIn(timeZone: zone).adding(days: 20)
+  let (plan, _) = await builtSwitzerland(hotel: true, airports: true, arrivalTime: "23:30", startDate: start)
+  let arrival = plan.airportConstraints.first { $0.direction == .arrival }!
+  #expect(arrival.cityTimeDayOffset == 1)                              // 街に入るのは日付が変わってから
+  #expect(CalendarDate(plan.days.first!.date!) == start.adding(days: 1))   // だから活動 1 日目も翌日
+  let leg = RouteRequests.legs(plan: plan, overrides: [:]).first { $0.legKey == routeLegKey("airport-zrh", plan.selectedBase!.id) }!
+  #expect(leg.clock == "01:00")                                        // 23:30 + 90 分
+  // 便の日(start)+ 日跨ぎ 1 日。活動 1 日目(start+1)から数えると 1 日行き過ぎる。
+  #expect(leg.date == start.adding(days: 1))
 }

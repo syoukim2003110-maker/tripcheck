@@ -46,10 +46,15 @@ public enum RouteRequests {
         if constraint.direction == .arrival {
           // 到着便の出発時刻 = 便時刻 + 空港所要分(spec §4.2)。`cityTime` は入国も移送も済んだ
           // 「街にいられる時刻」(`Builder/AirportComparison.swift:104-106`)なので、そこから空港を出る
-          // 道のりを測ると入国と移送を二重に数える。日跨ぎも同じで、深夜着の 1 日ずれは
-          // `plan.days` の日付が既に含んでいる(`Builder/TripBuilder.swift:268-270`)。
+          // 道のりを測ると入国と移送を二重に数える。
+          //
+          // 日付は便の暦日に戻してから数える: `plan.days[0].date` は
+          // `tripStartDate + max(0, cityTimeDayOffset)`(`Builder/TripBuilder.swift:268-271`)なので、
+          // 深夜着はそこから offset を引くと便の日に戻る。空港を出るのが翌日になるぶんは
+          // `minutes / 1440` が改めて足す。
+          let flightDate = firstDate?.adding(days: -max(0, constraint.cityTimeDayOffset))
           let minutes = (ClockTime(constraint.flightTime)?.minutes ?? 0) + constraint.airportMinutes
-          add(airportStop, base, dayIndex: nil, date: firstDate?.adding(days: minutes / 1440), clock: ClockTime(minutes: minutes).description, fallback: mode)
+          add(airportStop, base, dayIndex: nil, date: flightDate?.adding(days: minutes / 1440), clock: ClockTime(minutes: minutes).description, fallback: mode)
         } else if let last = plan.days.last {
           // 出発便のレグは最終日の終了時刻から(spec は定義していないので、ここで決める)。
           add(base, airportStop, dayIndex: nil, date: last.date.flatMap({ CalendarDate($0) }), clock: last.finishTime, fallback: mode)
