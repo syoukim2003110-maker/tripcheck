@@ -95,6 +95,9 @@ extension PlannerStore {
     let kind = Self.pinKind(for: built, number: number)
     return MapPin(
       id: stop.id,
+      // 停留所の点はほぼ全部開ける。**種別で閉ざさない** —— 注意のピンも手動の点も、
+      // 旅行者が頼んだ本物の停留所で、直しに行く先はその詳細シートである。
+      stopId: Self.opensStop(kind) ? stop.id : nil,
       coordinate: GeoPoint(latitude: stop.latitude, longitude: stop.longitude),
       kind: kind,
       dayIndex: dayIndex,
@@ -108,6 +111,8 @@ extension PlannerStore {
   private func basePin(_ base: TripBase, dayIndex: Int, colorHex: String) -> MapPin {
     MapPin(
       id: base.id,
+      // 拠点は停留所ではない。押しても開く詳細が無いので、鍵を持たせない。
+      stopId: nil,
       coordinate: GeoPoint(latitude: base.latitude, longitude: base.longitude),
       kind: .hotel,
       dayIndex: dayIndex,
@@ -135,11 +140,26 @@ extension PlannerStore {
     return .anchor(number: number)
   }
 
-  /// 丸の中に番号を出す種別。絵(`fork` / `bed` / `spark` / `plus`)で名乗るものは出さない。
+  /// 丸の中に番号を出す種別。絵(`fork` / `bed` / `spark`)だけで名乗るものは出さない。
+  ///
+  /// **手動の点も番号を出す。** 「1・2・+・4」と並ぶ日は訪問の順が 1 か所だけ読めなくなる
+  /// (v1.1 §7.1 / §5.6「日の識別は常に番号と併用」)。`+` は番号を追い出さず、
+  /// `!` と同じように丸の隅に付く小さな印になる(`PinView.badge`)。
   private nonisolated static func showsNumber(_ kind: MapPin.Kind) -> Bool {
     switch kind {
-    case .anchor, .warning: true
-    case .filler, .meal, .hotel, .manual: false
+    case .anchor, .warning, .manual: true
+    case .filler, .meal, .hotel: false
+    }
+  }
+
+  /// 押すと詳細シートが開く種別。停留所そのものを指している点だけが開く。
+  ///
+  /// `.hotel` は拠点で、`.meal` は場所を持たない食事の枠 —— どちらも `Inspector.stop(id)` が
+  /// 引ける相手ではない。残りは全部開く。
+  private nonisolated static func opensStop(_ kind: MapPin.Kind) -> Bool {
+    switch kind {
+    case .anchor, .warning, .manual, .filler: true
+    case .meal, .hotel: false
     }
   }
 

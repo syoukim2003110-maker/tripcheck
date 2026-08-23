@@ -40,6 +40,9 @@ import TripCheckKit
   let day = store.mapModel(scope: .day)
   #expect(!day.pins.isEmpty)
   #expect(day.pins.allSatisfy { $0.dayIndex == 2 })
+  // 空の列は `allSatisfy` を素通りする。線が 1 本も無い日で「その日の線だけ」が
+  // 通ってしまわないよう、まず線があることを言う。
+  #expect(!day.routes.isEmpty)
   #expect(day.routes.allSatisfy { $0.dayIndex == 2 && $0.selected })
   #expect(day.pins.count < store.mapModel(scope: .all).pins.count)
   // 凡例の日ボタンは、地図に出ている日と同じ列でなければ押しても何も指さない。
@@ -73,4 +76,68 @@ import TripCheckKit
     checked += 1
   }
   #expect(checked == 8)
+}
+
+/// 日付変更線をまたぐ 2 点は、地球をほぼ一周した絵にならない。+179 と −179 は 2 度離れて
+/// いるだけで、358 度離れてはいない —— 経度は輪であって数直線ではない。
+@Test func pointsAcrossTheAntimeridianStayNextToEachOther() {
+  let m = MapModel.region(for: [GeoPoint(latitude: -16.5, longitude: 179.0), GeoPoint(latitude: -16.5, longitude: -179.0)])
+  #expect(m.longitudeDelta < 10)                      // 2 度 × 余白。358 度ではない
+  #expect(m.longitudeDelta <= 360)
+  #expect(abs(abs(m.center.longitude) - 180) < 0.000001)   // 中心は日付変更線そのもの
+  #expect(m.center.longitude >= -180 && m.center.longitude <= 180)
+}
+
+/// 半周を超えない旅は今までどおり。日付変更線の手当てが、普通の広い旅程まで反対側へ
+/// ひっくり返してしまわないこと。
+@Test func aWideTripThatDoesNotCrossTheLineKeepsItsOwnCentre() {
+  let m = MapModel.region(for: [GeoPoint(latitude: 35.0, longitude: -10.0), GeoPoint(latitude: 55.0, longitude: 30.0)])
+  #expect(abs(m.center.longitude - 10) < 0.000001)
+  #expect(m.longitudeDelta > 40 && m.longitudeDelta <= 360)
+}
+
+/// 注意のピンも、自分で置いた点も、押せば詳細が開く。**とりわけ注意のピン** —— 詳細シートは
+/// そこを直しに行く先で、開かない地図は「直すところがある」とだけ言って直し方を渡さない。
+/// 拠点(ホテル)だけが鍵を持たない。
+@Test @MainActor func warningAndManualPinsCarryTheStopTheyOpen() async {
+  let store = PlannerStore(resolvers: [FakeResolver(unresolved: ["Nowhere"])], store: nil)
+  await store.addEntry(text: "Bern", suggestion: nil)
+  await store.addEntry(text: "Nowhere", suggestion: nil)
+  store.request.tripDays = 1
+  // 朝 6 時に予約した場所は、朝から始まる日程でも必ず遅れる(`reservationLateMinutes > 0`)。
+  store.updateEntry(id: store.request.entries[0].id, fixedTime: .some("06:00"), isReservation: true)
+  await store.requestBuildFromStart()
+  store.setManualPin(entryId: store.request.entries[1].id, name: "Nowhere", address: "", latitude: 46.95, longitude: 7.45)
+  await store.build()
+
+  let pins = store.mapModel(scope: .all).pins
+  guard let manual = pins.first(where: { $0.kind == .manual }) else { Issue.record("手動の点が地図に無い"); return }
+  #expect(manual.stopId == manual.id)
+  #expect(!manual.label.isEmpty)          // 手動の点も番号を保つ(v1.1 §5.6)
+
+  guard let warning = pins.first(where: { $0.kind == .warning }) else { Issue.record("注意の点が地図に無い"); return }
+  #expect(warning.stopId == warning.id)
+  #expect(!warning.label.isEmpty)
+
+  // 拠点は停留所ではない。開く中身が無いので鍵も持たない。
+  #expect(pins.filter { $0.kind == .hotel }.allSatisfy { $0.stopId == nil })
+
+  // 色が言う日と、押したときに選ばれる日は同じ。違うと、緑のピンを押して 1日目が開く。
+  store.focusStop(id: manual.id)
+  #expect(store.view.selectedDay == manual.dayIndex)
+}
+
+/// 強調は両側へ流れる(spec §5.4)。タイムラインの行から開いた詳細も、地図の同じ場所を指す
+/// —— 指さないと、帯で地図へ切り替えた旅行者が自分の読んでいた場所を目で探し直す。
+@Test @MainActor func openingAStopFromTheTimelineAlsoFocusesItsPin() async {
+  let store = PlannerStore(resolvers: [CatalogResolver()], store: nil); store.loadSample(.switzerland); await store.build()
+  guard let bundle = store.bundle, let stopId = bundle.plan.days.first?.stops.first?.stop.id else {
+    Issue.record("sample has no stops"); return
+  }
+  #expect(store.view.mapFocusedStopId == nil)
+  store.openInspector(.stop(stopId))
+  #expect(store.view.mapFocusedStopId == stopId)
+  // 日の設定は場所を指していない。地図の強調を書き換えない。
+  store.openInspector(.daySettings(0))
+  #expect(store.view.mapFocusedStopId == stopId)
 }

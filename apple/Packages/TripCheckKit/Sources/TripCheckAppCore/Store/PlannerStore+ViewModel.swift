@@ -192,6 +192,11 @@ extension PlannerStore {
   public func openInspector(_ target: Inspector) {
     view.inspector = target
     view.sheetDetent = .peek
+    // 強調は**両側へ流れる**(spec §5.4)。地図のピンから来た手は `focusStop` が既に書いて
+    // いるが、タイムラインの行や警告の一手から来た手はここでしか書かれない —— 書かないと、
+    // 行を押して詳細を読み、帯で地図へ切り替えた旅行者が、8 個の同じピンの中から自分が
+    // さっき読んでいた場所を目で探し直すことになる。
+    if case .stop(let stopId) = target { view.mapFocusedStopId = stopId }
   }
 
   public func closeInspector() {

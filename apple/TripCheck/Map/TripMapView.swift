@@ -50,8 +50,10 @@ struct TripMapView: View {
             PinView(pin: pin, highlighted: store.view.mapFocusedStopId == pin.id)
               .onTapGesture {
                 store.focusStop(id: pin.id)
-                // 詳細を開くのは予定地点だけ。ホテルにも食事枠にも、まだ開く中身が無い。
-                if case .anchor = pin.kind { store.openInspector(.stop(pin.id)) }
+                // 開く先は**種別ではなく `stopId` が決める**(`MapPin.stopId`)。注意のピンも
+                // 自分で置いた点も停留所なので開く —— とりわけ注意のピンは、詳細シートが
+                // まさに直しに行く先である。ホテルと食事の枠だけが鍵を持たない。
+                if let stopId = pin.stopId { store.openInspector(.stop(stopId)) }
               }
           }
           .annotationTitles(.hidden)

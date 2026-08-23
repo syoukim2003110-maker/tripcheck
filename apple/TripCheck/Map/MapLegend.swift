@@ -32,7 +32,9 @@ struct MapLegend: View {
           IconView(.arrow, size: 12, color: Tokens.Color.muted)
             .rotationEffect(.degrees(isOpen ? -90 : 90))
         }
-        .frame(minHeight: Tokens.Hit.secondary)
+        // 地図の上のボタンは 44pt を割ってはいけない —— 外した指はそのまま地図を掴んで
+        // 動かすので、押し損ないが「畳めなかった」ではなく「見ていた場所を見失った」になる。
+        .frame(minHeight: Tokens.Hit.primary)
         .contentShape(Rectangle())
       }
       .buttonStyle(.plain)
@@ -75,7 +77,8 @@ struct MapLegend: View {
             .frame(width: 24, height: 24)
             .background(Circle().fill(isSelected ? color : Tokens.Color.panel))
             .overlay(Circle().stroke(color, lineWidth: 1.5))
-            .frame(width: Tokens.Hit.primary, height: Tokens.Hit.secondary)
+            // 同じ理由で日ボタンも 44pt 角。見た目の丸は 24pt のまま(札が旅程を隠さない)。
+            .frame(minWidth: Tokens.Hit.primary, minHeight: Tokens.Hit.primary)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
