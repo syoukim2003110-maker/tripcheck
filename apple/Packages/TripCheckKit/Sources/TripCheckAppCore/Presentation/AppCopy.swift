@@ -237,6 +237,18 @@ public struct AppCopy: Sendable {
   /// 3 つ並ぶ錠剤には長すぎる —— 錠剤には短い名前を出し、**理由の 1 文は錠剤の下に**残す。
   public let passportUnsetShort: String
 
+  // MARK: - 保存・最近の旅程(Task 11)
+
+  /// 組んだ旅程が手元にあるときだけ出る、入力から戻る道。
+  public let backToPlan: String
+  /// 端末に残っている旅程の見出しと、その 1 件に対する 2 つの操作。
+  public let recentTripsTitle: String
+  public let openTripAction: String
+  public let deleteTripAction: String
+  /// 端末に残せないときの 1 行。**「保存に失敗しました」とは言わない** —— 旅行者に要るのは
+  /// 何が起きたかではなく、この先どうなるか(アプリを閉じると消える)である。
+  public let storageUnavailableNote: String
+
   private let pasteLimitToastText: @Sendable (Int) -> String
   private let daysValueText: @Sendable (Int) -> String
   private let priorityLabelText: @Sendable (String) -> String
@@ -273,6 +285,7 @@ public struct AppCopy: Sendable {
   private let changeBaseQuestionText: @Sendable (String) -> String
   private let issuesHeadingText: @Sendable (Int) -> String
   private let assumptionsHeadingText: @Sendable (Int) -> String
+  private let deleteTripQuestionText: @Sendable (String) -> String
 
   init(
     startTitle: String,
@@ -399,6 +412,11 @@ public struct AppCopy: Sendable {
     assumptionsNone: String,
     attentionsHeading: String,
     passportUnsetShort: String,
+    backToPlan: String,
+    recentTripsTitle: String,
+    openTripAction: String,
+    deleteTripAction: String,
+    storageUnavailableNote: String,
     pasteLimitToast: @escaping @Sendable (Int) -> String,
     daysValue: @escaping @Sendable (Int) -> String,
     priorityLabel: @escaping @Sendable (String) -> String,
@@ -434,7 +452,8 @@ public struct AppCopy: Sendable {
     extendTripQuestion: @escaping @Sendable (Int) -> String,
     changeBaseQuestion: @escaping @Sendable (String) -> String,
     issuesHeading: @escaping @Sendable (Int) -> String,
-    assumptionsHeading: @escaping @Sendable (Int) -> String
+    assumptionsHeading: @escaping @Sendable (Int) -> String,
+    deleteTripQuestion: @escaping @Sendable (String) -> String
   ) {
     self.startTitle = startTitle
     self.startHelpShort = startHelpShort
@@ -560,6 +579,11 @@ public struct AppCopy: Sendable {
     self.assumptionsNone = assumptionsNone
     self.attentionsHeading = attentionsHeading
     self.passportUnsetShort = passportUnsetShort
+    self.backToPlan = backToPlan
+    self.recentTripsTitle = recentTripsTitle
+    self.openTripAction = openTripAction
+    self.deleteTripAction = deleteTripAction
+    self.storageUnavailableNote = storageUnavailableNote
     self.pasteLimitToastText = pasteLimitToast
     self.daysValueText = daysValue
     self.priorityLabelText = priorityLabel
@@ -596,6 +620,7 @@ public struct AppCopy: Sendable {
     self.changeBaseQuestionText = changeBaseQuestion
     self.issuesHeadingText = issuesHeading
     self.assumptionsHeadingText = assumptionsHeading
+    self.deleteTripQuestionText = deleteTripQuestion
   }
 
   /// 貼り付けが上限に当たったときのトースト。**件数を名指しする** —— 12 までですとだけ
@@ -724,6 +749,10 @@ public struct AppCopy: Sendable {
 
   /// 前提の折り畳みの見出し。件数を出すのは、開く前に「何件あるか」が読めるようにするため。
   public func assumptionsHeading(count: Int) -> String { assumptionsHeadingText(count) }
+
+  /// 端末から 1 件消してよいかの問いかけ。**題を名指しする** —— 一覧の並びは更新のたびに
+  /// 変わるので、「この旅程を削除しますか？」では、どれを消すのかが読めない。
+  public func deleteTripQuestion(title: String) -> String { deleteTripQuestionText(title) }
 
   public static func `for`(_ locale: PlannerLocale) -> AppCopy {
     locale == .ja ? ja : en
@@ -861,6 +890,11 @@ public struct AppCopy: Sendable {
     assumptionsNone: "重要な前提はすべて確認済みです。",
     attentionsHeading: "その他の注意",
     passportUnsetShort: "未選択",
+    backToPlan: "組んだ旅程にもどる",
+    recentTripsTitle: "最近の旅程",
+    openTripAction: "開く",
+    deleteTripAction: "削除",
+    storageUnavailableNote: "旅程をこの端末に保存できません。アプリを閉じると、組んだ旅程は消えます。",
     pasteLimitToast: { "\($0)件あります。1回に確認できるのは12か所までです。残りは別の旅として分けてください。" },
     daysValue: { "\($0)日" },
     priorityLabel: { "\($0)の優先度" },
@@ -915,7 +949,8 @@ public struct AppCopy: Sendable {
     extendTripQuestion: { "\($0)日に延ばしますか？" },
     changeBaseQuestion: { "拠点を「\($0)」に変更しますか？" },
     issuesHeading: { "確認したいこと \($0)" },
-    assumptionsHeading: { "この結論の前提 \($0)件" }
+    assumptionsHeading: { "この結論の前提 \($0)件" },
+    deleteTripQuestion: { "「\($0)」を端末から削除しますか？" }
   )
 
   static let en = AppCopy(
@@ -1043,6 +1078,11 @@ public struct AppCopy: Sendable {
     assumptionsNone: "All critical assumptions are confirmed.",
     attentionsHeading: "Other notices",
     passportUnsetShort: "Not set",
+    backToPlan: "Back to your plan",
+    recentTripsTitle: "Recent trips",
+    openTripAction: "Open",
+    deleteTripAction: "Delete",
+    storageUnavailableNote: "Trips cannot be saved on this device. What you build disappears when the app closes.",
     pasteLimitToast: { "\($0) places found. Up to 12 places at a time. Keep the rest for a second trip." },
     daysValue: { "\($0) day\($0 == 1 ? "" : "s")" },
     priorityLabel: { "\($0) priority" },
@@ -1097,12 +1137,20 @@ public struct AppCopy: Sendable {
     extendTripQuestion: { "Extend the trip to \($0) \($0 == 1 ? "day" : "days")?" },
     changeBaseQuestion: { "Change the base to “\($0)”?" },
     issuesHeading: { "\($0) thing\($0 == 1 ? "" : "s") to check" },
-    assumptionsHeading: { "\($0) assumption\($0 == 1 ? "" : "s") behind this result" }
+    assumptionsHeading: { "\($0) assumption\($0 == 1 ? "" : "s") behind this result" },
+    deleteTripQuestion: { "Delete “\($0)” from this device?" }
   )
 
   /// 名前を並べるときの共通の切り詰め —— 先頭 2 件だけを出し、残りは件数で言う。Kit の
   /// `minimumDaysCopy`(`Presentation/Copy.swift`)が未確定の場所を並べるのと同じ形で、
   /// 3 つ以上を読み上げても旅行者はどれから直すか決められない。
+  /// 保存した旅程の題 —— **先頭 3 か所の名前**。一覧はこれで旅を見分けるので、名前を
+  /// 削るより並べる:「4日間の旅」では、どれが自分のスイスかは分からない。長さは
+  /// `StoredTripRecord.validTitle` の上限(UTF-16 で 160)に畳む。
+  static func tripTitle(_ names: [String], locale: PlannerLocale) -> String {
+    JSText.slice(names.prefix(3).joined(separator: locale == .ja ? "・" : ", "), 160)
+  }
+
   static func nameList(_ names: [String], locale: PlannerLocale) -> String {
     let head = names.prefix(2).joined(separator: locale == .ja ? "・" : ", ")
     let extra = names.count - 2

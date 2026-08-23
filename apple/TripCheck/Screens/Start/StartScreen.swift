@@ -20,6 +20,10 @@ struct StartScreen: View {
       VStack(alignment: .leading, spacing: 20) {
         BrandHeader(locale: store.request.locale, destination: store.request.destination)
 
+        // 続きから始める道(組みかけの旅程・端末に残っている旅程)。何も無ければ 1 行も
+        // 出ないので、初めての旅行者の画面は入力欄から始まる。
+        RecentTripsSection()
+
         Text(app.startTitle)
           .tcFont(.screenTitle)
           .foregroundStyle(Tokens.Color.ink)
@@ -92,6 +96,10 @@ struct StartScreen: View {
     // なる —— 国が既に決まっている旅で戻ってきたときに世界中を探し直さないよう、
     // 出てきた時点でも箱を渡す。国を選んだ瞬間に渡すのは `DestinationPicker` の側。
     .task { suggestions.setRegion(store.destinationBounds) }
+    // 端末に残っている旅程は**画面が出るたびに**読み直す。読むのがこの画面の仕事なのは、
+    // 一覧を出す節(`RecentTripsSection`)が空のときに view を 1 つも作らないから ——
+    // 作られない view に付けた `.task` は走らず、一覧は永久に空のままになる。
+    .task { await store.loadRecent() }
     .sheet(isPresented: $store.view.pasteOpen) { PasteImportSheet() }
     // 開いている行は id で覚える。行そのものを覚えると、シートの中で条件を変えた瞬間に
     // 「持っている行」と「リストの行」がずれる —— シートは id から毎回引き直す。外された

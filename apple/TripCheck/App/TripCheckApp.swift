@@ -20,9 +20,13 @@ struct TripCheckApp: App {
     // 解決器は順に呼ばれ、**先に `confirmed` を返したところで止まる**。端末の地図が先頭に
     // 立つのは、鍵ゼロで世界中の場所を知っているから —— カタログは東京 18 + スイス 8 地点
     // しか持たず、地図が答えられなかったぶんを受け止める控えになる。
+    // 保存先を 2 度渡すのは、`TripStore` が自分のディレクトリを外へ見せないから ——
+    // 起動した瞬間に「この端末に残せるか」を確かめる(`storageUnavailable`)には、
+    // `PlannerStore` の側も同じ場所を知っている必要がある。
     _store = State(initialValue: PlannerStore(
       resolvers: [ApplePlaceResolver(), CatalogResolver()],
-      store: TripStore(directory: directory)
+      store: TripStore(directory: directory),
+      storageDirectory: directory
     ))
   }
 

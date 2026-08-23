@@ -46,16 +46,36 @@ public final class PlannerStore {
   /// 日付を選んでも残存期間の判定が更新されない。書くのは `setPassportExpiry(_:)`。
   public internal(set) var passportExpiry: String?
 
+  /// 端末に残っている旅程(新しい順、最大 10 件)。`loadRecent()` が入れ替える。
+  public internal(set) var recentTrips: [StoredTripRecord] = []
+
+  /// 端末に旅程を残せない。`init` の探り(`trips/` を作ってみる)で**起動時に**立ち、以後の
+  /// 保存が落ちても立つ —— 最初の保存まで黙っていると、旅行者は残っているつもりで
+  /// アプリを閉じる。書くのは `PlannerStore+Persistence.swift`。
+  public internal(set) var storageUnavailable = false
+
   // MARK: - 手持ちの道具(観測しない)
 
   @ObservationIgnored let resolvers: [any PlaceResolver]
   @ObservationIgnored let store: TripStore?
+  /// `store` が書く場所。**`TripStore` は自分のディレクトリを外へ見せない**(actor の中の
+  /// `private let`)ので、起動時に「書けるかどうか」を同期に確かめるにはここへ同じ URL を
+  /// 渡してもらうしかない。渡さなければ探りは走らず、`storageUnavailable` は最初の保存が
+  /// 落ちたときに立つ。
+  @ObservationIgnored let storageDirectory: URL?
   @ObservationIgnored let autosaveDebounce: Duration
   @ObservationIgnored let clock: any Clock<Duration>
   /// 旅券の有効期限だけを置く箱。テストは自分の suite を差す(既定の suite を共有すると、
   /// 並列で走る別のテストが置いた期限をこちらが読む)。
   @ObservationIgnored let defaults: UserDefaults
   @ObservationIgnored private var buildTask: Task<Void, Never>?
+
+  /// いま書き換え続けている記録の id。1 つの旅は 1 枚の記録で、編集のたびに増やさない
+  /// (10 件の枠が 1 回の旅で埋まる)。`reset()` で消える —— 次の旅は次の記録。
+  @ObservationIgnored var currentTripId: String?
+
+  /// 待たせてある自動保存。次の変更が来たら破って取り直す(`autosaveDebounce`)。
+  @ObservationIgnored var autosaveTask: Task<Void, Never>?
 
   /// 旅行者の返事を待っている編集の中身。**`view` には置かない** —— `PlannerViewState` は
   /// `Equatable` かつ `Sendable` で、組み上がった旅程(`BuiltPlanBundle`)はそのどちらでも
@@ -80,17 +100,23 @@ public final class PlannerStore {
   public init(
     resolvers: [any PlaceResolver],
     store: TripStore?,
+    storageDirectory: URL? = nil,
     autosaveDebounce: Duration = .milliseconds(550),
     clock: any Clock<Duration> = ContinuousClock(),
     defaults: UserDefaults = .standard
   ) {
     self.resolvers = resolvers
     self.store = store
+    self.storageDirectory = storageDirectory
     self.autosaveDebounce = autosaveDebounce
     self.clock = clock
     self.defaults = defaults
     self.request = TripRequestState.initial(locale: .ja)
     self.passportExpiry = defaults.string(forKey: PlannerStore.passportExpiryKey)
+    self.storageUnavailable = Self.storageIsUnavailable(at: storageDirectory)
+    // 入力と編集の変化を見張り始める。`view`(開閉・選択)は見張らない —— 旅程を眺めて
+    // いるだけで記録が書き換わってはいけない。
+    watchForAutosave()
   }
 
   // MARK: - エンジンへの引き渡し
@@ -206,6 +232,11 @@ public final class PlannerStore {
     pendingApply = nil
     toastDismissTask?.cancel()
     toastDismissTask = nil
+    // 次の旅は次の記録。待たせてある保存も破る —— さっきの旅の 1 手が、まっさらな入力を
+    // 上書きしに来ない(新しい入力は入った時点で自分の保存を取り直す)。
+    autosaveTask?.cancel()
+    autosaveTask = nil
+    currentTripId = nil
     request = TripRequestState.initial(locale: request.locale)
     edit = .empty
     view = PlannerViewState()

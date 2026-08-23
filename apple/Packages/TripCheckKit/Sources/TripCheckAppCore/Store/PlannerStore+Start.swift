@@ -140,7 +140,11 @@ extension PlannerStore {
   /// 日を `EngineConstants.tripDaysRange`(1〜14 日目)の両端に畳む。下だけを畳んで上を
   /// 開けたままにすると、貼り付けの「Day 99」がそのまま `fixedDay` へ載り、行編集シートの
   /// `Picker` に対応するタグの無い値になる。
-  private static func clampedFixedDay(_ day: Int) -> Int {
+  ///
+  /// 貼り付けと行編集シートのほかに、端末内保存から読み戻す道も同じ畳み方を通る
+  /// (`PersistedEntry.entry(index:)`)—— 保存ファイルは書き換えられうるので、入り口が
+  /// 1 つ増えるたびにここを通す。
+  nonisolated static func clampedFixedDay(_ day: Int) -> Int {
     min(EngineConstants.tripDaysRange.upperBound, max(EngineConstants.tripDaysRange.lowerBound, day))
   }
 

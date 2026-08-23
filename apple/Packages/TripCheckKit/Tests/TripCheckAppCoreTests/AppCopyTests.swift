@@ -35,7 +35,9 @@ import TripCheckKit
               c.comparisonMinimalImprovement, c.comparisonShortest, c.comparisonNoRepair,
               c.comparisonNoRepairNeeded, c.comparisonNoShortest, c.alternativesHeading,
               c.diffBefore, c.diffAfter, c.applyAlternative, c.assumptionsNone, c.attentionsHeading,
-              c.passportUnsetShort] + c.diffLabels
+              c.passportUnsetShort,
+              c.backToPlan, c.recentTripsTitle, c.openTripAction, c.deleteTripAction,
+              c.storageUnavailableNote] + c.diffLabels
               + [c.daysValue(1), c.daysValue(4), c.priorityLabel(name: "X"), c.removeStopQuestion(name: "X"), c.mustRemovalNote(name: "X"), c.reservationRemovalNote(name: "X"), c.removedStopToast(name: "X"), c.pasteLimitToast(count: 14)]
               + [c.resolveAllConfirmed(count: 1), c.resolveAllConfirmed(count: 4),
                  c.resolveCountryConflict(codes: ["CH", "JP"]), c.resolveCandidateQuestion(name: "X"),
@@ -58,7 +60,8 @@ import TripCheckKit
                  c.shortenTripQuestion(days: 3), c.extendTripQuestion(days: 1),
                  c.extendTripQuestion(days: 6), c.changeBaseQuestion(name: "X")]
               + [c.issuesHeading(count: 1), c.issuesHeading(count: 3),
-                 c.assumptionsHeading(count: 1), c.assumptionsHeading(count: 3)] {
+                 c.assumptionsHeading(count: 1), c.assumptionsHeading(count: 3)]
+              + [c.deleteTripQuestion(title: "X")] {
       #expect(BannedTerms.violations(in: s).isEmpty, "\(locale): \(s)")
       #expect(!s.isEmpty, "\(locale): empty copy")
       checked += 1
@@ -67,8 +70,8 @@ import TripCheckKit
   // ja/en それぞれ 30 + Task 5 の 42 + Task 6 の 5 + Task 8 の 4 + Task 9 の 21 + diffLabels 6
   // + Task 10 の 21 + 引数を取る 8 + Task 5 の引数つき 16 + Task 6 の引数つき 8
   // + Task 7 の引数つき 2 + Task 8 の引数つき 1 + Task 9 の引数つき 12
-  // + Task 10 の引数つき 4(件数の 2 つは 1 と複数の両方を見る)
-  #expect(checked == 360)
+  // + Task 10 の引数つき 4(件数の 2 つは 1 と複数の両方を見る)+ Task 11 の 5 と引数つき 1
+  #expect(checked == 372)
 }
 
 /// 英語の日数は 1 日だけ単数。旅の長さを名乗る 2 文にも同じ規則が要る("1 days" を出さない)。
