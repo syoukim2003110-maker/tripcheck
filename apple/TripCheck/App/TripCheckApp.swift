@@ -11,12 +11,35 @@ import TripCheckKit
 @main
 struct TripCheckApp: App {
   @State private var store: PlannerStore
+  /// UI テストで走っているか。アニメーションを切るのに `body` の側でも要る。
+  private let isUITesting: Bool
+
+  /// UI テストのときだけ使う `UserDefaults` の箱。旅程の保存先と違って**名前は固定**で、
+  /// 起動のたびに中身を捨てる。
+  private static let uiTestSuiteName = "com.muraoshoki.tripcheck.uitest"
 
   init() {
     let isUITesting = ProcessInfo.processInfo.arguments.contains("-uiTesting")
+    self.isUITesting = isUITesting
     let directory = isUITesting
       ? FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
       : URL.applicationSupportDirectory.appendingPathComponent("TripCheck")
+    // 旅程の保存先だけでなく**設定の置き場も**使い捨てにする。言語と旅券の有効期限は
+    // `UserDefaults` に残るので、既定の箱を使うと 1 本のテストが選んだ言語で次のテストの
+    // アプリが立ち上がる —— 名前は固定にして起動のたびに消す(毎回 UUID にすると、
+    // シミュレータに読まれない plist が溜まり続ける)。
+    let defaults: UserDefaults
+    if isUITesting {
+      UserDefaults.standard.removePersistentDomain(forName: Self.uiTestSuiteName)
+      defaults = UserDefaults(suiteName: Self.uiTestSuiteName) ?? .standard
+    } else {
+      defaults = .standard
+    }
+    // 動きを切る。押した先が動いている最中は `XCUIElement` の位置が定まらないので、
+    // テストは待つか、動いている札を掴んで落ちるかのどちらかになる。UIKit 側
+    // (シート・警告の出入り)は `setAnimationsEnabled`、SwiftUI 側は `body` の
+    // `.transaction` が受け持つ —— どちらか片方だけでは止まらない。
+    if isUITesting { UIView.setAnimationsEnabled(false) }
     // 解決器は順に呼ばれ、**先に `confirmed` を返したところで止まる**。端末の地図が先頭に
     // 立つのは、鍵ゼロで世界中の場所を知っているから —— カタログは東京 18 + スイス 8 地点
     // しか持たず、地図が答えられなかったぶんを受け止める控えになる。
@@ -26,7 +49,8 @@ struct TripCheckApp: App {
     _store = State(initialValue: PlannerStore(
       resolvers: [ApplePlaceResolver(), CatalogResolver()],
       store: TripStore(directory: directory),
-      storageDirectory: directory
+      storageDirectory: directory,
+      defaults: defaults
     ))
   }
 
@@ -35,6 +59,13 @@ struct TripCheckApp: App {
       RootView()
         .environment(store)
         .preferredColorScheme(.light)
+        // SwiftUI 側の動きを切る(UI テストのときだけ)。`withAnimation` も暗黙の
+        // `.animation` も、この 1 枚が transaction から動きを抜くので素通しになる。
+        .transaction { transaction in
+          guard isUITesting else { return }
+          transaction.animation = nil
+          transaction.disablesAnimations = true
+        }
         // 共有リンクで開かれたとき。Web の `https://…#t=<code>` も、アプリの
         // `tripcheck://t/<code>` も、同じ 1 本のコードを運んでくる —— 読めなければ
         // `importShare` が何も変えずにトーストで報せる(開いていた旅程を黙って捨てない)。

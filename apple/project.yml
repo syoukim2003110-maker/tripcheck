@@ -30,7 +30,7 @@ targets:
       - package: TripCheckKit
         product: TripCheckAppCore
     scheme:
-      testTargets: [TripCheckUITests]        # Task 14 で TripCheckTests を先頭に足す
+      testTargets: [TripCheckTests, TripCheckUITests]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.muraoshoki.tripcheck
@@ -53,6 +53,17 @@ targets:
         CFBundleURLTypes:
           - CFBundleURLName: com.muraoshoki.tripcheck
             CFBundleURLSchemes: [tripcheck]
+  # アプリ本体の単体テスト。`IconShape` / `SVGPath` は App ターゲットの型なので、AppCore の
+  # テストからは触れない —— 文言とアイコンの走査はここに置く。
+  TripCheckTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [TripCheckTests]
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: "YES"
+    dependencies:
+      - target: TripCheck
   TripCheckUITests:
     type: bundle.ui-testing
     platform: iOS

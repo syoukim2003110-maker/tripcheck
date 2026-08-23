@@ -66,7 +66,8 @@ struct PlanScreen: View {
           options: [(MobileView.timeline, app.timelineTab), (MobileView.map, app.mapTab)],
           selection: store.view.mobileView,
           groupLabel: app.viewSwitchLabel,
-          onSelect: { store.view.mobileView = $0 }
+          onSelect: { store.view.mobileView = $0 },
+          identifier: { $0 == .map ? "plan.view.map" : "plan.view.timeline" }
         )
         .padding(.horizontal, 16)
         .accessibilityIdentifier("plan.view")
@@ -108,6 +109,11 @@ struct PlanScreen: View {
     // 重い結果の出る編集は**先に訊く**(v1.1 TC-007)。題は Kit が決める —— 新しい損傷が
     // ちょうど 1 件の予約遅れなら「この変更で予約に N 分遅れます」、それ以外は編集ごとの
     // 問いかけがそのまま残る(`PlannerEdits.confirmTitle`)。
+    //
+    // ここに `AccessibilityNotification.Announcement` は**足さない**。警告は modal として
+    // 出るので、UIKit が提示の瞬間に screen-changed を投げ、VoiceOver は焦点を移して題と
+    // 本文を読む —— 自前の 1 文を重ねると、同じ題が 2 度鳴る。読み上げを自分で出すのは、
+    // 焦点の動かない変化(組み上がり・Undo・Redo・トースト)の側だけである。
     .alert(hardEditTitle, isPresented: hardEditPresented) {
       Button(app.hardEditCancel, role: .cancel) { store.cancelPendingEdit() }
       Button(app.hardEditConfirm, role: .destructive) { Task { await store.confirmPendingEdit() } }
