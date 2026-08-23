@@ -139,6 +139,12 @@ public struct AppCopy: Sendable {
   public let retryBuildAction: String
   /// 「旅程 | 地図」の切替そのものの読み上げ名(2 つの錠剤の親)。
   public let viewSwitchLabel: String
+  /// 「日本語 | EN」の切替そのものの読み上げ名(2 つの錠剤の親)。
+  public let languageSwitchLabel: String
+  /// 錠剤 2 つの札。**どちらの言語で見ていても同じ 2 語**を出す —— 英語で見ている旅行者が
+  /// 日本語に戻したいとき、探す語が「Japanese」に化けていると自分の言語を見つけられない。
+  public let languageJa: String
+  public let languageEn: String
   /// 組み上がった旅程が 1 日も持たなかったときの 1 文。`Screen.error` の機械語ではなく、
   /// 旅行者が読む側。
   public let planErrorMessage: String
@@ -436,6 +442,9 @@ public struct AppCopy: Sendable {
     chooseCandidateAction: String,
     retryBuildAction: String,
     viewSwitchLabel: String,
+    languageSwitchLabel: String,
+    languageJa: String,
+    languageEn: String,
     planErrorMessage: String,
     diffLabels: [String],
     editedToast: String,
@@ -635,6 +644,9 @@ public struct AppCopy: Sendable {
     self.chooseCandidateAction = chooseCandidateAction
     self.retryBuildAction = retryBuildAction
     self.viewSwitchLabel = viewSwitchLabel
+    self.languageSwitchLabel = languageSwitchLabel
+    self.languageJa = languageJa
+    self.languageEn = languageEn
     self.planErrorMessage = planErrorMessage
     self.diffLabels = diffLabels
     self.editedToast = editedToast
@@ -996,6 +1008,9 @@ public struct AppCopy: Sendable {
     chooseCandidateAction: "候補から選ぶ",
     retryBuildAction: "もう一度つくる",
     viewSwitchLabel: "表示を切り替える",
+    languageSwitchLabel: "言語を切り替える",
+    languageJa: "日本語",
+    languageEn: "EN",
     planErrorMessage: "この条件では1日も組めませんでした。場所か日数を見直してから、もう一度つくってください。",
     diffLabels: ["重大な衝突", "超過", "移動", "最小余白", "訪問数", "日数"],
     editedToast: "変更しました",
@@ -1226,6 +1241,9 @@ public struct AppCopy: Sendable {
     chooseCandidateAction: "Pick a match",
     retryBuildAction: "Build it again",
     viewSwitchLabel: "Switch view",
+    languageSwitchLabel: "Switch language",
+    languageJa: "日本語",
+    languageEn: "EN",
     planErrorMessage: "Nothing could be scheduled under these conditions. Revisit the places or the day count, then build again.",
     diffLabels: ["Hard conflicts", "Overrun", "Travel", "Minimum slack", "Visits", "Days"],
     editedToast: "Updated",

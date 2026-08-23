@@ -122,7 +122,8 @@ public final class PlannerStore {
     self.autosaveDebounce = autosaveDebounce
     self.clock = clock
     self.defaults = defaults
-    self.request = TripRequestState.initial(locale: .ja)
+    // 言語は前に選んだものが勝ち、選んだことが無ければ端末の設定(`PlannerStore+Locale.swift`)。
+    self.request = TripRequestState.initial(locale: Self.storedLocale(in: defaults) ?? Self.systemLocale)
     self.passportExpiry = defaults.string(forKey: PlannerStore.passportExpiryKey)
     self.storageUnavailable = Self.storageIsUnavailable(at: storageDirectory)
     // 入力と編集の変化を見張り始める。`view`(開閉・選択)は見張らない —— 旅程を眺めて

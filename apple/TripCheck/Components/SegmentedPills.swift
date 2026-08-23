@@ -15,6 +15,9 @@ struct SegmentedPills<Value: Hashable>: View {
   /// 並んではいるが選べない選択肢(90 分を超える徒歩、提供元が「その手段では行けない」と
   /// 答えた区間)。**消さずに残す** —— 何分かかるかは事実で、消すと「その道は無い」に読める。
   var disabled: Set<Value> = []
+  /// 錠剤 1 つずつの識別子。UI テストが「旅程」と「地図」を名指しで押すために要る ——
+  /// 札は言語で変わるので、文字では選べない。渡さなければ識別子は付かない(既定)。
+  var identifier: ((Value) -> String)? = nil
 
   var body: some View {
     HStack(spacing: 6) {
@@ -47,6 +50,7 @@ struct SegmentedPills<Value: Hashable>: View {
         .disabled(isDisabled)
         .accessibilityLabel(option.label)
         .accessibilityAddTraits(isOn ? [.isButton, .isSelected] : .isButton)
+        .accessibilityIdentifier(identifier?(option.value) ?? "")
       }
     }
     .accessibilityElement(children: .contain)

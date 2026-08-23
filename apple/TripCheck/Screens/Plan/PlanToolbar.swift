@@ -2,7 +2,8 @@ import SwiftUI
 import TripCheckAppCore
 import TripCheckKit
 
-/// 結果画面のツールバー ——「入力にもどる」と、`•••` の中の Undo / Redo / 共有 / 印刷。
+/// 結果画面のツールバー ——「入力にもどる」と、`日本語 | EN`、`•••` の中の Undo / Redo /
+/// 共有 / 印刷。
 ///
 /// 結論の詳細はここには来ない:旅程の下に畳んである折り畳みそのものが入口で、警告の一手
 /// (「代替案を見る」)がそれを開く —— メニューにもう 1 つ入口を作ると、開いた先が画面の
@@ -13,9 +14,41 @@ struct PlanToolbar: ToolbarContent {
     ToolbarItem(placement: .topBarLeading) {
       EditInputButton()
     }
+    ToolbarItem(placement: .principal) {
+      LanguagePills()
+    }
     ToolbarItem(placement: .topBarTrailing) {
       HistoryMenu()
     }
+  }
+}
+
+/// `日本語 | EN`。
+///
+/// **旅程の真上に居る**のは、切り替えて何が変わるのかがその場で見えるから —— 設定画面の
+/// 奥に置くと、旅行者は戻ってくるまで結果を確かめられない。押しても旅程は組み直さない:
+/// 座標も分も変わらず、言葉だけが言い直される(`PlannerStore.changeLocale`)。
+///
+/// 札は**どちらの言語で見ていても同じ 2 語**にしてある。英語で見ている旅行者が日本語へ
+/// 戻したいとき、探す語が「Japanese」に化けていると自分の言語を見つけられない。
+private struct LanguagePills: View {
+  @Environment(PlannerStore.self) private var store
+
+  var body: some View {
+    let app = AppCopy.for(store.request.locale)
+
+    SegmentedPills(
+      options: [(PlannerLocale.ja, app.languageJa), (PlannerLocale.en, app.languageEn)],
+      selection: store.request.locale,
+      groupLabel: app.languageSwitchLabel,
+      onSelect: { store.changeLocale($0) },
+      identifier: { "plan.language.\($0.rawValue)" }
+    )
+    // 錠剤は**中身の幅**で置く。`SegmentedPills` は既定で 1 枚ずつを端まで伸ばすので、
+    // ツールバーの真ん中に幅を決め打ちで嵌めると「日本語」が縦に 3 行へ折れ、名札の帯が
+    // 倍の高さになった(組んだ bundle で見た)。折らないと決めれば、詰まったときに縮むのは
+    // 隣の「入力にもどる」で、あちらは既に `lineLimit(1)` を持っている。
+    .fixedSize(horizontal: true, vertical: false)
   }
 }
 
