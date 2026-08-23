@@ -16,7 +16,7 @@ import TripCheckKit
 
 /// 代替案 1 件。**採るのも編集**なので、`apply` はそのまま `PlannerStore.applyAlternative`
 /// に渡す —— ビューが `TripCounterfactual` を組み立て直す口を持たない。
-public struct VerdictAlternativeModel: Identifiable, Sendable {
+public struct AlternativeModel: Identifiable, Sendable {
   public var id: String
   /// `VerdictCopy.alternativeCopy(_:locale:).title`。
   public var title: String
@@ -47,7 +47,7 @@ public struct VerdictDetailsModel: Sendable {
   /// 元の案・最小修正版・移動を減らす案。貼り付けた旅程のときだけ。
   public var comparison: (original: VerdictComparisonCard, minimalRepair: VerdictComparisonCard, shortest: VerdictComparisonCard)?
   /// 比較できる変更案。**3 件まで。**
-  public var alternatives: [VerdictAlternativeModel]
+  public var alternatives: [AlternativeModel]
   public var assumptions: [String]
   public var attentions: [String]
 }
@@ -90,7 +90,7 @@ extension PlannerStore {
       coverage: coverage,
       comparison: existingItineraryComparison(bundle, locale: locale),
       alternatives: bundle.result.alternatives.prefix(Self.alternativeLimit).map { alternative in
-        VerdictAlternativeModel(
+        AlternativeModel(
           id: alternative.id,
           title: VerdictCopy.alternativeCopy(alternative, locale: locale).title,
           diff: Self.diffRows(before: alternative.before, after: alternative.after, copy: app),

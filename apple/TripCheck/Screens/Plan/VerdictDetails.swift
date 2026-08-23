@@ -194,7 +194,7 @@ private struct ComparisonSection: View {
 /// 予約に遅れるなら先に訊かれる(`PlannerStore+Edits.swift` の関所)。
 private struct AlternativesSection: View {
   @Environment(PlannerStore.self) private var store
-  let alternatives: [VerdictAlternativeModel]
+  let alternatives: [AlternativeModel]
 
   var body: some View {
     let app = AppCopy.for(store.request.locale)
