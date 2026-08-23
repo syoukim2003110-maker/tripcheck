@@ -108,6 +108,32 @@ public final class PlannerStore {
   /// 取り消しの検査が落ちた。ここで待たせれば、遅れて届く答えを毎回きっかり作れる。
   var buildGate: (@Sendable () async -> Void)?
 
+  // MARK: - 実経路(観測しない。`routeProgress` だけが観測される)
+
+  /// 経路の提供元。`nil` = 今までの挙動(テストと旧来の呼び出しの既定)。
+  @ObservationIgnored let routeProvider: (any RouteProvider)?
+
+  /// 回答キャッシュ(ジオメトリも同じ値の中)。**永続化しない・共有しない・Undo に入れない・`view` に
+  /// 置かない。** `tripRequest(with:days:)` が `LiveRouteMerge.apply` で折り込む。
+  @ObservationIgnored var liveRoutes: [RouteRequest: RouteOutcome] = [:]
+
+  /// 1 ビルド内で再試行しないための印(`build()` / `reset()` / `cancelBuild()` で空になる)。
+  @ObservationIgnored var attemptedRoutes: Set<RouteRequest> = []
+
+  /// `resolveGeneration` と同じ流儀。進んだ後に返ってきた回答は捨てる(キャッシュにも入れない)。
+  @ObservationIgnored var routeGeneration = 0
+
+  @ObservationIgnored var routeTask: Task<Void, Never>?
+
+  /// 確認ダイアログが開いていて置換を保留した連鎖の深さ。閉じたときに再開する。
+  @ObservationIgnored var deferredRouteReplacement: Int?
+
+  /// 置換した回数(テストが「1 回だけ」を数えるため)。
+  @ObservationIgnored var routeReplacements = 0
+
+  /// 進捗の表示用値。`view` ではなく store 直下(spec §4.1)。
+  public internal(set) var routeProgress: RouteProgress?
+
   public init(
     resolvers: [any PlaceResolver],
     store: TripStore?,
@@ -115,10 +141,12 @@ public final class PlannerStore {
     autosaveDebounce: Duration = .milliseconds(550),
     clock: any Clock<Duration> = ContinuousClock(),
     defaults: UserDefaults = .standard,
-    initialLocale: PlannerLocale = .ja
+    initialLocale: PlannerLocale = .ja,
+    routeProvider: (any RouteProvider)? = nil
   ) {
     self.resolvers = resolvers
     self.store = store
+    self.routeProvider = routeProvider
     self.storageDirectory = storageDirectory
     self.autosaveDebounce = autosaveDebounce
     self.clock = clock
@@ -138,8 +166,9 @@ public final class PlannerStore {
 
   // MARK: - エンジンへの引き渡し
 
-  /// `request` と `edit` を 1 つの `TripRequest` に畳む。**`view` は読まない** —— 見ている日や
-  /// 開いているシートで旅程が変わってはいけないので、この関数が触れる欄をその 2 つに限る。
+  /// `request` と `edit` と `liveRoutes` を畳んで 1 つの `TripRequest` にする。**`view` は読まない**
+  /// —— 見ている日や開いているシートで旅程が変わってはいけないので、この関数が触れる欄を
+  /// その 3 つに限る(`liveRoutes` は測った経路そのもので、旅行者の入力でも編集でもない)。
   ///
   /// 日数は `request.tripDays ?? edit.tripDays`:旅行者が名乗った日数が常に勝ち、名乗って
   /// いなければ直近の組み立てが落ち着いた日数を使う。
@@ -202,6 +231,9 @@ public final class PlannerStore {
     ctx.departureTime = request.departureTime.isEmpty ? nil : request.departureTime
     ctx.flightKind = request.flightKind
     ctx.mealPlan = request.mealPlan
+    // 測れた経路を最後に折り込む。答えの無いレグは触られないので、提供元が居ない(あるいは
+    // 1 本も返らなかった)ときの旅程は今までと 1 分も変わらない。
+    LiveRouteMerge.apply(liveRoutes, to: &ctx)
     return TripRequest(
       raw: raw,
       days: days,
@@ -218,6 +250,9 @@ public final class PlannerStore {
   public func build() async {
     buildTask?.cancel()
     buildGeneration += 1
+    // 走っている取得は、これから組む旅程のものではない。キャッシュは残す —— 同じレグを
+    // 組み直すだけなら、測った分をもう一度尋ねる必要はない。
+    invalidateRoutes(keepCache: true)
     let generation = buildGeneration
     view.screen = .building
     let req = tripRequest()
@@ -254,6 +289,7 @@ public final class PlannerStore {
     buildTask?.cancel()
     buildTask = nil
     buildGeneration += 1
+    invalidateRoutes(keepCache: true)
     if view.screen == .building {
       view.screen = bundle == nil ? .start : .plan
     }
@@ -262,6 +298,8 @@ public final class PlannerStore {
   /// 最初から。ロケールだけは端末の設定なので引き継ぐ。
   public func reset() {
     cancelBuild()
+    // 測った経路も捨てる。次は別の旅で、鍵(座標)が同じでも同じレグとは限らない。
+    invalidateRoutes(keepCache: false)
     // 飛んでいる問い合わせも同じように捨てる。世代を進めておけば、遅れて届いた場所は
     // `requestBuildFromStart` などのガードで落ちる —— 落とさないと、さっきの旅の答えが
     // 新しい旅の行へ番号で貼り付く。旗を倒すのはここ:返事は捨てるので、倒す役は

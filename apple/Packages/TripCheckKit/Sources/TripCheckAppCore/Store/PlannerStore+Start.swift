@@ -236,6 +236,9 @@ extension PlannerStore {
   @discardableResult
   public func setDestination(_ choice: DestinationChoice) -> [StrayPin] {
     request.destination = choice
+    // 国が変われば旅も変わる。測った経路は前の国のもので、外れた固定(`unpinStrays`)の
+    // 座標を含んでいることさえある —— 残すと、隣の国の分数が新しい旅程に効く。
+    invalidateRoutes(keepCache: false)
     let stray = unpinStrays()
     guard choice == .auto else {
       request.mixedCountryCodes = []

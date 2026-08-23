@@ -6,6 +6,10 @@ import TripCheckKit
 /// これを `Task.detached` に投げられるのはそのため。
 public enum BuildRunner {
 
+  /// spec §3.3: このアプリの live 経路は Apple 由来。Kit の既定(`nil` = google)は Web と
+  /// フィクスチャのもので、こちらは端末の MapKit が測った分数に付く出典である。
+  public static let liveRouteSource: EvidenceSource = .apple
+
   /// Kit の検証済みパイプライン。**順序に意味がある**:
   ///
   /// 1. `TripBuilder.build` —— 旅程そのもの。
@@ -34,7 +38,8 @@ public enum BuildRunner {
       solverTimedOut: fit.solverTimedOut,
       transferBufferMinutes: ctx.transferBufferMinutes,
       dayStartTimes: ctx.dayStartTimes,
-      dayEndTimes: ctx.dayEndTimes
+      dayEndTimes: ctx.dayEndTimes,
+      liveRouteSource: liveRouteSource
     ))
     let counterfactuals = TripScenarios.counterfactuals(request, plan: plan, fit: fit, options: options)
     // `AlternativePlan` は `TripCounterfactual` の別名(Feasibility/FeasibilityTypes.swift:111)。
