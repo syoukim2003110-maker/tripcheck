@@ -141,7 +141,9 @@ public final class PlannerStore {
   /// 先に始まった旅行者の一手が勝ち、置換はその後ろに並ぶ(`deferredRouteReplacement`)。
   @ObservationIgnored var rebuildsInFlight = 0
 
-  /// 置換した回数(テストが「1 回だけ」を数えるため)。
+  /// 置換した回数(テストが「1 回だけ」を数えるため)。**トーストの数ではない** ——
+  /// 「元に戻す」を差し出しているトーストが画面にあるときは、置換は起きても知らせは出ない
+  /// (spec §4.5.5)。
   @ObservationIgnored var routeReplacements = 0
 
   /// 進捗の表示用値。`view` ではなく store 直下(spec §4.1)。

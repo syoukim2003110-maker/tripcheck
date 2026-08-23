@@ -265,13 +265,47 @@ private actor RouteBuildGate {
   #expect(store.edit.userStayMinutes[id] == 120)   // 編集は飲み込まれずに着地した
   #expect(store.canUndo)
   await store.awaitRouteEnrichment()
-  // 置換はちょうど 1 回(`routeReplacements` はトーストと同じ行で 1 つ増えるので、
-  // 「実経路のトーストは 1 回だけ」と同じことを言っている)。
-  #expect(store.routeReplacements == 1)
-  #expect(store.view.toast?.kind == .info && store.view.toast?.canUndo == false)
-  #expect(store.view.toast?.text.hasPrefix(AppCopy.for(store.request.locale).routesUpdatedToast) == true)
+  // 置換はちょうど 1 回。ただしトーストは出ない —— 編集の「元に戻す」がまだ画面にあるので、
+  // 実経路のトーストはそれに道を譲る(`theRoutesToastYieldsToAnUndoStillOnScreen`)。
+  // ここで見るのは「譲ったこと」だけにする: 編集のトーストは自前の 6 秒で消えることがあり、
+  // 消えたかどうかは忙しさ次第で変わるが、**実経路のトーストが出ていないこと**は変わらない。
+  #expect(store.routeReplacements == 1 && store.liveRoutesAreAdopted)
+  #expect(store.view.toast?.canUndo != false)
+  #expect(store.view.toast?.text.hasPrefix(AppCopy.for(store.request.locale).routesUpdatedToast) != true)
   #expect(store.routeTask == nil && store.deferredRouteReplacement == nil)
   #expect(store.bundle!.plan.days.flatMap(\.legs).contains { $0.comparison.options.contains { $0.source == .live } })
+}
+
+/// 実経路のトーストは、旅行者にまだ「元に戻す」を差し出しているトーストには**上書きしない**。
+/// 消したばかりの場所を戻す手が、測り終わっただけで画面から消えてはいけない(spec §4.5.5)。
+/// 置換そのものは静かに済ませる —— 譲るのは 1 行の知らせだけで、旅程は新しい値になる。
+@Test @MainActor func theRoutesToastYieldsToAnUndoStillOnScreen() async {
+  let store = PlannerStore(resolvers: [CatalogResolver()], store: nil, routeProvider: FakeRouteProvider(delay: .milliseconds(40)))
+  store.loadSample(.switzerland)
+  await store.build()
+  await store.awaitRouteEnrichment()   // 1 回目の置換はここで済ませる(トーストも出る)
+  let replacementsBefore = store.routeReplacements
+  #expect(replacementsBefore == 1)
+
+  // 旅行者が 1 手打つ。出るのは「元に戻す」つきのトースト。
+  let id = store.bundle!.plan.days[0].stops[0].stop.id
+  await store.setStayMinutes(stopId: id, minutes: 120)
+  let undoToast = store.view.toast
+  #expect(undoToast?.kind == .edit && undoToast?.canUndo == true)
+  // 6 秒の時計は止めておく。忙しい機械では置換より先に鳴ってしまい、見たいもの
+  // (上書きされたかどうか)が測れなくなる。
+  store.toastDismissTask?.cancel()
+
+  // その直後に測り直しが 1 周する。
+  store.liveRoutes.removeAll()
+  store.attemptedRoutes.removeAll()
+  store.startRouteEnrichment()
+  await store.awaitRouteEnrichment()
+
+  #expect(store.routeReplacements == replacementsBefore + 1)   // 置換は起きた
+  #expect(store.liveRoutesAreAdopted)                          // 旅程は測った分を消費している
+  #expect(store.view.toast == undoToast)                       // 「元に戻す」は画面に残っている
+  #expect(store.canUndo)
 }
 
 /// 取得の最中に組み直しが始まったら、古い答えは誰の答えでもない —— キャッシュにも入らず、

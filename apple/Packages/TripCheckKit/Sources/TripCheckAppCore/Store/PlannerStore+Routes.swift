@@ -123,9 +123,15 @@ extension PlannerStore {
     routeReplacements += 1
     let delta = TripScenarios.totalPlanBufferMinutes(plan: after.plan, context: req.context)
       - TripScenarios.totalPlanBufferMinutes(plan: before.plan, context: before.request.context)
-    let text = [AppCopy.for(request.locale).routesUpdatedToast, VerdictCopy.bufferToastDetail(delta, locale: request.locale)]
-      .compactMap { $0 }.joined(separator: " ")
-    showToast(Toast(text: text, kind: .info, canUndo: false))
+    // **知らせは「元に戻す」に道を譲る**(spec §4.5.5)。差し出されている取り消しの上に
+    // 取り消せないトーストを重ねると、消したばかりの場所を戻す手が画面から消える ——
+    // 旅行者は自分が押したことの結果を待っているので、その 1 行のほうが後から来た測定より重い。
+    // 譲るのは知らせだけで、旅程はもう新しい値になっている(この上の `adopt`)。
+    if view.toast?.canUndo != true {
+      let text = [AppCopy.for(request.locale).routesUpdatedToast, VerdictCopy.bufferToastDetail(delta, locale: request.locale)]
+        .compactMap { $0 }.joined(separator: " ")
+      showToast(Toast(text: text, kind: .info, canUndo: false))
+    }
     startRouteEnrichment(chainDepth: chainDepth + 1)   // 日割りが変わって新しいレグが出ていれば次の世代で
   }
 

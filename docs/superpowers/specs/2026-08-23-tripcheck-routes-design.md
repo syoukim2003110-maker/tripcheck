@@ -176,7 +176,7 @@ public protocol RecommendationSource: Sendable {
 2. `pendingApply != nil`(確認ダイアログが開いている)なら保留し、ダイアログが閉じた時点で再開。**旅行者が頼んだ組み直し(`build()` / `applyGuardedEdit` / `adoptHistoryPresent`)が走っている間も同様に保留し、その組み直しが終わった時点で再開する** —— どちらも `buildGeneration` を進めてから待つので、その間に置換が世代を進めると旅行者の一手が自分の世代ガードで落ち、押しても何も起きない(再開時に既に `liveRoutes` が反映済みなら、置換そのものを取り止める)。
 3. `buildGeneration` を進めて捕捉 → `Task.detached { BuildRunner.run(tripRequest()) }` → `buildGate` → 世代一致を確認 → `adopt`(**`build()` は呼ばない**: `.building` を挟まず、読み上げを再発火しない)。
 4. `history` には触れない(編集ではない)。`historyPointsAtTheCurrentEdit` は `edit` が不変なので真のまま。
-5. トースト: `AppCopy.routesUpdatedToast` + `VerdictCopy.bufferToastDetail(delta)`(`before.plan` と `after.plan` の最小余裕差)。`canUndo: false`。`view.announcement` は更新しない(ヒーローが変わる場合は既存の `.onChange` が拾う)。
+5. トースト: `AppCopy.routesUpdatedToast` + `VerdictCopy.bufferToastDetail(delta)`(`before.plan` と `after.plan` の最小余裕差)。`canUndo: false`。`view.announcement` は更新しない(ヒーローが変わる場合は既存の `.onChange` が拾う)。**「元に戻す」を差し出しているトースト(`view.toast?.canUndo == true`)が画面に出ている間は、このトーストを出さない** —— 上書きすると旅行者が今まさに押した一手の取り消しが消える。置換そのもの(`adopt`)は知らせの有無に関わらず行う。
 6. 置換後に新しいレグが生まれた場合(日割りが変わった等)は次の世代で追加取得する。連鎖は 2 世代まで(3 世代目以降は取りに行かない。暴走防止)。
 
 `routeGeneration` を進める事象: `reset()`、`cancelBuild()`、`build()`、ガード付き編集の確定、Undo/Redo、`openTrip`、`importShare`、目的地の変更。古い世代の回答は捨てる(キャッシュには入れない)。
