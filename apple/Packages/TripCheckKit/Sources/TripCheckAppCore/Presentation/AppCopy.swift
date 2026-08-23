@@ -66,6 +66,14 @@ public struct AppCopy: Sendable {
   /// 地図が映す範囲のピル。
   public let mapScopeAll: String
   public let mapScopeDay: String
+  /// そのピル 2 つをひとまとめに呼ぶ名前(読み上げ用。Task 8)。
+  public let mapScopeLabel: String
+  /// 地図のピンが耳に名乗る種別のうち、Kit の凡例に鍵が無いもの(Task 8)。予定地点と
+  /// おすすめ地点は Kit の `legendAnchor` / `legendSuggestion` から来る —— 凡例と同じ語で
+  /// 名乗るために、ここには**足さない**。
+  public let mapPinHotel: String
+  public let mapPinManual: String
+  public let mapPinWarning: String
 
   // MARK: - 確認画面(Task 5)
 
@@ -164,6 +172,7 @@ public struct AppCopy: Sendable {
   private let dayTimeBarLabelText: @Sendable (String, String, String, String, Int, Int) -> String
   private let hotelLegDepartText: @Sendable (String) -> String
   private let hotelLegReturnText: @Sendable (String) -> String
+  private let mapPinLabelText: @Sendable (String, String) -> String
 
   init(
     startTitle: String,
@@ -196,6 +205,10 @@ public struct AppCopy: Sendable {
     mapTab: String,
     mapScopeAll: String,
     mapScopeDay: String,
+    mapScopeLabel: String,
+    mapPinHotel: String,
+    mapPinManual: String,
+    mapPinWarning: String,
     resolveTitle: String,
     resolveEditInput: String,
     resolveEditName: String,
@@ -267,7 +280,8 @@ public struct AppCopy: Sendable {
     planDeferredAnchors: @escaping @Sendable ([String]) -> String,
     dayTimeBarLabel: @escaping @Sendable (String, String, String, String, Int, Int) -> String,
     hotelLegDepart: @escaping @Sendable (String) -> String,
-    hotelLegReturn: @escaping @Sendable (String) -> String
+    hotelLegReturn: @escaping @Sendable (String) -> String,
+    mapPinLabel: @escaping @Sendable (String, String) -> String
   ) {
     self.startTitle = startTitle
     self.startHelpShort = startHelpShort
@@ -299,6 +313,10 @@ public struct AppCopy: Sendable {
     self.mapTab = mapTab
     self.mapScopeAll = mapScopeAll
     self.mapScopeDay = mapScopeDay
+    self.mapScopeLabel = mapScopeLabel
+    self.mapPinHotel = mapPinHotel
+    self.mapPinManual = mapPinManual
+    self.mapPinWarning = mapPinWarning
     self.resolveTitle = resolveTitle
     self.resolveEditInput = resolveEditInput
     self.resolveEditName = resolveEditName
@@ -371,6 +389,7 @@ public struct AppCopy: Sendable {
     self.dayTimeBarLabelText = dayTimeBarLabel
     self.hotelLegDepartText = hotelLegDepart
     self.hotelLegReturnText = hotelLegReturn
+    self.mapPinLabelText = mapPinLabel
   }
 
   /// 貼り付けが上限に当たったときのトースト。**件数を名指しする** —— 12 までですとだけ
@@ -463,6 +482,11 @@ public struct AppCopy: Sendable {
   public func hotelLegDepart(_ headline: String) -> String { hotelLegDepartText(headline) }
   public func hotelLegReturn(_ headline: String) -> String { hotelLegReturnText(headline) }
 
+  /// 地図のピンが耳に名乗る 1 文(Task 8)。「ツェルマット、予定地点」——**名前が先**で、
+  /// 種別が後ろ。VoiceOver で点から点へ移る旅行者は、まず「どこ」を聞きたいからである。
+  /// 区切りの記号が言語で違うので、組み立てをビューに置かずここへ持つ。
+  public func mapPinLabel(name: String, kind: String) -> String { mapPinLabelText(name, kind) }
+
   public static func `for`(_ locale: PlannerLocale) -> AppCopy {
     locale == .ja ? ja : en
   }
@@ -505,6 +529,10 @@ public struct AppCopy: Sendable {
     mapTab: "地図",
     mapScopeAll: "全日程",
     mapScopeDay: "この日",
+    mapScopeLabel: "地図に出す範囲",
+    mapPinHotel: "ホテル",
+    mapPinManual: "自分で指定した地点",
+    mapPinWarning: "注意地点",
     resolveTitle: "場所を確認してください。",
     resolveEditInput: "入力を直す",
     resolveEditName: "この名前を直す",
@@ -595,7 +623,8 @@ public struct AppCopy: Sendable {
       ].compactMap { $0 }).joined(separator: "、") + "。"
     },
     hotelLegDepart: { headline in "ホテルから \(headline)" },
-    hotelLegReturn: { headline in "ホテルへ \(headline)" }
+    hotelLegReturn: { headline in "ホテルへ \(headline)" },
+    mapPinLabel: { name, kind in "\(name)、\(kind)" }
   )
 
   static let en = AppCopy(
@@ -629,6 +658,10 @@ public struct AppCopy: Sendable {
     mapTab: "Map",
     mapScopeAll: "All days",
     mapScopeDay: "This day",
+    mapScopeLabel: "What the map shows",
+    mapPinHotel: "hotel",
+    mapPinManual: "point you placed",
+    mapPinWarning: "stop to check",
     resolveTitle: "Check these places.",
     resolveEditInput: "Edit input",
     resolveEditName: "Edit the name",
@@ -719,7 +752,8 @@ public struct AppCopy: Sendable {
       ].compactMap { $0 }).joined(separator: ", ") + "."
     },
     hotelLegDepart: { headline in "From hotel · \(headline)" },
-    hotelLegReturn: { headline in "To hotel · \(headline)" }
+    hotelLegReturn: { headline in "To hotel · \(headline)" },
+    mapPinLabel: { name, kind in "\(name), \(kind)" }
   )
 
   /// 名前を並べるときの共通の切り詰め —— 先頭 2 件だけを出し、残りは件数で言う。Kit の

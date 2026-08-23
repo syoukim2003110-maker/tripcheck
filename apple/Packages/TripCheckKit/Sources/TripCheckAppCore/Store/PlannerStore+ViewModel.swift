@@ -389,7 +389,10 @@ extension PlannerStore {
     return markers
   }
 
-  private static let conflictStatuses: Set<OpeningStatus> = [.conflict, .closed_day, .last_entry_conflict]
+  /// 「その場所で何かが噛み合っていない」と旅程が言っている状態。帯の赤い菱形
+  /// (`dayMarkers`)と地図の注意ピン(`PlannerStore+Map.swift`)は**同じ 3 つ**を見る ——
+  /// 別々に数えると、帯に印が立っている日の地図に注意のピンが 1 つも無い、が起こる。
+  nonisolated static let conflictStatuses: Set<OpeningStatus> = [.conflict, .closed_day, .last_entry_conflict]
 
   /// 中身の無い日の帯。合計は 1 のまま(ビューが幅を配れる形)で、`isEmpty` が中身の
   /// 無さを言う。

@@ -11,7 +11,8 @@ import TripCheckKit
               c.editEntryAction, c.entryDayLabel, c.entryDayAny, c.daysQuestion, c.daysUndecided, c.daysOther,
               c.daysOtherLabel, c.daysUndecidedNote, c.dateDisclosure, c.dateUndecided, c.destinationHint,
               c.customDisclosure, c.buildCTA, c.checkingPlacesCTA, c.buildingCTA,
-              c.timelineTab, c.mapTab, c.mapScopeAll, c.mapScopeDay,
+              c.timelineTab, c.mapTab, c.mapScopeAll, c.mapScopeDay, c.mapScopeLabel,
+              c.mapPinHotel, c.mapPinManual, c.mapPinWarning,
               c.resolveTitle, c.resolveEditInput, c.resolveEditName, c.resolveCountryHint, c.resolveWorldwide,
               c.resolveNoneOfThese, c.resolveDeferred, c.resolveNotFound, c.resolveSearchAgain, c.resolvePinOnMap,
               c.resolveStatusConfirmed, c.resolveStatusReview, c.resolveStatusUnresolved,
@@ -38,15 +39,16 @@ import TripCheckKit
                  c.planDeferredAnchors(names: ["X"]), c.planDeferredAnchors(names: ["X", "Y", "Z"]),
                  c.dayTimeBarLabel(visit: "1", travel: "2", slack: "3", available: "4", reservations: 0, conflicts: 0),
                  c.dayTimeBarLabel(visit: "1", travel: "2", slack: "3", available: "4", reservations: 1, conflicts: 2)]
-              + [c.hotelLegDepart("徒歩 5分"), c.hotelLegReturn("徒歩 5分")] {
+              + [c.hotelLegDepart("徒歩 5分"), c.hotelLegReturn("徒歩 5分")]
+              + [c.mapPinLabel(name: "ツェルマット", kind: c.mapPinWarning)] {
       #expect(BannedTerms.violations(in: s).isEmpty, "\(locale): \(s)")
       #expect(!s.isEmpty, "\(locale): empty copy")
       checked += 1
     }
   }
-  // ja/en それぞれ 30 + Task 5 の 42 + Task 6 の 5 + diffLabels 6 + 引数を取る 8
-  // + Task 5 の引数つき 16 + Task 6 の引数つき 8 + Task 7 の引数つき 2
-  #expect(checked == 234)
+  // ja/en それぞれ 30 + Task 5 の 42 + Task 6 の 5 + Task 8 の 4 + diffLabels 6 + 引数を取る 8
+  // + Task 5 の引数つき 16 + Task 6 の引数つき 8 + Task 7 の引数つき 2 + Task 8 の引数つき 1
+  #expect(checked == 244)
 }
 
 /// 帯の読み上げは 4 つの分数を**別々の節**に置く —— 入れ替わると「訪問30分・移動6時間」が
