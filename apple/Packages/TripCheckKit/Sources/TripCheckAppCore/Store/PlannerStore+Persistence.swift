@@ -14,8 +14,10 @@ import TripCheckKit
  * 始めたとき(`reset()`)だけ次の記録に移る。
  *
  * 開き直す側は「写しを戻す」のではなく**組み直す**:場所は保存した pin から
- * `ResolvedStop` を作り直し、カタログの決定はカタログを引き直し、拠点は名前から引き直して、
- * 最後にビルダーを回す。だから端末の中に古い経路も古い営業時間も残らない。
+ * `ResolvedStop` を作り直し、カタログの決定はカタログを引き直して、最後にビルダーを
+ * 回す。拠点は `edit.resolvedBase` を渡さない(保存していない)ままビルダーへ入り、
+ * `hotelQuery` からビルダー自身が組み直す。だから端末の中に古い経路も古い営業時間も
+ * 残らない。
  */
 extension PlannerStore {
 
@@ -114,7 +116,9 @@ extension PlannerStore {
   }
 
   /// 保存した旅程を開く。**写しを戻すのではなく組み直す** —— 端末に残っているのは入力と
-  /// 編集だけなので、場所を作り直し、カタログの決定と拠点を引き直してから、もう一度組む。
+  /// 編集だけなので、場所を作り直し、カタログの決定を引き直してから、もう一度組む。拠点は
+  /// ここでは引き直さない(`reopenResolutions` を見よ)—— `build()` の中でビルダーが
+  /// `hotelQuery` から組み直す。
   public func openTrip(id: String) async {
     guard let store, let record = await store.load(id: id) else { return }
     guard let input = try? Self.decode(PersistedTripInput.self, from: record.payload.input),
@@ -129,7 +133,9 @@ extension PlannerStore {
     await build()
   }
 
-  /// 1 枚捨てる。消したのが今書き換えている旅なら、次の変更は新しい記録に書く。
+  /// 1 枚捨てる。消したのが今書き換えている旅なら、次の変更は新しい記録に書く —— そして
+  /// 待たせてある保存があれば破る。破らないと、削除の直後に古い予約が効いて、消したはずの
+  /// 記録が(1 拍遅れて)また端末に書かれる。
   public func deleteTrip(id: String) async {
     guard let store else { return }
     do {
@@ -140,17 +146,32 @@ extension PlannerStore {
       // ファイル名にできない id(`invalidRecord`)。そんな記録は端末に無いので、
       // 消えているという答えは正しい —— 保存できないという報せは出さない。
     }
-    if currentTripId == id { currentTripId = nil }
+    if currentTripId == id {
+      autosaveTask?.cancel()
+      autosaveTask = nil
+      currentTripId = nil
+    }
     await loadRecent()
   }
 
   // MARK: - 開き直しの場所
 
-  /// 開いた直後の場所を整える 3 手。
+  /// 開いた直後の場所を整える 2 手。**拠点はここでは触らない**:`edit.resolvedBase` は
+  /// 保存していない(R11)ので `nil` のまま `build()` に渡り、Kit のビルダーが
+  /// `ctx.hotelQuery`(`PlannerStore.swift` の `tripRequest(with:days:)`)を
+  /// `Bases.resolveTripBase(query:resolved:locale:)` へ通して拠点を組み直す
+  /// (`Bases.swift:109`)。旅行者が `setBase` で選んだ拠点(Kit の推薦の 1 つを選んだ
+  /// もの)はそれで戻らずビルダーの推薦へ戻るが、これは意図どおり:拠点は旅行者が
+  /// 置いた pin ではなく Kit が計算した推薦データなので、pin と違って書き戻す元が無い。
+  ///
+  /// ここでかつて `hotelQuery` を `resolvers`(端末の地図が先頭)へ流して拠点を引き直して
+  /// いたが、地図には尋ねる相手が無い(ホテルは pin ではなく文字列でしか残らない)ので、
+  /// 旅行者が選んだ覚えのない点へ拠点が変わり得た —— `.catalog` の pin で実機に出た不具合
+  /// と同じ形。ビルダーの再解決に任せれば、セッション 1 と同じ拠点(同じ `hotelQuery` から
+  /// 同じ手順で決まる)に必ず揃う。
   private func reopenResolutions(overrides: [ResolutionOverride]) async {
     await reresolveCatalogPins()
     applyReopenedOverrides(overrides)
-    await reresolveBase()
   }
 
   /// カタログの決定はカタログを引き直す —— 名前が同じなら座標も滞在時間も同梱の表から
@@ -207,30 +228,6 @@ extension PlannerStore {
       request.entries[index].pinned = Self.pinned(stop)
     }
     edit.resolvedStops = extras
-  }
-
-  /// 拠点は名前から引き直す。`edit.resolvedBase` は保存していない(Kit の `ResolvedStop`
-  /// そのものだから)ので、残っているのは旅行者が書いた名前だけ。引けなければ何もしない
-  /// —— ビルダーが `Bases.resolveTripBase` で引き直し、それでも決まらなければ推薦を出す。
-  private func reresolveBase() async {
-    let query = edit.hotelQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !query.isEmpty, !resolvers.isEmpty else { return }
-
-    isResolvingPlaces = true
-    let answers = await ResolutionPipeline.resolve(
-      [PlaceQuery(inputIndex: 0, input: query)],
-      destination: request.destination,
-      locale: request.locale,
-      resolvers: resolvers
-    )
-    isResolvingPlaces = false
-
-    guard case .confirmed(let stop)? = answers[0] else { return }
-    var base = stop
-    // 拠点は出現ではない。`inputIndex` を残すと、行きたい場所の 1 行目と同じ添字を
-    // 名乗ることになる。
-    base.inputIndex = nil
-    edit.resolvedBase = base
   }
 
   // MARK: - 道具

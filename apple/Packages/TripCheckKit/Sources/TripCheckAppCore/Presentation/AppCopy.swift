@@ -1141,9 +1141,6 @@ public struct AppCopy: Sendable {
     deleteTripQuestion: { "Delete “\($0)” from this device?" }
   )
 
-  /// 名前を並べるときの共通の切り詰め —— 先頭 2 件だけを出し、残りは件数で言う。Kit の
-  /// `minimumDaysCopy`(`Presentation/Copy.swift`)が未確定の場所を並べるのと同じ形で、
-  /// 3 つ以上を読み上げても旅行者はどれから直すか決められない。
   /// 保存した旅程の題 —— **先頭 3 か所の名前**。一覧はこれで旅を見分けるので、名前を
   /// 削るより並べる:「4日間の旅」では、どれが自分のスイスかは分からない。長さは
   /// `StoredTripRecord.validTitle` の上限(UTF-16 で 160)に畳む。
@@ -1151,6 +1148,9 @@ public struct AppCopy: Sendable {
     JSText.slice(names.prefix(3).joined(separator: locale == .ja ? "・" : ", "), 160)
   }
 
+  /// 名前を並べるときの共通の切り詰め —— 先頭 2 件だけを出し、残りは件数で言う。Kit の
+  /// `minimumDaysCopy`(`Presentation/Copy.swift`)が未確定の場所を並べるのと同じ形で、
+  /// 3 つ以上を読み上げても旅行者はどれから直すか決められない。
   static func nameList(_ names: [String], locale: PlannerLocale) -> String {
     let head = names.prefix(2).joined(separator: locale == .ja ? "・" : ", ")
     let extra = names.count - 2

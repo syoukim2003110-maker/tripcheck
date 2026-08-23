@@ -49,6 +49,23 @@ private func savedRemovedStopCount(_ record: StoredTripRecord) -> Int {
   return removed.count
 }
 
+/// 保存された `hotelQuery`。
+private func savedHotelQuery(_ record: StoredTripRecord) -> String? {
+  guard case .string(let value)? = record.payload.edits["hotelQuery"] else { return nil }
+  return value
+}
+
+/// 待たせてある自動保存が実際に予約されるまで待つ。`autosaveTask` は internal だが
+/// `@testable import` なので覗ける —— タイミングに頼らず、「まだ書かれていない予約」が
+/// 確実にある状態を作るため(削除が本当にその予約を破ったかを見るテストのため)。
+@MainActor
+private func waitForPendingAutosave(_ store: PlannerStore) async {
+  for _ in 0..<250 {
+    if store.autosaveTask != nil { return }
+    try? await Task.sleep(for: .milliseconds(4))
+  }
+}
+
 @Test @MainActor func persistedPayloadNeverCarriesForbiddenKeys() async throws {
   let store = PlannerStore(resolvers: [], store: nil); store.loadSample(.switzerland)
   let apple = ResolvedStop(id: "apple-0-1", name: "Bern", area: "Bern", latitude: 46.9, longitude: 7.4, sourceUrl: "", verifiedAt: "", confidence: .medium, planningDurationMinutes: 60, isAnchor: true, input: "Bern", inputIndex: 0, address: "Bern", countryCode: "CH", provider: .apple)
@@ -215,4 +232,61 @@ private func savedRemovedStopCount(_ record: StoredTripRecord) -> Int {
   guard let id = await waitForSavedTrip(s2)?.id else { Issue.record("nothing saved"); return }
   await s2.openTrip(id: id)
   #expect(itinerary(s2) == before)
+}
+
+/// 拠点はここでも同じ形の落とし穴を持っていた:`edit.resolvedBase` は保存していない
+/// (R11)ので、開き直した側は `hotelQuery`(旅行者が書いた文字列)しか持たない。かつての
+/// `reresolveBase()` はこれを `resolvers`(端末の地図が先頭)へ流していた —— `.catalog`
+/// の pin と同じ理由で、これは旅行者が選んだ覚えのない拠点へ旅程を組み変えうる。
+///
+/// `FakeResolver` は尋ねられれば何にでも `.confirmed` を返す(`review`/`unresolved` に
+/// 名を挙げていない限り)。だから「尋ねられなかった」ことは `edit.resolvedBase` が
+/// `nil` のままであること、そして組み上がった拠点がセッション 1 と変わらないことで見る
+/// —— 尋ねられていれば、どちらも変わっているはずである。
+@Test @MainActor func reopeningNeverResolvesTheHotelThroughAnotherResolver() async throws {
+  let dir = temporaryDirectory()
+  let s1 = PlannerStore(
+    resolvers: [FakeResolver(), CatalogResolver()],
+    store: TripStore(directory: dir),
+    autosaveDebounce: .milliseconds(10)
+  )
+  s1.loadSample(.switzerland)
+  s1.edit.hotelQuery = "Hotel Bellevue Palace"
+  await s1.build()
+  // このセッションでも `setBase` は呼んでいない —— 拠点はビルダーの推薦任せ。
+  #expect(s1.edit.resolvedBase == nil)
+  let beforeBase = s1.bundle?.plan.selectedBase
+  guard await waitForSavedTrip(s1, until: { savedHotelQuery($0) == "Hotel Bellevue Palace" }) != nil else {
+    Issue.record("nothing saved"); return
+  }
+
+  let s2 = PlannerStore(resolvers: [FakeResolver(), CatalogResolver()], store: TripStore(directory: dir))
+  guard let id = await waitForSavedTrip(s2)?.id else { Issue.record("nothing saved"); return }
+  await s2.openTrip(id: id)
+
+  #expect(s2.edit.resolvedBase == nil)
+  #expect(s2.bundle?.plan.selectedBase == beforeBase)
+}
+
+/// 開いている旅を消したら、待たせてある自動保存も一緒に破る。破らないと、削除の直後に
+/// 前の予約が効いて、`currentTripId` が空になった `saveNow()` が**新しい id で**同じ内容を
+/// また書いてしまう —— 消したはずの旅が(別の記録として)一覧に戻る。
+@Test @MainActor func deletingTheOpenTripCancelsThePendingAutosave() async throws {
+  let dir = temporaryDirectory()
+  let store = PlannerStore(resolvers: [CatalogResolver()], store: TripStore(directory: dir), autosaveDebounce: .milliseconds(10))
+  store.loadSample(.switzerland)
+  guard let id = await waitForSavedTrip(store)?.id else { Issue.record("autosave did not write"); return }
+
+  // さらに 1 手動かして、次の自動保存を予約させておく(まだ書かれていない)。
+  store.request.tripDays = 6
+  await waitForPendingAutosave(store)
+  #expect(store.autosaveTask != nil)
+
+  await store.deleteTrip(id: id)
+  #expect(store.autosaveTask == nil)
+  #expect(store.recentTrips.isEmpty)
+
+  try await Task.sleep(for: .milliseconds(300))          // 待つ側の 10 ミリ秒が 30 回ぶん
+  await store.loadRecent()
+  #expect(store.recentTrips.isEmpty)
 }
