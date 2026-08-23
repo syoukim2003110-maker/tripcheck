@@ -27,6 +27,7 @@ struct TripMapView: View {
   var body: some View {
     @Bindable var store = store
     let model = store.mapModel(scope: store.view.mapScope)
+    let app = AppCopy.for(store.request.locale)
 
     // 凡例は地図の**安全域**として渡す(重ねるのではなく)。こうすると MapKit が寄せる先を
     // 札の上へ収めてくれる —— ただ重ねると、南端のピンが札の裏に隠れたまま「全部映した」
@@ -62,12 +63,20 @@ struct TripMapView: View {
       .mapStyle(.standard(pointsOfInterest: .excludingAll, showsTraffic: false))
       .mapControls { MapScaleView(); MapCompass() }
       .safeAreaInset(edge: .bottom, alignment: .leading, spacing: 0) {
-        MapLegend(days: model.legendDays, scope: $store.view.mapScope)
-          .padding(12)
-          // 札は自分で身をかわす —— ホームバー(`proxy` が教える安全域)と、その上に
-          // `PlanScreen` が置いている「旅程 | 地図」の帯のぶん。地図の安全域はどちらも
-          // 知らないので(上の定数の注記)、置いただけでは錠剤が帯の裏に沈む。
-          .padding(.bottom, proxy.safeAreaInsets.bottom + Self.viewSwitchBarHeight)
+        VStack(alignment: .leading, spacing: 6) {
+          if model.measuredCount > 0 {
+            Text(app.mapMeasuredRoutesValue(count: model.measuredCount))
+              .tcFont(.label)
+              .foregroundStyle(Tokens.Color.ink2)
+              .accessibilityIdentifier("map.measuredCount")
+          }
+          MapLegend(days: model.legendDays, scope: $store.view.mapScope)
+        }
+        .padding(12)
+        // 札は自分で身をかわす —— ホームバー(`proxy` が教える安全域)と、その上に
+        // `PlanScreen` が置いている「旅程 | 地図」の帯のぶん。地図の安全域はどちらも
+        // 知らないので(上の定数の注記)、置いただけでは錠剤が帯の裏に沈む。
+        .padding(.bottom, proxy.safeAreaInsets.bottom + Self.viewSwitchBarHeight)
       }
       // 日を変えても範囲を変えても、見えている中身に合わせて寄り直す。値は掴んだ `model`
       // ではなく**その時の store** から取る —— 変わった後の日で外接を作らないと、1 手ぶん

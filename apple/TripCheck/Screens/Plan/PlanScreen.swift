@@ -35,10 +35,15 @@ struct PlanScreen: View {
               DayHeaderRow(index: selectedDay)
               TimelineList(dayIndex: selectedDay)
               if let spare = store.spareCapacityLine(selectedDay) { SpareLine(text: spare) }
-              Text(store.statsLine)
-                .tcFont(.stats)
-                .foregroundStyle(Tokens.Color.ink2)
-                .accessibilityIdentifier("plan.stats")
+              HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Text(store.statsLine)
+                  .tcFont(.stats)
+                  .foregroundStyle(Tokens.Color.ink2)
+                  .accessibilityIdentifier("plan.stats")
+                Spacer(minLength: 0)
+                if let progress = store.routeProgressLine { RouteProgressLine(text: progress) }
+              }
+              .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: store.routeProgressLine)
               IssueCard()
               VerdictDetails()
               BeforeYouGoCard()

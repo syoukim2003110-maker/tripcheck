@@ -54,7 +54,9 @@ struct TripCheckApp: App {
       // `Locale.current` を読むのはここだけ(合成の根)。`PlannerStore.init` 自身の既定は
       // `.ja` に固定してあるので、AppCore のテストが作る 152 か所の store は機械の言語を
       // 読まない。
-      initialLocale: PlannerStore.systemLocale
+      initialLocale: PlannerStore.systemLocale,
+      // UI テストは通信しない決定的な提供元で同じ画面遷移を踏む。
+      routeProvider: isUITesting ? CannedRouteProvider() as any RouteProvider : AppleRouteProvider()
     ))
   }
 

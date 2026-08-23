@@ -58,7 +58,8 @@ struct MovementCard: View {
             selection: selectedMode,
             groupLabel: text.legModes,
             onSelect: onSelectMode,
-            disabled: Set(model.options.filter { !$0.enabled }.map(\.mode))
+            disabled: Set(model.options.filter { !$0.enabled }.map(\.mode)),
+            identifier: { "plan.movement.mode.\($0.rawValue)" }
           )
           if let evidence = model.evidenceLine {
             HStack(alignment: .top, spacing: 4) {
