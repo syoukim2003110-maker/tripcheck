@@ -162,6 +162,8 @@ public struct AppCopy: Sendable {
   private let planAmbiguousWarningText: @Sendable ([String]) -> String
   private let planDeferredAnchorsText: @Sendable ([String]) -> String
   private let dayTimeBarLabelText: @Sendable (String, String, String, String, Int, Int) -> String
+  private let hotelLegDepartText: @Sendable (String) -> String
+  private let hotelLegReturnText: @Sendable (String) -> String
 
   init(
     startTitle: String,
@@ -263,7 +265,9 @@ public struct AppCopy: Sendable {
     planUnresolvedWarning: @escaping @Sendable ([String]) -> String,
     planAmbiguousWarning: @escaping @Sendable ([String]) -> String,
     planDeferredAnchors: @escaping @Sendable ([String]) -> String,
-    dayTimeBarLabel: @escaping @Sendable (String, String, String, String, Int, Int) -> String
+    dayTimeBarLabel: @escaping @Sendable (String, String, String, String, Int, Int) -> String,
+    hotelLegDepart: @escaping @Sendable (String) -> String,
+    hotelLegReturn: @escaping @Sendable (String) -> String
   ) {
     self.startTitle = startTitle
     self.startHelpShort = startHelpShort
@@ -365,6 +369,8 @@ public struct AppCopy: Sendable {
     self.planAmbiguousWarningText = planAmbiguousWarning
     self.planDeferredAnchorsText = planDeferredAnchors
     self.dayTimeBarLabelText = dayTimeBarLabel
+    self.hotelLegDepartText = hotelLegDepart
+    self.hotelLegReturnText = hotelLegReturn
   }
 
   /// 貼り付けが上限に当たったときのトースト。**件数を名指しする** —— 12 までですとだけ
@@ -447,6 +453,15 @@ public struct AppCopy: Sendable {
   ) -> String {
     dayTimeBarLabelText(visit, travel, slack, available, reservations, conflicts)
   }
+
+  /// ホテルとのあいだの 1 行(Task 7)。`headline` は Kit の
+  /// `TimelinePresentation.legHeadline`(「徒歩 5分」)で、ここが足すのは向きの前置きだけ。
+  ///
+  /// Kit にも `hotelDepartRow` があるが、あちらは分に「約」を付ける古い形 —— v3.1 は移動の
+  /// 行から丸めの但し書きを外し、推定であることは別の 1 文が言う、と決めた。同じ画面の中で
+  /// ホテルの行だけが「約」を名乗ると、丸めているのはその区間だけに読める。
+  public func hotelLegDepart(_ headline: String) -> String { hotelLegDepartText(headline) }
+  public func hotelLegReturn(_ headline: String) -> String { hotelLegReturnText(headline) }
 
   public static func `for`(_ locale: PlannerLocale) -> AppCopy {
     locale == .ja ? ja : en
@@ -578,7 +593,9 @@ public struct AppCopy: Sendable {
         reservations > 0 ? "予約マーカー\(reservations)件" : nil,
         conflicts > 0 ? "衝突\(conflicts)件" : nil,
       ].compactMap { $0 }).joined(separator: "、") + "。"
-    }
+    },
+    hotelLegDepart: { headline in "ホテルから \(headline)" },
+    hotelLegReturn: { headline in "ホテルへ \(headline)" }
   )
 
   static let en = AppCopy(
@@ -700,7 +717,9 @@ public struct AppCopy: Sendable {
         reservations > 0 ? "\(reservations) reservation marker\(reservations == 1 ? "" : "s")" : nil,
         conflicts > 0 ? "\(conflicts) conflict\(conflicts == 1 ? "" : "s")" : nil,
       ].compactMap { $0 }).joined(separator: ", ") + "."
-    }
+    },
+    hotelLegDepart: { headline in "From hotel · \(headline)" },
+    hotelLegReturn: { headline in "To hotel · \(headline)" }
   )
 
   /// 名前を並べるときの共通の切り詰め —— 先頭 2 件だけを出し、残りは件数で言う。Kit の

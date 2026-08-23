@@ -26,6 +26,9 @@ enum Tokens {
 
   enum Day {
     static func color(index: Int) -> SwiftUI.Color { SwiftUI.Color(hexString: DayPalette.color(forDayIndex: index)) }
+    /// AppCore の導出値が運ぶ日の色(`ActivityModel.colorHex`)。出どころは上と同じ
+    /// `DayPalette` で、ビューが 16 進を自分で解く口を持たないための入口。
+    static func color(hex: String) -> SwiftUI.Color { SwiftUI.Color(hexString: hex) }
   }
 
   /// 指で押せる大きさ。主要な操作は 44pt、行内の小さな操作でも 24pt を下回らない。

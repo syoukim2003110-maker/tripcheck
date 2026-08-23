@@ -182,6 +182,22 @@ extension PlannerStore {
     view.selectedDay = min(max(0, index), lastDay)
   }
 
+  // MARK: - 4. 詳細を開く
+
+  /// 停留所の詳細・日の設定を開く唯一の入口。開いた高さは**毎回いちばん低いところに戻す**
+  /// —— 前に全画面まで引き上げたことが、次に軽く覗きたいときの邪魔にならないように。
+  ///
+  /// タイムラインの行(Task 7)も、地図のピン(Task 8)も、警告の一手(Task 6)もここを
+  /// 通る。`view.inspector` を直に書く場所を増やすと、開き方ごとに高さの規則が割れる。
+  public func openInspector(_ target: Inspector) {
+    view.inspector = target
+    view.sheetDetent = .peek
+  }
+
+  public func closeInspector() {
+    view.inspector = nil
+  }
+
   // MARK: - 5. 空き
 
   /// その日がどれだけ空いていて、あと何か所入るか。**空いている日にだけ**出す ——
