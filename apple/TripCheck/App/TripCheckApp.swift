@@ -56,7 +56,10 @@ struct TripCheckApp: App {
       // 読まない。
       initialLocale: PlannerStore.systemLocale,
       // UI テストは通信しない決定的な提供元で同じ画面遷移を踏む。
-      routeProvider: isUITesting ? CannedRouteProvider() as any RouteProvider : AppleRouteProvider()
+      routeProvider: isUITesting ? CannedRouteProvider() as any RouteProvider : AppleRouteProvider(),
+      // 聞き取り係も同じ理由で UI テストは canned。可用性の判定自体は composition root
+      // (`IntentAvailability`)に閉じ込めてあり、ストアは注入の有無しか見ない。
+      intentParser: IntentAvailability.makeDefaultParser(uiTesting: isUITesting)
     ))
   }
 

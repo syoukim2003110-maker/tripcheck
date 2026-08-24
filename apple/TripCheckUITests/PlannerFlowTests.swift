@@ -112,4 +112,24 @@ final class PlannerFlowTests: XCTestCase {
     app.buttons["plan.view.timeline"].tap()
     XCTAssertTrue(app.staticTexts["plan.hero"].waitForExistence(timeout: 10))
   }
+
+  /// 文らしい入力に「読み取る」行が出て、canned の聞き取りがフォームに展開される。
+  /// 行き先は検索欄のプリフィルに、ウィッシュは行に、確認トーストが出る(spec §4.4)。
+  @MainActor
+  func testFreeTextIntentFillsTheStartForm() {
+    let app = launch()
+    let field = app.textFields["start.placeField"]
+    XCTAssertTrue(field.waitForExistence(timeout: 10))
+    field.tap()
+    field.typeText("Weekend trip to Kanazawa, seafood and museum")
+
+    let row = app.buttons["start.intentRow"]
+    XCTAssertTrue(row.waitForExistence(timeout: 5))
+    row.tap()
+
+    XCTAssertTrue(app.otherElements["toast"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.buttons["海鮮"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["21世紀美術館"].exists)
+    XCTAssertEqual(field.value as? String, "金沢")
+  }
 }

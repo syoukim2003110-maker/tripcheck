@@ -12,18 +12,18 @@ import TripCheckKit
 /// キャンセルは公開されていないので、負けた生成は答えを捨てるだけ(結果は世代検査で守る)。
 @available(iOS 26.0, macOS 26.0, *)
 public struct FoundationModelsIntentParser: IntentParser {
-  static let instructions =
-    "旅行の希望を書いた文から条件を抜き出す。値は必ず本文に書かれた表記のまま写す。本文に無い情報は決して補わない。"
+  // 指示文そのもの(日本語)は走査の逃げ場である `AppCopy.swift` に置いてある(`IntentLiterals`)。
+  static let instructions = IntentLiterals.instructions
 
   @Generable
   struct GeneratedIntent {
-    @Guide(description: "旅の行き先の地名。本文の表記のまま。無ければ空文字。")
+    @Guide(description: IntentLiterals.destinationGuide)
     var destination: String
-    @Guide(description: "泊数・日数の表現を本文の表記のまま。例:「2泊」「3日間」「2泊3日」。無ければ空文字。")
+    @Guide(description: IntentLiterals.durationGuide)
     var durationText: String
-    @Guide(description: "時期・日付の表現を本文の表記のまま。例:「9月」「10月3日から」「来週末」。無ければ空文字。")
+    @Guide(description: IntentLiterals.whenGuide)
     var whenText: String
-    @Guide(description: "やりたいこと・食べたいもの・行きたい場所の項目。本文に書かれたものだけ。")
+    @Guide(description: IntentLiterals.wishesGuide)
     var wishes: [String]
   }
 

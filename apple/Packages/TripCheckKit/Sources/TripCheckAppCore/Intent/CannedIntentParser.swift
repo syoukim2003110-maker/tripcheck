@@ -11,7 +11,11 @@ public struct CannedIntentParser: IntentParser {
   public init() {}
 
   public func parse(_ text: String, locale: PlannerLocale) async -> IntentOutcome {
+    // 値そのもの(日本語)は走査の逃げ場である `AppCopy.swift` に置いてある(`IntentLiterals`)。
     .parsed(TripIntent(
-      destination: "金沢", durationText: "3泊", whenText: "", wishes: ["海鮮", "21世紀美術館"]))
+      destination: IntentLiterals.cannedDestination,
+      durationText: IntentLiterals.cannedDuration,
+      whenText: "",
+      wishes: IntentLiterals.cannedWishes))
   }
 }

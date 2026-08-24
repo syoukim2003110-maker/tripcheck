@@ -111,19 +111,30 @@ struct StartScreen: View {
       EntryEditSheet(entryID: entry.id)
     }
     .safeAreaInset(edge: .bottom) {
-      Button {
-        Task { await store.requestBuildFromStart() }
-      } label: {
-        Text(store.startCTA.label)
-          .tcFont(.stats)
-          .frame(maxWidth: .infinity)
-          .frame(height: Tokens.Hit.primary)
+      VStack(spacing: 8) {
+        // 場所を 12 件足そうとしたときの上限トーストなど(`PlannerStore+Start.swift`)は
+        // この画面にしか出番が無い —— `PlanScreen` へ渡る前にここで見せる。CTA の真上に
+        // 置くのは押した指がまだ画面の下にあるうちに文言が目に入るように(`PlanScreen`
+        // と同じ配置)。`.id(toast.id)` は 2 つ目のトーストでも `ToastView.onAppear` の
+        // 読み上げが必ず走るように要る。ボタン自身の `.padding` / `.background` は元のまま
+        // 動かさない —— 外側の VStack へ移すと `safeAreaInset` が確保する高さが変わり、
+        // スクロール内の「サンプルを見る」ボタンとこの CTA が重なって、タップが CTA に
+        // 吸われてしまった(UI テストで実測)。
+        if let toast = store.view.toast { ToastView(toast: toast).id(toast.id) }
+        Button {
+          Task { await store.requestBuildFromStart() }
+        } label: {
+          Text(store.startCTA.label)
+            .tcFont(.stats)
+            .frame(maxWidth: .infinity)
+            .frame(height: Tokens.Hit.primary)
+        }
+        .buttonStyle(.primaryAccent)
+        .disabled(!store.startCTA.enabled)
+        .padding(16)
+        .background(.ultraThinMaterial)
+        .accessibilityIdentifier("start.build")
       }
-      .buttonStyle(.primaryAccent)
-      .disabled(!store.startCTA.enabled)
-      .padding(16)
-      .background(.ultraThinMaterial)
-      .accessibilityIdentifier("start.build")
     }
   }
 }

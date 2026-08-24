@@ -32,7 +32,9 @@ struct PlaceSearchField: View {
           .submitLabel(.done)
           .focused($isFocused)
           .onSubmit { submitTypedName() }
+          .onChange(of: suggestions.query) { store.intentQueryChanged() }
           .accessibilityLabel(text.inputLabel)
+          .accessibilityIdentifier("start.placeField")
         Button { submitTypedName() } label: {
           IconView(.plus, size: 20, color: Tokens.Color.accent)
             .frame(width: Tokens.Hit.primary, height: Tokens.Hit.primary)
@@ -60,8 +62,47 @@ struct PlaceSearchField: View {
           .padding(.top, 8)
       }
 
-      if !suggestions.results.isEmpty {
+      if store.intentRowVisible(for: suggestions.query) || !suggestions.results.isEmpty {
         VStack(spacing: 0) {
+          if store.intentRowVisible(for: suggestions.query) {
+            Button {
+              let text = suggestions.query
+              Task {
+                if let query = await store.readTripIntent(from: text) {
+                  suggestions.query = query
+                }
+              }
+            } label: {
+              HStack(spacing: 8) {
+                if store.intentPhase == .reading {
+                  ProgressView().controlSize(.small)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                  Text(store.intentPhase == .reading ? app.intentParsing : app.intentRowTitle)
+                    .tcFont(.stopName)
+                    .foregroundStyle(Tokens.Color.ink)
+                  if store.intentPhase == .failed {
+                    Text(app.intentFailed)
+                      .tcFont(.meta)
+                      .foregroundStyle(Tokens.Color.muted)
+                  }
+                }
+                Spacer(minLength: 0)
+              }
+              .frame(maxWidth: .infinity, alignment: .leading)
+              .padding(.horizontal, 14)
+              .padding(.vertical, 8)
+              .frame(minHeight: Tokens.Hit.primary)
+              .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(store.intentPhase == .reading)
+            .accessibilityIdentifier("start.intentRow")
+            .onAppear { store.prewarmIntentIfNeeded() }
+            if !suggestions.results.isEmpty {
+              Rectangle().fill(Tokens.Color.line).frame(height: 1).padding(.leading, 14)
+            }
+          }
           ForEach(suggestions.results.prefix(Self.visibleSuggestions)) { suggestion in
             Button { choose(suggestion) } label: {
               VStack(alignment: .leading, spacing: 2) {
