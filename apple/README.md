@@ -26,7 +26,7 @@ apple/tools/verify-app.sh test     # 単体テスト(TripCheckTests)と UI テ�
 apple/tools/screenshot.sh boot     # 起動中のシミュレータを PNG に
 ```
 
-的は 2 つある。`TripCheckTests`(単体)は**アプリのソースそのものを読む走査**で、`IconShape` / `SVGPath` / `Icon` が App ターゲットの型なので AppCore 側には置けない。`TripCheckUITests` はシミュレータの上で 4 本の道を通す。`test` は `-only-testing:` で両方を名指しするので、片方が的から外れたまま緑になることがない。
+的は 2 つある。`TripCheckTests`(単体)は**アプリのソースそのものを読む走査**で、`IconShape` / `SVGPath` / `Icon` が App ターゲットの型なので AppCore 側には置けない。`TripCheckUITests` はシミュレータの上で 5 本の道を通す。`test` は `-only-testing:` で両方を名指しするので、片方が的から外れたまま緑になることがない。
 
 UI テストは `-uiTesting` を渡してアプリを起こす。この旗が立つと `TripCheckApp` は 3 つを切り替える —— 旅程の保存先を使い捨ての一時ディレクトリへ、`UserDefaults` を毎回消す専用の箱(`com.muraoshoki.tripcheck.uitest`)へ、そしてアニメーションを止める(UIKit 側は `UIView.setAnimationsEnabled(false)`、SwiftUI 側は根の `.transaction`)。動いている札は `XCUIElement` の位置が定まらないので掴めない。
 
@@ -49,16 +49,28 @@ xcrun simctl ui booted content_size large                    # 戻す
 | `Anton-Regular.ttf` | `a4ba3a92350ebb031da0cb47630ac49eb265082ca1bc0450442f4a83ab947cab` |
 | `OFL.txt` | `ee67e6ee22790b7929f1a3769ca2801d565c64b5a9096942c1adf5596de9c9e4` |
 
-## 検証値(engine、2026-08-24、`apple/tools/verify-kit.sh`)
+## 検証値(engine、2026-08-25、`apple/tools/verify-kit.sh`)
 
-**838 本すべて passed / `exit=0`**(警告ゼロ)。`verify-kit.sh` はパッケージ全体を回すので、内訳は
-`TripCheckKitTests` 581 と `TripCheckAppCoreTests` 257。前者は Plan 1 の 563 本に Task 10 の
-`PreTripTimelineTests` 13 本と、Routes spec の `LiveRouteMergeTests` 3 本・`EvidenceSourceTests` 2 本を
-足したもので、下の表(G1/G2/G3・共有・JSMath・境界)はその中身。
+**861 本すべて passed / `exit=0`**(警告ゼロ)。`verify-kit.sh` はパッケージ全体を回すので、内訳は
+`TripCheckKitTests` 593 と `TripCheckAppCoreTests` 268。前者は Plan 1 の 563 本に Task 10 の
+`PreTripTimelineTests` 13 本、Routes spec の `LiveRouteMergeTests` 3 本・`EvidenceSourceTests` 2 本、
+自由文インテント spec の `IntentTests` 6 本・`IntentResolutionTests` 6 本を足したもので、下の表
+(G1/G2/G3・共有・JSMath・境界)はその中身。後者(AppCoreTests)は `IntentFlowTests` 8 本・
+`IntentParserTests` 2 本を含む。
 
 Routes spec(実経路)は **Kit の既存テストに 1 行も触っていない**。足したのは上の 2 ファイルだけで、
 フィクスチャも不変 —— G1 は 500/500 のまま、G3 の差分もゼロ
 (`git status -- Tests/TripCheckKitTests/Fixtures` が空であることを毎回確かめている)。
+
+自由文インテント spec(Foundation Models)も同じ構え —— **Kit に足したのは決定的な型と純粋関数だけ**
+(`Intent/TripIntent.swift` の `TripIntent` / `IntentOutcome` / `IntentParser` プロトコル、
+`IntentTrigger.looksLikeTripSentence` の「文らしいか」判定、`IntentResolution` の「N泊」→日数・
+「10月3日から」→日付の決定的な変換)。LLM を呼ぶコードは Kit のどこにも無い。端末内 LLM
+(`FoundationModelsIntentParser`、iOS 26+ の `FoundationModels` を import)と UI テスト用の
+`CannedIntentParser` はどちらも AppCore 側にあり、同じ `IntentParser` を実装するだけの差し替え可能な
+実装 —— 起動時に `IntentAvailability.makeDefaultParser` が一度だけどちらを注入するか決める
+(実経路の `RouteProvider` と同じミラー型シーム、spec §3)。フィクスチャは触っておらず、G1/G3 の
+差分もゼロのまま。
 
 Plan 1 のときの負荷試験もそのまま効く:3 回のうち 1 回は 15 コアを全部埋めた状態(load average 26 → 29)で回して passed / `exit=0` だった。以前 `--parallel` で照合が落ちたのは load average 7 台のときだったので、その 4 倍の負荷でも動かないことを見ている。
 
@@ -71,20 +83,20 @@ Plan 1 のときの負荷試験もそのまま効く:3 回のうち 1 回は 15 
 | JSMath | `Fixtures/js-math-vectors.v1.json`(`Units/JSMathTests.swift`) | V8 `12.4.254.21-node.27`(フィクスチャの `v8Version` そのまま。Node 22.18.0)と **86,510 標本がビット一致**(緯度の cos/sin 45,002、小引数 sin 20,001、asin 20,001、π/2 近傍 240、中規模還元 322、巨大引数 242、builder コーパスの全順序対 702 辺) |
 | Kit 境界 | `Invariants/ImportBoundaryTests.swift` | Kit のソースに `import Foundation` 以外が無い。`PlannerViewState` の名前も現れない(spec §5.1) |
 
-## 検証値(アプリ、2026-08-24、`apple/tools/verify-app.sh test` を 2 回)
+## 検証値(アプリ、2026-08-25、`apple/tools/verify-app.sh test` を 2 回)
 
 2 回とも `TEST SUCCEEDED` / `exit=0`(警告ゼロ)。
 
 | 的 | 本数 | 中身 |
 | --- | --- | --- |
 | `TripCheckTests`(単体) | 9 | `CopyBoundaryTests` 3 + `IconCoverageTests` 6 |
-| `TripCheckUITests` | 5 | `PlannerFlowTests` 4 + `LaunchUITests` 1 |
+| `TripCheckUITests` | 6 | `PlannerFlowTests` 5 + `LaunchUITests` 1 |
 
 `CopyBoundaryTests` は `apple/TripCheck` と AppCore の `Sources`(81 ファイル)を歩き、文字列リテラルに日本語の文が無いこと・`Text("…")` に長い文が直接座っていないこと・リテラルが `BannedTerms` を踏まないことを見る。除くのは `Design/` と `AppCopy.swift` の 2 つだけで、`JSRegex("…")` の引数だけは日本語を許す —— `AppleAddress` が日本の住所を切る 2 本は文ではなく**文法**である。植えたリテラルで落ちることを確かめてある(`SpareLine.swift` に 3 種類を順に植えて、3 種類とも赤になった)。
 
 `IconCoverageTests` は 24 種の線と塗り、枠からのはみ出し、拡縮、線の太さ、そして**円弧が弧として引かれていること**(`pin` / `signal` / `moon` / `cloud`)を見る。Task 1 が残していた「`SVGPath` に自動の検査が無い」穴はここで塞がった。
 
-`PlannerFlowTests` の 4 本 —— 見本 → 旅程 → 詳細 → 外す → 元に戻す、旅程 ↔ 地図の往復、**ファーストビュー契約**(統合仕様 §10:既定の文字サイズの iPhone 17 Pro で、最初の停留所がスクロール無しに見え、押せる)、そして**実経路が届くところ**(見本 → 進捗の行が消える → 移動カードで車を選ぶ → 地図に「実経路 N区間」が出る)。4 本目は `-uiTesting` の `CannedRouteProvider` を通るので通信しない —— 徒歩 12 分/km、車 max(3, 3 分/km)、公共交通 max(5, 4 分/km) の決定的な答えで、同じ 2 点には毎回同じ分が返る。
+`PlannerFlowTests` の 5 本 —— 見本 → 旅程 → 詳細 → 外す → 元に戻す、旅程 ↔ 地図の往復、**ファーストビュー契約**(統合仕様 §10:既定の文字サイズの iPhone 17 Pro で、最初の停留所がスクロール無しに見え、押せる)、**実経路が届くところ**(見本 → 進捗の行が消える → 移動カードで車を選ぶ → 地図に「実経路 N区間」が出る)、そして**自由文インテントがフォームへ展開するところ**(`testFreeTextIntentFillsTheStartForm`:文らしい入力に「旅の条件として読み取る」行が出る → タップ → canned の聞き取り(行き先 金沢・3泊→4日・ウィッシュ 海鮮/21世紀美術館)がフォームへ展開し、確認トーストが出る)。実経路の本は `-uiTesting` の `CannedRouteProvider` を、インテントの本は同じく `-uiTesting` の `CannedIntentParser` を通るのでどちらも通信しない —— 徒歩 12 分/km、車 max(3, 3 分/km)、公共交通 max(5, 4 分/km) の決定的な答えで同じ 2 点には毎回同じ分が返り、インテントは入力に依らず常に同じ答え(`CannedIntentParser.swift`)を返す。
 
 ### 目で見たもの(シミュレータ、iPhone 17 Pro)
 
@@ -109,6 +121,41 @@ accessibility5 で見つけて直したものは 4 つ。時刻の列(`ActivityC
 ### Apple の場所解決が置く証拠(`ApplePlaceResolver`)
 
 端末の地図が返した停留所は**提供元の証拠を持たない**。`providerRef = nil`、`sourceUrl` と `verifiedAt` は空、`confidence = .medium`、`provider = .apple`、id は `apple-<inputIndex>-<hash>`。鍵ゼロで場所を引ける代わりに、営業時間も口コミも付いてこないので、`Feasibility` の数え上げでは「未確認」の側に落ちる —— 画面の 3 数(確認済み / 推定 / 未確認)がそう出るのはこのため。`ApplePlaceResolverTests.appleStopsCarryNoProviderEvidence` が 6 欄を名指しで留めている。
+
+### 自由文インテント(Foundation Models)
+
+検索窓に文らしい入力(「金沢に3泊、海鮮と21世紀美術館」のような文)をすると、候補の上に
+「旅の条件として読み取る」の行が出る。この行が出るのは **iOS 26 以降・Apple Intelligence が使える
+端末だけ**(`IntentAvailability.makeDefaultParser` が起動時に一度だけ判定 ——
+`SystemLanguageModel.default.availability` が `.available` でなければ parser を注入せず、行そのものが
+出ない)。非対応の端末では今までどおりの検索窓のまま —— エラーは出ず、従来 UI に静かに落ちる。
+行をタップすると端末内 LLM(Foundation Models、鍵もネットワークも要らない)が走り、行き先は検索欄の
+プリフィルに、日数・日付は `IntentResolution` の決定的な変換を経てフォームへ、やりたいこと・
+食べたいものはウィッシュの行として展開する(確認ファースト —— 旅程へ直接書く経路は無く、フォームに
+置くだけ)。**intent に無い欄は決してクリアしない**(`PlannerStore+Intent.apply`)。
+
+**本物の LLM はホストの Apple Intelligence 状態に依存するため自動テスト対象外。** 検証は次の三本で
+成り立っている。
+
+1. **開発機プローブ**(spec §8、2026-08-24、Xcode 26.6 / iOS SDK 26.5 のホストで
+   `availability = .available` を実測)。「9月に」から日付を捏造する・セッションを使い回すと単語
+   入力に前回の答えが混ざる、といった実際の挙動もここで見つけて、spec §4.2 の「暦の計算は Swift
+   側」「パースごとに新品セッション」という掟に落とし込んである。
+2. **canned パーサの UI テスト**(`testFreeTextIntentFillsTheStartForm`、上表)。`-uiTesting` は
+   常に `CannedIntentParser` を注入する(spec §4.5)—— シミュレータのホスト状態に自動テストを
+   依存させないための構え。
+3. **このホストでの手動確認**(Task 7、2026-08-25、iPhone 17 Pro シミュレータ)。`-uiTesting` を
+   外した素の起動でも「旅の条件として読み取る」行が出ることを確かめた
+   (`tripcheck-intent-row-real-fm`)—— このホストはシミュレータ自体が Apple Intelligence に
+   対応している。ただしタップした先の実際の生成結果(表記・待ち時間)はホストの状態に左右され
+   毎回同じ絵にならないため、適用後の画は撮っていない —— 下の 2 枚はどちらも canned の値。
+
+| 撮ったもの | 名前 | 何が写っているか |
+| --- | --- | --- |
+| 文らしい入力に行が出た状態(canned、`-uiTesting`) | `tripcheck-intent-row` | 「Weekend trip to Kanazawa, seafood and museum」の入力中に、通常の場所候補の上に「旅の条件として読み取る」の行が出ている |
+| 適用直後(canned) | `tripcheck-intent-applied-toast` | 検索欄が「金沢」に置き換わり、確認トースト「読み取りました。内容を確認して構築へ進んでください。」が出ている(自動で消える一過性の表示だが、この回は捕まえられた) |
+| 適用後のフォーム(canned) | `tripcheck-intent-applied-wishlist` | ウィッシュに「海鮮」「21世紀美術館」の2行、「何日くらい?」が「4日」に選び直っている(3泊→4日の変換) |
+| 素の起動(実機 Foundation Models、`-uiTesting` 無し) | `tripcheck-intent-row-real-fm` | 同じ文で「旅の条件として読み取る」の行が実モデル判定でも出ている。タップ後は撮っていない(上参照) |
 
 ### まだ直していないもの
 
