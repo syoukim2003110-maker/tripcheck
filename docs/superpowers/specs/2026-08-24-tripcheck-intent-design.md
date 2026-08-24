@@ -42,7 +42,7 @@ Foundation Models(iOS 26 の端末内 LLM)はこの構えの「聞き取りの�
 TripCheckKit (Foundation のみ)
   Intent/TripIntent.swift        … 型・プロトコル・結果 enum
   Intent/IntentTrigger.swift     … 「文らしさ」の決定的判定
-  Intent/IntentResolution.swift  … 表記→日数/日付の決定的パーサ+展開規則
+  Intent/IntentResolution.swift  … 表記→日数/日付の決定的パーサ(展開は AppCore の Store 拡張)
 TripCheckAppCore (FoundationModels 可)
   Intent/IntentAvailability.swift          … 入口を出すかの判定
   Intent/FoundationModelsIntentParser.swift … @available(iOS 26) の本物
@@ -149,8 +149,9 @@ public protocol IntentParser: Sendable {
 適用は `PlannerStore+Intent` が行う。**LLM の結果が直接プランになる経路は無い** — 全部
 既存フォームの値になり、ユーザーが見て直してから構築ボタンを押す。
 
-- **wishes** → 既存 `addEntry(text:suggestion:)` でウィッシュリストへ(既存の場所解決・
-  Resolve 画面がそのまま網になる)。空白除去・大文字小文字/空白違いの重複はスキップ。
+- **wishes** → 既存の追加経路(`addEntrySync` + `refreshInputMode`、貼り付け取り込みと同じ扱い)で
+  ウィッシュリストへ(既存の場所解決・Resolve 画面がそのまま網になる)。`addEntry` は使わない —
+  上限トーストが適用ループ中に連発するため。空白除去・大文字小文字/空白違いの重複はスキップ。
   上限は既存 `placeLimit`(12)から現在の件数を引いた分だけ。収まらない分は落とし、
   結果はフォーム上でそのまま見える。
 - **destination** → 検索欄にテキストをプリフィルし候補を開く(自動追加はしない。アンカーに  するかはユーザーがタップで決める)。wishes が1件も無い場合も同じ(プリフィルのみ)。
