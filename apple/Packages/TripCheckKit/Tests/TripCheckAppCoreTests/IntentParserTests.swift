@@ -7,7 +7,7 @@ import TripCheckKit
   let expected = TripIntent(
     destination: "金沢", durationText: "3泊", whenText: "", wishes: ["海鮮", "21世紀美術館"])
   #expect(await CannedIntentParser().parse("anything", locale: .ja) == .parsed(expected))
-  #expect(await CannedIntentParser().parse("別の入力", locale: .ja) == .parsed(expected))
+  #expect(await CannedIntentParser().parse("別の入力", locale: .en) == .parsed(expected))
 }
 
 // -uiTesting では必ず Canned —— シミュレータのホスト状態に依存させない(spec §4.5)。
