@@ -154,7 +154,7 @@ accessibility5 で見つけて直したものは 4 つ。時刻の列(`ActivityC
 | --- | --- | --- |
 | 文らしい入力に行が出た状態(canned、`-uiTesting`) | `tripcheck-intent-row` | 「Weekend trip to Kanazawa, seafood and museum」の入力中に、通常の場所候補の上に「旅の条件として読み取る」の行が出ている |
 | 適用直後(canned) | `tripcheck-intent-applied-toast` | 検索欄が「金沢」に置き換わり、確認トースト「読み取りました。内容を確認して構築へ進んでください。」が出ている(自動で消える一過性の表示だが、この回は捕まえられた) |
-| 適用後のフォーム(canned) | `tripcheck-intent-applied-wishlist` | ウィッシュに「海鮮」「21世紀美術館」の2行、「何日くらい?」が「4日」に選び直っている(3泊→4日の変換) |
+| 適用後のフォーム(canned) | `tripcheck-intent-applied-wishlist` | ウィッシュに「海鮮」「21世紀美術館」の2行、「何日くらい？」が「4日」に選び直っている(3泊→4日の変換) |
 | 素の起動(実機 Foundation Models、`-uiTesting` 無し) | `tripcheck-intent-row-real-fm` | 同じ文で「旅の条件として読み取る」の行が実モデル判定でも出ている。タップ後は撮っていない(上参照) |
 
 ### まだ直していないもの
