@@ -13,7 +13,8 @@ import Testing
 }
 
 @Test func fullWidthDigitsCount() {
-  #expect(IntentResolution.days(fromDurationText: "2泊") == 3)
+  #expect(IntentResolution.days(fromDurationText: "\u{FF12}泊") == 3)
+  #expect(IntentResolution.startDate(fromWhenText: "\u{FF11}\u{FF10}月\u{FF13}日", today: CalendarDate("2026-08-24")!) == "2026-10-03")
 }
 
 @Test func absurdDurationsClampToTheAllowedRange() {
