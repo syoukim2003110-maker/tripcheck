@@ -69,6 +69,21 @@ import TripCheckKit
   #expect(store.intentPhase == .idle)
 }
 
+// 読取中に構築へ進んだら、遅れて着いた答えは捨てられる(Start を CTA で離れたら、
+// 進行中の自由文パースを次の画面へ持ち越さない)。
+@Test(.timeLimit(.minutes(2))) @MainActor func leavingStartViaTheBuildCTADropsAnInFlightIntentParse() async {
+  let latch = IntentLatch()
+  let store = PlannerStore(resolvers: [], store: nil, intentParser: LatchedIntentParser(latch: latch))
+  store.addEntrySync(text: "Bern")
+  async let result = store.readTripIntent(from: "9月に2泊で金沢")
+  await latch.waitUntilCalled()
+  _ = await store.requestBuildFromStart()
+  await latch.release()
+  #expect(await result == nil)
+  #expect(store.request.entries.map(\.text) == ["Bern"])   // 遅い答えの行は足されない
+  #expect(store.intentPhase == .idle)
+}
+
 // Undo トーストが出ている間は譲る(実経路 T6 の規律)。
 @Test @MainActor func anUndoToastIsNeverClobberedByTheIntentToast() async {
   let parser = FakeIntentParser(outcome: .parsed(TripIntent(

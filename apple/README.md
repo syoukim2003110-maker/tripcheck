@@ -92,7 +92,7 @@ Plan 1 のときの負荷試験もそのまま効く:3 回のうち 1 回は 15 
 | `TripCheckTests`(単体) | 9 | `CopyBoundaryTests` 3 + `IconCoverageTests` 6 |
 | `TripCheckUITests` | 6 | `PlannerFlowTests` 5 + `LaunchUITests` 1 |
 
-`CopyBoundaryTests` は `apple/TripCheck` と AppCore の `Sources`(81 ファイル)を歩き、文字列リテラルに日本語の文が無いこと・`Text("…")` に長い文が直接座っていないこと・リテラルが `BannedTerms` を踏まないことを見る。除くのは `Design/` と `AppCopy.swift` の 2 つだけで、`JSRegex("…")` の引数だけは日本語を許す —— `AppleAddress` が日本の住所を切る 2 本は文ではなく**文法**である。植えたリテラルで落ちることを確かめてある(`SpareLine.swift` に 3 種類を順に植えて、3 種類とも赤になった)。
+`CopyBoundaryTests` は `apple/TripCheck` と AppCore の `Sources`(85 ファイル)を歩き、文字列リテラルに日本語の文が無いこと・`Text("…")` に長い文が直接座っていないこと・リテラルが `BannedTerms` を踏まないことを見る。除くのは `Design/` と `AppCopy.swift` の 2 つだけで、`JSRegex("…")` の引数だけは日本語を許す —— `AppleAddress` が日本の住所を切る 2 本は文ではなく**文法**である。植えたリテラルで落ちることを確かめてある(`SpareLine.swift` に 3 種類を順に植えて、3 種類とも赤になった)。
 
 `IconCoverageTests` は 24 種の線と塗り、枠からのはみ出し、拡縮、線の太さ、そして**円弧が弧として引かれていること**(`pin` / `signal` / `moon` / `cloud`)を見る。Task 1 が残していた「`SVGPath` に自動の検査が無い」穴はここで塞がった。
 

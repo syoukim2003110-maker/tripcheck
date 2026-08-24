@@ -48,7 +48,7 @@ extension PlannerStore {
     let name = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !name.isEmpty else { return }
     guard canAddEntry else {
-      view.toast = Toast(text: AppCopy.for(request.locale).placeLimitToast, kind: .limit)
+      showToast(Toast(text: AppCopy.for(request.locale).placeLimitToast, kind: .limit))
       return
     }
     let entryId = addEntrySync(text: name)
@@ -152,10 +152,10 @@ extension PlannerStore {
     request.unparsedLines.append(contentsOf: parsed.unparsed)
     refreshInputMode()
     if parsed.entries.count > room {
-      view.toast = Toast(
+      showToast(Toast(
         text: AppCopy.for(request.locale).pasteLimitToast(count: already + parsed.entries.count),
         kind: .limit
-      )
+      ))
     }
     return (added.count, parsed.unparsed.count)
   }
@@ -320,6 +320,10 @@ extension PlannerStore {
   /// 組まれていない旅程を「開きました」と報せることになる。
   @discardableResult
   public func requestBuildFromStart() async -> Bool {
+    // CTA で Start を離れるなら、読みかけの自由文パースもここで捨てる —— 遅れて届いた
+    // LLM の答えが、もう見えていない画面の裏でフォームを書き換えないように(spec §4.2
+    // 「画面を離れる → 進行中タスクをキャンセルし結果を捨てる」)。
+    intentQueryChanged()
     guard !request.entries.isEmpty, !isResolvingPlaces, view.screen != .building else { return false }
 
     let queries = request.entries.enumerated().compactMap { index, entry in

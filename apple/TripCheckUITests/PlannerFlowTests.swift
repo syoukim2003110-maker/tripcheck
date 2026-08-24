@@ -131,5 +131,8 @@ final class PlannerFlowTests: XCTestCase {
     XCTAssertTrue(app.buttons["海鮮"].waitForExistence(timeout: 5))
     XCTAssertTrue(app.buttons["21世紀美術館"].exists)
     XCTAssertEqual(field.value as? String, "金沢")
+    // canned の durationText は「3泊」(→4日) —— 既定の3日と区別できる値にして、
+    // 適用が本当に起きたことを日数タイルの選択状態でも確かめる。
+    XCTAssertTrue(app.buttons["4日"].isSelected)
   }
 }
