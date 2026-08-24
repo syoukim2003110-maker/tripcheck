@@ -152,6 +152,17 @@ public final class PlannerStore {
   /// 進捗の表示用値。`view` ではなく store 直下(spec §4.1)。
   public internal(set) var routeProgress: RouteProgress?
 
+  // MARK: - 自由文インテント(spec 2026-08-24)
+
+  /// 聞き取り係。nil = 入口を出さない(非対応端末・従来テスト)。起動時に composition root が決める。
+  @ObservationIgnored let intentParser: (any IntentParser)?
+  /// 実行中のパース。入力が変わったら世代で無効化し、タスクも畳む。
+  @ObservationIgnored var intentTask: Task<IntentOutcome, Never>?
+  @ObservationIgnored var intentGeneration = 0
+  @ObservationIgnored var intentPrewarmed = false
+  /// 行の見た目(待機/読取中/失敗)。View が読むので observable のまま。
+  public internal(set) var intentPhase: IntentPhase = .idle
+
   public init(
     resolvers: [any PlaceResolver],
     store: TripStore?,
@@ -160,11 +171,13 @@ public final class PlannerStore {
     clock: any Clock<Duration> = ContinuousClock(),
     defaults: UserDefaults = .standard,
     initialLocale: PlannerLocale = .ja,
-    routeProvider: (any RouteProvider)? = nil
+    routeProvider: (any RouteProvider)? = nil,
+    intentParser: (any IntentParser)? = nil
   ) {
     self.resolvers = resolvers
     self.store = store
     self.routeProvider = routeProvider
+    self.intentParser = intentParser
     self.storageDirectory = storageDirectory
     self.autosaveDebounce = autosaveDebounce
     self.clock = clock
@@ -321,6 +334,8 @@ public final class PlannerStore {
 
   /// 最初から。ロケールだけは端末の設定なので引き継ぐ。
   public func reset() {
+    // 読みかけの自由文パースも次の旅へ持ち越さない(`loadSample` / `openTrip` はここを通る)。
+    intentQueryChanged()
     cancelBuild()
     // 測った経路も捨てる。次は別の旅で、鍵(座標)が同じでも同じレグとは限らない。
     invalidateRoutes(keepCache: false)

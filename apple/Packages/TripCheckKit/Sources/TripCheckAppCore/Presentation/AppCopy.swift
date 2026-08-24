@@ -325,6 +325,17 @@ public struct AppCopy: Sendable {
   /// ここが言い、余裕の差は `VerdictCopy.bufferToastDetail` が別の行で言う。
   public let appleRouteEvidence: String
 
+  // MARK: - 自由文インテント(spec 2026-08-24)
+
+  /// 検索窓の下に出す「読み取る」行の見出し。
+  public let intentRowTitle: String
+  /// 読取中の行の見た目。
+  public let intentParsing: String
+  /// 失敗:場所は無傷なので、次の一手を促す。
+  public let intentFailed: String
+  /// 適用後のトースト。旅程へは直接書かないので「確認してから構築へ」と言う(spec §1)。
+  public let intentApplied: String
+
   private let pasteLimitToastText: @Sendable (Int) -> String
   private let daysValueText: @Sendable (Int) -> String
   private let priorityLabelText: @Sendable (String) -> String
@@ -539,6 +550,10 @@ public struct AppCopy: Sendable {
     printOmissionUnresolved: String,
     printOmissionRemoved: String,
     appleRouteEvidence: String,
+    intentRowTitle: String,
+    intentParsing: String,
+    intentFailed: String,
+    intentApplied: String,
     pasteLimitToast: @escaping @Sendable (Int) -> String,
     daysValue: @escaping @Sendable (Int) -> String,
     priorityLabel: @escaping @Sendable (String) -> String,
@@ -746,6 +761,10 @@ public struct AppCopy: Sendable {
     self.printOmissionUnresolved = printOmissionUnresolved
     self.printOmissionRemoved = printOmissionRemoved
     self.appleRouteEvidence = appleRouteEvidence
+    self.intentRowTitle = intentRowTitle
+    self.intentParsing = intentParsing
+    self.intentFailed = intentFailed
+    self.intentApplied = intentApplied
     self.pasteLimitToastText = pasteLimitToast
     self.daysValueText = daysValue
     self.priorityLabelText = priorityLabel
@@ -1130,6 +1149,10 @@ public struct AppCopy: Sendable {
     printOmissionUnresolved: "場所を解決できないため未判定です",
     printOmissionRemoved: "旅行者が旅程から外しました",
     appleRouteEvidence: "Apple Maps の経路",
+    intentRowTitle: "旅の条件として読み取る",
+    intentParsing: "読み取っています",
+    intentFailed: "読み取れませんでした。場所を選ぶか、書き方を変えてお試しください。",
+    intentApplied: "読み取りました。内容を確認して構築へ進んでください。",
     pasteLimitToast: { "\($0)件あります。1回に確認できるのは12か所までです。残りは別の旅として分けてください。" },
     daysValue: { "\($0)日" },
     priorityLabel: { "\($0)の優先度" },
@@ -1360,6 +1383,10 @@ public struct AppCopy: Sendable {
     printOmissionUnresolved: "Unresolved, so it was not evaluated",
     printOmissionRemoved: "Removed from the plan by the traveller",
     appleRouteEvidence: "Apple Maps route",
+    intentRowTitle: "Read as trip details",
+    intentParsing: "Reading",
+    intentFailed: "Couldn't read that. Pick a place or try different wording.",
+    intentApplied: "Details filled in. Review them, then build.",
     pasteLimitToast: { "\($0) places found. Up to 12 places at a time. Keep the rest for a second trip." },
     daysValue: { "\($0) day\($0 == 1 ? "" : "s")" },
     priorityLabel: { "\($0) priority" },

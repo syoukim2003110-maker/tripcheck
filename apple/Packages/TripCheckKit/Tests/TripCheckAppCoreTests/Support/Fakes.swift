@@ -87,3 +87,48 @@ struct FakeRouteProvider: RouteProvider {
     }
   }
 }
+
+/// 決められた答えを返す聞き取り係。outcome を差し替えて成功も失敗も演じる。
+struct FakeIntentParser: IntentParser {
+  var outcome: IntentOutcome = .parsed(TripIntent(
+    destination: "金沢", durationText: "3泊", whenText: "", wishes: ["海鮮"]))
+  func parse(_ text: String, locale: PlannerLocale) async -> IntentOutcome { outcome }
+}
+
+/// 呼ばれたことを合図し、放すまで答えを返さない聞き取り係。読みかけ中の割り込みを
+/// 決定的に作る(壁時計 sleep は並列スイートで飢えるため使わない —— RouteLatch と同じ教訓)。
+actor IntentLatch {
+  private var called = false
+  private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+  private var callWaiters: [CheckedContinuation<Void, Never>] = []
+  private var released = false
+  func markCalled() {
+    called = true
+    for w in callWaiters { w.resume() }
+    callWaiters = []
+  }
+  func waitUntilCalled() async {
+    if called { return }
+    await withCheckedContinuation { callWaiters.append($0) }
+  }
+  func release() {
+    released = true
+    for w in releaseWaiters { w.resume() }
+    releaseWaiters = []
+  }
+  func waitUntilReleased() async {
+    if released { return }
+    await withCheckedContinuation { releaseWaiters.append($0) }
+  }
+}
+
+/// ラッチが開くまで答えない聞き取り係。release を await より先に呼ぶこと(ラッチは
+/// キャンセルを見ない)。
+struct LatchedIntentParser: IntentParser {
+  let latch: IntentLatch
+  func parse(_ text: String, locale: PlannerLocale) async -> IntentOutcome {
+    await latch.markCalled()
+    await latch.waitUntilReleased()
+    return .parsed(TripIntent(destination: "遅い答え", durationText: "", whenText: "", wishes: ["遅い答え"]))
+  }
+}
