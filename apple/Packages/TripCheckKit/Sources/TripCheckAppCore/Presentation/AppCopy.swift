@@ -1478,15 +1478,15 @@ public struct AppCopy: Sendable {
 /// 後半は `-uiTesting` 専用の固定回答(`CannedIntentParser`)で、入力の言語に関わらず同じ
 /// 答えを返す取り決め(UI テストが前提にしている)。どちらも「文言」ではないが、走査
 /// (`CopyBoundaryTests.swift`)の逃げ場は `AppCopy.swift` 1 つだけなので、ここに置く。
-public enum IntentLiterals {
-  public static let instructions =
+enum IntentLiterals {
+  static let instructions =
     "旅行の希望を書いた文から条件を抜き出す。値は必ず本文に書かれた表記のまま写す。本文に無い情報は決して補わない。"
-  public static let destinationGuide = "旅の行き先の地名。本文の表記のまま。無ければ空文字。"
-  public static let durationGuide = "泊数・日数の表現を本文の表記のまま。例:「2泊」「3日間」「2泊3日」。無ければ空文字。"
-  public static let whenGuide = "時期・日付の表現を本文の表記のまま。例:「9月」「10月3日から」「来週末」。無ければ空文字。"
-  public static let wishesGuide = "やりたいこと・食べたいもの・行きたい場所の項目。本文に書かれたものだけ。"
+  static let destinationGuide = "旅の行き先の地名。本文の表記のまま。無ければ空文字。"
+  static let durationGuide = "泊数・日数の表現を本文の表記のまま。例:「2泊」「3日間」「2泊3日」。無ければ空文字。"
+  static let whenGuide = "時期・日付の表現を本文の表記のまま。例:「9月」「10月3日から」「来週末」。無ければ空文字。"
+  static let wishesGuide = "やりたいこと・食べたいもの・行きたい場所の項目。本文に書かれたものだけ。"
 
-  public static let cannedDestination = "金沢"
-  public static let cannedDuration = "3泊"
-  public static let cannedWishes = ["海鮮", "21世紀美術館"]
+  static let cannedDestination = "金沢"
+  static let cannedDuration = "3泊"
+  static let cannedWishes = ["海鮮", "21世紀美術館"]
 }

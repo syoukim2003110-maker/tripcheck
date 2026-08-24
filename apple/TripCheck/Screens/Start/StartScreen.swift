@@ -9,6 +9,7 @@ import TripCheckKit
 /// 転がしても、次の一手が視界から出ない。
 struct StartScreen: View {
   @Environment(PlannerStore.self) private var store
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var suggestions = AppleSuggestions()
 
   var body: some View {
@@ -135,6 +136,7 @@ struct StartScreen: View {
         .background(.ultraThinMaterial)
         .accessibilityIdentifier("start.build")
       }
+      .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: store.view.toast)
     }
   }
 }
