@@ -163,6 +163,8 @@ extension PlannerStore {
     // 静かな置換も日割りを変えうる(上の `adopt` がそれ)。天気は日 index で引くので、
     // 入れ替わった日割りのまま古い天気を残さない —— ここで測り直す。
     startWeatherEnrichment()
+    // 食事の候補も同じ場所で世代を進める(lazy なので、ここでは前の候補を捨てるだけ)。
+    invalidateFoodRecommendations()
   }
 
   /// 保留した置換を通す。ダイアログが閉じたとき(`confirmPendingEdit` の捨てる枝 /

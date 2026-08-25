@@ -171,6 +171,14 @@ public final class PlannerStore {
   /// Apple 必須の帰属。**帰属が無ければ天気そのものを出さない。**
   public internal(set) var weatherAttribution: WeatherAttribution?
 
+  // MARK: - 食事の候補(観測しない。foodRecommendationsBySlot だけが観測される。spec 2026-08-25)
+  /// 候補の提供元。nil = 出さない(UI テスト・未構成)。
+  @ObservationIgnored let foodRecommendationProvider: (any FoodRecommending)?
+  @ObservationIgnored var foodRecommendationGeneration = 0
+  @ObservationIgnored var foodRecommendationTasks: [String: Task<Void, Never>] = [:]
+  /// 食事枠 id → 候補の状態(表示専用)。
+  public internal(set) var foodRecommendationsBySlot: [String: FoodSlotRecommendations] = [:]
+
   // MARK: - 自由文インテント(spec 2026-08-24)
 
   /// 聞き取り係。nil = 入口を出さない(非対応端末・従来テスト)。起動時に composition root が決める。
@@ -192,13 +200,15 @@ public final class PlannerStore {
     initialLocale: PlannerLocale = .ja,
     routeProvider: (any RouteProvider)? = nil,
     intentParser: (any IntentParser)? = nil,
-    weatherProvider: (any WeatherProviding)? = nil
+    weatherProvider: (any WeatherProviding)? = nil,
+    foodRecommendationProvider: (any FoodRecommending)? = nil
   ) {
     self.resolvers = resolvers
     self.store = store
     self.routeProvider = routeProvider
     self.intentParser = intentParser
     self.weatherProvider = weatherProvider
+    self.foodRecommendationProvider = foodRecommendationProvider
     self.storageDirectory = storageDirectory
     self.autosaveDebounce = autosaveDebounce
     self.clock = clock
@@ -449,5 +459,8 @@ public final class PlannerStore {
     startRouteEnrichment()
     // 天気も同じ場所で測りに行く。表示専用なので旅程の判定を 1 ミリも動かさない。
     startWeatherEnrichment()
+    // 食事の候補も同じ場所で世代を進める。取得は lazy(タップ時)なので、ここでは前の旅程の
+    // 候補を捨てるだけ —— 新しい枠は `loadFoodRecommendations(slotId:)` が取りに行く。
+    invalidateFoodRecommendations()
   }
 }
