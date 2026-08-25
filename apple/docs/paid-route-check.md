@@ -25,3 +25,18 @@ Simulator でも bypass セッションで通せる。実 Google キーが要る
 ## 4. 実機
 実機は bypass 不要 — 実 App Attest でセッションが出る(`worker-auth-device-checklist.md`
 の手順で attest 済みなら、そのまま place-resolution も通る)。
+
+## 5. Google サジェスト
+検索窓の Apple 行の下に出る第 2 区画(`WorkerSuggestions`)も同じ鍵・同じ bypass で通す。
+
+1. 上の 1・2 と同じく `.dev.vars` に実 `GOOGLE_PLACES_API_KEY` を置き、`pnpm dev` を
+   起動。Simulator は `TRIPCHECK_WORKER_BYPASS_TOKEN` を .dev.vars と同じ値にして走らせる。
+2. Start 画面の検索窓に 3 文字以上打つ(1・2 文字では Apple 行しか出ない ——
+   `WorkerSuggestions.minimumQueryLength` が 3)。少し待つ(デバウンス)と、Apple 候補の
+   下に区切り線・見出し(「ウェブの検索候補」)・Google 候補の行・`Powered by Google` の
+   帰属が出る。
+3. Google 行を選ぶと、入力欄には選んだ名前がそのまま入り(候補ではなく通常入力として
+   渡る)、CTA で組んだときにその停留所が `google-` 始まりの検証済み id(`sourceUrl`/
+   `verifiedAt` が非空、`provider = .google`)になっていることを確認する。
+4. `.dev.vars` から鍵を外す(または Worker を止める / bypass トークンを外す)と、同じ
+   3 文字以上の入力でも第 2 区画は一切出ず、Apple 候補だけが残ることを確認する。

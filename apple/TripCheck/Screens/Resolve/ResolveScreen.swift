@@ -163,5 +163,7 @@ struct ResolveScreen: View {
 #Preview {
   let store = PlannerStore(resolvers: [], store: nil)
   store.view.screen = .resolve
-  return RootView().environment(store)
+  return RootView()
+    .environment(store)
+    .environment(WorkerSuggestions(client: CannedWorkerClient()))
 }

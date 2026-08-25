@@ -136,6 +136,23 @@ final class PlannerFlowTests: XCTestCase {
     XCTAssertTrue(app.buttons["4日"].isSelected)
   }
 
+  /// Canned は `suggestPlaces` が常に nil を返すので、Google 区画(`start.webSuggestion`)は
+  /// 出ない —— 検索窓の非回帰を固定する。
+  @MainActor
+  func testWebSuggestionSectionAbsentUnderCannedWorker() {
+    let app = launch()
+    let field = app.textFields["start.placeField"]
+    XCTAssertTrue(field.waitForExistence(timeout: 10))
+    field.tap()
+    field.typeText("Tokyo")
+
+    XCTAssertFalse(
+      app.buttons["start.webSuggestion"].waitForExistence(timeout: 2),
+      "Canned worker returns nil suggestions; the web section must not appear"
+    )
+    XCTAssertTrue(app.buttons["start.build"].exists)
+  }
+
   /// `-workerDiagnostics` の隠し画面が出て、疎通ボタンが canned クライアントで成功する。
   @MainActor
   func testWorkerDiagnosticsPingsSuccessfully() {

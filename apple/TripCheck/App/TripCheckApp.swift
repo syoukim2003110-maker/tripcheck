@@ -11,6 +11,7 @@ import TripCheckKit
 @main
 struct TripCheckApp: App {
   @State private var store: PlannerStore
+  @State private var webSuggestions: WorkerSuggestions
   /// UI テストで走っているか。アニメーションを切るのに `body` の側でも要る。
   private let isUITesting: Bool
   private let isWorkerDiagnostics: Bool
@@ -80,6 +81,7 @@ struct TripCheckApp: App {
       // 天気も同じ理由で composition root にだけ判定を閉じ込める(`WeatherAvailability`)。
       weatherProvider: WeatherAvailability.makeDefaultProvider(uiTesting: isUITesting)
     ))
+    _webSuggestions = State(initialValue: WorkerSuggestions(client: workerClient))
   }
 
   var body: some Scene {
@@ -90,6 +92,7 @@ struct TripCheckApp: App {
       } else {
         RootView()
           .environment(store)
+          .environment(webSuggestions)
           .preferredColorScheme(.light)
           // SwiftUI 側の動きを切る(UI テストのときだけ)。`withAnimation` も暗黙の
           // `.animation` も、この 1 枚が transaction から動きを抜くので素通しになる。

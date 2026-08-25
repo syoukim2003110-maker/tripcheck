@@ -7,6 +7,7 @@ import TripCheckKit
 /// 足せる(候補は近道であって、関所ではない)。
 struct PlaceSearchField: View {
   @Bindable var suggestions: AppleSuggestions
+  let webSuggestions: WorkerSuggestions
   /// 足すときに呼ばれる。第 2 引数は候補から選んだときだけ付く。
   let onSubmit: (String, PlaceSuggestion?) -> Void
 
@@ -16,6 +17,8 @@ struct PlaceSearchField: View {
 
   /// 候補は 5 行まで。iPhone の 1 画面に収まる数で、下の行きたい場所リストを押し出さない。
   private static let visibleSuggestions = 5
+  /// Google 行は 3 行まで。Apple の下に添える区画なので、より控えめな数にする。
+  private static let visibleWebSuggestions = 3
 
   var body: some View {
     let text = Copy.for(store.request.locale)
@@ -33,6 +36,7 @@ struct PlaceSearchField: View {
           .focused($isFocused)
           .onSubmit { submitTypedName() }
           .onChange(of: suggestions.query) { store.intentQueryChanged() }
+          .onChange(of: suggestions.query) { _, newValue in webSuggestions.query = newValue }
           .accessibilityLabel(text.inputLabel)
           .accessibilityIdentifier("start.placeField")
         Button { submitTypedName() } label: {
@@ -62,7 +66,7 @@ struct PlaceSearchField: View {
           .padding(.top, 8)
       }
 
-      if store.intentRowVisible(for: suggestions.query) || !suggestions.results.isEmpty {
+      if store.intentRowVisible(for: suggestions.query) || !suggestions.results.isEmpty || !webRows.isEmpty {
         VStack(spacing: 0) {
           if store.intentRowVisible(for: suggestions.query) {
             Button {
@@ -128,6 +132,50 @@ struct PlaceSearchField: View {
               Rectangle().fill(Tokens.Color.line).frame(height: 1).padding(.leading, 14)
             }
           }
+          if !webRows.isEmpty {
+            if !suggestions.results.isEmpty {
+              Rectangle().fill(Tokens.Color.line).frame(height: 1).padding(.leading, 14)
+            }
+            Text(app.webSuggestionsHeader)
+              .tcFont(.meta)
+              .foregroundStyle(Tokens.Color.muted)
+              .frame(maxWidth: .infinity, alignment: .leading)
+              .padding(.horizontal, 14)
+              .padding(.top, 8)
+            ForEach(webRows) { row in
+              Button { chooseWeb(row) } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                  Text(row.primaryText)
+                    .tcFont(.stopName)
+                    .foregroundStyle(Tokens.Color.ink)
+                  if !row.secondaryText.isEmpty {
+                    Text(row.secondaryText)
+                      .tcFont(.meta)
+                      .foregroundStyle(Tokens.Color.muted)
+                  }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .frame(minHeight: Tokens.Hit.primary)
+                .contentShape(Rectangle())
+              }
+              .buttonStyle(.plain)
+              .accessibilityIdentifier("start.webSuggestion")
+              .accessibilityLabel(row.secondaryText.isEmpty ? row.primaryText : "\(row.primaryText) \(row.secondaryText)")
+              if row.id != webRows.last?.id {
+                Rectangle().fill(Tokens.Color.line).frame(height: 1).padding(.leading, 14)
+              }
+            }
+            HStack(spacing: 0) {
+              Spacer(minLength: 0)
+              Text(verbatim: "Powered by Google")
+                .tcFont(.meta)
+                .foregroundStyle(Tokens.Color.muted)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 6)
+          }
         }
         .padding(.top, 6)
         .background(
@@ -160,6 +208,33 @@ struct PlaceSearchField: View {
   private func choose(_ suggestion: PlaceSuggestion) {
     onSubmit(suggestion.title, suggestion)
     suggestions.query = ""
+    isFocused = false
+  }
+
+  /// Apple 行と正規化名で重ならない Google 行を、上限まで。
+  private var webRows: [WorkerPlaceSuggestion] {
+    let taken = Set(suggestions.results.prefix(Self.visibleSuggestions).map { Self.normalize($0.title) })
+    var seen = Set<String>()
+    var out: [WorkerPlaceSuggestion] = []
+    for row in webSuggestions.results {
+      let key = Self.normalize(row.primaryText)
+      if taken.contains(key) || seen.contains(key) { continue }
+      seen.insert(key)
+      out.append(row)
+      if out.count == Self.visibleWebSuggestions { break }
+    }
+    return out
+  }
+
+  private static func normalize(_ s: String) -> String {
+    s.lowercased().split(whereSeparator: { $0.isWhitespace }).joined()
+  }
+
+  /// Google 予測は `CompletionToken` を持たない。`fullText` を通常入力として渡し、
+  /// CTA 時に既存チェーン(Google 優先)が解決する(`suggestion == nil` パス)。
+  private func chooseWeb(_ row: WorkerPlaceSuggestion) {
+    onSubmit(row.fullText, nil)
+    suggestions.query = ""     // onChange 経由で webSuggestions.query も空になる
     isFocused = false
   }
 }

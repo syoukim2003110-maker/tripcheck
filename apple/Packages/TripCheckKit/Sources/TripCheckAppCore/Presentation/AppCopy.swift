@@ -25,6 +25,8 @@ public struct AppCopy: Sendable {
   public let addPlaceLabel: String
   /// 端末の地図が候補を出せなかったときの 1 行。打った名前のままでも進める、と伝える。
   public let suggestionsUnavailable: String
+  /// Google 候補区画の見出し。Apple 行の下に付く。
+  public let webSuggestionsHeader: String
   /// 1 回に扱える場所の上限に当たったときのトースト。
   public let placeLimitToast: String
   /// 優先度の「通常」。「必須」「任意」は Kit の `must` / `optional`。
@@ -413,6 +415,7 @@ public struct AppCopy: Sendable {
     placeFieldPlaceholder: String,
     addPlaceLabel: String,
     suggestionsUnavailable: String,
+    webSuggestionsHeader: String,
     placeLimitToast: String,
     priorityNormal: String,
     pasteText: String,
@@ -631,6 +634,7 @@ public struct AppCopy: Sendable {
     self.placeFieldPlaceholder = placeFieldPlaceholder
     self.addPlaceLabel = addPlaceLabel
     self.suggestionsUnavailable = suggestionsUnavailable
+    self.webSuggestionsHeader = webSuggestionsHeader
     self.placeLimitToast = placeLimitToast
     self.priorityNormal = priorityNormal
     self.pasteText = pasteText
@@ -1021,6 +1025,7 @@ public struct AppCopy: Sendable {
     placeFieldPlaceholder: "例：ラウターブルンネン",
     addPlaceLabel: "この場所を追加",
     suggestionsUnavailable: "いまは候補を出せませんでした。打った名前のまま追加できます。",
+    webSuggestionsHeader: "ウェブの検索候補",
     placeLimitToast: "1回に確認できるのは12か所までです。残りは別の旅として分けてください。",
     priorityNormal: "通常",
     pasteText: "まとめて貼り付ける",
@@ -1270,6 +1275,7 @@ public struct AppCopy: Sendable {
     placeFieldPlaceholder: "e.g. Lauterbrunnen",
     addPlaceLabel: "Add this place",
     suggestionsUnavailable: "No matches right now — you can still add the name you typed.",
+    webSuggestionsHeader: "From web search",
     placeLimitToast: "Up to 12 places at a time. Keep the rest for a second trip.",
     priorityNormal: "Normal",
     pasteText: "Paste a list",

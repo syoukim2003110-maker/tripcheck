@@ -71,5 +71,7 @@ struct BuildScreen: View {
 #Preview {
   let store = PlannerStore(resolvers: [], store: nil)
   store.view.screen = .building
-  return RootView().environment(store)
+  return RootView()
+    .environment(store)
+    .environment(WorkerSuggestions(client: CannedWorkerClient()))
 }

@@ -202,5 +202,6 @@ struct PlanScreen: View {
   store.loadSample(.switzerland)
   return RootView()
     .environment(store)
+    .environment(WorkerSuggestions(client: CannedWorkerClient()))
     .task { await store.build() }
 }

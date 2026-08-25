@@ -57,5 +57,7 @@ private struct ErrorScreen: View {
 }
 
 #Preview {
-  RootView().environment(PlannerStore(resolvers: [], store: nil))
+  RootView()
+    .environment(PlannerStore(resolvers: [], store: nil))
+    .environment(WorkerSuggestions(client: CannedWorkerClient()))
 }

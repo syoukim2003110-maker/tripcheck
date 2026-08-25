@@ -11,6 +11,7 @@ struct StartScreen: View {
   @Environment(PlannerStore.self) private var store
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var suggestions = AppleSuggestions()
+  @Environment(WorkerSuggestions.self) private var webSuggestions
 
   var body: some View {
     @Bindable var store = store
@@ -30,7 +31,7 @@ struct StartScreen: View {
           .foregroundStyle(Tokens.Color.ink)
 
         VStack(alignment: .leading, spacing: 8) {
-          PlaceSearchField(suggestions: suggestions) { name, suggestion in
+          PlaceSearchField(suggestions: suggestions, webSuggestions: webSuggestions) { name, suggestion in
             Task { await store.addEntry(text: name, suggestion: suggestion) }
           }
           .disabled(!store.canAddEntry)
@@ -70,6 +71,7 @@ struct StartScreen: View {
             set: { choice in
               store.setDestination(choice)
               suggestions.setRegion(store.destinationBounds)
+              webSuggestions.configure(destination: choice, locale: store.request.locale)
             }
           ),
           locale: store.request.locale
@@ -96,7 +98,11 @@ struct StartScreen: View {
     // 検索窓は画面と同い年(`@State`)なので、`RootView` が `.start` へ戻るたびに新品に
     // なる —— 国が既に決まっている旅で戻ってきたときに世界中を探し直さないよう、
     // 出てきた時点でも箱を渡す。国を選んだ瞬間に渡すのは `DestinationPicker` の側。
-    .task { suggestions.setRegion(store.destinationBounds) }
+    .task {
+      suggestions.setRegion(store.destinationBounds)
+      webSuggestions.reset()
+      webSuggestions.configure(destination: store.request.destination, locale: store.request.locale)
+    }
     // 端末に残っている旅程は**画面が出るたびに**読み直す。読むのがこの画面の仕事なのは、
     // 一覧を出す節(`RecentTripsSection`)が空のときに view を 1 つも作らないから ——
     // 作られない view に付けた `.task` は走らず、一覧は永久に空のままになる。
@@ -180,5 +186,7 @@ private struct BrandHeader: View {
 }
 
 #Preview {
-  RootView().environment(PlannerStore(resolvers: [CatalogResolver()], store: nil))
+  RootView()
+    .environment(PlannerStore(resolvers: [CatalogResolver()], store: nil))
+    .environment(WorkerSuggestions(client: CannedWorkerClient()))
 }
