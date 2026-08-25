@@ -29,8 +29,12 @@ extension PlannerStore {
       return
     }
     hotelRecommendations = .loading
+    // web は routePoints を 10 点までしか受け取らない(超えると 400)。10 日超の旅程で静かに
+    // 「宿なし」へ落ちないよう先頭 10 点に丸める。全日の中心(latitude/longitude)は ctx が別途
+    // 出しているので、経路点は補助のバイアスに留まる。
+    let routePoints = Array(ctx.routePoints.prefix(10))
     let payload = HotelRecommendationRequestPayload(
-      latitude: ctx.latitude, longitude: ctx.longitude, area: ctx.area, routePoints: ctx.routePoints,
+      latitude: ctx.latitude, longitude: ctx.longitude, area: ctx.area, routePoints: routePoints,
       languageCode: request.locale.rawValue, destination: request.destination.rawValue)
     let generation = hotelRecommendationGeneration
     hotelRecommendationTask = Task { [weak self] in

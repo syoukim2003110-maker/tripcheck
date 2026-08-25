@@ -54,3 +54,12 @@ private func result() -> HotelRecommendationResult {
   let s = store(nil); s.beginHotelFetch(ctx())
   #expect(s.hotelRecommendations == .unavailable)
 }
+
+@Test @MainActor func hotelPayloadCapsRoutePointsAtTen() async throws {
+  let many = (0..<14).map { GeoPoint(latitude: 46.0 + Double($0) * 0.1, longitude: 7.0) }
+  let fake = FakeHotel(answer: result())
+  let s = store(fake)
+  s.beginHotelFetch(HotelRouteContext(latitude: 46.9, longitude: 7.4, area: "Bern", routePoints: many, spreadKm: 5))
+  await s.hotelRecommendationTask?.value
+  #expect(fake.lastPayload?.routePoints.count == 10)   // web の上限に丸める
+}
