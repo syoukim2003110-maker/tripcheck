@@ -26,6 +26,12 @@ struct DayHeaderRow: View {
           Text(header.summary)
             .tcFont(.dayHeader)
             .foregroundStyle(Tokens.Color.ink2)
+          if let weather = store.weatherByDay[index] {
+            WeatherChip(day: weather, copy: app)
+            if let attribution = store.weatherAttribution {
+              WeatherAttributionBadge(attribution: attribution, copy: app)
+            }
+          }
           Spacer(minLength: 0)
           IconView(.arrow, size: 14, color: Tokens.Color.muted)
         }

@@ -347,6 +347,14 @@ public struct AppCopy: Sendable {
   /// 応答が無かったとき。
   public let workerDiagnosticsUnreachable: String
 
+  // MARK: - 天気(spec 2026-08-25、日ヘッダーのチップ+帰属バッジ)
+
+  /// Apple Weather 商標(翻訳しない・両言語同一)。
+  public let weatherBrand: String
+  /// 帰属バッジのアクセシビリティ読み上げ。
+  public let weatherAttributionLabel: String
+  private let weatherPrecipitationText: @Sendable (Int) -> String
+
   private let pasteLimitToastText: @Sendable (Int) -> String
   private let daysValueText: @Sendable (Int) -> String
   private let priorityLabelText: @Sendable (String) -> String
@@ -569,6 +577,9 @@ public struct AppCopy: Sendable {
     workerDiagnosticsCheck: String,
     workerDiagnosticsReachable: String,
     workerDiagnosticsUnreachable: String,
+    weatherBrand: String,
+    weatherAttributionLabel: String,
+    weatherPrecipitation: @escaping @Sendable (Int) -> String,
     pasteLimitToast: @escaping @Sendable (Int) -> String,
     daysValue: @escaping @Sendable (Int) -> String,
     priorityLabel: @escaping @Sendable (String) -> String,
@@ -784,6 +795,9 @@ public struct AppCopy: Sendable {
     self.workerDiagnosticsCheck = workerDiagnosticsCheck
     self.workerDiagnosticsReachable = workerDiagnosticsReachable
     self.workerDiagnosticsUnreachable = workerDiagnosticsUnreachable
+    self.weatherBrand = weatherBrand
+    self.weatherAttributionLabel = weatherAttributionLabel
+    self.weatherPrecipitationText = weatherPrecipitation
     self.pasteLimitToastText = pasteLimitToast
     self.daysValueText = daysValue
     self.priorityLabelText = priorityLabel
@@ -845,6 +859,9 @@ public struct AppCopy: Sendable {
 
   /// 日数のタイル 1 枚ぶんの文字(「4日」/ "4 days")。
   public func daysValue(_ days: Int) -> String { daysValueText(days) }
+
+  /// 「降水 N%」。
+  public func weatherPrecipitation(_ percent: Int) -> String { weatherPrecipitationText(percent) }
 
   /// 優先度の 3 つ組をまとめて読み上げるときの名前。
   public func priorityLabel(name: String) -> String { priorityLabelText(name) }
@@ -1176,6 +1193,9 @@ public struct AppCopy: Sendable {
     workerDiagnosticsCheck: "疎通を確認",
     workerDiagnosticsReachable: "認証付き応答を受信しました。",
     workerDiagnosticsUnreachable: "応答がありませんでした。",
+    weatherBrand: "Apple Weather",
+    weatherAttributionLabel: "Apple Weather の天気",
+    weatherPrecipitation: { "降水 \($0)%" },
     pasteLimitToast: { "\($0)件あります。1回に確認できるのは12か所までです。残りは別の旅として分けてください。" },
     daysValue: { "\($0)日" },
     priorityLabel: { "\($0)の優先度" },
@@ -1414,6 +1434,9 @@ public struct AppCopy: Sendable {
     workerDiagnosticsCheck: "Check connection",
     workerDiagnosticsReachable: "Authenticated response received.",
     workerDiagnosticsUnreachable: "No response.",
+    weatherBrand: "Apple Weather",
+    weatherAttributionLabel: "Weather by Apple Weather",
+    weatherPrecipitation: { "\($0)% rain" },
     pasteLimitToast: { "\($0) places found. Up to 12 places at a time. Keep the rest for a second trip." },
     daysValue: { "\($0) day\($0 == 1 ? "" : "s")" },
     priorityLabel: { "\($0) priority" },

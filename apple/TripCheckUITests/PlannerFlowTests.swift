@@ -149,4 +149,63 @@ final class PlannerFlowTests: XCTestCase {
     app.buttons["diag.check"].tap()
     XCTAssertTrue(app.staticTexts["diag.pingResult"].waitForExistence(timeout: 5))
   }
+
+  /// 天気チップと Apple Weather 帰属が日ヘッダーに出る(canned プロバイダ)。
+  ///
+  /// `start.seeExample` の見本は**日付未定**(`loadSample` は `tripStartDate` を触らない)なので
+  /// ホライズン判定(今日〜+10日)に一度も入らず、canned でもチップは出ない
+  /// (`testSampleFetchesRoutesAndTheMapShowsAMeasuredLeg` のコメントの通り)。だから見本は使わず、
+  /// 場所を 1 件だけ打ち込み(候補には触れない・オフラインで決定的)、Start 画面の
+  /// 「日付を入れる」を開いて今日から数日先の日付を選んでから組む —— 実機で確かめたところ、
+  /// `DatePicker(.compact)` はタップすると月間カレンダーのポップオーバーになり、選んだ日の
+  /// ボタンは「M月D日 曜日」の形で読み上げる(今日だけ「今日, 」が付く)。月境界をまたいでも
+  /// 崩れないよう、目当ての日が見えなければ「来月」を押してから探す。
+  ///
+  /// a11y の型は実機で確認した実際の種別:`WeatherChip` は `.accessibilityElement(children:
+  /// .combine)` で複数の `Text` を畳むので `staticTexts`。`WeatherAttributionBadge` は
+  /// `Link` だが、`app.links[...]` ではなく `app.buttons[...]` に現れる(SwiftUI の `Link` は
+  /// ボタンのロールで公開される)。
+  @MainActor
+  func testWeatherChipAndAttributionAppear() {
+    let app = XCUIApplication()
+    // 表示文言の照合を機械の言語設定に依存させない —— どの実行環境でも同じ日本語で出す。
+    app.launchArguments = ["-uiTesting", "-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+    app.launch()
+
+    let field = app.textFields["start.placeField"]
+    XCTAssertTrue(field.waitForExistence(timeout: 10))
+    field.tap()
+    field.typeText("東京タワー\n")
+
+    let dateDisclosure = app.buttons["日付を入れる（営業時間・祝日・天気が正確になります）"]
+    XCTAssertTrue(dateDisclosure.waitForExistence(timeout: 5))
+    dateDisclosure.tap()
+
+    let datePickerButton = app.datePickers.firstMatch
+    XCTAssertTrue(datePickerButton.waitForExistence(timeout: 5))
+    datePickerButton.tap()
+
+    // ホライズン(今日〜+10日)に確実に入る、今日でも明日でもない日 —— 「今日, 」接頭辞が
+    // 付かない素の「M月D日」表記に揃う。
+    let calendar = Calendar.current
+    let target = calendar.date(byAdding: .day, value: 2, to: Date())!
+    let comps = calendar.dateComponents([.month, .day], from: target)
+    let dayLabelFragment = "\(comps.month!)月\(comps.day!)日"
+    let dayButton = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", dayLabelFragment)).firstMatch
+    if !dayButton.waitForExistence(timeout: 2) {
+      // 月末近くで表示中の月をまたいだ場合だけ、次月へ送る。
+      app.buttons["DatePicker.NextMonth"].tap()
+    }
+    XCTAssertTrue(dayButton.waitForExistence(timeout: 5))
+    dayButton.tap()
+
+    let buildButton = app.buttons["start.build"]
+    XCTAssertTrue(buildButton.waitForExistence(timeout: 5))
+    XCTAssertTrue(buildButton.isEnabled)
+    buildButton.tap()
+
+    XCTAssertTrue(app.staticTexts["plan.hero"].waitForExistence(timeout: 30))
+    XCTAssertTrue(app.staticTexts["plan.weatherChip.0"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.buttons["plan.weatherAttribution"].waitForExistence(timeout: 5))
+  }
 }

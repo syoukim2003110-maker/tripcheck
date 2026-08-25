@@ -61,7 +61,9 @@ struct TripCheckApp: App {
       routeProvider: isUITesting ? CannedRouteProvider() as any RouteProvider : AppleRouteProvider(),
       // 聞き取り係も同じ理由で UI テストは canned。可用性の判定自体は composition root
       // (`IntentAvailability`)に閉じ込めてあり、ストアは注入の有無しか見ない。
-      intentParser: IntentAvailability.makeDefaultParser(uiTesting: isUITesting)
+      intentParser: IntentAvailability.makeDefaultParser(uiTesting: isUITesting),
+      // 天気も同じ理由で composition root にだけ判定を閉じ込める(`WeatherAvailability`)。
+      weatherProvider: WeatherAvailability.makeDefaultProvider(uiTesting: isUITesting)
     ))
 
     let isWorkerDiagnostics = ProcessInfo.processInfo.arguments.contains("-workerDiagnostics")
