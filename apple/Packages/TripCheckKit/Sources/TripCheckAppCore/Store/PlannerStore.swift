@@ -375,6 +375,9 @@ public final class PlannerStore {
     invalidateRoutes(keepCache: false)
     // 天気も同じく次の旅へ持ち越さない。次の旅は誰も測っていないので、空に戻す。
     invalidateWeather()
+    // 食事の候補も次の旅へ持ち越さない(weather と同じ規律)。bundle が消える reset では
+    // 今の候補は無効になる。
+    invalidateFoodRecommendations()
     // 飛んでいる問い合わせも同じように捨てる。世代を進めておけば、遅れて届いた場所は
     // `requestBuildFromStart` などのガードで落ちる —— 落とさないと、さっきの旅の答えが
     // 新しい旅の行へ番号で貼り付く。旗を倒すのはここ:返事は捨てるので、倒す役は
