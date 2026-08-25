@@ -179,6 +179,12 @@ public final class PlannerStore {
   /// 食事枠 id → 候補の状態(表示専用)。
   public internal(set) var foodRecommendationsBySlot: [String: FoodSlotRecommendations] = [:]
 
+  // MARK: - 近くの宿(観測しない。hotelRecommendations だけが観測される。spec 2026-08-26)
+  @ObservationIgnored let hotelRecommendationProvider: (any HotelRecommending)?
+  @ObservationIgnored var hotelRecommendationGeneration = 0
+  @ObservationIgnored var hotelRecommendationTask: Task<Void, Never>?
+  public internal(set) var hotelRecommendations: HotelRecommendationsState?
+
   // MARK: - 場所の詳細(観測しない。placeIntelligenceByStop だけが観測される。spec 2026-08-25)
   @ObservationIgnored let placeIntelligenceProvider: (any PlaceIntelligenceProviding)?
   @ObservationIgnored var placeIntelligenceGeneration = 0
@@ -209,6 +215,7 @@ public final class PlannerStore {
     intentParser: (any IntentParser)? = nil,
     weatherProvider: (any WeatherProviding)? = nil,
     foodRecommendationProvider: (any FoodRecommending)? = nil,
+    hotelRecommendationProvider: (any HotelRecommending)? = nil,
     placeIntelligenceProvider: (any PlaceIntelligenceProviding)? = nil
   ) {
     self.resolvers = resolvers
@@ -217,6 +224,7 @@ public final class PlannerStore {
     self.intentParser = intentParser
     self.weatherProvider = weatherProvider
     self.foodRecommendationProvider = foodRecommendationProvider
+    self.hotelRecommendationProvider = hotelRecommendationProvider
     self.placeIntelligenceProvider = placeIntelligenceProvider
     self.storageDirectory = storageDirectory
     self.autosaveDebounce = autosaveDebounce
@@ -387,6 +395,7 @@ public final class PlannerStore {
     // 食事の候補も次の旅へ持ち越さない(weather と同じ規律)。bundle が消える reset では
     // 今の候補は無効になる。
     invalidateFoodRecommendations()
+    invalidateHotelRecommendations()
     invalidatePlaceIntelligence()
     // 飛んでいる問い合わせも同じように捨てる。世代を進めておけば、遅れて届いた場所は
     // `requestBuildFromStart` などのガードで落ちる —— 落とさないと、さっきの旅の答えが
@@ -475,6 +484,7 @@ public final class PlannerStore {
     // 食事の候補も同じ場所で世代を進める。取得は lazy(タップ時)なので、ここでは前の旅程の
     // 候補を捨てるだけ —— 新しい枠は `loadFoodRecommendations(slotId:)` が取りに行く。
     invalidateFoodRecommendations()
+    invalidateHotelRecommendations()
     invalidatePlaceIntelligence()
   }
 }

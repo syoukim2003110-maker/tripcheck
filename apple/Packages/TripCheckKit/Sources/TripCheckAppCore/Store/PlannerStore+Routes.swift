@@ -165,6 +165,7 @@ extension PlannerStore {
     startWeatherEnrichment()
     // 食事の候補も同じ場所で世代を進める(lazy なので、ここでは前の候補を捨てるだけ)。
     invalidateFoodRecommendations()
+    invalidateHotelRecommendations()
     invalidatePlaceIntelligence()
   }
 
