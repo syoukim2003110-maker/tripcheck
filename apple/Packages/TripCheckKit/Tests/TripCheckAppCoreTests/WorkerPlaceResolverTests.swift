@@ -14,6 +14,7 @@ private struct StubWorker: WorkerAuthenticating {
   func placeIntelligence(_ payload: PlaceIntelligenceRequestPayload) async -> PlaceIntelligenceResult? { nil }
   func hotelRecommendations(_ payload: HotelRecommendationRequestPayload) async -> HotelRecommendationResult? { nil }
   func routeRecommendations(_ payload: RouteRecommendationRequestPayload) async -> RouteRecommendationResult? { nil }
+  func freshVoices(_ payload: FreshVoicesRequestPayload) async -> FreshVoicesResult? { nil }
 }
 
 private struct SlowStubWorker: WorkerAuthenticating {
@@ -30,6 +31,7 @@ private struct SlowStubWorker: WorkerAuthenticating {
   func placeIntelligence(_ payload: PlaceIntelligenceRequestPayload) async -> PlaceIntelligenceResult? { nil }
   func hotelRecommendations(_ payload: HotelRecommendationRequestPayload) async -> HotelRecommendationResult? { nil }
   func routeRecommendations(_ payload: RouteRecommendationRequestPayload) async -> RouteRecommendationResult? { nil }
+  func freshVoices(_ payload: FreshVoicesRequestPayload) async -> FreshVoicesResult? { nil }
 }
 
 private func rawStop(input: String, name: String) -> WorkerResolvedStop {

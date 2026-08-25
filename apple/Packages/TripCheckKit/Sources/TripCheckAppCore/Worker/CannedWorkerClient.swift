@@ -33,4 +33,6 @@ public actor CannedWorkerClient: WorkerAuthenticating {
   public func hotelRecommendations(_ payload: HotelRecommendationRequestPayload) async -> HotelRecommendationResult? { nil }
 
   public func routeRecommendations(_ payload: RouteRecommendationRequestPayload) async -> RouteRecommendationResult? { nil }
+
+  public func freshVoices(_ payload: FreshVoicesRequestPayload) async -> FreshVoicesResult? { nil }
 }

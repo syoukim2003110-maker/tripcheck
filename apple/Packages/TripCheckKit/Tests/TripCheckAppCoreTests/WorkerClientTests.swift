@@ -15,6 +15,8 @@ private actor FakeGateway {
   var intelUnauthorizedOnce = false
   var hotelUnauthorizedOnce = false
   var routeUnauthorizedOnce = false
+  var freshUnauthorizedOnce = false
+  var freshServerError = false
   var lastAttestKeyId: String?
   private var sawUnknownKey = false
   private var sawPing401 = false
@@ -25,8 +27,9 @@ private actor FakeGateway {
   private var sawIntel401 = false
   private var sawHotel401 = false
   private var sawRoute401 = false
+  private var sawFresh401 = false
 
-  func configure(unknownKeyOnce: Bool = false, pingUnauthorizedOnce: Bool = false, resolveUnauthorizedOnce: Bool = false, suggestUnauthorizedOnce: Bool = false, liveRoutesUnauthorizedOnce: Bool = false, foodUnauthorizedOnce: Bool = false, intelUnauthorizedOnce: Bool = false, hotelUnauthorizedOnce: Bool = false, routeUnauthorizedOnce: Bool = false) {
+  func configure(unknownKeyOnce: Bool = false, pingUnauthorizedOnce: Bool = false, resolveUnauthorizedOnce: Bool = false, suggestUnauthorizedOnce: Bool = false, liveRoutesUnauthorizedOnce: Bool = false, foodUnauthorizedOnce: Bool = false, intelUnauthorizedOnce: Bool = false, hotelUnauthorizedOnce: Bool = false, routeUnauthorizedOnce: Bool = false, freshUnauthorizedOnce: Bool = false, freshServerError: Bool = false) {
     self.unknownKeyOnce = unknownKeyOnce
     self.pingUnauthorizedOnce = pingUnauthorizedOnce
     self.resolveUnauthorizedOnce = resolveUnauthorizedOnce
@@ -36,6 +39,8 @@ private actor FakeGateway {
     self.intelUnauthorizedOnce = intelUnauthorizedOnce
     self.hotelUnauthorizedOnce = hotelUnauthorizedOnce
     self.routeUnauthorizedOnce = routeUnauthorizedOnce
+    self.freshUnauthorizedOnce = freshUnauthorizedOnce
+    self.freshServerError = freshServerError
   }
 
   func respond(to request: WorkerRequest) -> WorkerResponse {
@@ -101,6 +106,15 @@ private actor FakeGateway {
         return json(#"{"code":"session_expired"}"#, 401)
       }
       return json(#"{"provider":"google_maps","fetchedAt":"t","candidates":[{"id":"g1","providerRef":"ChIJ","name":"Cafe Alpen","address":"a","type":"cafe","googleMapsUrl":"u","latitude":46.9,"longitude":7.4,"rating":4.5,"userRatingCount":10,"routeDistanceMeters":180}]}"#, 200)
+    case "/api/place-intelligence/fresh":
+      if freshServerError {
+        return json(#"{"code":"not_configured"}"#, 503)
+      }
+      if freshUnauthorizedOnce, !sawFresh401 {
+        sawFresh401 = true
+        return json(#"{"code":"session_expired"}"#, 401)
+      }
+      return json(#"{"provider":"anthropic_web_search","checkedAt":"t","intent":"place","depth":"quick","summary":"Buzzing.","searchCount":2,"findings":[{"title":"Night market reopens","url":"https://news.example/x","note":"Crowds returned.","age":"3 days ago","isRecent":true,"sourceKind":"news","evidenceLevel":"cited_claim","urlSignature":"sig"}]}"#, 200)
     default:
       return json(#"{"code":"not_found"}"#, 404)
     }
@@ -263,5 +277,33 @@ final class WorkerClientTests: XCTestCase {
     let result = await client.routeRecommendations(payload)
     XCTAssertNotNil(result, "a 401 must be retried once and then succeed")
     XCTAssertEqual(result?.candidates.first?.id, "g1")
+  }
+
+  func testFreshVoicesDecodesOn200() async {
+    let (client, _) = makeClient()
+    let payload = FreshVoicesRequestPayload(name: "Kaffee", area: "Bern", languageCode: "en", destination: "auto", intent: "place", depth: "quick")
+    let result = await client.freshVoices(payload)
+    XCTAssertEqual(result?.summary, "Buzzing.")
+    XCTAssertEqual(result?.findings.first?.title, "Night market reopens")
+    XCTAssertEqual(result?.findings.first?.sourceKind, "news")
+  }
+
+  func testFreshVoicesRetriesOnceOn401() async {
+    let gateway = FakeGateway()
+    await gateway.configure(freshUnauthorizedOnce: true)
+    let (client, _) = makeClient(gateway: gateway)
+    let payload = FreshVoicesRequestPayload(name: "Kaffee", area: "Bern", languageCode: "en", destination: "auto", intent: "place", depth: "quick")
+    let result = await client.freshVoices(payload)
+    XCTAssertNotNil(result, "a 401 must be retried once and then succeed")
+    XCTAssertEqual(result?.findings.first?.title, "Night market reopens")
+  }
+
+  func testFreshVoicesReturnsNilOnServerError() async {
+    let gateway = FakeGateway()
+    await gateway.configure(freshServerError: true)
+    let (client, _) = makeClient(gateway: gateway)
+    let payload = FreshVoicesRequestPayload(name: "Kaffee", area: "Bern", languageCode: "en", destination: "auto", intent: "place", depth: "quick")
+    let result = await client.freshVoices(payload)
+    XCTAssertNil(result, "a 503 not_configured must fail closed to nil")
   }
 }

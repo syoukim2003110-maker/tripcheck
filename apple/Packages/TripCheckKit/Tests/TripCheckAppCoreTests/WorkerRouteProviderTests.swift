@@ -29,6 +29,7 @@ private actor FakeRouteWorker: WorkerAuthenticating {
   func placeIntelligence(_ payload: PlaceIntelligenceRequestPayload) async -> PlaceIntelligenceResult? { nil }
   func hotelRecommendations(_ payload: HotelRecommendationRequestPayload) async -> HotelRecommendationResult? { nil }
   func routeRecommendations(_ payload: RouteRecommendationRequestPayload) async -> RouteRecommendationResult? { nil }
+  func freshVoices(_ payload: FreshVoicesRequestPayload) async -> FreshVoicesResult? { nil }
 }
 
 /// 呼ばれたら決まった結果を返す fallback。Google と区別できる値にする。

@@ -356,6 +356,46 @@ public actor WorkerClient: WorkerAuthenticating {
     }
   }
 
+  public func freshVoices(_ payload: FreshVoicesRequestPayload) async -> FreshVoicesResult? {
+    let auth = await ensureSession()
+    guard case .authenticated = auth, let token = sessionToken else { return nil }
+    guard let body = try? JSONEncoder().encode(payload) else { return nil }
+    switch await freshVoicesOnce(token: token, body: body) {
+    case .resolved(let result): return result
+    case .failed: return nil
+    case .unauthorized:
+      sessionToken = nil
+      state = .idle
+      let reauth = await authenticate(allowKeyReset: true)
+      guard case .authenticated = reauth, let fresh = sessionToken else { return nil }
+      if case .resolved(let result) = await freshVoicesOnce(token: fresh, body: body) { return result }
+      return nil
+    }
+  }
+
+  private enum FreshOnce {
+    case resolved(FreshVoicesResult)
+    case unauthorized
+    case failed
+  }
+
+  private func freshVoicesOnce(token: String, body: Data) async -> FreshOnce {
+    do {
+      let response = try await transport.send(
+        WorkerRequest(path: "/api/place-intelligence/fresh", method: "POST", body: body, sessionToken: token),
+        baseURL: baseURL
+      )
+      if response.status == 200 {
+        guard let decoded = try? JSONDecoder().decode(FreshVoicesResult.self, from: response.body) else { return .failed }
+        return .resolved(decoded)
+      }
+      if response.status == 401 { return .unauthorized }
+      return .failed
+    } catch {
+      return .failed
+    }
+  }
+
   private func authenticate(allowKeyReset: Bool) async -> WorkerAuthState {
     state = .authenticating
     if let bypassToken, !attestor.isSupported {
