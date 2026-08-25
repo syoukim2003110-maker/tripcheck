@@ -376,6 +376,7 @@ public struct AppCopy: Sendable {
   public let placeIntelligenceUnavailable: String
   /// 「営業中」表示。
   public let placeIntelligenceOpenNow: String
+  public let placeIntelligenceClosed: String
 
   private let pasteLimitToastText: @Sendable (Int) -> String
   private let daysValueText: @Sendable (Int) -> String
@@ -610,6 +611,7 @@ public struct AppCopy: Sendable {
     placeIntelligenceTitle: String,
     placeIntelligenceUnavailable: String,
     placeIntelligenceOpenNow: String,
+    placeIntelligenceClosed: String,
     pasteLimitToast: @escaping @Sendable (Int) -> String,
     daysValue: @escaping @Sendable (Int) -> String,
     priorityLabel: @escaping @Sendable (String) -> String,
@@ -836,6 +838,7 @@ public struct AppCopy: Sendable {
     self.placeIntelligenceTitle = placeIntelligenceTitle
     self.placeIntelligenceUnavailable = placeIntelligenceUnavailable
     self.placeIntelligenceOpenNow = placeIntelligenceOpenNow
+    self.placeIntelligenceClosed = placeIntelligenceClosed
     self.pasteLimitToastText = pasteLimitToast
     self.daysValueText = daysValue
     self.priorityLabelText = priorityLabel
@@ -1242,6 +1245,7 @@ public struct AppCopy: Sendable {
     placeIntelligenceTitle: "この場所について",
     placeIntelligenceUnavailable: "詳細を取得できませんでした",
     placeIntelligenceOpenNow: "営業中",
+    placeIntelligenceClosed: "現在営業していません",
     pasteLimitToast: { "\($0)件あります。1回に確認できるのは12か所までです。残りは別の旅として分けてください。" },
     daysValue: { "\($0)日" },
     priorityLabel: { "\($0)の優先度" },
@@ -1491,6 +1495,7 @@ public struct AppCopy: Sendable {
     placeIntelligenceTitle: "About this place",
     placeIntelligenceUnavailable: "Details unavailable",
     placeIntelligenceOpenNow: "Open now",
+    placeIntelligenceClosed: "Currently closed",
     pasteLimitToast: { "\($0) places found. Up to 12 places at a time. Keep the rest for a second trip." },
     daysValue: { "\($0) day\($0 == 1 ? "" : "s")" },
     priorityLabel: { "\($0) priority" },

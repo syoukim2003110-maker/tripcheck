@@ -34,9 +34,6 @@ private func result() -> PlaceIntelligenceResult {
   PlannerStore(resolvers: [], store: nil, placeIntelligenceProvider: provider)
 }
 
-@MainActor private func waitUntil(_ c: () -> Bool) async throws {
-  var n = 0; while !c(), n < 2000 { try await Task.sleep(for: .milliseconds(1)); n += 1 }
-}
 
 @Test @MainActor func fetchLoadsForProviderVerifiedStop() async throws {
   let fake = FakeIntel(answer: result())

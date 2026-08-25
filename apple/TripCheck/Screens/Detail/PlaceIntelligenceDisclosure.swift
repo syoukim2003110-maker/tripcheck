@@ -18,6 +18,11 @@ struct PlaceIntelligenceDisclosure: View {
     DisclosureCard(title: app.placeIntelligenceTitle) {
       content(app)
         .task { store.loadPlaceIntelligence(stopId: stopId) }
+        // 開いている最中に再ビルド(背景の経路差し替え等)で候補が消えたら、閉じ開きを
+        // 待たずに取り直す(食事シートと同じ自己回復)。
+        .onChange(of: store.placeIntelligenceByStop[stopId]) { _, now in
+          if now == nil { store.loadPlaceIntelligence(stopId: stopId) }
+        }
     }
     .accessibilityIdentifier("plan.placeIntelligence")
   }
@@ -44,6 +49,11 @@ struct PlaceIntelligenceDisclosure: View {
             Text(app.placeIntelligenceOpenNow)
               .tcFont(.meta)
               .foregroundStyle(Tokens.Color.recommendation)
+          }
+          if let status = result.place.businessStatus, status != "OPERATIONAL" {
+            Text(app.placeIntelligenceClosed)
+              .tcFont(.meta)
+              .foregroundStyle(Tokens.Color.accent)
           }
         }
         if !result.analysis.summary.isEmpty {
