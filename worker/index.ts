@@ -19,6 +19,7 @@ import {
 } from "../lib/server/provider-resilience.ts";
 import { apiRoutePolicy, type ApiRoutePolicy } from "../lib/server/api-route-policy.ts";
 import { placePhotoTokenSecret, verifyPlacePhotoToken } from "../lib/server/place-photo-token.ts";
+import { handleAppGateway, isAppGatewayPath } from "../lib/server/app-attest/gateway.ts";
 
 interface Fetcher {
   fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
@@ -39,6 +40,10 @@ interface Env extends DurableQuotaEnvironment {
   FOOD_RECOMMENDATIONS_ENABLED?: string;
   ROUTE_RECOMMENDATIONS_ENABLED?: string;
   ANTHROPIC_REQUESTS_ENABLED?: string;
+  TRIPCHECK_APP_IDS?: string;
+  TRIPCHECK_APP_ATTEST_ENVIRONMENTS?: string;
+  TRIPCHECK_APP_ATTEST_BYPASS_TOKEN?: string;
+  TRIPCHECK_APP_API_DISABLED?: string;
 }
 
 interface ExecutionContext {
@@ -432,6 +437,11 @@ async function handlePaidApi(
 const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+
+    if (isAppGatewayPath(url.pathname)) {
+      const response = await handleAppGateway(request, env as unknown as import("../lib/server/app-attest/gateway.ts").AppGatewayEnvironment);
+      return secureResponse(response, url);
+    }
 
     const paidApiRoute = paidRoutePolicy(request, url);
     if (paidApiRoute) return handlePaidApi(request, url, env, ctx, paidApiRoute);
