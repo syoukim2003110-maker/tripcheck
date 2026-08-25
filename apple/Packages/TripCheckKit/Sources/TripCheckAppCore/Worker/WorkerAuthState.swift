@@ -57,4 +57,6 @@ public protocol WorkerAuthenticating: Sendable {
   /// 有効なセッションを確かめる(無ければ attest / assert で取り直す)。
   func ensureSession() async -> WorkerAuthState
   func ping() async -> WorkerPingResult
+  /// 検証済みの場所解決。失敗・未認証・到達不能はすべて nil(=呼び出し側はローカルへ代替)。
+  func resolvePlaces(_ payload: PlaceResolutionRequestPayload) async -> PlaceResolutionResult?
 }

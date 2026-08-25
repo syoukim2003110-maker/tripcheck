@@ -72,6 +72,48 @@ public actor WorkerClient: WorkerAuthenticating {
     }
   }
 
+  public func resolvePlaces(_ payload: PlaceResolutionRequestPayload) async -> PlaceResolutionResult? {
+    let auth = await ensureSession()
+    guard case .authenticated = auth, let token = sessionToken else { return nil }
+    guard let body = try? JSONEncoder().encode(payload) else { return nil }
+    switch await resolvePlacesOnce(token: token, body: body) {
+    case .resolved(let result): return result
+    case .failed: return nil
+    case .unauthorized:
+      // 401 のときは 1 度だけ取り直して再送。
+      sessionToken = nil
+      state = .idle
+      let reauth = await authenticate(allowKeyReset: true)
+      guard case .authenticated = reauth, let fresh = sessionToken else { return nil }
+      if case .resolved(let result) = await resolvePlacesOnce(token: fresh, body: body) { return result }
+      return nil
+    }
+  }
+
+  private enum ResolveOnce {
+    case resolved(PlaceResolutionResult)
+    case unauthorized
+    case failed
+  }
+
+  /// 200→結果、401→取り直しの合図、その他/例外→failed(ローカル代替)。
+  private func resolvePlacesOnce(token: String, body: Data) async -> ResolveOnce {
+    do {
+      let response = try await transport.send(
+        WorkerRequest(path: "/api/place-resolution", method: "POST", body: body, sessionToken: token),
+        baseURL: baseURL
+      )
+      if response.status == 200 {
+        guard let decoded = try? JSONDecoder().decode(PlaceResolutionResult.self, from: response.body) else { return .failed }
+        return .resolved(decoded)
+      }
+      if response.status == 401 { return .unauthorized }
+      return .failed
+    } catch {
+      return .failed
+    }
+  }
+
   private func authenticate(allowKeyReset: Bool) async -> WorkerAuthState {
     state = .authenticating
     if let bypassToken, !attestor.isSupported {

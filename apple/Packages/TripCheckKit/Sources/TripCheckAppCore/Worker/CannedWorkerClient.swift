@@ -19,4 +19,6 @@ public actor CannedWorkerClient: WorkerAuthenticating {
   public func ping() async -> WorkerPingResult {
     WorkerPingResult(ok: true, expiresAt: expiry)
   }
+
+  public func resolvePlaces(_ payload: PlaceResolutionRequestPayload) async -> PlaceResolutionResult? { nil }
 }
