@@ -1,5 +1,6 @@
 import XCTest
 import Foundation
+import TripCheckKit
 @testable import TripCheckAppCore
 
 /// テスト内で Worker の応答を組み立てる小さなゲートウェイ。challenge → session を返し、
@@ -9,17 +10,20 @@ private actor FakeGateway {
   var pingUnauthorizedOnce = false
   var resolveUnauthorizedOnce = false
   var suggestUnauthorizedOnce = false
+  var liveRoutesUnauthorizedOnce = false
   var lastAttestKeyId: String?
   private var sawUnknownKey = false
   private var sawPing401 = false
   private var sawResolve401 = false
   private var sawSuggest401 = false
+  private var sawLiveRoutes401 = false
 
-  func configure(unknownKeyOnce: Bool = false, pingUnauthorizedOnce: Bool = false, resolveUnauthorizedOnce: Bool = false, suggestUnauthorizedOnce: Bool = false) {
+  func configure(unknownKeyOnce: Bool = false, pingUnauthorizedOnce: Bool = false, resolveUnauthorizedOnce: Bool = false, suggestUnauthorizedOnce: Bool = false, liveRoutesUnauthorizedOnce: Bool = false) {
     self.unknownKeyOnce = unknownKeyOnce
     self.pingUnauthorizedOnce = pingUnauthorizedOnce
     self.resolveUnauthorizedOnce = resolveUnauthorizedOnce
     self.suggestUnauthorizedOnce = suggestUnauthorizedOnce
+    self.liveRoutesUnauthorizedOnce = liveRoutesUnauthorizedOnce
   }
 
   func respond(to request: WorkerRequest) -> WorkerResponse {
@@ -55,6 +59,12 @@ private actor FakeGateway {
         return json(#"{"code":"session_expired"}"#, 401)
       }
       return json(#"{"provider":"google_maps","suggestions":[{"providerRef":"abc","primaryText":"Tokyo Tower","secondaryText":"Minato","fullText":"Tokyo Tower, Minato"}]}"#, 200)
+    case "/api/live-routes":
+      if liveRoutesUnauthorizedOnce, !sawLiveRoutes401 {
+        sawLiveRoutes401 = true
+        return json(#"{"code":"session_expired"}"#, 401)
+      }
+      return json(#"{"provider":"google_maps","fetchedAt":"t","travelMode":"WALK","legs":[{"id":"L1","durationMinutes":12,"distanceMeters":900,"encodedPolyline":null,"transferCount":null,"transitSteps":null,"walkToStopMinutes":null,"walkFromStopMinutes":null,"status":"ok"}]}"#, 200)
     default:
       return json(#"{"code":"not_found"}"#, 404)
     }
@@ -160,5 +170,18 @@ final class WorkerClientTests: XCTestCase {
     let result = await client.suggestPlaces(payload)
     XCTAssertNotNil(result, "a 401 must be retried once and then succeed")
     XCTAssertEqual(result?.suggestions.first?.providerRef, "abc")
+  }
+
+  func testLiveRoutesRetriesOnceOn401() async {
+    let gateway = FakeGateway()
+    await gateway.configure(liveRoutesUnauthorizedOnce: true)
+    let (client, _) = makeClient(gateway: gateway)
+    let payload = LiveRoutesRequestPayload(
+      legs: [LiveRouteLegPayload(id: "L1", origin: GeoPoint(latitude: 1, longitude: 1),
+                                 destination: GeoPoint(latitude: 2, longitude: 2), departureTime: "2026-08-25T00:00:00Z")],
+      languageCode: "en", travelMode: "WALK")
+    let result = await client.liveRoutes(payload)
+    XCTAssertNotNil(result, "a 401 must be retried once and then succeed")
+    XCTAssertEqual(result?.legs.first?.durationMinutes, 12)
   }
 }

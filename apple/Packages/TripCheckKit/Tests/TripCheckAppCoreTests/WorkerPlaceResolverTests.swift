@@ -9,6 +9,7 @@ private struct StubWorker: WorkerAuthenticating {
   func ping() async -> WorkerPingResult { .init(ok: false, expiresAt: nil) }
   func resolvePlaces(_ payload: PlaceResolutionRequestPayload) async -> PlaceResolutionResult? { result }
   func suggestPlaces(_ payload: PlaceSuggestionRequestPayload) async -> PlaceSuggestionResult? { nil }
+  func liveRoutes(_ payload: LiveRoutesRequestPayload) async -> LiveRoutesResult? { nil }
 }
 
 private struct SlowStubWorker: WorkerAuthenticating {
@@ -20,6 +21,7 @@ private struct SlowStubWorker: WorkerAuthenticating {
     return PlaceResolutionResult(provider: "google_maps", fetchedAt: "t", places: [], hotel: nil, ambiguous: [])
   }
   func suggestPlaces(_ payload: PlaceSuggestionRequestPayload) async -> PlaceSuggestionResult? { nil }
+  func liveRoutes(_ payload: LiveRoutesRequestPayload) async -> LiveRoutesResult? { nil }
 }
 
 private func rawStop(input: String, name: String) -> WorkerResolvedStop {

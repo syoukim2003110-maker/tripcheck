@@ -61,4 +61,6 @@ public protocol WorkerAuthenticating: Sendable {
   func resolvePlaces(_ payload: PlaceResolutionRequestPayload) async -> PlaceResolutionResult?
   /// 検証済みの場所サジェスト。失敗・未認証・到達不能はすべて nil(=呼び出し側は Apple のみ)。
   func suggestPlaces(_ payload: PlaceSuggestionRequestPayload) async -> PlaceSuggestionResult?
+  /// 検証済みの実経路。失敗・未認証・到達不能はすべて nil(=呼び出し側は Apple へ代替)。
+  func liveRoutes(_ payload: LiveRoutesRequestPayload) async -> LiveRoutesResult?
 }
