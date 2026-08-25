@@ -23,6 +23,7 @@ struct PlaceSearchField: View {
   var body: some View {
     let text = Copy.for(store.request.locale)
     let app = AppCopy.for(store.request.locale)
+    let webRows = self.webRows
 
     VStack(alignment: .leading, spacing: 0) {
       HStack(spacing: 10) {
@@ -213,6 +214,10 @@ struct PlaceSearchField: View {
 
   /// Apple 行と正規化名で重ならない Google 行を、上限まで。
   private var webRows: [WorkerPlaceSuggestion] {
+    // 入力欄が最小長に満たないときは Google 行を出さない。Start に戻った直後(query 空)に
+    // root 常駐の webSuggestions が前回の結果をまだ持っていても、.task の reset を待たずに
+    // 同期で隠れる。WorkerSuggestions.minimumQueryLength と対称。
+    guard typedName.count >= WorkerSuggestions.minimumQueryLength else { return [] }
     let taken = Set(suggestions.results.prefix(Self.visibleSuggestions).map { Self.normalize($0.title) })
     var seen = Set<String>()
     var out: [WorkerPlaceSuggestion] = []
