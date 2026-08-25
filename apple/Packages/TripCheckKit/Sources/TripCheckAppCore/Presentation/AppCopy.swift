@@ -401,6 +401,19 @@ public struct AppCopy: Sendable {
   /// 「営業中」表示。
   public let placeIntelligenceOpenNow: String
   public let placeIntelligenceClosed: String
+  /// 「最新の声」入れ子節の折り畳み時 CTA(押すと展開して取得 = opt-in の 2 度目のタップ)。
+  public let freshVoicesExpand: String
+  /// 展開後、中身の先頭に置く小さな節見出し。
+  public let freshVoicesTitle: String
+  /// 話題ゼロ/取得できなかったときの 1 行。
+  public let freshVoicesEmpty: String
+  /// 出典ラベル(SNS / ニュース / ブログ / ウェブ)。
+  public let freshSourceSocial: String
+  public let freshSourceNews: String
+  public let freshSourceBlog: String
+  public let freshSourceWeb: String
+  /// 新しい話題であることを示す小さな札。
+  public let freshVoicesRecent: String
 
   private let pasteLimitToastText: @Sendable (Int) -> String
   private let daysValueText: @Sendable (Int) -> String
@@ -644,6 +657,14 @@ public struct AppCopy: Sendable {
     placeIntelligenceUnavailable: String,
     placeIntelligenceOpenNow: String,
     placeIntelligenceClosed: String,
+    freshVoicesExpand: String,
+    freshVoicesTitle: String,
+    freshVoicesEmpty: String,
+    freshSourceSocial: String,
+    freshSourceNews: String,
+    freshSourceBlog: String,
+    freshSourceWeb: String,
+    freshVoicesRecent: String,
     pasteLimitToast: @escaping @Sendable (Int) -> String,
     daysValue: @escaping @Sendable (Int) -> String,
     priorityLabel: @escaping @Sendable (String) -> String,
@@ -879,6 +900,14 @@ public struct AppCopy: Sendable {
     self.placeIntelligenceUnavailable = placeIntelligenceUnavailable
     self.placeIntelligenceOpenNow = placeIntelligenceOpenNow
     self.placeIntelligenceClosed = placeIntelligenceClosed
+    self.freshVoicesExpand = freshVoicesExpand
+    self.freshVoicesTitle = freshVoicesTitle
+    self.freshVoicesEmpty = freshVoicesEmpty
+    self.freshSourceSocial = freshSourceSocial
+    self.freshSourceNews = freshSourceNews
+    self.freshSourceBlog = freshSourceBlog
+    self.freshSourceWeb = freshSourceWeb
+    self.freshVoicesRecent = freshVoicesRecent
     self.pasteLimitToastText = pasteLimitToast
     self.daysValueText = daysValue
     self.priorityLabelText = priorityLabel
@@ -1294,6 +1323,14 @@ public struct AppCopy: Sendable {
     placeIntelligenceUnavailable: "詳細を取得できませんでした",
     placeIntelligenceOpenNow: "営業中",
     placeIntelligenceClosed: "現在営業していません",
+    freshVoicesExpand: "最新の声を見る",
+    freshVoicesTitle: "最新の声",
+    freshVoicesEmpty: "最近の話題は見つかりませんでした",
+    freshSourceSocial: "SNS",
+    freshSourceNews: "ニュース",
+    freshSourceBlog: "ブログ",
+    freshSourceWeb: "ウェブ",
+    freshVoicesRecent: "最近",
     pasteLimitToast: { "\($0)件あります。1回に確認できるのは12か所までです。残りは別の旅として分けてください。" },
     daysValue: { "\($0)日" },
     priorityLabel: { "\($0)の優先度" },
@@ -1552,6 +1589,14 @@ public struct AppCopy: Sendable {
     placeIntelligenceUnavailable: "Details unavailable",
     placeIntelligenceOpenNow: "Open now",
     placeIntelligenceClosed: "Currently closed",
+    freshVoicesExpand: "See recent voices",
+    freshVoicesTitle: "Recent voices",
+    freshVoicesEmpty: "No recent buzz found",
+    freshSourceSocial: "Social",
+    freshSourceNews: "News",
+    freshSourceBlog: "Blog",
+    freshSourceWeb: "Web",
+    freshVoicesRecent: "Recent",
     pasteLimitToast: { "\($0) places found. Up to 12 places at a time. Keep the rest for a second trip." },
     daysValue: { "\($0) day\($0 == 1 ? "" : "s")" },
     priorityLabel: { "\($0) priority" },
