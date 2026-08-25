@@ -152,3 +152,28 @@ Worker の疎通とは別の条件 —— 空きが 30 分未満しかない日�
    出ず、「候補が見つかりませんでした」だけが出ることを確認する
    (`beginGapDetourFetch` が `routeDetourProvider == nil` を `.unavailable` として
    即座に返す道と同じ結果になる)。
+
+## 11. 最新の声(place-intelligence/fresh)
+
+合成の根(`TripCheckApp.init`)は非 UI テストのとき常に
+`FreshVoicesAvailability.makeDefaultProvider(uiTesting:client:)` が返す
+`WorkerFreshVoicesProvider` を `PlannerStore` に渡す(`-uiTesting` は nil のまま ——
+「最新の声」節は決定的に空表示になり、そもそも基底カードが `.unavailable` になる UI テストでは
+入れ子の節自体が描かれない)。この節は基底の場所詳細(この場所について)が `.loaded` に
+なって初めて出る入れ子の開示で、展開でだけ 1 度取りに行く(`depth:"quick"` = 1 unit)。
+
+1. 上の 1〜3 と同じく `.dev.vars` に実 `GOOGLE_PLACES_API_KEY` を置き、さらに
+   `ANTHROPIC_REQUESTS_ENABLED="true"` と非空の `ANTHROPIC_API_KEY` を置いて `pnpm dev` を
+   起動。Simulator は `TRIPCHECK_WORKER_BYPASS_TOKEN` を `.dev.vars` と同じ値にして走らせる
+   (`-uiTesting` は付けない)。
+2. Google 検証済み(ピンに Google の裏取りがある)停留所のシートを開き、「この場所について」
+   (`plan.placeIntelligence`)を開く。詳細が出たら、その中の「最新の声を見る」
+   (`plan.placeIntelligence.fresh`)を開く。初回だけ `/api/place-intelligence/fresh` の取得が
+   走り、要約(あれば)と、題名(タップで元記事へ遷移)・ひとこと・出典ラベル(SNS/ニュース/
+   ブログ/ウェブ)・新しければ「最近」の札を持つ行が並ぶこと(`plan.placeIntelligence.fresh.loaded`
+   / 各行 `plan.placeIntelligence.fresh.finding`)を確認する。写真・絵文字は出ないこと。
+3. `ANTHROPIC_REQUESTS_ENABLED` を外す(または鍵を空にする)と、同じ節を開いても
+   `{code:"not_configured"}` / 503 でフェイルクローズし、「最近の話題は見つかりませんでした」
+   だけが出ること(`plan.placeIntelligence.fresh.unavailable`)を確認する。Worker を止めた場合・
+   8 秒でタイムアウトした場合・非 200 が返った場合も同じ空表示になる
+   (`beginFreshVoices` が nil を `.unavailable` として扱う道と同じ結果)。
