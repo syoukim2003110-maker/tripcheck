@@ -198,6 +198,13 @@ public final class PlannerStore {
   /// 停留所 id → 詳細の状態(表示専用)。
   public internal(set) var placeIntelligenceByStop: [String: StopPlaceIntelligence] = [:]
 
+  // MARK: - 最新の声(観測しない。freshVoicesByStop だけが観測される。spec 2026-08-26)
+  @ObservationIgnored let freshVoicesProvider: (any FreshVoicesProviding)?
+  @ObservationIgnored var freshVoicesGeneration = 0
+  @ObservationIgnored var freshVoicesTasks: [String: Task<Void, Never>] = [:]
+  /// 停留所 id → 最新の声の状態(表示専用)。
+  public internal(set) var freshVoicesByStop: [String: StopFreshVoices] = [:]
+
   // MARK: - 自由文インテント(spec 2026-08-24)
 
   /// 聞き取り係。nil = 入口を出さない(非対応端末・従来テスト)。起動時に composition root が決める。
@@ -223,7 +230,8 @@ public final class PlannerStore {
     foodRecommendationProvider: (any FoodRecommending)? = nil,
     hotelRecommendationProvider: (any HotelRecommending)? = nil,
     placeIntelligenceProvider: (any PlaceIntelligenceProviding)? = nil,
-    routeDetourProvider: (any RouteDetourRecommending)? = nil
+    routeDetourProvider: (any RouteDetourRecommending)? = nil,
+    freshVoicesProvider: (any FreshVoicesProviding)? = nil
   ) {
     self.resolvers = resolvers
     self.store = store
@@ -234,6 +242,7 @@ public final class PlannerStore {
     self.hotelRecommendationProvider = hotelRecommendationProvider
     self.placeIntelligenceProvider = placeIntelligenceProvider
     self.routeDetourProvider = routeDetourProvider
+    self.freshVoicesProvider = freshVoicesProvider
     self.storageDirectory = storageDirectory
     self.autosaveDebounce = autosaveDebounce
     self.clock = clock
