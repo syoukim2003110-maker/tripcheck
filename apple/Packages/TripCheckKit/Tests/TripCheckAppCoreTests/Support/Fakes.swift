@@ -168,3 +168,25 @@ final class InMemoryAttestKeyStore: AttestKeyStore, @unchecked Sendable {
   func deleteKeyId() throws { lock.withLock { self.keyId = nil } }
   var storedKeyId: String? { lock.withLock { keyId } }
 }
+
+// MARK: - 天気のフェイク(spec 2026-08-25)
+
+struct FakeWeatherProvider: WeatherProviding {
+  /// 返す固定の日々(index はテストが要求に合わせて渡す)。
+  var days: [WeatherDay] = []
+  var attribution: WeatherAttribution? = WeatherAttribution(
+    legalPageURL: URL(string: "https://weatherkit.apple.com/legal-attribution.html")!
+  )
+  /// 呼ばれた要求を記録(世代ガードやスキップ判定の検証用)。
+  final class Recorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private(set) var lastRequests: [WeatherDayRequest] = []
+    func record(_ r: [WeatherDayRequest]) { lock.withLock { lastRequests = r } }
+  }
+  var recorder = Recorder()
+  func weather(for requests: [WeatherDayRequest], locale: PlannerLocale) async -> WeatherResult {
+    recorder.record(requests)
+    let mapped = requests.compactMap { req in days.first { $0.index == req.index } }
+    return mapped.isEmpty ? .empty : WeatherResult(days: mapped, attribution: attribution)
+  }
+}
