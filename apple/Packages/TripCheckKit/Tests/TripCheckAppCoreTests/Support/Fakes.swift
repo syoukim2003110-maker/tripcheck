@@ -177,6 +177,8 @@ struct FakeWeatherProvider: WeatherProviding {
   var attribution: WeatherAttribution? = WeatherAttribution(
     legalPageURL: URL(string: "https://weatherkit.apple.com/legal-attribution.html")!
   )
+  /// 答えを返すまでの間(世代ガードのテストが遅れて届く答えを作るため)。既定は即答。
+  var delay: Duration = .zero
   /// 呼ばれた要求を記録(世代ガードやスキップ判定の検証用)。
   final class Recorder: @unchecked Sendable {
     private let lock = NSLock()
@@ -186,6 +188,7 @@ struct FakeWeatherProvider: WeatherProviding {
   var recorder = Recorder()
   func weather(for requests: [WeatherDayRequest], locale: PlannerLocale) async -> WeatherResult {
     recorder.record(requests)
+    if delay > .zero { try? await Task.sleep(for: delay) }
     let mapped = requests.compactMap { req in days.first { $0.index == req.index } }
     return mapped.isEmpty ? .empty : WeatherResult(days: mapped, attribution: attribution)
   }

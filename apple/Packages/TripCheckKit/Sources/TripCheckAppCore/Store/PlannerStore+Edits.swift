@@ -200,6 +200,8 @@ extension PlannerStore {
     closeInspectorIfItPointsAtNothing()
     showEditToast(label: pending.label, bufferDeltaMinutes: pending.bufferDeltaMinutes)
     startRouteEnrichment()
+    // 編集後の旅程で測り直す。天気も表示専用のまま新しい日割りに追従する。
+    startWeatherEnrichment()
   }
 
   /// 開いているシートが指す先が旅程から消えていたら閉じる。
@@ -273,6 +275,8 @@ extension PlannerStore {
     adopt(result)
     closeInspectorIfItPointsAtNothing()
     startRouteEnrichment()
+    // 元に戻す/やり直すで日割りが変わることもあるので、天気も同じ場所で測り直す。
+    startWeatherEnrichment()
   }
 
   // MARK: - トースト

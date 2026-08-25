@@ -152,6 +152,25 @@ public final class PlannerStore {
   /// 進捗の表示用値。`view` ではなく store 直下(spec §4.1)。
   public internal(set) var routeProgress: RouteProgress?
 
+  // MARK: - 天気(観測しない。`weatherByDay`/`weatherAttribution` だけが観測される。spec 2026-08-25)
+
+  /// 天気の提供元。`nil` = 今までの挙動(テストと旧来の呼び出しの既定・端末が非対応)。
+  @ObservationIgnored let weatherProvider: (any WeatherProviding)?
+
+  /// `routeGeneration` と同じ流儀。進んだ後に返ってきた答えは捨てる。
+  @ObservationIgnored var weatherGeneration = 0
+
+  /// 走っている取得。**`weatherGeneration` を進めた者がこの欄を持ち、終わりに世代が変わって
+  /// いなければ自分で畳む。**
+  @ObservationIgnored var weatherTask: Task<Void, Never>?
+
+  /// 日ごとの天気(表示専用)。`FeasibilityResult` / `PlannerContext` / `verified` には触れない
+  /// —— 天気は判定の材料ではなく、画面に添える一言でしかない。
+  public internal(set) var weatherByDay: [Int: WeatherDay] = [:]
+
+  /// Apple 必須の帰属。**帰属が無ければ天気そのものを出さない。**
+  public internal(set) var weatherAttribution: WeatherAttribution?
+
   // MARK: - 自由文インテント(spec 2026-08-24)
 
   /// 聞き取り係。nil = 入口を出さない(非対応端末・従来テスト)。起動時に composition root が決める。
@@ -172,12 +191,14 @@ public final class PlannerStore {
     defaults: UserDefaults = .standard,
     initialLocale: PlannerLocale = .ja,
     routeProvider: (any RouteProvider)? = nil,
-    intentParser: (any IntentParser)? = nil
+    intentParser: (any IntentParser)? = nil,
+    weatherProvider: (any WeatherProviding)? = nil
   ) {
     self.resolvers = resolvers
     self.store = store
     self.routeProvider = routeProvider
     self.intentParser = intentParser
+    self.weatherProvider = weatherProvider
     self.storageDirectory = storageDirectory
     self.autosaveDebounce = autosaveDebounce
     self.clock = clock
@@ -290,6 +311,9 @@ public final class PlannerStore {
     // 走っている取得は、これから組む旅程のものではない。キャッシュは残す —— 同じレグを
     // 組み直すだけなら、測った分をもう一度尋ねる必要はない。
     invalidateRoutes(keepCache: true)
+    // 天気も同じ理由で世代を進める。この build が commit まで届けば `startWeatherEnrichment()`
+    // が測り直す —— 届かなければ(古い世代として捨てられれば)ここで空にしたままでよい。
+    invalidateWeather()
     let generation = buildGeneration
     view.screen = .building
     let req = tripRequest()
@@ -339,6 +363,8 @@ public final class PlannerStore {
     cancelBuild()
     // 測った経路も捨てる。次は別の旅で、鍵(座標)が同じでも同じレグとは限らない。
     invalidateRoutes(keepCache: false)
+    // 天気も同じく次の旅へ持ち越さない。次の旅は誰も測っていないので、空に戻す。
+    invalidateWeather()
     // 飛んでいる問い合わせも同じように捨てる。世代を進めておけば、遅れて届いた場所は
     // `requestBuildFromStart` などのガードで落ちる —— 落とさないと、さっきの旅の答えが
     // 新しい旅の行へ番号で貼り付く。旗を倒すのはここ:返事は捨てるので、倒す役は
@@ -421,5 +447,7 @@ public final class PlannerStore {
     view.announcement = hero.text
     // 画面が出てから測りに行く。返事が揃えば `replaceWithLiveRoutes` が静かに差し替える。
     startRouteEnrichment()
+    // 天気も同じ場所で測りに行く。表示専用なので旅程の判定を 1 ミリも動かさない。
+    startWeatherEnrichment()
   }
 }
