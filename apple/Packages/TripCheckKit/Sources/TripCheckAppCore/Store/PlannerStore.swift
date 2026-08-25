@@ -390,13 +390,19 @@ public final class PlannerStore {
   /// 走っている組み立てを捨てる。`BuildRunner.run` は純粋な計算なので途中では止まらない ——
   /// 止まるのは**受け取る側**で、世代を 1 つ進めておけば、遅れて届いた束は `build()` の
   /// ガードで落ちる。
-  public func cancelBuild() {
+  public func cancelBuild(refetchWeather: Bool = true) {
     buildTask?.cancel()
     buildTask = nil
     buildGeneration += 1
     invalidateRoutes(keepCache: true)
     if view.screen == .building {
       view.screen = bundle == nil ? .start : .plan
+      // build() は頭で天気を空にしている(コミットに賭けて)。ここで戻る先が実在するプラン
+      // (bundle != nil、つまり画面は .plan になった)なら、賭けに負けたぶんを測り直す ——
+      // 測り直さないと、次に成功するまで天気の欄が空のまま取り残される。
+      // `startWeatherEnrichment()` 自身が `invalidateWeather()` を先に呼び、
+      // `weatherProvider != nil` も見るので、安全かつ provider 未注入なら何もしない。
+      if refetchWeather, bundle != nil { startWeatherEnrichment() }
     }
   }
 
@@ -404,7 +410,9 @@ public final class PlannerStore {
   public func reset() {
     // 読みかけの自由文パースも次の旅へ持ち越さない(`loadSample` / `openTrip` はここを通る)。
     intentQueryChanged()
-    cancelBuild()
+    // reset 自身がこの直後に invalidateWeather() で天気を空にするので、ここでは測り直さない
+    // (測り直しても無意味に捨てられるだけで、直後の空にする代入と競合させる理由が無い)。
+    cancelBuild(refetchWeather: false)
     // 測った経路も捨てる。次は別の旅で、鍵(座標)が同じでも同じレグとは限らない。
     invalidateRoutes(keepCache: false)
     // 天気も同じく次の旅へ持ち越さない。次の旅は誰も測っていないので、空に戻す。

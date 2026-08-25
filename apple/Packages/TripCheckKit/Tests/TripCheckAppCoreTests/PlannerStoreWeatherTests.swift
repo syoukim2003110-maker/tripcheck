@@ -3,6 +3,38 @@ import Foundation
 @testable import TripCheckAppCore
 import TripCheckKit
 
+/// 組み上がった答えを `commit` の直前で止めておく関所(`PlannerStore.buildGate` に差す)。
+/// `PlannerStoreBuildTests.swift` の同名 actor と同じ形(`private` なのでファイルをまたげない
+/// —— ここに複製する)。詳細な理由はそちらのコメントを参照。
+private actor BuildGate {
+  private var held = false
+  private var opened = false
+  private var arrivals: [CheckedContinuation<Void, Never>] = []
+  private var departures: [CheckedContinuation<Void, Never>] = []
+
+  /// 組み立て側。着いたことを知らせ、`open()` が来るまで待つ。
+  func hold() async {
+    held = true
+    for waiter in arrivals { waiter.resume() }
+    arrivals.removeAll()
+    guard !opened else { return }
+    await withCheckedContinuation { departures.append($0) }
+  }
+
+  /// テスト側。組み立てが関所に着く(= 答えが出来た)まで待つ。
+  func waitUntilHeld() async {
+    guard !held else { return }
+    await withCheckedContinuation { arrivals.append($0) }
+  }
+
+  /// テスト側。留めていた答えを先へ通す。
+  func open() {
+    opened = true
+    for waiter in departures { waiter.resume() }
+    departures.removeAll()
+  }
+}
+
 final class PlannerStoreWeatherTests: XCTestCase {
 
   // MARK: - Pure helpers
@@ -131,5 +163,35 @@ final class PlannerStoreWeatherTests: XCTestCase {
     XCTAssertGreaterThan(weatherProvider.recorder.callCount, callsAfterBuild)   // 置換の後にもう一度呼ばれた
     XCTAssertFalse(store.weatherByDay.isEmpty)
     XCTAssertNotNil(store.weatherAttribution)
+  }
+
+  // MARK: - Cancel restores the kept plan's weather
+
+  /// 組み直しを取り消すと、保持していたプランの天気が戻る。`build()` は頭で `invalidateWeather()`
+  /// を呼び、賭けに勝ったとき(commit まで届いたとき)だけ `startWeatherEnrichment()` が測り直す
+  /// —— 取り消して 1 本目のプランへ戻る側は、これまで測り直さずに欄が空のまま残っていた。
+  @MainActor
+  func testCancellingARebuildRestoresWeatherForTheKeptPlan() async {
+    let provider = FakeWeatherProvider(days: fakeDays(count: 4))
+    let store = await buildSwissSampleWithDate(weatherProvider: provider)
+    await store.awaitWeatherEnrichment()
+    XCTAssertFalse(store.weatherByDay.isEmpty)   // 1 本目のプランは天気が埋まっている
+
+    let gate = BuildGate()
+    store.buildGate = { await gate.hold() }
+    async let running: Void = store.build()      // 2 本目。頭の invalidateWeather() が空にする
+    await gate.waitUntilHeld()
+
+    XCTAssertEqual(store.view.screen, .building)
+    XCTAssertTrue(store.weatherByDay.isEmpty)    // build 開始時点で空にされている
+
+    store.cancelBuild()   // 既定 refetchWeather: true。1 本目(保持したプラン)へ戻る
+
+    await gate.open()
+    await running
+    await store.awaitWeatherEnrichment()
+
+    XCTAssertEqual(store.view.screen, .plan)
+    XCTAssertFalse(store.weatherByDay.isEmpty)   // 取り消し後、保持したプランの天気が戻る
   }
 }

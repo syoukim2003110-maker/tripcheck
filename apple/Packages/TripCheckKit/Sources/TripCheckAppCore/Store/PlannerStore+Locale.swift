@@ -39,7 +39,10 @@ extension PlannerStore {
   /// 待ち画面も畳む。
   public func changeLocale(_ locale: PlannerLocale) {
     guard locale != request.locale else { return }
-    cancelBuild()
+    // 天気は測り直さない(refetchWeather: false)。ここで測ればまだ切り替える前のロケールで
+    // 呼ぶことになり、直後の `request.locale = locale` との順序が崩れる —— 言語切り替えは
+    // これまでどおり天気に触れない。
+    cancelBuild(refetchWeather: false)
     request.locale = locale
     defaults.set(locale.rawValue, forKey: PlannerStore.localeKey)
   }
