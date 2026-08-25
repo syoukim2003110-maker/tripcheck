@@ -23,15 +23,18 @@ public enum SheetDetent: Equatable, Sendable {
   case peek, half, full
 }
 
-/// 開いている詳細。停留所 id か、日ごとの設定。
+/// 開いている詳細。停留所 id か、日ごとの設定か、食事枠の候補一覧。
 public enum Inspector: Equatable, Sendable, Identifiable {
   case stop(String)
   case daySettings(Int)
+  /// 食事枠 1 つの候補一覧(spec 2026-08-25)。運ぶのは `MealModel.slotId`。
+  case mealRecommendations(String)
 
   public var id: String {
     switch self {
     case .stop(let stopId): "stop:\(stopId)"
     case .daySettings(let day): "day:\(day)"
+    case .mealRecommendations(let slotId): "meal:\(slotId)"
     }
   }
 }

@@ -11,12 +11,15 @@ import TripCheckAppCore
 /// 動線のこの時刻に食事の時間が空いている、というのは旅程の情報である。
 struct MealRow: View {
   let model: MealModel
+  @Environment(PlannerStore.self) private var store
 
   /// 時刻の列は字と一緒に伸びる(`ActivityCard` と同じ理由・同じ上限)。
   @ScaledMetric(relativeTo: .footnote) private var rawTimeWidth: CGFloat = 44
   private var timeWidth: CGFloat { min(rawTimeWidth, 96) }
 
   var body: some View {
+    let app = AppCopy.for(store.request.locale)
+
     HStack(spacing: 10) {
       Text(model.time)
         .tcFont(.meta)
@@ -30,6 +33,10 @@ struct MealRow: View {
         .foregroundStyle(Tokens.Color.ink2)
         .fixedSize(horizontal: false, vertical: true)
       Spacer(minLength: 0)
+      // 候補一覧が開けることを示す控えめなヒント。破線の枠・`Spacer` はそのまま残す。
+      Text(app.mealRecommendationsHint)
+        .tcFont(.meta)
+        .foregroundStyle(Tokens.Color.recommendation)
     }
     .padding(.horizontal, 10)
     .padding(.vertical, 8)
@@ -38,7 +45,14 @@ struct MealRow: View {
       RoundedRectangle(cornerRadius: Tokens.Radius.control)
         .strokeBorder(Tokens.Color.recommendation, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
     )
+    .contentShape(Rectangle())
+    .onTapGesture {
+      store.openInspector(.mealRecommendations(model.slotId))
+      store.loadFoodRecommendations(slotId: model.slotId)
+    }
     .accessibilityElement(children: .combine)
     .accessibilityIdentifier("plan.meal")
+    .accessibilityAddTraits(.isButton)
+    .accessibilityHint(app.mealRecommendationsHint)
   }
 }

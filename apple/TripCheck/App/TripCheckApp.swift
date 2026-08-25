@@ -81,7 +81,11 @@ struct TripCheckApp: App {
       // (`IntentAvailability`)に閉じ込めてあり、ストアは注入の有無しか見ない。
       intentParser: IntentAvailability.makeDefaultParser(uiTesting: isUITesting),
       // 天気も同じ理由で composition root にだけ判定を閉じ込める(`WeatherAvailability`)。
-      weatherProvider: WeatherAvailability.makeDefaultProvider(uiTesting: isUITesting)
+      weatherProvider: WeatherAvailability.makeDefaultProvider(uiTesting: isUITesting),
+      // 食事の候補も同じ理由で composition root にだけ判定を閉じ込める
+      // (`FoodRecommendationAvailability`)。UI テストは nil のまま —— タップした行は
+      // 決定的に「候補なし」になる(`MealRow` の非回帰)。
+      foodRecommendationProvider: FoodRecommendationAvailability.makeDefaultProvider(uiTesting: isUITesting, client: workerClient)
     ))
     _webSuggestions = State(initialValue: WorkerSuggestions(client: workerClient))
   }

@@ -93,6 +93,10 @@ struct PlanScreen: View {
         DaySettingsSheet(day: day)
           .presentationDetents([.medium, .large])
           .presentationDragIndicator(.visible)
+      case .mealRecommendations(let slotId):
+        FoodRecommendationSheet(slotId: slotId)
+          .presentationDetents([.fraction(0.3), .medium, .large], selection: detent)
+          .presentationDragIndicator(.visible)
       }
     }
     // 何を渡すかを決める 1 枚。**全画面の高さで出す** —— 4 つの選択と、その結果として何が

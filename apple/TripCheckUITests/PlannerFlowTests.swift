@@ -25,6 +25,27 @@ final class PlannerFlowTests: XCTestCase {
     return app
   }
 
+  /// 食事枠(`plan.meal`)をタップすると候補シートが開く。`-uiTesting` は food provider が
+  /// nil(`FoodRecommendationAvailability.makeDefaultProvider`)なので、候補は決定的に
+  /// 「候補なし」になる —— `plan.foodCandidate` は 1 件も出ない、というのが非回帰の中身。
+  /// 見本(スイス)は 1〜4 日目にそれぞれ食事枠が 2 つあり(実測: `plan.meal` が
+  /// hittable な `buttons` として 2 件)、日を切り替えなくても既定の 0 日目でタップできる。
+  @MainActor
+  func testMealRowOpensRecommendationSheetUnderCannedProvider() {
+    let app = launch()
+    app.buttons["start.seeExample"].tap()
+    XCTAssertTrue(app.staticTexts["plan.hero"].waitForExistence(timeout: 30))
+
+    let meal = app.buttons.matching(identifier: "plan.meal").firstMatch
+    XCTAssertTrue(meal.waitForExistence(timeout: 5))
+    XCTAssertTrue(meal.isHittable)
+    meal.tap()
+
+    XCTAssertTrue(app.otherElements["plan.mealRecommendations.sheet"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["plan.mealRecommendations.empty"].waitForExistence(timeout: 5))
+    XCTAssertFalse(app.links.matching(identifier: "plan.foodCandidate").firstMatch.exists)
+  }
+
   /// 見本を入れて組み、最初の停留所を開き、外して、元に戻す。
   @MainActor
   func testSampleToPlanToDetailToRemoveToUndo() {

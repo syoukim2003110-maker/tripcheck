@@ -357,6 +357,17 @@ public struct AppCopy: Sendable {
   public let weatherAttributionLabel: String
   private let weatherPrecipitationText: @Sendable (Int) -> String
 
+  // MARK: - 食事の候補(spec 2026-08-25、`FoodRecommendationSheet`)
+
+  /// 候補一覧シートの見出し。
+  public let mealRecommendationsTitle: String
+  /// 食事枠の行に付く控えめなヒント(タップで開くと伝える)。
+  public let mealRecommendationsHint: String
+  /// 取得できた/取得したが 0 件だったときの 1 行。
+  public let mealRecommendationsEmpty: String
+  /// 候補カードの「営業中」表示。
+  public let openNowLabel: String
+
   private let pasteLimitToastText: @Sendable (Int) -> String
   private let daysValueText: @Sendable (Int) -> String
   private let priorityLabelText: @Sendable (String) -> String
@@ -583,6 +594,10 @@ public struct AppCopy: Sendable {
     weatherBrand: String,
     weatherAttributionLabel: String,
     weatherPrecipitation: @escaping @Sendable (Int) -> String,
+    mealRecommendationsTitle: String,
+    mealRecommendationsHint: String,
+    mealRecommendationsEmpty: String,
+    openNowLabel: String,
     pasteLimitToast: @escaping @Sendable (Int) -> String,
     daysValue: @escaping @Sendable (Int) -> String,
     priorityLabel: @escaping @Sendable (String) -> String,
@@ -802,6 +817,10 @@ public struct AppCopy: Sendable {
     self.weatherBrand = weatherBrand
     self.weatherAttributionLabel = weatherAttributionLabel
     self.weatherPrecipitationText = weatherPrecipitation
+    self.mealRecommendationsTitle = mealRecommendationsTitle
+    self.mealRecommendationsHint = mealRecommendationsHint
+    self.mealRecommendationsEmpty = mealRecommendationsEmpty
+    self.openNowLabel = openNowLabel
     self.pasteLimitToastText = pasteLimitToast
     self.daysValueText = daysValue
     self.priorityLabelText = priorityLabel
@@ -1201,6 +1220,10 @@ public struct AppCopy: Sendable {
     weatherBrand: "Apple Weather",
     weatherAttributionLabel: "Apple Weather の天気",
     weatherPrecipitation: { "降水 \($0)%" },
+    mealRecommendationsTitle: "近くの食事",
+    mealRecommendationsHint: "候補を見る",
+    mealRecommendationsEmpty: "候補が見つかりませんでした",
+    openNowLabel: "営業中",
     pasteLimitToast: { "\($0)件あります。1回に確認できるのは12か所までです。残りは別の旅として分けてください。" },
     daysValue: { "\($0)日" },
     priorityLabel: { "\($0)の優先度" },
@@ -1443,6 +1466,10 @@ public struct AppCopy: Sendable {
     weatherBrand: "Apple Weather",
     weatherAttributionLabel: "Weather by Apple Weather",
     weatherPrecipitation: { "\($0)% rain" },
+    mealRecommendationsTitle: "Places to eat nearby",
+    mealRecommendationsHint: "See suggestions",
+    mealRecommendationsEmpty: "No suggestions found",
+    openNowLabel: "Open now",
     pasteLimitToast: { "\($0) places found. Up to 12 places at a time. Keep the rest for a second trip." },
     daysValue: { "\($0) day\($0 == 1 ? "" : "s")" },
     priorityLabel: { "\($0) priority" },

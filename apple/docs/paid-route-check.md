@@ -63,3 +63,22 @@ Simulator でも bypass セッションで通せる。実 Google キーが要る
    旅程を組み直したときに交通機関レグの線が消え(Apple の ETA のみに戻り)、分数も
    Apple 側の値に変わることを確認する —— `WorkerRouteProvider` が Apple
    (`AppleRouteProvider` = `MKDirections`)へ黙って戻っている。
+
+## 7. 食事候補(food-recommendations)
+
+合成の根(`TripCheckApp.init`)は非 UI テストのとき常に
+`FoodRecommendationAvailability.makeDefaultProvider(uiTesting:client:)` が返す
+`WorkerFoodRecommender` を `PlannerStore` に渡す(`-uiTesting` は nil のまま —— タイムラインの
+食事枠は決定的に「候補が見つかりませんでした」になる、これが UI 回帰テストの前提)。
+
+1. 上の 1・2 と同じく `.dev.vars` に実 `GOOGLE_PLACES_API_KEY`(Places API が有効な
+   キー)を置き、`pnpm dev` を起動。Simulator は `TRIPCHECK_WORKER_BYPASS_TOKEN` を
+   `.dev.vars` と同じ値にして走らせる(`-uiTesting` は付けない)。
+2. 旅程を組み、タイムラインの破線の食事枠(「候補を見る」ヒント付き)をタップする。
+   下からシートが開き、名前・種別・評価・距離・住所を持つ候補カードが並ぶこと
+   (`plan.foodCandidate`)を確認する。カードをタップすると Google マップの該当店へ
+   遷移すること。
+3. Worker を止める、または `.dev.vars` から鍵を外すと、同じ食事枠をタップしても
+   カードは 1 件も出ず、「候補が見つかりませんでした」だけが出ることを確認する
+   (`beginFoodFetch` が `foodRecommendationProvider == nil` を `.unavailable` として
+   即座に返す道と同じ結果になる)。
