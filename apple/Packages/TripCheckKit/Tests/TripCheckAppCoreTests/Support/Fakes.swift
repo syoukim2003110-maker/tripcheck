@@ -1,3 +1,4 @@
+import Foundation
 import TripCheckKit
 @testable import TripCheckAppCore
 
@@ -131,4 +132,39 @@ struct LatchedIntentParser: IntentParser {
     await latch.waitUntilReleased()
     return .parsed(TripIntent(destination: "遅い答え", durationText: "", whenText: "", wishes: ["遅い答え"]))
   }
+}
+
+// MARK: - Worker 認証のフェイク(spec 2026-08-25)
+
+struct FakeAttestor: AppAttesting {
+  var supported = true
+  var keyId = "fake-key-id"
+  /// true なら `assert` が `keyInvalid` を投げ、keyId 破棄 → 再登録の自己回復を試させる。
+  var assertInvalidates = false
+
+  var isSupported: Bool { supported }
+  func generateKey() async throws -> String { keyId }
+  func attest(keyId: String, clientDataHash: Data) async throws -> Data { Data("attestation".utf8) }
+  func assert(keyId: String, clientDataHash: Data) async throws -> Data {
+    if assertInvalidates { throw AppAttestError.keyInvalid }
+    return Data("assertion".utf8)
+  }
+}
+
+/// `URLSession` を使わない通信。`handler` は純粋(状態は呼び出し側の actor に持たせる)。
+struct FakeTransport: WorkerTransport {
+  let handler: @Sendable (WorkerRequest) async throws -> WorkerResponse
+  func send(_ request: WorkerRequest, baseURL: URL) async throws -> WorkerResponse {
+    try await handler(request)
+  }
+}
+
+final class InMemoryAttestKeyStore: AttestKeyStore, @unchecked Sendable {
+  private let lock = NSLock()
+  private var keyId: String?
+  init(keyId: String? = nil) { self.keyId = keyId }
+  func loadKeyId() throws -> String? { lock.withLock { keyId } }
+  func saveKeyId(_ keyId: String) throws { lock.withLock { self.keyId = keyId } }
+  func deleteKeyId() throws { lock.withLock { self.keyId = nil } }
+  var storedKeyId: String? { lock.withLock { keyId } }
 }
