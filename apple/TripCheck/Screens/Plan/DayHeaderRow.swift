@@ -26,12 +26,6 @@ struct DayHeaderRow: View {
           Text(header.summary)
             .tcFont(.dayHeader)
             .foregroundStyle(Tokens.Color.ink2)
-          if let weather = store.weatherByDay[index] {
-            WeatherChip(day: weather, copy: app)
-            if let attribution = store.weatherAttribution {
-              WeatherAttributionBadge(attribution: attribution, copy: app)
-            }
-          }
           Spacer(minLength: 0)
           IconView(.arrow, size: 14, color: Tokens.Color.muted)
         }
@@ -42,6 +36,30 @@ struct DayHeaderRow: View {
       .accessibilityLabel("\(store.dayDateLabel(index)) \(header.summary)")
       .accessibilityHint(app.daySettingsTitle)
       .accessibilityIdentifier("plan.daySettings")
+
+      // 天気は日の設定ボタンの外(兄弟)に置く —— SwiftUI はボタンの中にボタン/Link を入れ子に
+      // できない(外側のボタンがタップを奪う)。`WeatherAttributionBadge` は Apple 必須の
+      // **機能する**法的リンクなので、日の設定ボタンの `.contentShape` の外に独立した
+      // タップ域を持たせる。チップは表示専用なので入れ子でも実害は無いが、並びを保つために
+      // ここでも一緒に出す。
+      //
+      // `.accessibilityElement(children: .contain)` が要る —— この行を挟む VStack 自体に
+      // `plan.dayHeader` という識別子が付いていて(下の `.accessibilityIdentifier`)、素の
+      // `HStack` のまま(それ自身がアクセシビリティの境界を作らない)だと、その識別子が
+      // 直下の最初の要素(このチップ/バッジ)まで素通りして `plan.weatherChip.*`/
+      // `plan.weatherAttribution` を上書きしてしまう(日の設定ボタンが入れ子だった頃は、
+      // ボタン自身が境界になって守っていた実測の挙動)。`.contain` でここを境界にして、
+      // チップ/バッジそれぞれの識別子を守る。
+      if let weather = store.weatherByDay[index] {
+        HStack(spacing: 8) {
+          WeatherChip(day: weather, copy: app)
+          if let attribution = store.weatherAttribution {
+            WeatherAttributionBadge(attribution: attribution, copy: app)
+          }
+          Spacer(minLength: 0)
+        }
+        .accessibilityElement(children: .contain)
+      }
 
       if header.bar.isEmpty {
         Text(Copy.for(store.request.locale).openDay)

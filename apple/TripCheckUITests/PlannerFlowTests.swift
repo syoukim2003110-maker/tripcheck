@@ -206,6 +206,18 @@ final class PlannerFlowTests: XCTestCase {
 
     XCTAssertTrue(app.staticTexts["plan.hero"].waitForExistence(timeout: 30))
     XCTAssertTrue(app.staticTexts["plan.weatherChip.0"].waitForExistence(timeout: 10))
-    XCTAssertTrue(app.buttons["plan.weatherAttribution"].waitForExistence(timeout: 5))
+    let badge = app.buttons["plan.weatherAttribution"]
+    XCTAssertTrue(badge.waitForExistence(timeout: 5))
+
+    // 帰属バッジは日の設定ボタンの兄弟でなければならない —— 入れ子のままだと外側の
+    // 日の設定ボタンにタップを奪われ、法的リンクではなく `daySettings.sheet` が開く
+    // (レビュー指摘・実機で再現した回帰)。Safari を実際に起動させて確かめずに、間接的な
+    // 強い証拠として「タップしても日の設定シートは出ない」ことを見る —— シートが出たら、
+    // バッジがまだ日の設定ボタンの中に居るという意味になる。
+    badge.tap()
+    XCTAssertFalse(
+      app.otherElements["daySettings.sheet"].waitForExistence(timeout: 3),
+      "tapping the weather attribution badge must not open the day-settings inspector"
+    )
   }
 }
