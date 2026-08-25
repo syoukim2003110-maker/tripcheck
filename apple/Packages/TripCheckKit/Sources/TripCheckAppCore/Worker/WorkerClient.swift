@@ -276,6 +276,46 @@ public actor WorkerClient: WorkerAuthenticating {
     }
   }
 
+  public func hotelRecommendations(_ payload: HotelRecommendationRequestPayload) async -> HotelRecommendationResult? {
+    let auth = await ensureSession()
+    guard case .authenticated = auth, let token = sessionToken else { return nil }
+    guard let body = try? JSONEncoder().encode(payload) else { return nil }
+    switch await hotelRecommendationsOnce(token: token, body: body) {
+    case .resolved(let result): return result
+    case .failed: return nil
+    case .unauthorized:
+      sessionToken = nil
+      state = .idle
+      let reauth = await authenticate(allowKeyReset: true)
+      guard case .authenticated = reauth, let fresh = sessionToken else { return nil }
+      if case .resolved(let result) = await hotelRecommendationsOnce(token: fresh, body: body) { return result }
+      return nil
+    }
+  }
+
+  private enum HotelOnce {
+    case resolved(HotelRecommendationResult)
+    case unauthorized
+    case failed
+  }
+
+  private func hotelRecommendationsOnce(token: String, body: Data) async -> HotelOnce {
+    do {
+      let response = try await transport.send(
+        WorkerRequest(path: "/api/hotel-recommendations", method: "POST", body: body, sessionToken: token),
+        baseURL: baseURL
+      )
+      if response.status == 200 {
+        guard let decoded = try? JSONDecoder().decode(HotelRecommendationResult.self, from: response.body) else { return .failed }
+        return .resolved(decoded)
+      }
+      if response.status == 401 { return .unauthorized }
+      return .failed
+    } catch {
+      return .failed
+    }
+  }
+
   private func authenticate(allowKeyReset: Bool) async -> WorkerAuthState {
     state = .authenticating
     if let bypassToken, !attestor.isSupported {

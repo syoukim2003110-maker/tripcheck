@@ -67,4 +67,6 @@ public protocol WorkerAuthenticating: Sendable {
   func foodRecommendations(_ payload: FoodRecommendationRequestPayload) async -> FoodRecommendationResult?
   /// 検証済み場所の詳細。失敗・未認証・到達不能はすべて nil(=呼び出し側は詳細なし)。
   func placeIntelligence(_ payload: PlaceIntelligenceRequestPayload) async -> PlaceIntelligenceResult?
+  /// 検証済みの宿候補。失敗・未認証・到達不能はすべて nil。
+  func hotelRecommendations(_ payload: HotelRecommendationRequestPayload) async -> HotelRecommendationResult?
 }
