@@ -32,6 +32,9 @@ struct StopInspector: View {
             header(model)
             if model.dayOptions.count > 1 { dayPills(model, text: text) }
             EvidenceDisclosure(model: model)
+            if model.isProviderVerified {
+              PlaceIntelligenceDisclosure(stopId: model.stopId)
+            }
             ConditionsDisclosure(model: model)
             mapLinks(model, text: text, app: app)
             if model.canRemove { removeButton(model, text: text) }

@@ -85,7 +85,11 @@ struct TripCheckApp: App {
       // 食事の候補も同じ理由で composition root にだけ判定を閉じ込める
       // (`FoodRecommendationAvailability`)。UI テストは nil のまま —— タップした行は
       // 決定的に「候補なし」になる(`MealRow` の非回帰)。
-      foodRecommendationProvider: FoodRecommendationAvailability.makeDefaultProvider(uiTesting: isUITesting, client: workerClient)
+      foodRecommendationProvider: FoodRecommendationAvailability.makeDefaultProvider(uiTesting: isUITesting, client: workerClient),
+      // 場所の詳細も同じ理由で composition root にだけ判定を閉じ込める
+      // (`PlaceIntelligenceAvailability`)。UI テストは nil のまま —— カードを開いても
+      // 決定的に「詳細を取得できませんでした」になる(`PlaceIntelligenceDisclosure` の非回帰)。
+      placeIntelligenceProvider: PlaceIntelligenceAvailability.makeDefaultProvider(uiTesting: isUITesting, client: workerClient)
     ))
     _webSuggestions = State(initialValue: WorkerSuggestions(client: workerClient))
   }

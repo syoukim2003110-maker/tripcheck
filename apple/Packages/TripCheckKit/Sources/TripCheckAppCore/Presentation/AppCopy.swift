@@ -368,6 +368,15 @@ public struct AppCopy: Sendable {
   /// 候補カードの「営業中」表示。
   public let openNowLabel: String
 
+  // MARK: - 場所の詳細(spec 2026-08-25、`PlaceIntelligenceDisclosure`)
+
+  /// 開示カードの見出し。
+  public let placeIntelligenceTitle: String
+  /// 取得できなかった/未認証だったときの 1 行。
+  public let placeIntelligenceUnavailable: String
+  /// 「営業中」表示。
+  public let placeIntelligenceOpenNow: String
+
   private let pasteLimitToastText: @Sendable (Int) -> String
   private let daysValueText: @Sendable (Int) -> String
   private let priorityLabelText: @Sendable (String) -> String
@@ -598,6 +607,9 @@ public struct AppCopy: Sendable {
     mealRecommendationsHint: String,
     mealRecommendationsEmpty: String,
     openNowLabel: String,
+    placeIntelligenceTitle: String,
+    placeIntelligenceUnavailable: String,
+    placeIntelligenceOpenNow: String,
     pasteLimitToast: @escaping @Sendable (Int) -> String,
     daysValue: @escaping @Sendable (Int) -> String,
     priorityLabel: @escaping @Sendable (String) -> String,
@@ -821,6 +833,9 @@ public struct AppCopy: Sendable {
     self.mealRecommendationsHint = mealRecommendationsHint
     self.mealRecommendationsEmpty = mealRecommendationsEmpty
     self.openNowLabel = openNowLabel
+    self.placeIntelligenceTitle = placeIntelligenceTitle
+    self.placeIntelligenceUnavailable = placeIntelligenceUnavailable
+    self.placeIntelligenceOpenNow = placeIntelligenceOpenNow
     self.pasteLimitToastText = pasteLimitToast
     self.daysValueText = daysValue
     self.priorityLabelText = priorityLabel
@@ -1224,6 +1239,9 @@ public struct AppCopy: Sendable {
     mealRecommendationsHint: "候補を見る",
     mealRecommendationsEmpty: "候補が見つかりませんでした",
     openNowLabel: "営業中",
+    placeIntelligenceTitle: "この場所について",
+    placeIntelligenceUnavailable: "詳細を取得できませんでした",
+    placeIntelligenceOpenNow: "営業中",
     pasteLimitToast: { "\($0)件あります。1回に確認できるのは12か所までです。残りは別の旅として分けてください。" },
     daysValue: { "\($0)日" },
     priorityLabel: { "\($0)の優先度" },
@@ -1470,6 +1488,9 @@ public struct AppCopy: Sendable {
     mealRecommendationsHint: "See suggestions",
     mealRecommendationsEmpty: "No suggestions found",
     openNowLabel: "Open now",
+    placeIntelligenceTitle: "About this place",
+    placeIntelligenceUnavailable: "Details unavailable",
+    placeIntelligenceOpenNow: "Open now",
     pasteLimitToast: { "\($0) places found. Up to 12 places at a time. Keep the rest for a second trip." },
     daysValue: { "\($0) day\($0 == 1 ? "" : "s")" },
     priorityLabel: { "\($0) priority" },

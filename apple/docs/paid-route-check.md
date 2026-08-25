@@ -82,3 +82,26 @@ Simulator でも bypass セッションで通せる。実 Google キーが要る
    カードは 1 件も出ず、「候補が見つかりませんでした」だけが出ることを確認する
    (`beginFoodFetch` が `foodRecommendationProvider == nil` を `.unavailable` として
    即座に返す道と同じ結果になる)。
+
+## 8. 場所の詳細(place-intelligence)
+
+合成の根(`TripCheckApp.init`)は非 UI テストのとき常に
+`PlaceIntelligenceAvailability.makeDefaultProvider(uiTesting:client:)` が返す
+`WorkerPlaceIntelligenceProvider` を `PlannerStore` に渡す(`-uiTesting` は nil のまま ——
+「この場所について」カードは決定的に「詳細を取得できませんでした」になる、これが UI 回帰
+テストの前提)。カードの入口自体は `RouteStop.providerRef` の有無(Google 検証済みかどうか)
+で決まり、これは Worker の疎通とは別の条件 —— 鍵が無くても Apple フォールバックで解決した
+停留所にはカードそのものが出ない。
+
+1. 上の 1・2 と同じく `.dev.vars` に実 `GOOGLE_PLACES_API_KEY`(Places API が有効な
+   キー)を置き、`pnpm dev` を起動。Simulator は `TRIPCHECK_WORKER_BYPASS_TOKEN` を
+   `.dev.vars` と同じ値にして走らせる(`-uiTesting` は付けない)。
+2. 地名を検索窓へ打ち込み、Google 検証済み(`google-` 始まりの id)の停留所として解決させて
+   から旅程を組む。その停留所の詳細シートを開くと、根拠の開示部の下に「この場所について」
+   カード(`plan.placeIntelligence`)が出る。
+3. カードを開くと、初回だけ取得が走り(2 回目以降は同じ結果をそのまま出す)、営業時間・
+   評価・要約が並ぶこと(`plan.placeIntelligence.loaded`)を確認する。
+4. Worker を止める、または `.dev.vars` から鍵を外すと、同じカードを開いても
+   「詳細を取得できませんでした」(`plan.placeIntelligence.unavailable`)だけが出ることを
+   確認する(`loadPlaceIntelligence` が `placeIntelligenceProvider == nil` を `.unavailable`
+   として即座に返す道と同じ結果になる)。
