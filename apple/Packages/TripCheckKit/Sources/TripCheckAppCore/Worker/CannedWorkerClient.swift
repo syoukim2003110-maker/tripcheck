@@ -21,4 +21,6 @@ public actor CannedWorkerClient: WorkerAuthenticating {
   }
 
   public func resolvePlaces(_ payload: PlaceResolutionRequestPayload) async -> PlaceResolutionResult? { nil }
+
+  public func suggestPlaces(_ payload: PlaceSuggestionRequestPayload) async -> PlaceSuggestionResult? { nil }
 }

@@ -59,4 +59,6 @@ public protocol WorkerAuthenticating: Sendable {
   func ping() async -> WorkerPingResult
   /// 検証済みの場所解決。失敗・未認証・到達不能はすべて nil(=呼び出し側はローカルへ代替)。
   func resolvePlaces(_ payload: PlaceResolutionRequestPayload) async -> PlaceResolutionResult?
+  /// 検証済みの場所サジェスト。失敗・未認証・到達不能はすべて nil(=呼び出し側は Apple のみ)。
+  func suggestPlaces(_ payload: PlaceSuggestionRequestPayload) async -> PlaceSuggestionResult?
 }

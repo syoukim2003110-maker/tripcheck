@@ -8,15 +8,18 @@ private actor FakeGateway {
   var unknownKeyOnce = false
   var pingUnauthorizedOnce = false
   var resolveUnauthorizedOnce = false
+  var suggestUnauthorizedOnce = false
   var lastAttestKeyId: String?
   private var sawUnknownKey = false
   private var sawPing401 = false
   private var sawResolve401 = false
+  private var sawSuggest401 = false
 
-  func configure(unknownKeyOnce: Bool = false, pingUnauthorizedOnce: Bool = false, resolveUnauthorizedOnce: Bool = false) {
+  func configure(unknownKeyOnce: Bool = false, pingUnauthorizedOnce: Bool = false, resolveUnauthorizedOnce: Bool = false, suggestUnauthorizedOnce: Bool = false) {
     self.unknownKeyOnce = unknownKeyOnce
     self.pingUnauthorizedOnce = pingUnauthorizedOnce
     self.resolveUnauthorizedOnce = resolveUnauthorizedOnce
+    self.suggestUnauthorizedOnce = suggestUnauthorizedOnce
   }
 
   func respond(to request: WorkerRequest) -> WorkerResponse {
@@ -46,6 +49,12 @@ private actor FakeGateway {
         return json(#"{"code":"session_expired"}"#, 401)
       }
       return json(#"{"provider":"google_maps","fetchedAt":"t","places":[],"hotel":null,"ambiguous":[]}"#, 200)
+    case "/api/place-suggestions":
+      if suggestUnauthorizedOnce, !sawSuggest401 {
+        sawSuggest401 = true
+        return json(#"{"code":"session_expired"}"#, 401)
+      }
+      return json(#"{"provider":"google_maps","suggestions":[{"providerRef":"abc","primaryText":"Tokyo Tower","secondaryText":"Minato","fullText":"Tokyo Tower, Minato"}]}"#, 200)
     default:
       return json(#"{"code":"not_found"}"#, 404)
     }
@@ -141,5 +150,15 @@ final class WorkerClientTests: XCTestCase {
     let result = await client.resolvePlaces(payload)
     XCTAssertNotNil(result, "a 401 must be retried once and then succeed")
     XCTAssertEqual(result?.provider, "google_maps")
+  }
+
+  func testSuggestPlacesRetriesOnceOn401() async {
+    let gateway = FakeGateway()
+    await gateway.configure(suggestUnauthorizedOnce: true)
+    let (client, _) = makeClient(gateway: gateway)
+    let payload = PlaceSuggestionRequestPayload(query: "tok", languageCode: "en", destination: "auto")
+    let result = await client.suggestPlaces(payload)
+    XCTAssertNotNil(result, "a 401 must be retried once and then succeed")
+    XCTAssertEqual(result?.suggestions.first?.providerRef, "abc")
   }
 }
