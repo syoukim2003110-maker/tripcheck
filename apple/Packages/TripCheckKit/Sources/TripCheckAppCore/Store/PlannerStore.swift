@@ -185,6 +185,12 @@ public final class PlannerStore {
   @ObservationIgnored var hotelRecommendationTask: Task<Void, Never>?
   public internal(set) var hotelRecommendations: HotelRecommendationsState?
 
+  // MARK: - 空き時間の寄り道(観測しない。gapDetourByDay だけが観測される。spec 2026-08-26)
+  @ObservationIgnored let routeDetourProvider: (any RouteDetourRecommending)?
+  @ObservationIgnored var routeDetourGeneration = 0
+  @ObservationIgnored var routeDetourTasks: [Int: Task<Void, Never>] = [:]
+  public internal(set) var gapDetourByDay: [Int: GapDetourState] = [:]
+
   // MARK: - 場所の詳細(観測しない。placeIntelligenceByStop だけが観測される。spec 2026-08-25)
   @ObservationIgnored let placeIntelligenceProvider: (any PlaceIntelligenceProviding)?
   @ObservationIgnored var placeIntelligenceGeneration = 0
@@ -216,7 +222,8 @@ public final class PlannerStore {
     weatherProvider: (any WeatherProviding)? = nil,
     foodRecommendationProvider: (any FoodRecommending)? = nil,
     hotelRecommendationProvider: (any HotelRecommending)? = nil,
-    placeIntelligenceProvider: (any PlaceIntelligenceProviding)? = nil
+    placeIntelligenceProvider: (any PlaceIntelligenceProviding)? = nil,
+    routeDetourProvider: (any RouteDetourRecommending)? = nil
   ) {
     self.resolvers = resolvers
     self.store = store
@@ -226,6 +233,7 @@ public final class PlannerStore {
     self.foodRecommendationProvider = foodRecommendationProvider
     self.hotelRecommendationProvider = hotelRecommendationProvider
     self.placeIntelligenceProvider = placeIntelligenceProvider
+    self.routeDetourProvider = routeDetourProvider
     self.storageDirectory = storageDirectory
     self.autosaveDebounce = autosaveDebounce
     self.clock = clock
@@ -396,6 +404,7 @@ public final class PlannerStore {
     // 今の候補は無効になる。
     invalidateFoodRecommendations()
     invalidateHotelRecommendations()
+    invalidateRouteDetour()
     invalidatePlaceIntelligence()
     // 飛んでいる問い合わせも同じように捨てる。世代を進めておけば、遅れて届いた場所は
     // `requestBuildFromStart` などのガードで落ちる —— 落とさないと、さっきの旅の答えが
@@ -485,6 +494,7 @@ public final class PlannerStore {
     // 候補を捨てるだけ —— 新しい枠は `loadFoodRecommendations(slotId:)` が取りに行く。
     invalidateFoodRecommendations()
     invalidateHotelRecommendations()
+    invalidateRouteDetour()
     invalidatePlaceIntelligence()
   }
 }
