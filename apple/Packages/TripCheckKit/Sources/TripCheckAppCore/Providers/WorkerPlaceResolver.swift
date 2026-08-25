@@ -7,7 +7,11 @@ import TripCheckKit
 /// リゾルバ(Apple → Catalog)に委ねる — オンデバイス解決が下限なので壊れない。
 public struct WorkerPlaceResolver: PlaceResolver {
   private let client: any WorkerAuthenticating
-  public init(client: any WorkerAuthenticating) { self.client = client }
+  private let timeout: Duration
+  public init(client: any WorkerAuthenticating, timeout: Duration = .seconds(6)) {
+    self.client = client
+    self.timeout = timeout
+  }
 
   public func resolve(_ queries: [PlaceQuery], destination: DestinationChoice, locale: PlannerLocale) async -> [Int: PlaceResolution] {
     guard !queries.isEmpty else { return [:] }
@@ -16,7 +20,7 @@ public struct WorkerPlaceResolver: PlaceResolver {
       languageCode: locale.rawValue,
       destination: destination.rawValue
     )
-    guard let result = await client.resolvePlaces(payload) else { return [:] }
+    guard let result = await resolveWithinTimeout(payload) else { return [:] }
 
     var out: [Int: PlaceResolution] = [:]
     for place in result.places {
@@ -30,6 +34,23 @@ public struct WorkerPlaceResolver: PlaceResolver {
       }
     }
     return out
+  }
+
+  /// 探す側と時計を競争させる。ネットワークが黙っても resolve が返らない、を防ぐ。
+  /// 打ち切り(または解決失敗)は nil を返し、呼び手はローカルへ代替する。
+  private func resolveWithinTimeout(_ payload: PlaceResolutionRequestPayload) async -> PlaceResolutionResult? {
+    let client = self.client
+    let limit = timeout
+    return await withTaskGroup(of: PlaceResolutionResult?.self) { group in
+      group.addTask { await client.resolvePlaces(payload) }
+      group.addTask {
+        try? await Task.sleep(for: limit)
+        return nil
+      }
+      let first = await group.next() ?? nil
+      group.cancelAll()
+      return first
+    }
   }
 
   /// web の `ResolvedInputStop` を iOS の検証済み `ResolvedStop` に写す。id は Apple と同じ

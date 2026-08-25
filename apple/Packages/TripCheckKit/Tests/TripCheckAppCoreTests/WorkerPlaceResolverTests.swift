@@ -10,6 +10,16 @@ private struct StubWorker: WorkerAuthenticating {
   func resolvePlaces(_ payload: PlaceResolutionRequestPayload) async -> PlaceResolutionResult? { result }
 }
 
+private struct SlowStubWorker: WorkerAuthenticating {
+  func describe() async -> WorkerClientDescription { .init(baseURL: "slow", attestSupported: true, state: .idle) }
+  func ensureSession() async -> WorkerAuthState { .idle }
+  func ping() async -> WorkerPingResult { .init(ok: false, expiresAt: nil) }
+  func resolvePlaces(_ payload: PlaceResolutionRequestPayload) async -> PlaceResolutionResult? {
+    try? await Task.sleep(for: .seconds(2))
+    return PlaceResolutionResult(provider: "google_maps", fetchedAt: "t", places: [], hotel: nil, ambiguous: [])
+  }
+}
+
 private func rawStop(input: String, name: String) -> WorkerResolvedStop {
   WorkerResolvedStop(id: "g", providerRef: "ChIJ_x", name: name, area: "Minato",
     latitude: 35.6586, longitude: 139.7454, sourceUrl: "https://maps.google/x",
@@ -47,5 +57,11 @@ final class WorkerPlaceResolverTests: XCTestCase {
     let resolver = WorkerPlaceResolver(client: StubWorker(result: nil))
     let answers = await resolver.resolve([PlaceQuery(inputIndex: 0, input: "x")], destination: .auto, locale: .ja)
     XCTAssertTrue(answers.isEmpty)
+  }
+
+  func testASlowWorkerTimesOutAndTheChainFallsThrough() async {
+    let resolver = WorkerPlaceResolver(client: SlowStubWorker(), timeout: .milliseconds(20))
+    let answers = await resolver.resolve([PlaceQuery(inputIndex: 0, input: "x")], destination: .auto, locale: .ja)
+    XCTAssertTrue(answers.isEmpty, "a stalled worker must time out and yield no entries so Apple/Catalog run")
   }
 }
