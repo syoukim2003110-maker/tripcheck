@@ -97,7 +97,11 @@ struct TripCheckApp: App {
       // 空き時間の寄り道も同じ理由で composition root にだけ判定を閉じ込める
       // (`RouteDetourAvailability`)。UI テストは nil のまま —— カードを開いても
       // 決定的に「候補が見つかりませんでした」になる(`GapDetourCard` の非回帰)。
-      routeDetourProvider: RouteDetourAvailability.makeDefaultProvider(uiTesting: isUITesting, client: workerClient)
+      routeDetourProvider: RouteDetourAvailability.makeDefaultProvider(uiTesting: isUITesting, client: workerClient),
+      // 最新の声も同じ理由で composition root にだけ判定を閉じ込める(`FreshVoicesAvailability`)。
+      // UI テストは nil のまま —— 入れ子の「最新の声」節を展開しても決定的に空表示になる
+      // (`PlaceIntelligenceDisclosure` の非回帰)。
+      freshVoicesProvider: FreshVoicesAvailability.makeDefaultProvider(uiTesting: isUITesting, client: workerClient)
     ))
     _webSuggestions = State(initialValue: WorkerSuggestions(client: workerClient))
   }

@@ -9,6 +9,9 @@ import TripCheckAppCore
 /// 付けた `.task` が「初めて開いたとき」の入口になる —— `expanded` の `@State` をもう一組
 /// ここに持つ必要はない。閉じて開き直すたびに `.task` はもう一度走るが、`loadPlaceIntelligence`
 /// は `.loading`/`.loaded` なら無視して戻るので、二重に取りに行くことはない。
+///
+/// 基底が `.loaded` になった後にだけ、入れ子の「最新の声」節(`/api/place-intelligence/fresh`)を
+/// 出す —— これも展開でだけ取りに行く 2 度目のタップ(opt-in、depth "quick" = 1 unit)。
 struct PlaceIntelligenceDisclosure: View {
   let stopId: String
   @Environment(PlannerStore.self) private var store
@@ -38,6 +41,10 @@ struct PlaceIntelligenceDisclosure: View {
         .foregroundStyle(Tokens.Color.muted)
         .accessibilityIdentifier("plan.placeIntelligence.unavailable")
     case .some(.loaded(let result)):
+      // 「最新の声」の題材は解決済みの基底結果から組む(web の checkPlace と同じ)。検証済み
+      // 停留所は name/address が必ず埋まるので、空ガードは防御的な保険。
+      let freshName = result.place.name.isEmpty ? result.place.address : result.place.name
+      let freshArea = result.place.address.isEmpty ? result.place.name : String(result.place.address.prefix(100))
       VStack(alignment: .leading, spacing: 6) {
         HStack(spacing: 8) {
           if let rating = result.place.rating {
@@ -82,8 +89,94 @@ struct PlaceIntelligenceDisclosure: View {
               .foregroundStyle(Tokens.Color.ink2)
           }
         }
+        // 入れ子の「最新の声」。折り畳んだ札のラベルが「見る」CTA を兼ね、開いた初回だけ取りに行く。
+        DisclosureCard(title: app.freshVoicesExpand) {
+          freshContent(app)
+            .task { store.loadFreshVoices(stopId: stopId, name: freshName, area: freshArea) }
+            .onChange(of: store.freshVoicesByStop[stopId]) { _, now in
+              if now == nil { store.loadFreshVoices(stopId: stopId, name: freshName, area: freshArea) }
+            }
+        }
+        .accessibilityIdentifier("plan.placeIntelligence.fresh")
       }
       .accessibilityIdentifier("plan.placeIntelligence.loaded")
+    }
+  }
+
+  /// 入れ子の「最新の声」節の中身。基底カードと同じ状態機械(読取中→スピナー、取得不可/空→
+  /// 1 行、取得済み→節見出し + 要約 + 出典行)。写真・絵文字は出さない。
+  @ViewBuilder private func freshContent(_ app: AppCopy) -> some View {
+    switch store.freshVoicesByStop[stopId] {
+    case .some(.loading), .none:
+      ProgressView()
+        .frame(maxWidth: .infinity, alignment: .leading)
+    case .some(.unavailable):
+      Text(app.freshVoicesEmpty)
+        .tcFont(.meta)
+        .foregroundStyle(Tokens.Color.muted)
+        .accessibilityIdentifier("plan.placeIntelligence.fresh.unavailable")
+    case .some(.loaded(let fresh)):
+      if fresh.summary.isEmpty, fresh.findings.isEmpty {
+        Text(app.freshVoicesEmpty)
+          .tcFont(.meta)
+          .foregroundStyle(Tokens.Color.muted)
+          .accessibilityIdentifier("plan.placeIntelligence.fresh.unavailable")
+      } else {
+        VStack(alignment: .leading, spacing: 8) {
+          Text(app.freshVoicesTitle)
+            .tcFont(.meta)
+            .foregroundStyle(Tokens.Color.muted)
+          if !fresh.summary.isEmpty {
+            Text(fresh.summary)
+              .tcFont(.body)
+              .foregroundStyle(Tokens.Color.ink2)
+              .fixedSize(horizontal: false, vertical: true)
+          }
+          ForEach(Array(fresh.findings.enumerated()), id: \.offset) { _, finding in
+            VStack(alignment: .leading, spacing: 2) {
+              if let url = URL(string: finding.url) {
+                Link(destination: url) {
+                  Text(finding.title)
+                    .tcFont(.meta)
+                    .foregroundStyle(Tokens.Color.ink2)
+                }
+              } else {
+                Text(finding.title)
+                  .tcFont(.meta)
+                  .foregroundStyle(Tokens.Color.ink2)
+              }
+              if !finding.note.isEmpty {
+                Text(finding.note)
+                  .tcFont(.meta)
+                  .foregroundStyle(Tokens.Color.muted)
+                  .fixedSize(horizontal: false, vertical: true)
+              }
+              HStack(spacing: 8) {
+                Text(freshSourceLabel(app, finding.sourceKind))
+                  .tcFont(.meta)
+                  .foregroundStyle(Tokens.Color.muted)
+                if finding.isRecent == true || finding.age != nil {
+                  Text(app.freshVoicesRecent)
+                    .tcFont(.meta)
+                    .foregroundStyle(Tokens.Color.recommendation)
+                }
+              }
+            }
+            .accessibilityIdentifier("plan.placeIntelligence.fresh.finding")
+          }
+        }
+        .accessibilityIdentifier("plan.placeIntelligence.fresh.loaded")
+      }
+    }
+  }
+
+  /// web の `sourceKind` を UI ラベルへ。未知値は「ウェブ」に寄せる(web の既定と同じ)。
+  private func freshSourceLabel(_ app: AppCopy, _ kind: String) -> String {
+    switch kind {
+    case "social": return app.freshSourceSocial
+    case "news": return app.freshSourceNews
+    case "blog": return app.freshSourceBlog
+    default: return app.freshSourceWeb
     }
   }
 }
