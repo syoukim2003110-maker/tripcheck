@@ -4,7 +4,7 @@
  * signing-secret chain, so no new configuration and nothing stored.
  */
 
-import { hmacBase64Url, signingSecret, type SigningEnvironment } from "../hmac-signature.ts";
+import { equalSignatures, hmacBase64Url, signingSecret, type SigningEnvironment } from "../hmac-signature.ts";
 
 const CHALLENGE_DOMAIN = "tc-app-challenge-v1";
 const SESSION_DOMAIN = "tc-app-session-v1";
@@ -50,7 +50,7 @@ export async function verifyChallenge(
     return { ok: false, code: "challenge_invalid" };
   }
   const expected = await hmacBase64Url(secret, [CHALLENGE_DOMAIN, issuedAtText, nonceHex].join("\n"));
-  if (signature !== expected) return { ok: false, code: "challenge_invalid" };
+  if (!equalSignatures(signature, expected)) return { ok: false, code: "challenge_invalid" };
   const issuedAt = Number(issuedAtText);
   if (nowSeconds < issuedAt - CHALLENGE_LEEWAY_SECONDS) return { ok: false, code: "challenge_invalid" };
   if (nowSeconds > issuedAt + CHALLENGE_TTL_SECONDS) return { ok: false, code: "challenge_expired" };
@@ -85,7 +85,7 @@ export async function verifySession(
   }
   const payload = [SESSION_DOMAIN, keyId, issuedAtText, expiresAtText].join("\n");
   const expected = await hmacBase64Url(secret, payload);
-  if (signature !== expected) return { ok: false, code: "session_invalid" };
+  if (!equalSignatures(signature, expected)) return { ok: false, code: "session_invalid" };
   const issuedAt = Number(issuedAtText);
   const expiresAt = Number(expiresAtText);
   if (expiresAt - issuedAt !== SESSION_TTL_SECONDS || nowSeconds < issuedAt - CHALLENGE_LEEWAY_SECONDS) {

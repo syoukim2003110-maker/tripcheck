@@ -56,7 +56,7 @@ WorkerClient (AppCore, actor)            /api/app/* 早期分岐(同一オリジ
 ## 4. プロトコル仕様
 
 共通: リクエスト/レスポンスとも JSON(`content-type: application/json`)。エラーは
-`{ "error": "<code>" }`。コードは `bad_request`(400) / `challenge_invalid` / `challenge_expired` /
+`{ "code": "<code>" }`。コードは `bad_request`(400) / `challenge_invalid` / `challenge_expired` /
 `attestation_invalid` / `assertion_invalid` / `unknown_key` / `counter_regressed` /
 `app_id_mismatch` / `environment_rejected` / `bypass_disabled` / `session_invalid` /
 `session_expired`(以上 401) / `disabled` / `no_signing_secret`(以上 503)。

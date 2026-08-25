@@ -172,3 +172,39 @@ test("bypass is fail-closed unless the token is configured and matches", async (
   assert.equal(on.status, 200, JSON.stringify(await on.clone().json()));
   assert.ok(String((await json(on)).session).startsWith("v1.bypass-local."));
 });
+
+test("a chain that doesn't reach the injected root fails, and an assertion signed by the wrong device fails", async () => {
+  const root = makeRootCa();
+  const intermediate = makeIntermediate(root);
+  const device = makeDeviceKey();
+  const otherRoot = makeRootCa();
+  const env = baseEnv();
+
+  const c1 = await getChallenge(env);
+  const wrongChain = await handleAppGateway(
+    post("/api/app/attest", { keyId: base64(device.keyId), attestation: buildAttestation({ root, intermediate, device, challenge: c1, appId: APP_ID }), challenge: c1 }),
+    env,
+    { nowSeconds: NOW, keyStore: processLocalAppAttestKeyStore(), rootCertificate: otherRoot.der },
+  );
+  assert.equal(wrongChain.status, 401);
+  assert.equal((await json(wrongChain)).code, "attestation_invalid");
+
+  const keyStore = processLocalAppAttestKeyStore();
+  const deps = { nowSeconds: NOW, keyStore, rootCertificate: root.der };
+  const c2 = await getChallenge(env);
+  await handleAppGateway(
+    post("/api/app/attest", { keyId: base64(device.keyId), attestation: buildAttestation({ root, intermediate, device, challenge: c2, appId: APP_ID }), challenge: c2 }),
+    env,
+    deps,
+  );
+
+  const impostor = makeDeviceKey();
+  const c3 = await getChallenge(env);
+  const wrongSigner = await handleAppGateway(
+    post("/api/app/assert", { keyId: base64(device.keyId), assertion: buildAssertion({ device: impostor, challenge: c3, appId: APP_ID, counter: 1 }), challenge: c3 }),
+    env,
+    deps,
+  );
+  assert.equal(wrongSigner.status, 401);
+  assert.equal((await json(wrongSigner)).code, "assertion_invalid");
+});

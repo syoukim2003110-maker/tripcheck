@@ -10,7 +10,7 @@
  * equivalent single source of truth, pinned by its own test.
  */
 
-import type { SigningEnvironment } from "../hmac-signature.ts";
+import { equalSignatures, type SigningEnvironment } from "../hmac-signature.ts";
 import { base64ToBytes, bytesToBase64Url, randomHex } from "./bytes.ts";
 import {
   issueChallenge,
@@ -151,7 +151,7 @@ export async function handleAppGateway(
     const bypassToken = stringField(body, "bypassToken", 128);
     if (bypassToken !== null) {
       const expected = env.TRIPCHECK_APP_ATTEST_BYPASS_TOKEN?.trim();
-      if (!expected || bypassToken !== expected) return refusal("bypass_disabled", 401);
+      if (!expected || !equalSignatures(bypassToken, expected)) return refusal("bypass_disabled", 401);
       const issued = await issueSession(env, BYPASS_KEY_ID, nowSeconds);
       if (!issued) return refusal("no_signing_secret", 503);
       return appJson({ session: issued.session, expiresAt: issued.expiresAt }, 200);
@@ -199,6 +199,7 @@ export async function handleAppGateway(
 
   const publicKeyPoint = base64ToBytes(record.publicKey);
   if (!publicKeyPoint) return refusal("unknown_key", 401);
+  if (!allowedAppIds(env).includes(record.appId)) return refusal("app_id_mismatch", 401);
   const verdict = await verifyAssertion({
     assertion,
     challenge,
