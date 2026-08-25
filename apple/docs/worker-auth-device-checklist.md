@@ -8,7 +8,7 @@ Simulator は App Attest 非対応なので、本物のアテステーション�
 
 `.dev.vars` に 2 行足す(値はそのまま):
 
-    TRIPCHECK_APP_IDS=T8L5BPC2XJ.com.muraoshoki.tripcheck
+    TRIPCHECK_APP_IDS=XWN4466Y7M.com.muraoshoki.tripcheck
     TRIPCHECK_APP_ATTEST_ENVIRONMENTS=development
 
 そして dev サーバを起動:
