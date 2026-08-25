@@ -65,4 +65,6 @@ public protocol WorkerAuthenticating: Sendable {
   func liveRoutes(_ payload: LiveRoutesRequestPayload) async -> LiveRoutesResult?
   /// 検証済みの食事候補。失敗・未認証・到達不能はすべて nil(=呼び出し側は候補なし)。
   func foodRecommendations(_ payload: FoodRecommendationRequestPayload) async -> FoodRecommendationResult?
+  /// 検証済み場所の詳細。失敗・未認証・到達不能はすべて nil(=呼び出し側は詳細なし)。
+  func placeIntelligence(_ payload: PlaceIntelligenceRequestPayload) async -> PlaceIntelligenceResult?
 }
