@@ -42,14 +42,29 @@ struct TripCheckApp: App {
     // (シート・警告の出入り)は `setAnimationsEnabled`、SwiftUI 側は `body` の
     // `.transaction` が受け持つ —— どちらか片方だけでは止まらない。
     if isUITesting { UIView.setAnimationsEnabled(false) }
-    // 解決器は順に呼ばれ、**先に `confirmed` を返したところで止まる**。端末の地図が先頭に
-    // 立つのは、鍵ゼロで世界中の場所を知っているから —— カタログは東京 18 + スイス 8 地点
-    // しか持たず、地図が答えられなかったぶんを受け止める控えになる。
+    let isWorkerDiagnostics = ProcessInfo.processInfo.arguments.contains("-workerDiagnostics")
+    self.isWorkerDiagnostics = isWorkerDiagnostics
+    let baseURLString = ProcessInfo.processInfo.environment["TRIPCHECK_WORKER_BASE_URL"]
+      ?? (Bundle.main.object(forInfoDictionaryKey: "TripCheckWorkerBaseURL") as? String)
+      ?? "http://127.0.0.1:3000"
+    let baseURL = URL(string: baseURLString) ?? URL(string: "http://127.0.0.1:3000")!
+    let workerClient = WorkerAvailability.makeDefaultClient(
+      uiTesting: isUITesting,
+      baseURL: baseURL,
+      bypassToken: ProcessInfo.processInfo.environment["TRIPCHECK_WORKER_BYPASS_TOKEN"]
+    )
+    self.workerClient = workerClient
+
+    // 解決器は順に呼ばれ、**先に `confirmed` を返したところで止まる**。Worker(Google 検証済み)
+    // が先頭に立つのは、鍵を持つ Worker が一番信頼できる情報源だから —— 未認証・オフライン・
+    // 失敗・タイムアウトは空辞書を返し、次点の端末の地図(鍵ゼロで世界中の場所を知っている)へ
+    // 委ねる。カタログは東京 18 + スイス 8 地点しか持たず、地図も答えられなかったぶんを
+    // 受け止める最後の控えになる。
     // 保存先を 2 度渡すのは、`TripStore` が自分のディレクトリを外へ見せないから ——
     // 起動した瞬間に「この端末に残せるか」を確かめる(`storageUnavailable`)には、
     // `PlannerStore` の側も同じ場所を知っている必要がある。
     _store = State(initialValue: PlannerStore(
-      resolvers: [ApplePlaceResolver(), CatalogResolver()],
+      resolvers: [WorkerPlaceResolver(client: workerClient), ApplePlaceResolver(), CatalogResolver()],
       store: TripStore(directory: directory),
       storageDirectory: directory,
       defaults: defaults,
@@ -65,18 +80,6 @@ struct TripCheckApp: App {
       // 天気も同じ理由で composition root にだけ判定を閉じ込める(`WeatherAvailability`)。
       weatherProvider: WeatherAvailability.makeDefaultProvider(uiTesting: isUITesting)
     ))
-
-    let isWorkerDiagnostics = ProcessInfo.processInfo.arguments.contains("-workerDiagnostics")
-    self.isWorkerDiagnostics = isWorkerDiagnostics
-    let baseURLString = ProcessInfo.processInfo.environment["TRIPCHECK_WORKER_BASE_URL"]
-      ?? (Bundle.main.object(forInfoDictionaryKey: "TripCheckWorkerBaseURL") as? String)
-      ?? "http://127.0.0.1:3000"
-    let baseURL = URL(string: baseURLString) ?? URL(string: "http://127.0.0.1:3000")!
-    self.workerClient = WorkerAvailability.makeDefaultClient(
-      uiTesting: isUITesting,
-      baseURL: baseURL,
-      bypassToken: ProcessInfo.processInfo.environment["TRIPCHECK_WORKER_BYPASS_TOKEN"]
-    )
   }
 
   var body: some Scene {
