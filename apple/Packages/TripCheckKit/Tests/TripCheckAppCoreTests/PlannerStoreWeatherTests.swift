@@ -105,4 +105,31 @@ final class PlannerStoreWeatherTests: XCTestCase {
     XCTAssertTrue(store.weatherByDay.isEmpty)
     XCTAssertNil(store.weatherAttribution)
   }
+
+  /// Fix round 1: 実経路が揃って `replaceWithLiveRoutes` が静かに置換すると、天気も測り直す
+  /// —— 置換で日割りが変わりうるので(spec のコメントどおり)、古い日 index の天気を残さない。
+  @MainActor
+  func testAQuietRouteReplacementRefetchesWeather() async {
+    let weatherProvider = FakeWeatherProvider(days: fakeDays(count: 4))
+    let store = PlannerStore(
+      resolvers: [CatalogResolver()], store: nil,
+      routeProvider: FakeRouteProvider(), weatherProvider: weatherProvider
+    )
+    store.loadSample(.switzerland)
+    let today = Destinations.localDateIn(timeZone: TimeZone.current.identifier)
+    store.request.tripStartDate = today.adding(days: 1).description
+
+    await store.build()
+    await store.awaitWeatherEnrichment()
+    let callsAfterBuild = weatherProvider.recorder.callCount
+    XCTAssertGreaterThan(callsAfterBuild, 0)
+
+    await store.awaitRouteEnrichment()   // 実経路の取得+静かな置換が落ち着くまで待つ
+    XCTAssertEqual(store.routeReplacements, 1)
+    await store.awaitWeatherEnrichment()   // 置換が起こした天気の取り直しを待つ
+
+    XCTAssertGreaterThan(weatherProvider.recorder.callCount, callsAfterBuild)   // 置換の後にもう一度呼ばれた
+    XCTAssertFalse(store.weatherByDay.isEmpty)
+    XCTAssertNotNil(store.weatherAttribution)
+  }
 }

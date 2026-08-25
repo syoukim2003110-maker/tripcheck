@@ -179,11 +179,13 @@ struct FakeWeatherProvider: WeatherProviding {
   )
   /// 答えを返すまでの間(世代ガードのテストが遅れて届く答えを作るため)。既定は即答。
   var delay: Duration = .zero
-  /// 呼ばれた要求を記録(世代ガードやスキップ判定の検証用)。
+  /// 呼ばれた要求を記録(世代ガードやスキップ判定の検証用)。`callCount` は「静かな置換の後に
+  /// もう一度呼ばれたか」を数えるためのもの(直近の要求だけでは回数が分からない)。
   final class Recorder: @unchecked Sendable {
     private let lock = NSLock()
     private(set) var lastRequests: [WeatherDayRequest] = []
-    func record(_ r: [WeatherDayRequest]) { lock.withLock { lastRequests = r } }
+    private(set) var callCount = 0
+    func record(_ r: [WeatherDayRequest]) { lock.withLock { lastRequests = r; callCount += 1 } }
   }
   var recorder = Recorder()
   func weather(for requests: [WeatherDayRequest], locale: PlannerLocale) async -> WeatherResult {

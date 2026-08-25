@@ -160,6 +160,9 @@ extension PlannerStore {
       showToast(Toast(text: text, kind: .info, canUndo: false))
     }
     startRouteEnrichment(chainDepth: chainDepth + 1)   // 日割りが変わって新しいレグが出ていれば次の世代で
+    // 静かな置換も日割りを変えうる(上の `adopt` がそれ)。天気は日 index で引くので、
+    // 入れ替わった日割りのまま古い天気を残さない —— ここで測り直す。
+    startWeatherEnrichment()
   }
 
   /// 保留した置換を通す。ダイアログが閉じたとき(`confirmPendingEdit` の捨てる枝 /
