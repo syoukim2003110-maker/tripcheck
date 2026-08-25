@@ -61,6 +61,9 @@ public struct StopInspectorModel: Equatable, Sendable {
   public var appleMapsUrl: URL?
   /// もう外してある場所は外せない。
   public var canRemove: Bool
+  /// Google など外部プロバイダで検証済み(`RouteStop.providerRef` 有り)。詳細カードの入口を
+  /// 出すかどうかは、これだけで決める(`loadPlaceIntelligence(stopId:)` と同じ条件)。
+  public var isProviderVerified: Bool
 }
 
 extension PlannerStore {
@@ -111,7 +114,8 @@ extension PlannerStore {
       // ボタンを置かない。
       mapsUrl: URL(string: TripPresentation.googleMapsSearchUrl(stop)),
       appleMapsUrl: Self.appleMapsUrl(for: stop),
-      canRemove: !edit.removedStops.contains { $0.id == stopId }
+      canRemove: !edit.removedStops.contains { $0.id == stopId },
+      isProviderVerified: built.stop.providerRef != nil
     )
   }
 

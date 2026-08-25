@@ -16,7 +16,7 @@ public struct PlaceIntelligenceRequestPayload: Encodable, Sendable {
 }
 
 /// web `PlaceIntelligenceResult["place"]` の写し。payment/photo* はデコードで無視。
-public struct PlaceIntelligencePlace: Decodable, Sendable {
+public struct PlaceIntelligencePlace: Decodable, Sendable, Equatable {
   public let name: String
   public let address: String
   public let googleMapsUrl: String
@@ -28,18 +28,18 @@ public struct PlaceIntelligencePlace: Decodable, Sendable {
 }
 
 /// web `PlaceReviewEvidence` の抜粋(本文フィールドは web で `text`)。
-public struct PlaceIntelligenceReview: Decodable, Sendable, Identifiable {
+public struct PlaceIntelligenceReview: Decodable, Sendable, Identifiable, Equatable {
   public let text: String?
   public let rating: Double?
   public var id: String { (text ?? "") + "|\(rating ?? 0)" }
 }
 
-public struct PlaceIntelligenceAnalysis: Decodable, Sendable {
+public struct PlaceIntelligenceAnalysis: Decodable, Sendable, Equatable {
   public let summary: String
   public let confidence: String
 }
 
-public struct PlaceIntelligenceResult: Decodable, Sendable {
+public struct PlaceIntelligenceResult: Decodable, Sendable, Equatable {
   public let place: PlaceIntelligencePlace
   public let reviews: [PlaceIntelligenceReview]
   public let analysis: PlaceIntelligenceAnalysis

@@ -204,6 +204,7 @@ extension PlannerStore {
     startWeatherEnrichment()
     // 食事の候補も同じ場所で世代を進める(lazy なので、ここでは前の候補を捨てるだけ)。
     invalidateFoodRecommendations()
+    invalidatePlaceIntelligence()
   }
 
   /// 開いているシートが指す先が旅程から消えていたら閉じる。
@@ -281,6 +282,7 @@ extension PlannerStore {
     startWeatherEnrichment()
     // 食事の候補も同じ場所で世代を進める(lazy なので、ここでは前の候補を捨てるだけ)。
     invalidateFoodRecommendations()
+    invalidatePlaceIntelligence()
   }
 
   // MARK: - トースト
