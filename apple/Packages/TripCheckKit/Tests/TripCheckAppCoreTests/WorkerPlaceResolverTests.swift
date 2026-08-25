@@ -10,6 +10,7 @@ private struct StubWorker: WorkerAuthenticating {
   func resolvePlaces(_ payload: PlaceResolutionRequestPayload) async -> PlaceResolutionResult? { result }
   func suggestPlaces(_ payload: PlaceSuggestionRequestPayload) async -> PlaceSuggestionResult? { nil }
   func liveRoutes(_ payload: LiveRoutesRequestPayload) async -> LiveRoutesResult? { nil }
+  func foodRecommendations(_ payload: FoodRecommendationRequestPayload) async -> FoodRecommendationResult? { nil }
 }
 
 private struct SlowStubWorker: WorkerAuthenticating {
@@ -22,6 +23,7 @@ private struct SlowStubWorker: WorkerAuthenticating {
   }
   func suggestPlaces(_ payload: PlaceSuggestionRequestPayload) async -> PlaceSuggestionResult? { nil }
   func liveRoutes(_ payload: LiveRoutesRequestPayload) async -> LiveRoutesResult? { nil }
+  func foodRecommendations(_ payload: FoodRecommendationRequestPayload) async -> FoodRecommendationResult? { nil }
 }
 
 private func rawStop(input: String, name: String) -> WorkerResolvedStop {

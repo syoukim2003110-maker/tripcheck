@@ -25,4 +25,6 @@ public actor CannedWorkerClient: WorkerAuthenticating {
   public func suggestPlaces(_ payload: PlaceSuggestionRequestPayload) async -> PlaceSuggestionResult? { nil }
 
   public func liveRoutes(_ payload: LiveRoutesRequestPayload) async -> LiveRoutesResult? { nil }
+
+  public func foodRecommendations(_ payload: FoodRecommendationRequestPayload) async -> FoodRecommendationResult? { nil }
 }

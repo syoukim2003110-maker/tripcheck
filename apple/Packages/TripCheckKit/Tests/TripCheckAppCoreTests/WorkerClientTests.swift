@@ -11,19 +11,22 @@ private actor FakeGateway {
   var resolveUnauthorizedOnce = false
   var suggestUnauthorizedOnce = false
   var liveRoutesUnauthorizedOnce = false
+  var foodUnauthorizedOnce = false
   var lastAttestKeyId: String?
   private var sawUnknownKey = false
   private var sawPing401 = false
   private var sawResolve401 = false
   private var sawSuggest401 = false
   private var sawLiveRoutes401 = false
+  private var sawFood401 = false
 
-  func configure(unknownKeyOnce: Bool = false, pingUnauthorizedOnce: Bool = false, resolveUnauthorizedOnce: Bool = false, suggestUnauthorizedOnce: Bool = false, liveRoutesUnauthorizedOnce: Bool = false) {
+  func configure(unknownKeyOnce: Bool = false, pingUnauthorizedOnce: Bool = false, resolveUnauthorizedOnce: Bool = false, suggestUnauthorizedOnce: Bool = false, liveRoutesUnauthorizedOnce: Bool = false, foodUnauthorizedOnce: Bool = false) {
     self.unknownKeyOnce = unknownKeyOnce
     self.pingUnauthorizedOnce = pingUnauthorizedOnce
     self.resolveUnauthorizedOnce = resolveUnauthorizedOnce
     self.suggestUnauthorizedOnce = suggestUnauthorizedOnce
     self.liveRoutesUnauthorizedOnce = liveRoutesUnauthorizedOnce
+    self.foodUnauthorizedOnce = foodUnauthorizedOnce
   }
 
   func respond(to request: WorkerRequest) -> WorkerResponse {
@@ -65,6 +68,12 @@ private actor FakeGateway {
         return json(#"{"code":"session_expired"}"#, 401)
       }
       return json(#"{"provider":"google_maps","fetchedAt":"t","travelMode":"WALK","legs":[{"id":"L1","durationMinutes":12,"distanceMeters":900,"encodedPolyline":null,"transferCount":null,"transitSteps":null,"walkToStopMinutes":null,"walkFromStopMinutes":null,"status":"ok"}]}"#, 200)
+    case "/api/food-recommendations":
+      if foodUnauthorizedOnce, !sawFood401 {
+        sawFood401 = true
+        return json(#"{"code":"session_expired"}"#, 401)
+      }
+      return json(#"{"provider":"google_maps","ranking":"evidence_weighted","fetchedAt":"t","candidates":[{"id":"c1","name":"Trattoria","address":"1 Via Roma","type":"italian_restaurant","googleMapsUrl":"https://maps.google/x","distanceMeters":240,"rating":4.4,"userRatingCount":812,"openNow":true,"hours":[],"paymentEvidence":[],"reviewSnippets":[],"websiteUrl":null}]}"#, 200)
     default:
       return json(#"{"code":"not_found"}"#, 404)
     }
@@ -183,5 +192,16 @@ final class WorkerClientTests: XCTestCase {
     let result = await client.liveRoutes(payload)
     XCTAssertNotNil(result, "a 401 must be retried once and then succeed")
     XCTAssertEqual(result?.legs.first?.durationMinutes, 12)
+  }
+
+  func testFoodRecommendationsRetriesOnceOn401() async {
+    let gateway = FakeGateway()
+    await gateway.configure(foodUnauthorizedOnce: true)
+    let (client, _) = makeClient(gateway: gateway)
+    let payload = FoodRecommendationRequestPayload(latitude: 1, longitude: 1, area: "A", mealKind: "lunch",
+      query: nil, languageCode: "en", destination: "auto", routePolyline: nil)
+    let result = await client.foodRecommendations(payload)
+    XCTAssertNotNil(result, "a 401 must be retried once and then succeed")
+    XCTAssertEqual(result?.candidates.first?.id, "c1")
   }
 }

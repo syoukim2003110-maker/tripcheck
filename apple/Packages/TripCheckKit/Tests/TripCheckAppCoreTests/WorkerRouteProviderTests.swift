@@ -25,6 +25,7 @@ private actor FakeRouteWorker: WorkerAuthenticating {
     if let sleep { try? await Task.sleep(for: sleep) }
     return answer
   }
+  func foodRecommendations(_ payload: FoodRecommendationRequestPayload) async -> FoodRecommendationResult? { nil }
 }
 
 /// 呼ばれたら決まった結果を返す fallback。Google と区別できる値にする。
