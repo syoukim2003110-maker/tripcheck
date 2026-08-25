@@ -105,3 +105,26 @@ Simulator でも bypass セッションで通せる。実 Google キーが要る
    「詳細を取得できませんでした」(`plan.placeIntelligence.unavailable`)だけが出ることを
    確認する(`loadPlaceIntelligence` が `placeIntelligenceProvider == nil` を `.unavailable`
    として即座に返す道と同じ結果になる)。
+
+## 9. 近くの宿(hotel-recommendations)
+
+合成の根(`TripCheckApp.init`)は非 UI テストのとき常に
+`HotelRecommendationAvailability.makeDefaultProvider(uiTesting:client:)` が返す
+`WorkerHotelRecommender` を `PlannerStore` に渡す(`-uiTesting` は nil のまま —— 「近くの宿」
+シートは決定的に「候補が見つかりませんでした」になる、これが UI 回帰テストの前提)。カードの
+入口自体は経路アンカーの有無(`hotelRecommendationsAvailable` = scheduled stops がある)で
+決まり、Worker の疎通とは別の条件 —— 停留所が 1 つも組まれていない旅程にはカードそのものが
+出ない。
+
+1. 上の 1・2 と同じく `.dev.vars` に実 `GOOGLE_PLACES_API_KEY`(Places API が有効な
+   キー)を置き、`pnpm dev` を起動。Simulator は `TRIPCHECK_WORKER_BYPASS_TOKEN` を
+   `.dev.vars` と同じ値にして走らせる(`-uiTesting` は付けない)。
+2. 旅程を組み、旅程の後ろの方(出発前チェックの直前)にある破線の「近くの宿」カード
+   (`plan.suggestedHotels`)をタップする。下からシートが開き、初回だけ経路全体(全日の
+   重心)に近い宿の取得が走り、名前・評価・経路からの外れ幅・住所を持つ候補カードが並ぶこと
+   (`plan.hotelCandidate`)を確認する。カードをタップすると Google マップの該当宿へ
+   遷移すること。
+3. Worker を止める、または `.dev.vars` から鍵を外すと、同じカードを開いても候補は 1 件も
+   出ず、「候補が見つかりませんでした」だけが出ることを確認する
+   (`beginHotelFetch` が `hotelRecommendationProvider == nil` を `.unavailable` として
+   即座に返す道と同じ結果になる)。

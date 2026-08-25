@@ -368,6 +368,18 @@ public struct AppCopy: Sendable {
   /// 候補カードの「営業中」表示。
   public let openNowLabel: String
 
+  // MARK: - 近くの宿(spec 2026-08-26、`SuggestedHotelsCard`/`HotelRecommendationsSheet`)
+
+  /// 経路アンカーがあるときに旅程へ挿す破線カードの見出し。
+  public let suggestedHotelsTitle: String
+  /// 候補一覧シートの見出し。
+  public let hotelRecommendationsSheetTitle: String
+  /// 取得できた/取得したが 0 件だったときの 1 行。
+  public let hotelRecommendationsEmpty: String
+  /// 経路からの外れ幅の前置き。呼び出し側が `"\(app.hotelRouteBurden) \(km) km"` の語順で
+  /// 数値と単位を後ろに続ける(ja「経路から約 1.2 km」/en「off route by 1.2 km」)。
+  public let hotelRouteBurden: String
+
   // MARK: - 場所の詳細(spec 2026-08-25、`PlaceIntelligenceDisclosure`)
 
   /// 開示カードの見出し。
@@ -608,6 +620,10 @@ public struct AppCopy: Sendable {
     mealRecommendationsHint: String,
     mealRecommendationsEmpty: String,
     openNowLabel: String,
+    suggestedHotelsTitle: String,
+    hotelRecommendationsSheetTitle: String,
+    hotelRecommendationsEmpty: String,
+    hotelRouteBurden: String,
     placeIntelligenceTitle: String,
     placeIntelligenceUnavailable: String,
     placeIntelligenceOpenNow: String,
@@ -835,6 +851,10 @@ public struct AppCopy: Sendable {
     self.mealRecommendationsHint = mealRecommendationsHint
     self.mealRecommendationsEmpty = mealRecommendationsEmpty
     self.openNowLabel = openNowLabel
+    self.suggestedHotelsTitle = suggestedHotelsTitle
+    self.hotelRecommendationsSheetTitle = hotelRecommendationsSheetTitle
+    self.hotelRecommendationsEmpty = hotelRecommendationsEmpty
+    self.hotelRouteBurden = hotelRouteBurden
     self.placeIntelligenceTitle = placeIntelligenceTitle
     self.placeIntelligenceUnavailable = placeIntelligenceUnavailable
     self.placeIntelligenceOpenNow = placeIntelligenceOpenNow
@@ -1242,6 +1262,10 @@ public struct AppCopy: Sendable {
     mealRecommendationsHint: "候補を見る",
     mealRecommendationsEmpty: "候補が見つかりませんでした",
     openNowLabel: "営業中",
+    suggestedHotelsTitle: "近くの宿",
+    hotelRecommendationsSheetTitle: "経路に近い宿",
+    hotelRecommendationsEmpty: "候補が見つかりませんでした",
+    hotelRouteBurden: "経路から約",
     placeIntelligenceTitle: "この場所について",
     placeIntelligenceUnavailable: "詳細を取得できませんでした",
     placeIntelligenceOpenNow: "営業中",
@@ -1492,6 +1516,10 @@ public struct AppCopy: Sendable {
     mealRecommendationsHint: "See suggestions",
     mealRecommendationsEmpty: "No suggestions found",
     openNowLabel: "Open now",
+    suggestedHotelsTitle: "Hotels nearby",
+    hotelRecommendationsSheetTitle: "Hotels near your route",
+    hotelRecommendationsEmpty: "No hotels found",
+    hotelRouteBurden: "off route by",
     placeIntelligenceTitle: "About this place",
     placeIntelligenceUnavailable: "Details unavailable",
     placeIntelligenceOpenNow: "Open now",

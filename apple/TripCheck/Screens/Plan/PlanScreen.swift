@@ -46,6 +46,7 @@ struct PlanScreen: View {
               .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: store.routeProgressLine)
               IssueCard()
               VerdictDetails()
+              if store.hotelRecommendationsAvailable { SuggestedHotelsCard() }
               BeforeYouGoCard()
             }
             .padding(16)

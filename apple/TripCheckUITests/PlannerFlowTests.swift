@@ -46,6 +46,34 @@ final class PlannerFlowTests: XCTestCase {
     XCTAssertFalse(app.links.matching(identifier: "plan.foodCandidate").firstMatch.exists)
   }
 
+  /// 「近くの宿」カード(`plan.suggestedHotels`)をタップすると候補シートが開く。`-uiTesting`
+  /// は hotel provider が nil(`HotelRecommendationAvailability.makeDefaultProvider`)なので、
+  /// 候補は決定的に「候補が見つかりませんでした」になる —— `plan.hotelCandidate` は 1 件も
+  /// 出ない、というのが非回帰の中身。見本(スイス)は複数日にわたる scheduled stops を
+  /// 持つので経路アンカーが立ち(`hotelRecommendationsAvailable`)、カードは
+  /// `BeforeYouGoCard` の直前(旅程の後ろの方)に出る —— 既定のビューポートには収まらない
+  /// ことがあるので、有限回だけ下へたぐってから触れる。
+  @MainActor
+  func testSuggestedHotelsCardOpensRecommendationSheetUnderCannedProvider() {
+    let app = launch()
+    app.buttons["start.seeExample"].tap()
+    XCTAssertTrue(app.staticTexts["plan.hero"].waitForExistence(timeout: 30))
+
+    let card = app.buttons.matching(identifier: "plan.suggestedHotels").firstMatch
+    XCTAssertTrue(card.waitForExistence(timeout: 5))
+    var attempts = 0
+    while !card.isHittable && attempts < 10 {
+      app.swipeUp()
+      attempts += 1
+    }
+    XCTAssertTrue(card.isHittable)
+    card.tap()
+
+    XCTAssertTrue(app.otherElements["plan.hotelRecommendations.sheet"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["plan.hotelRecommendations.empty"].waitForExistence(timeout: 5))
+    XCTAssertFalse(app.links.matching(identifier: "plan.hotelCandidate").firstMatch.exists)
+  }
+
   /// 見本を入れて組み、最初の停留所を開き、外して、元に戻す。
   @MainActor
   func testSampleToPlanToDetailToRemoveToUndo() {
