@@ -168,6 +168,7 @@ extension PlannerStore {
     invalidateHotelRecommendations()
     invalidateRouteDetour()
     invalidatePlaceIntelligence()
+    invalidateFreshVoices()
   }
 
   /// 保留した置換を通す。ダイアログが閉じたとき(`confirmPendingEdit` の捨てる枝 /

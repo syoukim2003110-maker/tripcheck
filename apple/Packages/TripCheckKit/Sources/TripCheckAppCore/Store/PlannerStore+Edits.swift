@@ -207,6 +207,7 @@ extension PlannerStore {
     invalidateHotelRecommendations()
     invalidateRouteDetour()
     invalidatePlaceIntelligence()
+    invalidateFreshVoices()
   }
 
   /// 開いているシートが指す先が旅程から消えていたら閉じる。
@@ -287,6 +288,7 @@ extension PlannerStore {
     invalidateHotelRecommendations()
     invalidateRouteDetour()
     invalidatePlaceIntelligence()
+    invalidateFreshVoices()
   }
 
   // MARK: - トースト

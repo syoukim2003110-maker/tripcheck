@@ -415,6 +415,7 @@ public final class PlannerStore {
     invalidateHotelRecommendations()
     invalidateRouteDetour()
     invalidatePlaceIntelligence()
+    invalidateFreshVoices()
     // 飛んでいる問い合わせも同じように捨てる。世代を進めておけば、遅れて届いた場所は
     // `requestBuildFromStart` などのガードで落ちる —— 落とさないと、さっきの旅の答えが
     // 新しい旅の行へ番号で貼り付く。旗を倒すのはここ:返事は捨てるので、倒す役は
@@ -505,5 +506,6 @@ public final class PlannerStore {
     invalidateHotelRecommendations()
     invalidateRouteDetour()
     invalidatePlaceIntelligence()
+    invalidateFreshVoices()
   }
 }
