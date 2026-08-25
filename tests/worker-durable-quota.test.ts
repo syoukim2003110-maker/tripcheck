@@ -8,6 +8,7 @@ import type {
 } from "../lib/server/durable-provider-quota.ts";
 import { googleProviderCircuit } from "../lib/server/provider-resilience.ts";
 import { PROVIDER_QUOTA_SCHEMA_SQL, PROVIDER_QUOTA_TABLE_INFO_SQL } from "../db/provider-quota-schema.ts";
+import { issueSession } from "../lib/server/app-attest/app-session.ts";
 
 type AppFetch = (request: Request, env: unknown, context: unknown) => Promise<Response>;
 const testGlobal = globalThis as typeof globalThis & { __tripCheckAppFetch?: AppFetch };
@@ -433,4 +434,41 @@ test("origin and kill-switch denials retain edge security headers and never dele
   assert.equal(featureKilled.headers.get("X-Frame-Options"), "DENY");
   assert.equal(appCalls, 0);
   assert.equal(db.batches.length, 0);
+});
+
+test("a cross-origin paid request with a valid app session passes the auth gate", async () => {
+  const db = new WorkerTestD1();
+  const env = environment(db);
+  const issued = await issueSession(env, "unit-test-key", Math.floor(Date.now() / 1000));
+  assert.ok(issued, "issueSession must mint a token with the test signing secret");
+  const request = paidPost("/api/place-resolution",
+    { queries: ["Tokyo Tower"], languageCode: "en", destination: "auto" },
+    { Origin: "https://native.app", "Sec-Fetch-Site": "cross-site", "X-TripCheck-App-Session": issued!.session });
+  const response = await worker.fetch(request, env, context);
+  assert.notEqual(response.status, 403, "a valid app session must not be forbidden cross-origin");
+});
+
+test("a cross-origin paid request with an invalid app session is forbidden", async () => {
+  const db = new WorkerTestD1();
+  const request = paidPost("/api/place-resolution",
+    { queries: ["x"], languageCode: "en", destination: "auto" },
+    { Origin: "https://native.app", "Sec-Fetch-Site": "cross-site", "X-TripCheck-App-Session": "v1.badkey.1.2.deadbeef" });
+  const response = await worker.fetch(request, environment(new WorkerTestD1()), context);
+  assert.equal(response.status, 403);
+});
+
+test("an app-authed paid request is charged to its key, not a cookie session", async () => {
+  const db = new WorkerTestD1();
+  const env = environment(db);
+  let seenSession: string | null = null;
+  testGlobal.__tripCheckAppFetch = async (req) => {
+    seenSession = (req as Request).headers.get("X-TripCheck-Session");
+    return Response.json({ ok: true });
+  };
+  const issued = await issueSession(env, "charge-key", Math.floor(Date.now() / 1000));
+  const request = paidPost("/api/place-resolution",
+    { queries: ["x"], languageCode: "en", destination: "auto" },
+    { Origin: "https://native.app", "Sec-Fetch-Site": "cross-site", "X-TripCheck-App-Session": issued!.session });
+  await worker.fetch(request, env, context);
+  assert.equal(seenSession, "app_charge-key");
 });

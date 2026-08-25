@@ -19,7 +19,8 @@ import {
 } from "../lib/server/provider-resilience.ts";
 import { apiRoutePolicy, type ApiRoutePolicy } from "../lib/server/api-route-policy.ts";
 import { placePhotoTokenSecret, verifyPlacePhotoToken } from "../lib/server/place-photo-token.ts";
-import { handleAppGateway, isAppGatewayPath } from "../lib/server/app-attest/gateway.ts";
+import { handleAppGateway, isAppGatewayPath, APP_SESSION_HEADER } from "../lib/server/app-attest/gateway.ts";
+import { verifySession } from "../lib/server/app-attest/app-session.ts";
 
 interface Fetcher {
   fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
@@ -115,6 +116,24 @@ function paidRequestIsSameOrigin(request: Request, env: Env) {
   }
 }
 
+type AppSessionVerdict = { ok: true; keyId: string } | { ok: false; code?: "no_signing_secret" };
+
+/**
+ * The second gate. A native client sends no browser Origin, so it proves itself
+ * with the short-lived session this Worker minted after App Attest (or the
+ * dev-only bypass). A valid signature is sufficient here: the session was only
+ * issued after the app-id allowlist was checked at attest/assert time.
+ */
+async function appSessionIsAuthorized(request: Request, env: Env, nowSeconds: number): Promise<AppSessionVerdict> {
+  if (env.TRIPCHECK_APP_API_DISABLED?.trim()) return { ok: false };
+  const token = request.headers.get(APP_SESSION_HEADER);
+  if (!token || token.length > 512) return { ok: false };
+  const verdict = await verifySession(env, token, nowSeconds);
+  if (verdict.ok) return { ok: true, keyId: verdict.keyId };
+  if (verdict.code === "no_signing_secret") return { ok: false, code: "no_signing_secret" };
+  return { ok: false };
+}
+
 /**
  * An `<img>` sends no Origin and no custom header, so `signed_resource` routes
  * prove themselves with the signature the server minted for that exact photo
@@ -171,8 +190,8 @@ function cookieValue(request: Request, name: string) {
  * else's counter, and rotating it can only escape the per-trip row: the
  * session-day ceiling above it is the real per-actor bound.
  */
-function quotaIdentity(request: Request) {
-  const existingSession = boundedOpaqueId(cookieValue(request, SESSION_COOKIE));
+function quotaIdentity(request: Request, forcedSessionId?: string | null) {
+  const existingSession = forcedSessionId ?? boundedOpaqueId(cookieValue(request, SESSION_COOKIE));
   const sessionId = existingSession ?? globalThis.crypto.randomUUID().replaceAll("-", "");
   const suppliedTrip = boundedOpaqueId(request.headers.get("X-TripCheck-Trip"));
   const tripScope = suppliedTrip ?? `time_bucket_${Math.floor(Date.now() / (4 * 60 * 60 * 1000))}`;
@@ -325,11 +344,16 @@ async function handlePaidApi(
   ctx: ExecutionContext,
   route: PaidApiRoute,
 ) {
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const appVerdict: AppSessionVerdict = route.origin === "signed_resource"
+    ? { ok: false }
+    : await appSessionIsAuthorized(request, env, nowSeconds);
   const authorized = route.origin === "signed_resource"
     ? await signedResourceIsAuthorized(request, url, env)
-    : paidRequestIsSameOrigin(request, env);
+    : (paidRequestIsSameOrigin(request, env) || appVerdict.ok);
   if (!authorized) {
-    return secureResponse(edgeJson("forbidden", 403), url);
+    const noSecret = appVerdict.ok === false && appVerdict.code === "no_signing_secret";
+    return secureResponse(edgeJson(noSecret ? "no_signing_secret" : "forbidden", noSecret ? 503 : 403), url);
   }
   if (!paidFeatureEnabled(route, env)) {
     return secureResponse(edgeJson("feature_disabled", 503, {
@@ -342,7 +366,7 @@ async function handlePaidApi(
 
   let identity: ReturnType<typeof quotaIdentity>;
   try {
-    identity = quotaIdentity(request);
+    identity = quotaIdentity(request, appVerdict.ok ? `app_${appVerdict.keyId}`.slice(0, 128) : null);
   } catch {
     return secureResponse(edgeJson("quota_store_unavailable", 503), url);
   }
