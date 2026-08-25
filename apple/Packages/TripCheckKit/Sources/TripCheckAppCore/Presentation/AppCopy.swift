@@ -336,6 +336,17 @@ public struct AppCopy: Sendable {
   /// 適用後のトースト。旅程へは直接書かないので「確認してから構築へ」と言う(spec §1)。
   public let intentApplied: String
 
+  // MARK: - Worker 認証の診断画面(spec 2026-08-25、-workerDiagnostics 時のみ)
+
+  /// 診断画面の見出し。
+  public let workerDiagnosticsTitle: String
+  /// 疎通を確かめるボタン。
+  public let workerDiagnosticsCheck: String
+  /// 認証付き応答を受け取れたとき。
+  public let workerDiagnosticsReachable: String
+  /// 応答が無かったとき。
+  public let workerDiagnosticsUnreachable: String
+
   private let pasteLimitToastText: @Sendable (Int) -> String
   private let daysValueText: @Sendable (Int) -> String
   private let priorityLabelText: @Sendable (String) -> String
@@ -554,6 +565,10 @@ public struct AppCopy: Sendable {
     intentParsing: String,
     intentFailed: String,
     intentApplied: String,
+    workerDiagnosticsTitle: String,
+    workerDiagnosticsCheck: String,
+    workerDiagnosticsReachable: String,
+    workerDiagnosticsUnreachable: String,
     pasteLimitToast: @escaping @Sendable (Int) -> String,
     daysValue: @escaping @Sendable (Int) -> String,
     priorityLabel: @escaping @Sendable (String) -> String,
@@ -765,6 +780,10 @@ public struct AppCopy: Sendable {
     self.intentParsing = intentParsing
     self.intentFailed = intentFailed
     self.intentApplied = intentApplied
+    self.workerDiagnosticsTitle = workerDiagnosticsTitle
+    self.workerDiagnosticsCheck = workerDiagnosticsCheck
+    self.workerDiagnosticsReachable = workerDiagnosticsReachable
+    self.workerDiagnosticsUnreachable = workerDiagnosticsUnreachable
     self.pasteLimitToastText = pasteLimitToast
     self.daysValueText = daysValue
     self.priorityLabelText = priorityLabel
@@ -1153,6 +1172,10 @@ public struct AppCopy: Sendable {
     intentParsing: "読み取っています",
     intentFailed: "読み取れませんでした。場所を選ぶか、書き方を変えてお試しください。",
     intentApplied: "読み取りました。内容を確認して構築へ進んでください。",
+    workerDiagnosticsTitle: "接続診断",
+    workerDiagnosticsCheck: "疎通を確認",
+    workerDiagnosticsReachable: "認証付き応答を受信しました。",
+    workerDiagnosticsUnreachable: "応答がありませんでした。",
     pasteLimitToast: { "\($0)件あります。1回に確認できるのは12か所までです。残りは別の旅として分けてください。" },
     daysValue: { "\($0)日" },
     priorityLabel: { "\($0)の優先度" },
@@ -1387,6 +1410,10 @@ public struct AppCopy: Sendable {
     intentParsing: "Reading",
     intentFailed: "Couldn't read that. Pick a place or try different wording.",
     intentApplied: "Details filled in. Review them, then build.",
+    workerDiagnosticsTitle: "Connection check",
+    workerDiagnosticsCheck: "Check connection",
+    workerDiagnosticsReachable: "Authenticated response received.",
+    workerDiagnosticsUnreachable: "No response.",
     pasteLimitToast: { "\($0) places found. Up to 12 places at a time. Keep the rest for a second trip." },
     daysValue: { "\($0) day\($0 == 1 ? "" : "s")" },
     priorityLabel: { "\($0) priority" },

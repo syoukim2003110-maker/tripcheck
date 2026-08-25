@@ -33,6 +33,13 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<key>TripCheckWorkerBaseURL</key>
+	<string>http://127.0.0.1:3000</string>
 	<key>UIAppFonts</key>
 	<array>
 		<string>Anton-Regular.ttf</string>

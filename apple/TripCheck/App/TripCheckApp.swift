@@ -13,6 +13,8 @@ struct TripCheckApp: App {
   @State private var store: PlannerStore
   /// UI テストで走っているか。アニメーションを切るのに `body` の側でも要る。
   private let isUITesting: Bool
+  private let isWorkerDiagnostics: Bool
+  private let workerClient: any WorkerAuthenticating
 
   /// UI テストのときだけ使う `UserDefaults` の箱。旅程の保存先と違って**名前は固定**で、
   /// 起動のたびに中身を捨てる。
@@ -61,27 +63,44 @@ struct TripCheckApp: App {
       // (`IntentAvailability`)に閉じ込めてあり、ストアは注入の有無しか見ない。
       intentParser: IntentAvailability.makeDefaultParser(uiTesting: isUITesting)
     ))
+
+    let isWorkerDiagnostics = ProcessInfo.processInfo.arguments.contains("-workerDiagnostics")
+    self.isWorkerDiagnostics = isWorkerDiagnostics
+    let baseURLString = ProcessInfo.processInfo.environment["TRIPCHECK_WORKER_BASE_URL"]
+      ?? (Bundle.main.object(forInfoDictionaryKey: "TripCheckWorkerBaseURL") as? String)
+      ?? "http://127.0.0.1:3000"
+    let baseURL = URL(string: baseURLString) ?? URL(string: "http://127.0.0.1:3000")!
+    self.workerClient = WorkerAvailability.makeDefaultClient(
+      uiTesting: isUITesting,
+      baseURL: baseURL,
+      bypassToken: ProcessInfo.processInfo.environment["TRIPCHECK_WORKER_BYPASS_TOKEN"]
+    )
   }
 
   var body: some Scene {
     WindowGroup {
-      RootView()
-        .environment(store)
-        .preferredColorScheme(.light)
-        // SwiftUI 側の動きを切る(UI テストのときだけ)。`withAnimation` も暗黙の
-        // `.animation` も、この 1 枚が transaction から動きを抜くので素通しになる。
-        .transaction { transaction in
-          guard isUITesting else { return }
-          transaction.animation = nil
-          transaction.disablesAnimations = true
-        }
-        // 共有リンクで開かれたとき。Web の `https://…#t=<code>` も、アプリの
-        // `tripcheck://t/<code>` も、同じ 1 本のコードを運んでくる —— 読めなければ
-        // `importShare` が何も変えずにトーストで報せる(開いていた旅程を黙って捨てない)。
-        .onOpenURL { url in
-          guard let code = PlannerStore.shareCode(from: url) else { return }
-          Task { await store.importShare(code: code) }
-        }
+      if isWorkerDiagnostics {
+        WorkerDiagnosticsScreen(client: workerClient)
+          .preferredColorScheme(.light)
+      } else {
+        RootView()
+          .environment(store)
+          .preferredColorScheme(.light)
+          // SwiftUI 側の動きを切る(UI テストのときだけ)。`withAnimation` も暗黙の
+          // `.animation` も、この 1 枚が transaction から動きを抜くので素通しになる。
+          .transaction { transaction in
+            guard isUITesting else { return }
+            transaction.animation = nil
+            transaction.disablesAnimations = true
+          }
+          // 共有リンクで開かれたとき。Web の `https://…#t=<code>` も、アプリの
+          // `tripcheck://t/<code>` も、同じ 1 本のコードを運んでくる —— 読めなければ
+          // `importShare` が何も変えずにトーストで報せる(開いていた旅程を黙って捨てない)。
+          .onOpenURL { url in
+            guard let code = PlannerStore.shareCode(from: url) else { return }
+            Task { await store.importShare(code: code) }
+          }
+      }
     }
   }
 }

@@ -135,4 +135,18 @@ final class PlannerFlowTests: XCTestCase {
     // 適用が本当に起きたことを日数タイルの選択状態でも確かめる。
     XCTAssertTrue(app.buttons["4日"].isSelected)
   }
+
+  /// `-workerDiagnostics` の隠し画面が出て、疎通ボタンが canned クライアントで成功する。
+  @MainActor
+  func testWorkerDiagnosticsPingsSuccessfully() {
+    let app = XCUIApplication()
+    app.launchArguments = ["-uiTesting", "-workerDiagnostics"]
+    app.launch()
+
+    XCTAssertTrue(app.otherElements["diag.screen"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.staticTexts["diag.state"].waitForExistence(timeout: 5))
+
+    app.buttons["diag.check"].tap()
+    XCTAssertTrue(app.staticTexts["diag.pingResult"].waitForExistence(timeout: 5))
+  }
 }

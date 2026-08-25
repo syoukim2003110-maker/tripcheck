@@ -36,6 +36,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.muraoshoki.tripcheck
         TARGETED_DEVICE_FAMILY: "1"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CODE_SIGN_ENTITLEMENTS: TripCheck/Resources/TripCheck.entitlements
     info:
       path: TripCheck/Resources/Info.plist
       properties:
@@ -53,6 +54,9 @@ targets:
         CFBundleURLTypes:
           - CFBundleURLName: com.muraoshoki.tripcheck
             CFBundleURLSchemes: [tripcheck]
+        TripCheckWorkerBaseURL: http://127.0.0.1:3000
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
   # アプリ本体の単体テスト。`IconShape` / `SVGPath` は App ターゲットの型なので、AppCore の
   # テストからは触れない —— 文言とアイコンの走査はここに置く。
   TripCheckTests:
