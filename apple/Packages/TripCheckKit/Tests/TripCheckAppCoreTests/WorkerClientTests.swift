@@ -14,6 +14,7 @@ private actor FakeGateway {
   var foodUnauthorizedOnce = false
   var intelUnauthorizedOnce = false
   var hotelUnauthorizedOnce = false
+  var routeUnauthorizedOnce = false
   var lastAttestKeyId: String?
   private var sawUnknownKey = false
   private var sawPing401 = false
@@ -23,8 +24,9 @@ private actor FakeGateway {
   private var sawFood401 = false
   private var sawIntel401 = false
   private var sawHotel401 = false
+  private var sawRoute401 = false
 
-  func configure(unknownKeyOnce: Bool = false, pingUnauthorizedOnce: Bool = false, resolveUnauthorizedOnce: Bool = false, suggestUnauthorizedOnce: Bool = false, liveRoutesUnauthorizedOnce: Bool = false, foodUnauthorizedOnce: Bool = false, intelUnauthorizedOnce: Bool = false, hotelUnauthorizedOnce: Bool = false) {
+  func configure(unknownKeyOnce: Bool = false, pingUnauthorizedOnce: Bool = false, resolveUnauthorizedOnce: Bool = false, suggestUnauthorizedOnce: Bool = false, liveRoutesUnauthorizedOnce: Bool = false, foodUnauthorizedOnce: Bool = false, intelUnauthorizedOnce: Bool = false, hotelUnauthorizedOnce: Bool = false, routeUnauthorizedOnce: Bool = false) {
     self.unknownKeyOnce = unknownKeyOnce
     self.pingUnauthorizedOnce = pingUnauthorizedOnce
     self.resolveUnauthorizedOnce = resolveUnauthorizedOnce
@@ -33,6 +35,7 @@ private actor FakeGateway {
     self.foodUnauthorizedOnce = foodUnauthorizedOnce
     self.intelUnauthorizedOnce = intelUnauthorizedOnce
     self.hotelUnauthorizedOnce = hotelUnauthorizedOnce
+    self.routeUnauthorizedOnce = routeUnauthorizedOnce
   }
 
   func respond(to request: WorkerRequest) -> WorkerResponse {
@@ -92,6 +95,12 @@ private actor FakeGateway {
         return json(#"{"code":"session_expired"}"#, 401)
       }
       return json(#"{"provider":"google_maps","fetchedAt":"t","evidenceProviders":{"rakuten":false},"candidates":[{"id":"h1","name":"Hotel Bern","address":"a","googleMapsUrl":"u","websiteUrl":null,"rating":4.3,"userRatingCount":10,"distanceMeters":320,"routeBurdenMeters":800}]}"#, 200)
+    case "/api/route-recommendations":
+      if routeUnauthorizedOnce, !sawRoute401 {
+        sawRoute401 = true
+        return json(#"{"code":"session_expired"}"#, 401)
+      }
+      return json(#"{"provider":"google_maps","fetchedAt":"t","candidates":[{"id":"g1","providerRef":"ChIJ","name":"Cafe Alpen","address":"a","type":"cafe","googleMapsUrl":"u","latitude":46.9,"longitude":7.4,"rating":4.5,"userRatingCount":10,"routeDistanceMeters":180}]}"#, 200)
     default:
       return json(#"{"code":"not_found"}"#, 404)
     }
@@ -242,5 +251,17 @@ final class WorkerClientTests: XCTestCase {
     let result = await client.hotelRecommendations(payload)
     XCTAssertNotNil(result, "a 401 must be retried once and then succeed")
     XCTAssertEqual(result?.candidates.first?.id, "h1")
+  }
+
+  func testRouteRecommendationsRetriesOnceOn401() async {
+    let gateway = FakeGateway()
+    await gateway.configure(routeUnauthorizedOnce: true)
+    let (client, _) = makeClient(gateway: gateway)
+    let payload = RouteRecommendationRequestPayload(
+      routePoints: [GeoPoint(latitude: 46.9, longitude: 7.4)], excludedPlaceIds: [], excludedNames: [],
+      languageCode: "en", destination: "auto", suggestionKinds: ["CAFE"])
+    let result = await client.routeRecommendations(payload)
+    XCTAssertNotNil(result, "a 401 must be retried once and then succeed")
+    XCTAssertEqual(result?.candidates.first?.id, "g1")
   }
 }
