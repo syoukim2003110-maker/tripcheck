@@ -93,7 +93,11 @@ struct TripCheckApp: App {
       // 場所の詳細も同じ理由で composition root にだけ判定を閉じ込める
       // (`PlaceIntelligenceAvailability`)。UI テストは nil のまま —— カードを開いても
       // 決定的に「詳細を取得できませんでした」になる(`PlaceIntelligenceDisclosure` の非回帰)。
-      placeIntelligenceProvider: PlaceIntelligenceAvailability.makeDefaultProvider(uiTesting: isUITesting, client: workerClient)
+      placeIntelligenceProvider: PlaceIntelligenceAvailability.makeDefaultProvider(uiTesting: isUITesting, client: workerClient),
+      // 空き時間の寄り道も同じ理由で composition root にだけ判定を閉じ込める
+      // (`RouteDetourAvailability`)。UI テストは nil のまま —— カードを開いても
+      // 決定的に「候補が見つかりませんでした」になる(`GapDetourCard` の非回帰)。
+      routeDetourProvider: RouteDetourAvailability.makeDefaultProvider(uiTesting: isUITesting, client: workerClient)
     ))
     _webSuggestions = State(initialValue: WorkerSuggestions(client: workerClient))
   }

@@ -380,6 +380,18 @@ public struct AppCopy: Sendable {
   /// 数値と単位を後ろに続ける(ja「経路から約 1.2 km」/en「off route by 1.2 km」)。
   public let hotelRouteBurden: String
 
+  // MARK: - 空き時間の寄り道(spec 2026-08-26、`GapDetourCard`/`RouteDetourSheet`)
+
+  /// 空きがあるときに旅程へ挿す破線カードの見出し。
+  public let gapDetourTitle: String
+  /// 候補一覧シートの見出し。
+  public let routeDetourSheetTitle: String
+  /// 取得できた/取得したが 0 件だったときの 1 行。
+  public let routeDetourEmpty: String
+  /// 経路からの外れ幅の前置き。呼び出し側が `"\(app.routeDetourDistance) \(m)m"` の語順で
+  /// 数値と単位を後ろに続ける(ja「経路から約 180m」/en「off route by 180m」)。
+  public let routeDetourDistance: String
+
   // MARK: - 場所の詳細(spec 2026-08-25、`PlaceIntelligenceDisclosure`)
 
   /// 開示カードの見出し。
@@ -624,6 +636,10 @@ public struct AppCopy: Sendable {
     hotelRecommendationsSheetTitle: String,
     hotelRecommendationsEmpty: String,
     hotelRouteBurden: String,
+    gapDetourTitle: String,
+    routeDetourSheetTitle: String,
+    routeDetourEmpty: String,
+    routeDetourDistance: String,
     placeIntelligenceTitle: String,
     placeIntelligenceUnavailable: String,
     placeIntelligenceOpenNow: String,
@@ -855,6 +871,10 @@ public struct AppCopy: Sendable {
     self.hotelRecommendationsSheetTitle = hotelRecommendationsSheetTitle
     self.hotelRecommendationsEmpty = hotelRecommendationsEmpty
     self.hotelRouteBurden = hotelRouteBurden
+    self.gapDetourTitle = gapDetourTitle
+    self.routeDetourSheetTitle = routeDetourSheetTitle
+    self.routeDetourEmpty = routeDetourEmpty
+    self.routeDetourDistance = routeDetourDistance
     self.placeIntelligenceTitle = placeIntelligenceTitle
     self.placeIntelligenceUnavailable = placeIntelligenceUnavailable
     self.placeIntelligenceOpenNow = placeIntelligenceOpenNow
@@ -1266,6 +1286,10 @@ public struct AppCopy: Sendable {
     hotelRecommendationsSheetTitle: "経路に近い宿",
     hotelRecommendationsEmpty: "候補が見つかりませんでした",
     hotelRouteBurden: "経路から約",
+    gapDetourTitle: "空き時間の寄り道",
+    routeDetourSheetTitle: "経路沿いの寄り道",
+    routeDetourEmpty: "候補が見つかりませんでした",
+    routeDetourDistance: "経路から約",
     placeIntelligenceTitle: "この場所について",
     placeIntelligenceUnavailable: "詳細を取得できませんでした",
     placeIntelligenceOpenNow: "営業中",
@@ -1520,6 +1544,10 @@ public struct AppCopy: Sendable {
     hotelRecommendationsSheetTitle: "Hotels near your route",
     hotelRecommendationsEmpty: "No hotels found",
     hotelRouteBurden: "off route by",
+    gapDetourTitle: "Fill your spare time",
+    routeDetourSheetTitle: "Detours along your route",
+    routeDetourEmpty: "No suggestions found",
+    routeDetourDistance: "off route by",
     placeIntelligenceTitle: "About this place",
     placeIntelligenceUnavailable: "Details unavailable",
     placeIntelligenceOpenNow: "Open now",

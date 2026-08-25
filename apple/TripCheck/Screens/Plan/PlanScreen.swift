@@ -47,6 +47,7 @@ struct PlanScreen: View {
               IssueCard()
               VerdictDetails()
               if store.hotelRecommendationsAvailable { SuggestedHotelsCard() }
+              if store.gapDetourAvailable(selectedDay) { GapDetourCard(dayIndex: selectedDay) }
               BeforeYouGoCard()
             }
             .padding(16)

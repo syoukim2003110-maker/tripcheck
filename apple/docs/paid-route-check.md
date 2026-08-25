@@ -128,3 +128,27 @@ Simulator でも bypass セッションで通せる。実 Google キーが要る
    出ず、「候補が見つかりませんでした」だけが出ることを確認する
    (`beginHotelFetch` が `hotelRecommendationProvider == nil` を `.unavailable` として
    即座に返す道と同じ結果になる)。
+
+## 10. 空き時間の寄り道(route-recommendations)
+
+合成の根(`TripCheckApp.init`)は非 UI テストのとき常に
+`RouteDetourAvailability.makeDefaultProvider(uiTesting:client:)` が返す
+`WorkerRouteDetourRecommender` を `PlannerStore` に渡す(`-uiTesting` は nil のまま ——
+「空き時間の寄り道」シートは決定的に「候補が見つかりませんでした」になる、これが UI 回帰
+テストの前提)。カードの入口自体はその日の空きの有無(`gapDetourAvailable(dayIndex)` =
+`bundle.gaps[dayIndex]` が非 nil、その日でいちばん埋める価値のある 30 分以上の空き)で決まり、
+Worker の疎通とは別の条件 —— 空きが 30 分未満しかない日にはカードそのものが出ない。
+
+1. 上の 1・2 と同じく `.dev.vars` に実 `GOOGLE_PLACES_API_KEY`(Places API が有効な
+   キー)を置き、`pnpm dev` を起動。Simulator は `TRIPCHECK_WORKER_BYPASS_TOKEN` を
+   `.dev.vars` と同じ値にして走らせる(`-uiTesting` は付けない)。
+2. 旅程を組み、空きのある日を選んだ状態で旅程の後ろの方(出発前チェックの直前、
+   「近くの宿」カードのすぐ後ろ)にある破線の「空き時間の寄り道」カード
+   (`plan.gapDetour`)をタップする。下からシートが開き、初回だけその空きの経路区間
+   (直前・直後の停留所の座標)に近い候補の取得が走り、名前・種別・評価・経路からの
+   外れ幅(m)・住所を持つ候補カードが並ぶこと(`plan.detourCandidate`)を確認する。
+   カードをタップすると Google マップの該当地点へ遷移すること。
+3. Worker を止める、または `.dev.vars` から鍵を外すと、同じカードを開いても候補は 1 件も
+   出ず、「候補が見つかりませんでした」だけが出ることを確認する
+   (`beginGapDetourFetch` が `routeDetourProvider == nil` を `.unavailable` として
+   即座に返す道と同じ結果になる)。
