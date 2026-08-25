@@ -69,6 +69,7 @@ final class WorkerClientTests: XCTestCase {
     let (client, _) = makeClient(keyStore: keyStore)
     let state = await client.ensureSession()
     guard case .authenticated = state else { return XCTFail("expected authenticated, got \(state)") }
+    XCTAssertEqual(keyStore.storedKeyId, "existing-key", "returning device must assert with its stored key, not re-attest a fresh one")
   }
 
   func testUnknownKeyResetsAndReattests() async {
