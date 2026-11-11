@@ -1,12 +1,16 @@
 /**
- * Google Maps JavaScript API is the only third party the browser talks to.
- * Everything else the app fetches is a same-origin `/api/` route, including
- * Places photos and link-preview thumbnails, which are proxied precisely so
- * this list can stay closed.
+ * Browser-visible providers stay on an explicit host allowlist. Google powers
+ * configured paid maps; the key-free map fetches its public style, glyphs and
+ * vector tiles from OpenFreeMap. Everything else remains behind same-origin
+ * `/api/` routes.
  */
 const GOOGLE_MAPS_HOSTS = [
   "https://*.googleapis.com",
   "https://*.gstatic.com",
+] as const;
+
+const OPEN_FREE_MAP_HOSTS = [
+  "https://tiles.openfreemap.org",
 ] as const;
 
 /** Tiles, markers, Street View and the photo redirect's destination. */
@@ -39,7 +43,7 @@ const productionContentSecurityPolicy = [
   // the Maps runtime's own tile and metadata traffic. There are no websockets
   // in production — that allowance existed for local HMR, which never sees
   // this policy.
-  `connect-src 'self' data: blob: ${GOOGLE_MAPS_HOSTS.join(" ")}`,
+  `connect-src 'self' data: blob: ${GOOGLE_MAPS_HOSTS.join(" ")} ${OPEN_FREE_MAP_HOSTS.join(" ")}`,
   "worker-src 'self' blob:",
   "frame-src 'self' https://www.google.com https://maps.google.com",
 ].join("; ");

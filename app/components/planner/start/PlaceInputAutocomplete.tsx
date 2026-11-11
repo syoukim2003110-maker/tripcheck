@@ -50,7 +50,9 @@ export default function PlaceInputAutocomplete({
 }: PlaceInputAutocompleteProps) {
   const [panelDismissed, setPanelDismissed] = useState(false);
   const [activeProviderRef, setActiveProviderRef] = useState<string | null>(null);
+  const [editing, setEditing] = useState(!value.trim());
   const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tokenLines = value.replace(/\r/g, "").split("\n").map((line) => line.trim()).filter(Boolean);
   const target = suggestions.target;
   const panelOpen = target !== null && !panelDismissed;
   const selectedOverride = target === null ? undefined : resolutionOverrides.find((override) => (
@@ -68,6 +70,13 @@ export default function PlaceInputAutocomplete({
     if (blurTimer.current) clearTimeout(blurTimer.current);
   }, []);
 
+  useEffect(() => {
+    // Programmatic fills (sample trip, restored draft) should land in the
+    // compact chip state. Keystrokes keep the editor open because focus is
+    // still inside the textarea.
+    if (value.trim() && document.activeElement !== inputRef.current) setEditing(false);
+  }, [inputRef, value]);
+
   function syncTarget(raw: string, cursor: number | null) {
     onActivePlaceChange(activeWishlistPlaceAtCursor(raw, cursor ?? raw.length));
     setActiveProviderRef(null);
@@ -80,6 +89,19 @@ export default function PlaceInputAutocomplete({
     setActiveProviderRef(null);
     setPanelDismissed(true);
     inputRef.current?.focus();
+  }
+
+  function removeToken(tokenIndex: number) {
+    const sourceLines = value.replace(/\r/g, "").split("\n");
+    let visibleIndex = -1;
+    const next = sourceLines.filter((line) => {
+      if (!line.trim()) return true;
+      visibleIndex += 1;
+      return visibleIndex !== tokenIndex;
+    }).join("\n").replace(/^\n+|\n+$/g, "");
+    onChange(next);
+    syncTarget(next, next.length);
+    if (!next.trim()) setEditing(true);
   }
 
   function moveActive(direction: 1 | -1) {
@@ -129,6 +151,8 @@ export default function PlaceInputAutocomplete({
       // The review step runs on a separate provider budget, so it genuinely
       // still works when this one is spent.
       ? locale === "ja" ? "この旅の候補検索上限に達しました。このまま入力を続け、次の確認画面で場所を選べます。" : "This trip's suggestion limit is used up. Keep typing — you can still pick each place on the next review screen."
+      : suggestions.status === "explicit_search_only"
+        ? locale === "ja" ? "「この場所で旅程を作る」を押すと、入力した場所を無料検索します。" : "Choose “Build my trip” to search these places with the key-free provider."
       : suggestions.status === "unavailable"
         ? locale === "ja" ? "候補を取得できませんでした。入力後の確認画面で再検索できます。" : "Suggestions are unavailable. You can retry on the review screen."
         : suggestions.status === "ready" && suggestions.suggestions.length === 0
@@ -136,8 +160,29 @@ export default function PlaceInputAutocomplete({
           : "";
 
   return (
-    <div className="planner-composer">
+    <div className={`planner-composer${tokenLines.length > 0 ? " has-tokens" : ""}${editing ? " is-editing" : ""}`}>
       <label htmlFor="trip-input"><span>{label}</span></label>
+      {tokenLines.length > 0 ? (
+        <div className="planner-place-token-list" aria-label={locale === "ja" ? "入力済みの場所" : "Entered places"}>
+          {tokenLines.map((line, index) => (
+            <button
+              aria-label={locale === "ja" ? `${line}を入力から外す` : `Remove ${line} from the input`}
+              className="planner-place-token"
+              key={`${line}-${index}`}
+              onClick={() => removeToken(index)}
+              type="button"
+            ><span>{line}</span><b aria-hidden="true">×</b></button>
+          ))}
+          <button
+            className="planner-place-token-edit"
+            onClick={() => {
+              setEditing(true);
+              requestAnimationFrame(() => inputRef.current?.focus());
+            }}
+            type="button"
+          >{locale === "ja" ? "＋ 場所を追加・編集" : "+ Add or edit places"}</button>
+        </div>
+      ) : null}
       <textarea
         aria-activedescendant={activeIndex >= 0 ? `${listboxId}-${activeIndex}` : undefined}
         aria-autocomplete="list"
@@ -149,7 +194,10 @@ export default function PlaceInputAutocomplete({
         autoFocus
         id="trip-input"
         onBlur={() => {
-          blurTimer.current = setTimeout(() => setPanelDismissed(true), 120);
+          blurTimer.current = setTimeout(() => {
+            setPanelDismissed(true);
+            if (value.trim()) setEditing(false);
+          }, 120);
         }}
         onChange={(event) => {
           const raw = event.currentTarget.value;
@@ -157,7 +205,10 @@ export default function PlaceInputAutocomplete({
           syncTarget(raw, event.currentTarget.selectionStart);
         }}
         onClick={(event) => syncTarget(event.currentTarget.value, event.currentTarget.selectionStart)}
-        onFocus={(event) => syncTarget(event.currentTarget.value, event.currentTarget.selectionStart)}
+        onFocus={(event) => {
+          setEditing(true);
+          syncTarget(event.currentTarget.value, event.currentTarget.selectionStart);
+        }}
         onKeyDown={handleKeyDown}
         onKeyUp={(event) => {
           if (panelOpen && ["ArrowDown", "ArrowUp", "Enter", "Escape"].includes(event.key)) return;

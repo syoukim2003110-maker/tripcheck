@@ -66,6 +66,7 @@ type StopInspectorProps = {
   onCommitStayMinutes: (stopId: string, value: string) => void;
   onCommitLastEntry: (stopId: string, value: string) => void;
   onMoveStopToDay: (stopId: string, dayIndex: number) => void;
+  onSelectStop: (stopId: string) => void;
   onRemoveStop: (stop: RouteStop) => void;
   onCheckPlace: (stop: RouteStop) => void;
   onEnsureSourcePreviews: (sources: ReadonlyArray<{ url: string; urlSignature?: string | null }>) => void;
@@ -97,12 +98,15 @@ export default function StopInspector({
   onCommitStayMinutes,
   onCommitLastEntry,
   onMoveStopToDay,
+  onSelectStop,
   onRemoveStop,
   onCheckPlace,
   onEnsureSourcePreviews,
   onPhotoError,
 }: StopInspectorProps) {
   const text = ui[locale];
+  const previousStop = day?.stops[selectedStopIndex - 1] ?? null;
+  const nextStop = day?.stops[selectedStopIndex + 1] ?? null;
   return (
     <aside
       aria-labelledby="planner-stop-inspector-title"
@@ -119,8 +123,11 @@ export default function StopInspector({
           <p>{selectedBuiltStop.stop.area}</p>
         </div>
       </header>
+      <div className="planner-inspector-schedule">
+        <span><Icon name="calendar" size={14} />{locale === "ja" ? "予定時刻" : "Scheduled"} {selectedBuiltStop.arrival}–{selectedBuiltStop.departure}</span>
+        <b>{text.stayLabel} {text.minutes(selectedBuiltStop.stop.planningDurationMinutes)}</b>
+      </div>
       <div className="planner-inspector-meta">
-        <span>{selectedBuiltStop.arrival}–{selectedBuiltStop.departure}</span>
         {selectedBuiltStop.fixedTime ? <span className="is-booked">{selectedBuiltStop.isReservation ? text.reservation : text.timePinned} {selectedBuiltStop.fixedTime}</span> : null}
         {selectedBuiltStop.reservationLateMinutes > 0 ? <span className="is-booked">{text.lateBy(selectedBuiltStop.reservationLateMinutes)}</span> : null}
         {selectedBuiltStop.priority === "must" ? <span className="is-must">{text.must}</span> : null}
@@ -154,6 +161,13 @@ export default function StopInspector({
             ))}
           </div>
         </div>
+      ) : null}
+      {day && day.stops.length > 1 ? (
+        <nav aria-label={locale === "ja" ? "この日のスポット間を移動" : "Move between stops on this day"} className="planner-inspector-nav">
+          <button disabled={!previousStop} onClick={() => previousStop && onSelectStop(previousStop.stop.id)} type="button">‹ {locale === "ja" ? "前のスポット" : "Previous"}</button>
+          <span>{locale === "ja" ? `${activeDay + 1}日目` : `Day ${activeDay + 1}`} · {selectedStopIndex + 1}/{day.stops.length}</span>
+          <button disabled={!nextStop} onClick={() => nextStop && onSelectStop(nextStop.stop.id)} type="button">{locale === "ja" ? "次のスポット" : "Next"} ›</button>
+        </nav>
       ) : null}
       {/* v3.1 §2: the receptacle. Everything the timeline stops saying about
           confidence is reachable from this one control, and the photo inside

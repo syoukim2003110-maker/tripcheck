@@ -1,11 +1,8 @@
 "use client";
 
-// The mobile itinerary/map switch. It is a map control, not a report row, so
-// it lives beside the map layer rather than at the top of the result sheet:
-// as a sheet row it cost 52px of the first viewport on every screen, and as a
-// sticky row it competed with the sticky day rail underneath it. Anchored to
-// the bottom of the viewport it stays reachable at any scroll position and
-// costs the itinerary nothing.
+// The mobile itinerary/map switch. The reference treats this as the primary
+// view hierarchy directly below the app bar, so it stays visible while either
+// surface (and its stop sheet) is active.
 import type { MobileResultView } from "../../../../lib/planner-app-state.ts";
 import type { PlannerLocale } from "../../../../lib/presentation/planner-copy.ts";
 

@@ -44,6 +44,10 @@ export default defineConfig(async () => {
   const { cloudflare } = await import("@cloudflare/vite-plugin");
 
   return {
+    // MapLibre creates its worker from package-relative ESM. Vite's dev
+    // pre-bundler otherwise rewrites that URL to a transient optimized file
+    // which vinext can request before it exists, leaving a blank basemap.
+    optimizeDeps: { exclude: ["maplibre-gl"] },
     server: isCodexSeatbeltSandbox
       ? { watch: { useFsEvents: false, usePolling: true } }
       : undefined,

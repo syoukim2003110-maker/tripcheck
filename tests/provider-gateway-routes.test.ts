@@ -2,6 +2,10 @@ import assert from "node:assert/strict";
 import { registerHooks } from "node:module";
 import test from "node:test";
 
+// This suite exercises paid-provider behavior intentionally. Production code
+// now requires the same explicit server authorization.
+process.env.TRIPCHECK_PAID_API_ENABLED = "true";
+
 // App routes use extensionless bundler imports. Resolve only app/api -> lib
 // edges so the real handlers can be exercised by Node's strip-types runner.
 const routeHooks = registerHooks({

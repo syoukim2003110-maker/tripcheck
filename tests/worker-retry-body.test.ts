@@ -115,6 +115,7 @@ type RetryTestEnvironment = {
   IMAGES: never;
   TRIPCHECK_PUBLIC_ORIGIN?: string;
   TRIPCHECK_QUOTA_HASH_SECRET?: string;
+  TRIPCHECK_PAID_API_ENABLED?: string;
 };
 
 type RetryTestContext = {
@@ -134,6 +135,7 @@ function environment(db?: RetryTestD1): RetryTestEnvironment {
     IMAGES: undefined as never,
     TRIPCHECK_PUBLIC_ORIGIN: "https://tripcheck.test",
     TRIPCHECK_QUOTA_HASH_SECRET: "worker-test-secret-that-is-at-least-32-characters",
+    TRIPCHECK_PAID_API_ENABLED: "true",
   };
 }
 

@@ -6,6 +6,7 @@ import {
 } from "../lib/google-place-suggestions.ts";
 import {
   activeWishlistPlaceAtCursor,
+  PlaceSuggestionError,
   rebaseResolutionOverrides,
   requestPlaceSuggestions,
 } from "../lib/place-suggestion-client.ts";
@@ -122,8 +123,10 @@ test("provider choices follow unchanged occurrences across textarea edits", () =
 
 test("the browser suggestion client sends only the typed query and opaque trip identity", async () => {
   const originalFetch = globalThis.fetch;
+  const originalOptIn = process.env.NEXT_PUBLIC_TRIPCHECK_PAID_PLACE_RESOLUTION_ENABLED;
   let requestBody: Record<string, unknown> = {};
   let requestHeaders = new Headers();
+  process.env.NEXT_PUBLIC_TRIPCHECK_PAID_PLACE_RESOLUTION_ENABLED = "true";
   globalThis.fetch = (async (_input, init) => {
     requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
     requestHeaders = new Headers(init?.headers);
@@ -141,8 +144,52 @@ test("the browser suggestion client sends only the typed query and opaque trip i
     assert.equal(result[0]?.providerRef, "ChIJ_Linz_Austria");
   } finally {
     globalThis.fetch = originalFetch;
+    if (originalOptIn === undefined) delete process.env.NEXT_PUBLIC_TRIPCHECK_PAID_PLACE_RESOLUTION_ENABLED;
+    else process.env.NEXT_PUBLIC_TRIPCHECK_PAID_PLACE_RESOLUTION_ENABLED = originalOptIn;
   }
   assert.deepEqual(requestBody, { query: "Linz", languageCode: "en", destination: "auto" });
   assert.match(requestHeaders.get(TRIP_REQUEST_HEADER) ?? "", /^trip_[A-Za-z0-9_-]+$/);
   assert.equal(requestHeaders.has("X-Goog-Api-Key"), false);
+});
+
+test("a missing autocomplete provider hands search to the explicit build action", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalOptIn = process.env.NEXT_PUBLIC_TRIPCHECK_PAID_PLACE_RESOLUTION_ENABLED;
+  process.env.NEXT_PUBLIC_TRIPCHECK_PAID_PLACE_RESOLUTION_ENABLED = "true";
+  globalThis.fetch = (async () => Response.json(
+    { code: "not_configured" },
+    { status: 503 },
+  )) as typeof fetch;
+  try {
+    await assert.rejects(
+      requestPlaceSuggestions("京都駅", "ja", "auto"),
+      (error: unknown) => error instanceof PlaceSuggestionError && error.code === "explicit_search_only",
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalOptIn === undefined) delete process.env.NEXT_PUBLIC_TRIPCHECK_PAID_PLACE_RESOLUTION_ENABLED;
+    else process.env.NEXT_PUBLIC_TRIPCHECK_PAID_PLACE_RESOLUTION_ENABLED = originalOptIn;
+  }
+});
+
+test("the default zero-cost mode performs no autocomplete network request", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalOptIn = process.env.NEXT_PUBLIC_TRIPCHECK_PAID_PLACE_RESOLUTION_ENABLED;
+  let providerCalls = 0;
+  delete process.env.NEXT_PUBLIC_TRIPCHECK_PAID_PLACE_RESOLUTION_ENABLED;
+  globalThis.fetch = (async () => {
+    providerCalls += 1;
+    throw new Error("autocomplete must stay offline");
+  }) as typeof fetch;
+  try {
+    await assert.rejects(
+      requestPlaceSuggestions("Linz", "en", "auto"),
+      (error: unknown) => error instanceof PlaceSuggestionError && error.code === "explicit_search_only",
+    );
+    assert.equal(providerCalls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalOptIn === undefined) delete process.env.NEXT_PUBLIC_TRIPCHECK_PAID_PLACE_RESOLUTION_ENABLED;
+    else process.env.NEXT_PUBLIC_TRIPCHECK_PAID_PLACE_RESOLUTION_ENABLED = originalOptIn;
+  }
 });

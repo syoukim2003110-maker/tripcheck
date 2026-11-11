@@ -1,7 +1,6 @@
 import type { CSSProperties } from "react";
 import {
   buildPlannerDayTimeBarModel,
-  formatPlannerDayTimeDuration,
   plannerDayTimeBarAriaLabel,
   type PlannerDayTimeBarDay,
   type PlannerDayTimeBarFit,

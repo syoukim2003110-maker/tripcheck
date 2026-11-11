@@ -579,6 +579,7 @@ test("route reports Rakuten evidence availability and logs only a bounded failur
   const originalRakutenId = process.env.RAKUTEN_APPLICATION_ID;
   const originalRakutenKey = process.env.RAKUTEN_ACCESS_KEY;
   const originalNonCoreApis = process.env.TRIPCHECK_NON_CORE_APIS_ENABLED;
+  const originalPaidApiEnabled = process.env.TRIPCHECK_PAID_API_ENABLED;
   const warnings: unknown[][] = [];
   const googleHotel = (latitude: number, longitude: number) => ({
     id: `hotel-${latitude}`,
@@ -609,6 +610,7 @@ test("route reports Rakuten evidence availability and logs only a bounded failur
     process.env.RAKUTEN_APPLICATION_ID = "rakuten-id";
     process.env.RAKUTEN_ACCESS_KEY = "rakuten-secret";
     process.env.TRIPCHECK_NON_CORE_APIS_ENABLED = "true";
+    process.env.TRIPCHECK_PAID_API_ENABLED = "true";
     console.warn = (...args: unknown[]) => { warnings.push(args); };
 
     globalThis.fetch = (async (input) => {
@@ -651,5 +653,7 @@ test("route reports Rakuten evidence availability and logs only a bounded failur
     else process.env.RAKUTEN_ACCESS_KEY = originalRakutenKey;
     if (originalNonCoreApis === undefined) delete process.env.TRIPCHECK_NON_CORE_APIS_ENABLED;
     else process.env.TRIPCHECK_NON_CORE_APIS_ENABLED = originalNonCoreApis;
+    if (originalPaidApiEnabled === undefined) delete process.env.TRIPCHECK_PAID_API_ENABLED;
+    else process.env.TRIPCHECK_PAID_API_ENABLED = originalPaidApiEnabled;
   }
 });

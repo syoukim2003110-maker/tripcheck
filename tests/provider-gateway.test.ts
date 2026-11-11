@@ -101,7 +101,7 @@ test("old UTC-day counters are pruned while current-day saturation fails closed"
 });
 
 test("production preflight requires both matching Origin and same-origin Fetch Metadata", () => {
-  const gateway = new PaidProviderGateway({ environment: { NODE_ENV: "production", TRIPCHECK_PUBLIC_ORIGIN: "https://tripcheck.test" } });
+  const gateway = new PaidProviderGateway({ environment: { NODE_ENV: "production", TRIPCHECK_PAID_API_ENABLED: "true", TRIPCHECK_PUBLIC_ORIGIN: "https://tripcheck.test" } });
   const accepted = gateway.preflight(request({ Origin: "https://tripcheck.test", "Sec-Fetch-Site": "same-origin" }), "google");
   assert.equal(accepted.ok, true);
 
@@ -119,17 +119,22 @@ test("production preflight requires both matching Origin and same-origin Fetch M
 });
 
 test("global and provider kill switches fail closed without reserving quota", () => {
+  const missingOptIn = new PaidProviderGateway({ environment: { NODE_ENV: "test" } });
+  const missingOptInResult = missingOptIn.preflight(request(), "google");
+  assert.equal(missingOptInResult.ok, false);
+  if (!missingOptInResult.ok) assert.equal(missingOptInResult.code, "paid_api_disabled");
+
   const global = new PaidProviderGateway({ environment: { NODE_ENV: "test", TRIPCHECK_PAID_API_DISABLED: "true" } });
   const globalResult = global.preflight(request(), "google");
   assert.equal(globalResult.ok, false);
   if (!globalResult.ok) assert.equal(globalResult.code, "paid_api_disabled");
 
-  const google = new PaidProviderGateway({ environment: { NODE_ENV: "test", TRIPCHECK_GOOGLE_API_DISABLED: "1" } });
+  const google = new PaidProviderGateway({ environment: { NODE_ENV: "test", TRIPCHECK_PAID_API_ENABLED: "true", TRIPCHECK_GOOGLE_API_DISABLED: "1" } });
   const googleResult = google.preflight(request(), "google");
   assert.equal(googleResult.ok, false);
   if (!googleResult.ok) assert.equal(googleResult.code, "provider_disabled");
 
-  const anthropic = new PaidProviderGateway({ environment: { NODE_ENV: "test", TRIPCHECK_ANTHROPIC_API_DISABLED: "yes" } });
+  const anthropic = new PaidProviderGateway({ environment: { NODE_ENV: "test", TRIPCHECK_PAID_API_ENABLED: "true", TRIPCHECK_ANTHROPIC_API_DISABLED: "yes" } });
   const anthropicResult = anthropic.preflight(request(), "anthropic");
   assert.equal(anthropicResult.ok, false);
   if (!anthropicResult.ok) assert.equal(anthropicResult.code, "provider_disabled");
@@ -139,7 +144,7 @@ test("default identity issues a bounded anonymous HttpOnly cookie without storin
   const configured = policies();
   const ledger = new ProcessLocalProviderLedger({ policies: configured });
   const gateway = new PaidProviderGateway({
-    environment: { NODE_ENV: "production", TRIPCHECK_PUBLIC_ORIGIN: "https://tripcheck.test" },
+    environment: { NODE_ENV: "production", TRIPCHECK_PAID_API_ENABLED: "true", TRIPCHECK_PUBLIC_ORIGIN: "https://tripcheck.test" },
     policies: configured,
     ledger,
     createAnonymousId: () => "12345678-1234-1234-1234-123456789abc",
@@ -164,7 +169,7 @@ test("default identity issues a bounded anonymous HttpOnly cookie without storin
 });
 
 test("the origin gateway preserves the Worker's full bounded opaque identity range", () => {
-  const gateway = new PaidProviderGateway();
+  const gateway = new PaidProviderGateway({ environment: { TRIPCHECK_PAID_API_ENABLED: "true" } });
   const sessionId = `session_${"a".repeat(93)}`;
   const tripId = `trip_${"b".repeat(95)}`;
   const preflight = gateway.preflight(request({
@@ -184,7 +189,7 @@ test("gateway reservations expose explicit non-durable metadata and count bounde
   const configured = policies();
   const ledger = new ProcessLocalProviderLedger({ policies: configured });
   const gateway = new PaidProviderGateway({
-    environment: { NODE_ENV: "test" },
+    environment: { NODE_ENV: "test", TRIPCHECK_PAID_API_ENABLED: "true" },
     policies: configured,
     ledger,
     identityResolver: () => ({

@@ -164,6 +164,10 @@ export default function ResolveScreen({
   onContinue,
 }: ResolveScreenProps) {
   const text = ui[locale];
+  const usesOpenStreetMap = reviewedPlaceRows.some((row) => (
+    row.resolved?.id.startsWith("osm-")
+    || row.ambiguity?.candidates.some((candidate) => candidate.id.startsWith("osm-"))
+  ));
   // Automatic detection stops rather than merge two countries into one trip.
   // The reason has to be on screen: the traveller is standing here because the
   // build refused, not because they navigated back.
@@ -375,6 +379,12 @@ export default function ResolveScreen({
         {unresolvedReviewedCount > 0 ? <p className="planner-inline-status is-warning" role="status">{locale === "ja" ? `${unresolvedReviewedCount}件は未解決です。確認が終わるまで結論を出しません。` : `${unresolvedReviewedCount} place${unresolvedReviewedCount === 1 ? " is" : "s are"} unresolved. The result stays conditional until they are confirmed.`}</p> : null}
         {ambiguousReviewedCount > 0 ? <p className="planner-inline-status is-warning" role="status">{locale === "ja" ? `${ambiguousReviewedCount}件は同名候補があります。住所を見て選んでください。` : `${ambiguousReviewedCount} place${ambiguousReviewedCount === 1 ? " has" : "s have"} same-name matches. Choose by address.`}</p> : null}
       </section>
+      {usesOpenStreetMap ? (
+        <p className="planner-place-provider-credit">
+          {locale === "ja" ? "場所検索: " : "Place search: "}
+          <a href="https://www.openstreetmap.org/copyright" rel="noreferrer" target="_blank">© OpenStreetMap contributors</a>
+        </p>
+      ) : null}
       {countryChoiceLeadsHere ? null : resolveEscapeControls}
 
       {/* v1.1 §5.2: the Resolve step is about places. Trip conditions
@@ -426,7 +436,7 @@ export default function ResolveScreen({
 
       </details>
 
-      <button className="planner-build-button" disabled={!canBuild} onClick={onContinue} type="button">
+      <button className="planner-build-button" disabled={!canBuild || confirmedReviewedCount === 0} onClick={onContinue} type="button">
         <span>{locale === "ja"
           ? `${confirmedReviewedCount}か所で続ける`
           : `Continue with ${confirmedReviewedCount} place${confirmedReviewedCount === 1 ? "" : "s"}`}</span><b aria-hidden="true"><Icon name="arrow" size={19} /></b>

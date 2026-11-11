@@ -24,7 +24,7 @@ import {
 } from "../../../../lib/place-suggestion-client.ts";
 import type { PlannerLocale } from "../../../../lib/presentation/planner-copy.ts";
 
-export type PlaceSuggestionStatus = "idle" | "loading" | "ready" | "unavailable" | "quota_exhausted";
+export type PlaceSuggestionStatus = "idle" | "loading" | "ready" | "unavailable" | "quota_exhausted" | "explicit_search_only";
 
 export type PlaceSuggestionsState = {
   /** The place occurrence the caret is on, or null when no single place is in focus. */
@@ -38,6 +38,9 @@ const MINIMUM_QUERY_LENGTH = 2;
 const DEBOUNCE_MS = 550;
 /** Bounded so a long session cannot grow the cache without limit. */
 const MAX_CACHED_QUERIES = 60;
+// A configured server key is not consent to spend it. Autocomplete becomes a
+// paid Google request only when the deployment explicitly opts in.
+const GOOGLE_PLACE_SUGGESTIONS_ENABLED = process.env.NEXT_PUBLIC_TRIPCHECK_GOOGLE_PLACE_SUGGESTIONS_ENABLED === "true";
 
 const emptyState: PlaceSuggestionsState = { target: null, status: "idle", suggestions: [] };
 
@@ -61,11 +64,20 @@ export function usePlaceSuggestions({
     suggestions: [],
   });
   const cacheRef = useRef(new Map<string, PlaceSuggestion[]>());
+  const explicitSearchOnlyRef = useRef(false);
 
   const requestSuggestionsFor = useCallback((target: ActiveWishlistPlace | null) => {
+    if (!target || target.query.trim().length < MINIMUM_QUERY_LENGTH) {
+      setRequest(null);
+      return;
+    }
+    const key = requestKey(target.query, destination, locale);
+    // Once the server has confirmed that autocomplete is absent, changing
+    // lines remains a local state transition rather than probing it again.
+    if (explicitSearchOnlyRef.current) {
+      setResult({ key, status: "explicit_search_only", suggestions: [] });
+    }
     setRequest((current) => {
-      if (!target || target.query.trim().length < MINIMUM_QUERY_LENGTH) return null;
-      const key = requestKey(target.query, destination, locale);
       // Same query, same place occurrence: keep the in-flight request and its
       // object identity so the effect below does not re-run.
       if (current && current.key === key && current.target.inputIndex === target.inputIndex) return current;
@@ -75,6 +87,7 @@ export function usePlaceSuggestions({
 
   useEffect(() => {
     if (!request) return;
+    if (!GOOGLE_PLACE_SUGGESTIONS_ENABLED || explicitSearchOnlyRef.current) return;
     const cached = cacheRef.current.get(request.key);
     if (cached) {
       setResult({ key: request.key, status: "ready", suggestions: cached });
@@ -94,7 +107,12 @@ export function usePlaceSuggestions({
         })
         .catch((error: unknown) => {
           if (controller.signal.aborted) return;
-          // A failure is deliberately not cached: the next pause may succeed.
+          if (error instanceof PlaceSuggestionError && error.code === "explicit_search_only") {
+            explicitSearchOnlyRef.current = true;
+          }
+          // Transient failures are not cached: the next pause may succeed.
+          // Provider absence is stable for this page load and is remembered
+          // so editing another line does not keep probing the disabled route.
           setResult({
             key: request.key,
             status: error instanceof PlaceSuggestionError ? error.code : "unavailable",
@@ -109,11 +127,15 @@ export function usePlaceSuggestions({
   }, [destination, locale, request]);
 
   const state: PlaceSuggestionsState = request === null
-    ? emptyState
+    ? GOOGLE_PLACE_SUGGESTIONS_ENABLED
+      ? emptyState
+      : { ...emptyState, status: "explicit_search_only" }
     : {
       target: request.target,
-      status: result.key === request.key ? result.status : "idle",
-      suggestions: result.key === request.key ? result.suggestions : [],
+      status: !GOOGLE_PLACE_SUGGESTIONS_ENABLED
+        ? "explicit_search_only"
+        : result.key === request.key ? result.status : "idle",
+      suggestions: GOOGLE_PLACE_SUGGESTIONS_ENABLED && result.key === request.key ? result.suggestions : [],
     };
 
   return { placeSuggestions: state, requestSuggestionsFor };

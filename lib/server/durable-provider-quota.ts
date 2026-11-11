@@ -47,6 +47,7 @@ export const DURABLE_PROVIDER_QUOTA_POLICIES: DurableQuotaPolicies = Object.free
 ) as DurableQuotaPolicies;
 
 export const DURABLE_QUOTA_KILL_SWITCHES = Object.freeze({
+  optIn: "TRIPCHECK_PAID_API_ENABLED",
   global: "TRIPCHECK_PAID_API_DISABLED",
   google: "TRIPCHECK_GOOGLE_API_DISABLED",
   anthropic: "TRIPCHECK_ANTHROPIC_API_DISABLED",
@@ -71,6 +72,7 @@ export interface D1DatabaseLike {
 }
 
 export type DurableQuotaEnvironment = Readonly<{
+  TRIPCHECK_PAID_API_ENABLED?: string;
   TRIPCHECK_PAID_API_DISABLED?: string;
   TRIPCHECK_GOOGLE_API_DISABLED?: string;
   TRIPCHECK_ANTHROPIC_API_DISABLED?: string;
@@ -285,7 +287,8 @@ async function enforceWithOptions(
   env: DurableQuotaEnvironment,
   options: EnforcerOptions,
 ): Promise<DurableQuotaResult> {
-  if (enabledFlag(env.TRIPCHECK_PAID_API_DISABLED)) {
+  if (!enabledFlag(env.TRIPCHECK_PAID_API_ENABLED)
+    || enabledFlag(env.TRIPCHECK_PAID_API_DISABLED)) {
     return denial("paid_api_disabled", 503);
   }
   if (enabledFlag(env[DURABLE_QUOTA_KILL_SWITCHES[request.provider]])) {

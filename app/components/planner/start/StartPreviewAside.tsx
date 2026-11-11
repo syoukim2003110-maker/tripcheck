@@ -75,6 +75,20 @@ export default function StartPreviewAside({ locale }: StartPreviewAsideProps) {
           <span className="planner-start-chip is-gap"><Icon name="spark" size={12} />{locale === "ja" ? "45分で寄れるカフェ" : "A café for a 45-min gap"}</span>
         </div>
       </div>
+      <div className="planner-start-preview-photos" aria-label={locale === "ja" ? "宿泊と食事の例" : "Example stays and meals"}>
+        {[
+          locale === "ja" ? ["ルツェルン泊", "湖まで徒歩3分"] : ["Stay in Lucerne", "3 min to the lake"],
+          locale === "ja" ? ["湖畔ランチ", "チーズフォンデュ"] : ["Lakeside lunch", "Cheese fondue"],
+          locale === "ja" ? ["山麓の拠点", "移動を短く"] : ["Mountain base", "Less backtracking"],
+          locale === "ja" ? ["動線上のカフェ", "45分で寄り道"] : ["Café on the route", "Fits a 45-min gap"],
+        ].map(([title, detail], index) => (
+          <article key={title}>
+            <span aria-hidden="true" className={`planner-start-preview-photo is-photo-${index + 1}`} />
+            <b>{title}</b>
+            <small>{detail}</small>
+          </article>
+        ))}
+      </div>
       <div className="planner-start-preview-card">
         <b><i aria-hidden="true"><Icon name="check" size={11} /></i>{locale === "ja" ? "4日なら、無理なく回れます" : "This works comfortably in 4 days"}</b>
         <small>{locale === "ja" ? "8か所 · 移動8時間40分 · 余裕4時間10分" : "8 places · 8h 40m travel · 4h 10m buffer"}</small>

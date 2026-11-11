@@ -59,11 +59,14 @@ function parseProviderOverrides(value: unknown): PlaceResolutionProviderOverride
   return result;
 }
 
-export function parsePlaceResolutionRequest(input: unknown): PlaceResolutionRequest | null {
+export function parsePlaceResolutionRequest(
+  input: unknown,
+  maximumQueries: number = PLANNING_BUDGET.placeResolutions,
+): PlaceResolutionRequest | null {
   if (!input || typeof input !== "object") return null;
   const candidate = input as Record<string, unknown>;
   if (candidate.languageCode !== "en" && candidate.languageCode !== "ja") return null;
-  if (!Array.isArray(candidate.queries) || candidate.queries.length > PLANNING_BUDGET.placeResolutions) return null;
+  if (!Array.isArray(candidate.queries) || candidate.queries.length > maximumQueries) return null;
   const parsedQueries = candidate.queries.map((query) => boundedText(query, 1, 120));
   if (parsedQueries.some((query) => query === null)) return null;
   const queries = [...new Set(parsedQueries as string[])];
@@ -378,22 +381,16 @@ function needsTravellerChoice(
   return plausible.length > 1;
 }
 
-export async function fetchGooglePlaceResolutions(
+/**
+ * Provider-neutral shortlist decision shared by Google and the keyless
+ * Nominatim adapter. Keeping one decision path prevents a free-provider
+ * fallback from silently changing the product's ambiguity contract.
+ */
+export function selectPlaceResolutionCandidates(
   request: PlaceResolutionRequest,
-  apiKey: string,
-  fetcher: typeof fetch = fetch,
+  results: ResolvedInputStop[][],
+  exactResults: Array<ResolvedInputStop | null> = [],
 ) {
-  const destination = destinationById(request.destination === "auto" ? "worldwide" : request.destination);
-  const exactResultsPromise = Promise.all(request.providerOverrides.map((override) => (
-    fetchGoogleResolvedPlaceById(override, request.languageCode, apiKey, fetcher, destination)
-  )));
-  const inputs = [...request.queries, ...(request.hotelQuery ? [request.hotelQuery] : [])];
-  const results: ResolvedInputStop[][] = [];
-  for (let index = 0; index < inputs.length; index += 6) {
-    const group = inputs.slice(index, index + 6);
-    results.push(...await Promise.all(group.map((input) => fetchGoogleResolvedPlaceCandidates(input, request.languageCode, apiKey, fetcher, destination))));
-  }
-  const exactResults = await exactResultsPromise;
   const placeResults = results.slice(0, request.queries.length);
   const ambiguous: AmbiguousPlaceResolution[] = [];
   const places = placeResults.flatMap((candidates, index) => {
@@ -410,4 +407,22 @@ export async function fetchGooglePlaceResolutions(
   });
   const hotel = request.hotelQuery ? results.at(-1)?.[0] ?? null : null;
   return { places: [...exactResults.filter((stop): stop is ResolvedInputStop => stop !== null), ...places], hotel, ambiguous };
+}
+
+export async function fetchGooglePlaceResolutions(
+  request: PlaceResolutionRequest,
+  apiKey: string,
+  fetcher: typeof fetch = fetch,
+) {
+  const destination = destinationById(request.destination === "auto" ? "worldwide" : request.destination);
+  const exactResultsPromise = Promise.all(request.providerOverrides.map((override) => (
+    fetchGoogleResolvedPlaceById(override, request.languageCode, apiKey, fetcher, destination)
+  )));
+  const inputs = [...request.queries, ...(request.hotelQuery ? [request.hotelQuery] : [])];
+  const results: ResolvedInputStop[][] = [];
+  for (let index = 0; index < inputs.length; index += 6) {
+    const group = inputs.slice(index, index + 6);
+    results.push(...await Promise.all(group.map((input) => fetchGoogleResolvedPlaceCandidates(input, request.languageCode, apiKey, fetcher, destination))));
+  }
+  return selectPlaceResolutionCandidates(request, results, await exactResultsPromise);
 }

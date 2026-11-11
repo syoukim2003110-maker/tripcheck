@@ -127,9 +127,13 @@ export default function PlacesStep({
         suggestions={placeSuggestions}
         value={itinerary}
       />
-      <p className="planner-parse-hint">{locale === "ja"
-        ? "1行に1か所。入力を止めると候補が出ます。選ぶと同名の都市・店を取り違えません。"
-        : "One place per line. Pause to see matches, then choose one to avoid same-name mix-ups."}</p>
+      <p className="planner-parse-hint">{placeSuggestions.status === "explicit_search_only"
+        ? locale === "ja"
+          ? "1行に1か所。旅程作成を押した時だけ無料検索し、同名候補は確認画面で選べます。"
+          : "One place per line. Key-free search runs only when you build; same-name matches are reviewed next."
+        : locale === "ja"
+          ? "1行に1か所。入力を止めると候補が出ます。選ぶと同名の都市・店を取り違えません。"
+          : "One place per line. Pause to see matches, then choose one to avoid same-name mix-ups."}</p>
       <details className="planner-input-examples">
         <summary>{locale === "ja" ? "入力例を見る" : "See input examples"}</summary>
         <p>{locale === "ja"
@@ -317,7 +321,7 @@ export default function PlacesStep({
           ? (locale === "ja" ? "旅程を作成中…" : "Building your itinerary…")
           : isResolvingPlaces
             ? (locale === "ja" ? "場所を確認しています…" : "Checking your places…")
-            : (locale === "ja" ? "旅程をつくる" : "Build my trip")}</span><b aria-hidden="true"><Icon name="arrow" size={19} /></b>
+            : (locale === "ja" ? "この場所で旅程を作る" : "Build my trip with these places")}</span><b aria-hidden="true"><Icon name="arrow" size={19} /></b>
       </button>
 
       <details className="planner-advanced-disclosure" open={buildMode === "custom" || undefined}>

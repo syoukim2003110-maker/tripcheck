@@ -76,17 +76,27 @@ export function useTripPersistence({
 
   useEffect(() => {
     if (!pendingSharedBuild) return;
-    setPendingSharedBuild(false);
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) setPendingSharedBuild(false);
+    });
     void buildPlan({ preserveEdits: true });
+    return () => { cancelled = true; };
     // buildPlan reads the freshly hydrated state from this render on purpose.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingSharedBuild]);
 
   useEffect(() => {
+    let cancelled = false;
     try {
       const stored = window.localStorage.getItem("tripcheck.passportExpiry");
-      if (stored && /^\d{4}-\d{2}-\d{2}$/.test(stored)) setPassportExpiry(stored);
+      if (stored && /^\d{4}-\d{2}-\d{2}$/.test(stored)) {
+        queueMicrotask(() => {
+          if (!cancelled) setPassportExpiry(stored);
+        });
+      }
     } catch { /* storage unavailable (private mode) — the field just starts empty */ }
+    return () => { cancelled = true; };
   }, []);
 
   // Save meaningful user-authored changes after a short quiet period. The

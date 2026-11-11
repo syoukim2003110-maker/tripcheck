@@ -1,3 +1,5 @@
+@import "maplibre-gl/dist/maplibre-gl.css";
+
 :root {
   /* v1.1 spec §10.2 colour tokens (Calm / Editorial / Precise / Warm). */
   --pl-bg: #f7f7f4;
@@ -95,9 +97,9 @@ body:has(.trip-planner-app) {
 }
 .planner-brand-mark {
   align-items: center;
-  background: var(--pl-ink);
-  border-radius: 10px;
-  color: white;
+  background: var(--pl-accent-soft);
+  border-radius: 50%;
+  color: var(--pl-accent);
   display: flex;
   grid-row: 1 / 3;
   height: 32px;
@@ -105,15 +107,16 @@ body:has(.trip-planner-app) {
   width: 32px;
 }
 .planner-brand b {
-  font-family: var(--pl-display);
-  font-size: 19px;
-  font-weight: 400;
-  letter-spacing: 0.03em;
+  font-family: inherit;
+  font-size: 20px;
+  font-weight: 850;
+  letter-spacing: -0.03em;
   line-height: 1;
 }
 .planner-brand small { color: var(--pl-muted); font-size: 12px; grid-column: 2; letter-spacing: 0.01em; margin-top: 2px; }
 
 .planner-top-actions { align-items: center; display: flex; gap: 10px; pointer-events: auto; }
+.planner-mobile-planbar { display: none; }
 .planner-privacy {
   align-items: center;
   backdrop-filter: blur(12px);
@@ -198,6 +201,121 @@ body:has(.trip-planner-app) {
   padding: 6px 18px;
 }
 .planner-map-retry:hover { border-color: var(--pl-ink); }
+
+/* Key-free map overview. OpenFreeMap supplies the visual tiles; the local SVG
+   underlay keeps real coordinates visible without any remote dependency.
+   Measured geometry stays solid and visit-order connectors stay dashed. */
+.planner-zero-map { background: #eef2e9; inset: 0; overflow: hidden; position: absolute; }
+.planner-zero-map > svg { height: 100%; width: 100%; }
+.planner-openfree-map,
+.planner-zero-map-fallback { inset: 0; position: absolute; transition: opacity 180ms ease; }
+.planner-openfree-map { opacity: 0; z-index: 1; }
+.planner-openfree-map.maplibregl-map { font-family: inherit; }
+.planner-zero-map-fallback { opacity: 1; z-index: 0; }
+.planner-zero-map.is-provider-ready .planner-openfree-map { opacity: 1; }
+.planner-zero-map.is-provider-ready .planner-zero-map-fallback { opacity: 0; pointer-events: none; }
+.planner-openfree-map .maplibregl-ctrl-bottom-left,
+.planner-openfree-map .maplibregl-ctrl-bottom-right { bottom: 54px; }
+.planner-openfree-map .maplibregl-ctrl-attrib { background: rgb(255 255 255 / 88%); color: var(--pl-ink-2); font-size: 11px; }
+.planner-openfree-map .maplibregl-ctrl-attrib a { color: inherit; }
+.planner-openfree-map .maplibregl-ctrl-group { border: 1px solid var(--pl-line); border-radius: 10px; box-shadow: var(--pl-shadow-soft); overflow: hidden; }
+.planner-openfree-map .maplibregl-ctrl button { cursor: pointer !important; }
+.planner-openfree-pin {
+  align-items: center;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--pl-ink);
+  display: grid;
+  justify-items: center;
+  min-width: 42px;
+  outline: none;
+  padding: 0;
+}
+.planner-openfree-pin > span {
+  align-items: center;
+  background: var(--zero-pin-color);
+  border: 2px solid white;
+  border-radius: 999px;
+  box-shadow: 0 3px 10px rgb(11 11 14 / 22%);
+  color: white;
+  display: inline-flex;
+  font-size: 13px;
+  font-weight: 850;
+  height: 32px;
+  justify-content: center;
+  line-height: 1;
+  width: 32px;
+}
+.planner-openfree-pin > small {
+  background: rgb(255 255 255 / 88%);
+  border-radius: 999px;
+  box-shadow: 0 1px 5px rgb(11 11 14 / 12%);
+  color: var(--pl-ink);
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.25;
+  margin-top: 3px;
+  max-width: 160px;
+  overflow: hidden;
+  padding: 2px 6px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.planner-openfree-pin:not(.is-active-day):not(.is-food):not(.is-hotel):not(.is-recommendation) { opacity: 0.52; }
+.planner-openfree-pin.is-filler > span { background: white; border: 3px dashed var(--zero-pin-color); color: var(--zero-pin-color); }
+.planner-openfree-pin.is-selected > span,
+.planner-openfree-pin:focus-visible > span { box-shadow: 0 0 0 3px white, 0 0 0 6px var(--pl-ink), 0 5px 14px rgb(11 11 14 / 24%); }
+.planner-zero-map-retry {
+  background: rgb(255 255 255 / 94%);
+  border: 1px solid var(--pl-control-border);
+  border-radius: 999px;
+  bottom: 82px;
+  box-shadow: var(--pl-shadow-soft);
+  color: var(--pl-ink);
+  font-size: 12px;
+  font-weight: 750;
+  left: 16px;
+  min-height: 40px;
+  padding: 6px 13px;
+  position: absolute;
+  z-index: 4;
+}
+.planner-zero-map.is-coordinate-picking > svg { cursor: crosshair !important; }
+.planner-zero-map-water { fill: #d8e8e6; opacity: 0.74; }
+.planner-zero-map-terrain { fill: none; opacity: 0.42; stroke: #c6d1c4; stroke-width: 48; }
+.planner-zero-map-terrain.is-secondary { opacity: 0.28; stroke-width: 30; }
+.planner-zero-route path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.planner-zero-route:not(.is-active) { opacity: 0.34; }
+.planner-zero-route-outline { stroke: rgb(255 255 255 / 92%); stroke-width: 11; }
+.planner-zero-route.is-measured > path:last-child { stroke-width: 5.5; }
+.planner-zero-route.is-estimated { fill: none; opacity: 0.45; stroke-dasharray: 9 13; stroke-linecap: round; stroke-width: 3; }
+.planner-zero-route.is-estimated.is-active { opacity: 0.8; }
+.planner-zero-pin,
+.planner-zero-special-pin { cursor: pointer !important; outline: none; }
+.planner-zero-pin-halo { fill: white; filter: url(#zero-map-shadow); opacity: 0.94; }
+.planner-zero-pin-dot { fill: var(--zero-pin-color); stroke: white; stroke-width: 2; }
+.planner-zero-pin:not(.is-active-day) { opacity: 0.48; }
+.planner-zero-pin.is-filler .planner-zero-pin-dot { fill: white; stroke: var(--zero-pin-color); stroke-dasharray: 4 3; stroke-width: 3; }
+.planner-zero-pin.is-filler .planner-zero-pin-glyph { fill: var(--zero-pin-color); }
+.planner-zero-pin.is-hotel .planner-zero-pin-dot { fill: var(--pl-good); }
+.planner-zero-pin.is-meal .planner-zero-pin-dot { fill: #e88032; }
+.planner-zero-pin.is-selected .planner-zero-pin-halo,
+.planner-zero-pin:focus-visible .planner-zero-pin-halo { fill: rgb(255 255 255 / 100%); stroke: var(--pl-ink); stroke-width: 2; }
+.planner-zero-pin-glyph { fill: white; font-size: 15px; font-weight: 850; pointer-events: none; }
+.planner-zero-pin-label,
+.planner-zero-special-label { fill: var(--pl-ink); font-size: 13px; font-weight: 750; paint-order: stroke; pointer-events: none; stroke: rgb(255 255 255 / 94%); stroke-linejoin: round; stroke-width: 5px; }
+.planner-zero-special-pin > circle { fill: white; filter: url(#zero-map-shadow); stroke: #7461a8; stroke-width: 3; }
+.planner-zero-special-pin > text:not(.planner-zero-special-label) { fill: #66509f; font-size: 14px; font-weight: 900; }
+.planner-zero-special-pin.is-food > circle { stroke: #e06f43; }
+.planner-zero-special-pin.is-food > text:not(.planner-zero-special-label) { fill: #e06f43; }
+.planner-zero-special-pin.is-hotel > circle { stroke: var(--pl-good); }
+.planner-zero-special-pin.is-hotel > text:not(.planner-zero-special-label) { fill: var(--pl-good); }
+.planner-zero-special-pin.is-selected > circle,
+.planner-zero-special-pin:focus-visible > circle { stroke-width: 5; }
+.planner-zero-scale path { fill: none; stroke: var(--pl-ink); stroke-width: 2; }
+.planner-zero-scale text { fill: var(--pl-ink); font-size: 12px; font-weight: 700; }
+.planner-zero-map-pick-hint { background: var(--pl-ink); border-radius: 999px; bottom: 72px; color: white; font-size: 13px; font-weight: 750; left: 50%; margin: 0; padding: 9px 14px; position: absolute; transform: translateX(-50%); white-space: nowrap; z-index: 4; }
 
 .planner-map-scope {
   backdrop-filter: blur(12px);
@@ -555,6 +673,30 @@ body:has(.trip-planner-app) {
 .planner-choice > span { color: var(--pl-muted); display: block; font-size: 12px; font-weight: 700; letter-spacing: 0.04em; margin-bottom: 7px; }
 .planner-composer textarea { background: transparent; border: 0; color: var(--pl-ink); font: inherit; font-size: 15px; font-weight: 550; height: 172px; line-height: 1.7; outline: 0; padding: 0; resize: none; width: 100%; }
 .planner-composer textarea::placeholder { color: var(--pl-muted); font-weight: 450; }
+.planner-place-token-list { align-content: flex-start; display: flex; flex-wrap: wrap; gap: 9px; min-height: 172px; padding: 2px 0; }
+.planner-composer.is-editing .planner-place-token-list { display: none; }
+.planner-composer.has-tokens:not(.is-editing) textarea { height: 1px; opacity: 0; overflow: hidden; padding: 0; pointer-events: none; position: absolute; width: 1px; }
+.planner-composer .planner-place-token,
+.planner-composer .planner-place-token-edit {
+  align-items: center;
+  align-self: flex-start;
+  background: white;
+  border: 1px solid var(--pl-line);
+  border-radius: 10px;
+  box-shadow: 0 1px 2px rgb(11 11 14 / 5%);
+  color: var(--pl-ink);
+  display: inline-flex;
+  font-size: 14px;
+  font-weight: 650;
+  gap: 9px;
+  line-height: 1.3;
+  min-height: 42px;
+  padding: 8px 11px 8px 13px;
+}
+.planner-composer .planner-place-token:hover { border-color: var(--pl-accent); }
+.planner-composer .planner-place-token b { color: var(--pl-muted); font-size: 17px; font-weight: 450; line-height: 1; }
+.planner-composer .planner-place-token-edit { background: transparent; border-style: dashed; box-shadow: none; color: var(--pl-accent-deep); }
+.planner-composer .planner-place-token-edit:hover { background: var(--pl-accent-soft); border-color: var(--pl-accent); }
 .planner-place-selection-confirmed { align-items: center; color: var(--pl-good); display: inline-flex; font-size: 12px; font-weight: 750; gap: 5px; margin-top: 4px; }
 .planner-place-selection-confirmed > span { align-items: center; background: var(--pl-good-soft); border-radius: 50%; display: inline-flex; height: 17px; justify-content: center; width: 17px; }
 .planner-place-suggestion-panel { background: white; border: 1px solid var(--pl-line); border-radius: 14px; box-shadow: 0 12px 30px rgb(11 11 14 / 12%); display: grid; gap: 6px; margin-top: 8px; overflow: hidden; padding: 7px; position: relative; z-index: 15; }
@@ -1090,6 +1232,15 @@ details.planner-excluded { display: block; }
 .planner-start-preview-daynum { align-items: center; border-radius: 999px; color: white; display: inline-flex; flex: 0 0 auto; font-size: 12px; font-weight: 850; height: 22px; justify-content: center; margin-top: 1px; width: 22px; }
 .planner-start-preview-canvas { border-radius: 14px; min-height: 210px; overflow: hidden; position: relative; }
 .planner-start-preview-canvas > svg { height: 100%; left: 0; position: absolute; top: 0; width: 100%; }
+.planner-start-preview-photos { display: grid; gap: 8px; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 12px; position: relative; z-index: 2; }
+.planner-start-preview-photos article { background: rgb(255 255 255 / 94%); border: 1px solid rgb(255 255 255 / 80%); border-radius: 10px; display: grid; gap: 2px; min-width: 0; overflow: hidden; padding: 5px 5px 7px; }
+.planner-start-preview-photo { background-image: url("/tripcheck-preview-sprite.jpg"); background-repeat: no-repeat; background-size: 200% 200%; border-radius: 10px; display: block; height: 62px; margin-bottom: 3px; width: 100%; }
+.planner-start-preview-photo.is-photo-1 { background-position: 0 0; }
+.planner-start-preview-photo.is-photo-2 { background-position: 100% 0; }
+.planner-start-preview-photo.is-photo-3 { background-position: 0 100%; }
+.planner-start-preview-photo.is-photo-4 { background-position: 100% 100%; }
+.planner-start-preview-photos b { font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.planner-start-preview-photos small { color: var(--pl-muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .planner-start-chip svg { flex: 0 0 auto; }
 .planner-start-chip { align-items: center; background: white; border-radius: 999px; box-shadow: var(--pl-shadow-soft); display: inline-flex; font-size: 12px; font-weight: 750; gap: 6px; padding: 8px 11px; position: absolute; z-index: 2; }
 .planner-start-chip { font-size: 11px; padding: 6px 9px; }
@@ -1106,9 +1257,30 @@ details.planner-excluded { display: block; }
 .planner-start-preview-card > div p b { font-size: 12.5px; }
 .planner-start-preview-card > div p small { color: var(--pl-muted); font-size: 12px; }
 @media (min-width: 1120px) {
-  .trip-planner-app.is-places .planner-form-view { max-width: 1180px; }
+  .trip-planner-app.is-places .planner-form-view { max-width: 1320px; }
   .trip-planner-app.is-places .planner-place-step { grid-template-columns: minmax(0, 1.05fr) minmax(360px, 0.95fr); }
   .trip-planner-app.is-places .planner-start-preview { display: block; min-height: 520px; }
+}
+
+/* At wide desktop widths a comparison task deserves its own column. The map
+   remains visible in the middle instead of being hidden behind an oversized
+   floating card. Narrower screens keep the existing drawer behaviour. */
+@media screen and (min-width: 1280px) {
+  .trip-planner-app.is-result:has(.planner-inspector.is-recommendations),
+  .trip-planner-app.is-result:has(.planner-inspector.is-food) { --pl-rail: 36vw; }
+  .planner-inspector.is-recommendations,
+  .planner-inspector.is-food {
+    border-left: 1px solid var(--pl-line);
+    border-radius: 0;
+    bottom: 0;
+    box-shadow: -12px 0 32px rgb(11 11 14 / 8%);
+    padding: 78px 20px 24px;
+    right: 0;
+    top: 0;
+    width: min(400px, 31vw);
+  }
+  .planner-inspector.is-recommendations .planner-inspector-close,
+  .planner-inspector.is-food .planner-inspector-close { top: 22px; }
 }
 
 .planner-place-country { background: white; border: 1px solid var(--pl-line); border-radius: 14px; margin-top: 12px; padding: 11px 13px; }
@@ -1155,6 +1327,8 @@ details.planner-excluded { display: block; }
 .planner-resolved-places li > span:nth-child(2) { display: grid; min-width: 0; }
 .planner-resolved-places li > span:nth-child(2) b { font-size: 13px; overflow-wrap: anywhere; }
 .planner-resolved-places li > span:nth-child(2) small { color: var(--pl-muted); font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
+.planner-place-provider-credit { color: var(--pl-muted); font-size: 11px; line-height: 1.4; margin: -8px 2px 12px; text-align: right; }
+.planner-place-provider-credit a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
 .planner-place-candidates { background: white; border: 1px solid var(--pl-control-border); border-radius: 10px; color: var(--pl-ink-2); font: inherit; font-size: 12px; margin-top: 3px; max-width: 100%; min-height: 32px; padding: 3px 24px 3px 7px; }
 /* v1.1 §5.2: an ambiguous place asks one question with at most three inline
    candidates; a not-found place offers retry, edit and a manual pin. */
@@ -1215,6 +1389,7 @@ details.planner-excluded { display: block; }
 .planner-date-field > small { color: var(--pl-muted); font-size: 12px; line-height: 1.45; }
 
 .planner-mobile-result-toggle { display: none; }
+.planner-map-teaser { display: none; }
 /* v3.1 §6.2: no tile between the headline and the day rail. What was a boxed
    panel — label, two lines of arithmetic, a button on its own row — is now the
    warning and its action on one line, with the arithmetic behind a question
@@ -1346,10 +1521,12 @@ details.planner-excluded { display: block; }
 
 /* v3.1 §5.2: the movement is a card — mode mark, what it is, where it goes,
    and a chevron that says the row opens. */
-.planner-leg { color: var(--pl-muted); display: block; margin-left: 50px; padding: 3px 0; position: relative; }
-.planner-leg > summary { align-items: center; background: var(--pl-panel); border: 1px solid var(--pl-line); border-radius: 14px; display: flex; gap: 10px; list-style: none; min-height: 48px; padding: 7px 10px; transition: border-color 130ms; }
+.planner-leg { color: var(--pl-muted); display: block; padding: 3px 0; position: relative; }
+.planner-leg > summary { align-items: center; background: var(--pl-panel); border: 1px solid var(--pl-line); border-radius: 14px; display: grid; gap: 10px; grid-template-columns: 40px 30px minmax(0, 1fr) 16px; list-style: none; min-height: 56px; padding: 7px 10px 7px 0; transition: border-color 130ms; }
 .planner-leg > summary:hover { border-color: var(--pl-control-border); }
 .planner-leg > summary::-webkit-details-marker { display: none; }
+.planner-leg-times { align-items: center; align-self: stretch; display: grid; font-size: 11px; font-variant-numeric: tabular-nums; font-weight: 700; justify-items: center; line-height: 1; padding: 2px 0; }
+.planner-leg-times i { background: var(--pl-line); height: 8px; width: 1px; }
 .planner-leg-mark { align-items: center; background: var(--pl-tile); border-radius: 10px; color: var(--pl-ink-2); display: flex; flex: 0 0 auto; height: 30px; justify-content: center; width: 30px; }
 .planner-leg-body { display: grid; flex: 1 1 auto; gap: 1px; min-width: 0; }
 .planner-leg-body b { color: var(--pl-ink); font-size: 13px; font-weight: 700; }
@@ -1548,6 +1725,14 @@ details.planner-excluded { display: block; }
 
 .planner-inspector-meta { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 14px; }
 .planner-inspector-meta span { background: var(--pl-tile); border-radius: 10px; font-size: 12.5px; font-weight: 650; padding: 5px 9px; }
+.planner-inspector-schedule { align-items: center; border-bottom: 1px solid var(--pl-line); display: flex; font-size: 12.5px; gap: 10px; justify-content: space-between; margin-top: 14px; padding-bottom: 12px; }
+.planner-inspector-schedule span { align-items: center; display: inline-flex; gap: 6px; }
+.planner-inspector-schedule b { font-size: 12.5px; white-space: nowrap; }
+.planner-inspector-nav { display: grid; gap: 6px; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); margin-top: 10px; }
+.planner-inspector-nav button { background: white; border: 1px solid var(--pl-line); border-radius: 10px; color: var(--pl-ink); font: inherit; font-size: 12px; font-weight: 750; min-height: 40px; padding: 6px 8px; }
+.planner-inspector-nav button:last-child { text-align: right; }
+.planner-inspector-nav button:disabled { color: var(--pl-muted); opacity: .42; }
+.planner-inspector-nav span { align-self: center; color: var(--pl-muted); font-size: 11px; font-weight: 700; text-align: center; white-space: nowrap; }
 .planner-inspector-meta .is-booked { background: var(--pl-accent-soft); color: var(--pl-accent-deep); }
 .planner-inspector-meta .is-must { background: #edeafc; color: #5b3ea8; }
 .planner-inspector-meta .is-optional { color: var(--pl-muted); }
@@ -1896,6 +2081,28 @@ div.planner-route-ideas-empty { display: grid; gap: 8px; }
   .planner-brand b { font-size: 15px; }
   .planner-brand small { display: none; }
   .planner-new-trip { font-size: 0; gap: 0; min-height: 36px; padding: 0 11px; }
+  .trip-planner-app.is-result .planner-brand,
+  .trip-planner-app.is-result .planner-top-actions { display: none; }
+  .trip-planner-app.is-result .planner-topbar { background: white; border-bottom: 1px solid var(--pl-line); z-index: 70; }
+  .planner-mobile-planbar {
+    align-items: center;
+    display: grid;
+    gap: 8px;
+    grid-template-columns: 44px minmax(0, 1fr) auto 44px;
+    height: 56px;
+    pointer-events: auto;
+    width: 100%;
+  }
+  .planner-mobile-planbar > b { font-size: 15px; text-align: center; }
+  .planner-mobile-planbar-back,
+  .planner-mobile-top-menu > summary { align-items: center; background: transparent; border: 0; color: var(--pl-ink); display: flex; font-size: 25px; height: 44px; justify-content: center; list-style: none; width: 44px; }
+  .planner-mobile-top-menu > summary { font-size: 16px; font-weight: 850; letter-spacing: 1px; }
+  .planner-mobile-top-menu > summary::-webkit-details-marker { display: none; }
+  .planner-mobile-saved { align-items: center; color: var(--pl-ink-2); display: inline-flex; font-size: 12px; font-weight: 700; gap: 4px; white-space: nowrap; }
+  .planner-mobile-top-menu { position: relative; }
+  .planner-mobile-top-menu > div { background: white; border: 1px solid var(--pl-line); border-radius: 14px; box-shadow: var(--pl-shadow); display: grid; gap: 3px; padding: 6px; position: absolute; right: 0; top: 48px; width: 150px; }
+  .planner-mobile-top-menu > div button { background: transparent; border: 0; border-radius: 10px; color: var(--pl-ink); font: inherit; font-size: 12.5px; font-weight: 700; min-height: 40px; padding: 7px 9px; text-align: left; }
+  .trip-planner-app.is-result.is-mobile-timeline .planner-result-header { display: none; }
 
   .planner-sheet {
     border-radius: 14px 18px 0 0;
@@ -1943,38 +2150,32 @@ div.planner-route-ideas-empty { display: grid; gap: 8px; }
     height: 100dvh;
     inset: 0;
   }
-  .trip-planner-app.is-result.is-mobile-timeline .planner-result-view { padding: 62px 16px 96px; }
+  .trip-planner-app.is-result.is-mobile-timeline .planner-result-view { padding: 118px 16px 32px; }
   /* The map tab is the map. The sheet has nothing to add over it, and the one
      control that matters there — the switch back — is anchored to the
      viewport, not to the sheet. */
   .trip-planner-app.is-result.is-mobile-map .planner-sheet { display: none; }
-  /* Anchored to the bottom of the viewport rather than the top of the sheet:
-     as a sheet row it spent 52px of the first viewport, and as a sticky row it
-     sat directly on top of the sticky day rail. Down here it costs the
-     itinerary nothing and stays reachable at any scroll position. */
+  /* The reference makes this a conventional underline tab bar immediately
+     below the 56px app bar. It is shared by the itinerary, the full map and
+     an open stop sheet, so the user never loses orientation. */
   .planner-mobile-result-toggle {
-    backdrop-filter: blur(12px);
-    background: rgb(255 255 255 / 92%);
-    border: 1px solid rgb(11 11 14 / 8%);
-    border-radius: 999px;
-    bottom: max(14px, env(safe-area-inset-bottom, 0px));
-    box-shadow: var(--pl-shadow-soft);
-    display: flex;
-    left: 50%;
-    padding: 3px;
+    background: rgb(255 255 255 / 96%);
+    border-bottom: 1px solid var(--pl-line);
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    height: 52px;
+    left: 0;
+    padding: 0 20px;
     position: fixed;
-    transform: translateX(-50%);
+    right: 0;
+    top: 56px;
     z-index: 60;
   }
-  /* An open inspector owns the bottom of the screen, and its own actions sit
-     there. Switching to the map is not what you came to that sheet for, so
-     the switch stands down until the sheet is closed. */
-  .trip-planner-app:has(.planner-inspector) .planner-mobile-result-toggle { display: none; }
-  .planner-mobile-result-toggle button { background: transparent; border: 0; border-radius: 999px; color: var(--pl-muted); font-size: 12px; font-weight: 750; min-height: 44px; padding: 0 18px; }
-  .planner-mobile-result-toggle button.is-active { background: var(--pl-ink); color: white; }
+  .planner-mobile-result-toggle button { background: transparent; border: 0; border-bottom: 3px solid transparent; border-radius: 0; color: var(--pl-muted); font-size: 14px; font-weight: 750; min-height: 44px; padding: 0 18px; }
+  .planner-mobile-result-toggle button.is-active { border-bottom-color: var(--pl-accent); color: var(--pl-accent-deep); }
   /* TC-055: the day rail is the topmost sticky row now that the view switch
      has left the sheet, so it parks directly under the floating header. */
-  .planner-day-tabs { top: 58px; }
+  .planner-day-tabs { top: 108px; }
   /* bottom-sheet grab handle */
   .planner-sheet::before {
     background: #d9d9e0;
@@ -2058,6 +2259,28 @@ div.planner-route-ideas-empty { display: grid; gap: 8px; }
      (hotel row, meal/gap recommendation rows, per-stop Google Maps link) and
      the 地図 view shows the row itself. */
   .trip-planner-app.is-result.is-mobile-timeline .planner-map-empty { display: none; }
+  .planner-map-teaser {
+    align-items: center;
+    background: linear-gradient(135deg, #edf4ed 0%, #fbfaf5 48%, #e9f3f4 100%);
+    border: 1px solid var(--pl-line);
+    border-radius: 14px;
+    color: var(--pl-ink);
+    display: grid;
+    gap: 12px;
+    grid-template-columns: 76px minmax(0, 1fr) 20px;
+    margin: 14px 0 4px;
+    min-height: 78px;
+    overflow: hidden;
+    padding: 10px 14px 10px 8px;
+    text-align: left;
+    width: 100%;
+  }
+  .planner-map-teaser-route { height: 58px; position: relative; width: 76px; }
+  .planner-map-teaser-route::before { border-left: 4px solid #2878d4; border-radius: 50%; content: ""; height: 48px; left: 35px; position: absolute; top: 4px; transform: rotate(28deg); width: 22px; }
+  .planner-map-teaser-route i { background: white; border: 3px solid #2878d4; border-radius: 50%; height: 10px; left: 27px; position: absolute; top: 5px; width: 10px; }
+  .planner-map-teaser-route i:nth-child(2) { left: 49px; top: 27px; }
+  .planner-map-teaser-route i:nth-child(3) { left: 36px; top: 47px; }
+  .planner-map-teaser b { font-size: 15px; }
   .planner-meal-chip { flex: 0 0 auto; }
   .planner-open-maps { font-size: 0; gap: 0; padding: 0 13px; }
 
@@ -2124,6 +2347,9 @@ div.planner-route-ideas-empty { display: grid; gap: 8px; }
   .planner-result-header h1 { font-size: 17px; line-height: 1.15; }
   .planner-result-actions { display: grid; grid-template-columns: 62px 44px; width: auto; }
   .planner-result-actions button { font-size: 12px; min-height: 44px; padding: 7px 6px; white-space: normal; }
+  /* The compact verdict sentence is already represented by the warning strip;
+     the persistent mobile app bar now owns edit, saved state and more actions. */
+  .trip-planner-app.is-result.is-mobile-timeline .planner-result-header { display: none; }
   /* Gate E: one verdict strip. The card used to be a tile of its own — its
      own background, border, padding and margins — carrying a label that
      repeated the headline above it and a button on a row of its own. On a

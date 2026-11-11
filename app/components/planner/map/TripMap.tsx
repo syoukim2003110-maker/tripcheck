@@ -9,6 +9,7 @@
 // state is the mobile legend disclosure, which is view-only (TC-040).
 import { useState, type CSSProperties, type ReactNode } from "react";
 import PlannerGoogleMap, { type PlannerGoogleMapProps } from "../../../PlannerGoogleMap";
+import ZeroCostMap from "./ZeroCostMap";
 import Icon from "../../../PlannerIcons";
 import type { BuiltTripPlan, FoodRecommendationSlot } from "../../../../lib/trip-builder.ts";
 import type { HotelCandidate } from "../../../../lib/google-hotels.ts";
@@ -147,8 +148,36 @@ export default function TripMap({
   // TC-040: on phones the legend collapses to a small toggle so it stays
   // reachable without covering the map strip; desktop always shows the body.
   const [legendExpanded, setLegendExpanded] = useState(false);
+  const fallbackLayers = mapDayLayers.length > 0
+    ? mapScope === "all" ? mapDayLayers : mapDayLayers.filter((layer) => layer.dayIndex === activeDay)
+    : [{
+        dayIndex: activeDay,
+        dayColor: plannerDayColors[activeDay % plannerDayColors.length],
+        stops: [
+          ...(displayedMapBase ? [{
+            id: displayedMapBase.id,
+            name: displayedMapBase.name,
+            latitude: displayedMapBase.latitude,
+            longitude: displayedMapBase.longitude,
+            kind: "hotel" as const,
+          }] : []),
+          ...displayedMapStops.map((stop, index) => ({
+            id: stop.id,
+            name: stop.name,
+            latitude: stop.latitude,
+            longitude: stop.longitude,
+            sequence: index + 1,
+            kind: mapItemKinds?.[stop.id] ?? "anchor",
+            warning: mapWarningStopIds?.includes(stop.id) ?? false,
+          })),
+        ],
+      }];
   return (
-    <div className={`planner-map-canvas${displayedMapStops.length > 8 ? " is-dense" : ""}`} role="region" aria-label={text.mapReady}>
+    <div
+      aria-label={mapsApiKey ? text.mapReady : locale === "ja" ? "旅程の概略地図" : "Trip route overview"}
+      className={`planner-map-canvas${displayedMapStops.length > 8 ? " is-dense" : ""}`}
+      role="region"
+    >
       {hasPlan ? (
         <div className="planner-map-scope" role="group" aria-label={locale === "ja" ? "地図に表示する日程" : "Days shown on map"}>
           <button aria-pressed={mapScope === "all"} className={mapScope === "all" ? "is-active" : ""} onClick={() => onChangeMapScope("all")} type="button">{locale === "ja" ? "全日程" : "All days"}</button>
@@ -191,7 +220,7 @@ export default function TripMap({
           </div>
         </div>
       ) : null}
-      {inputStep !== "places" || hasPlan || isBuilding ? <PlannerGoogleMap
+      {inputStep !== "places" || hasPlan || isBuilding ? mapsApiKey ? <PlannerGoogleMap
         apiKey={mapsApiKey}
         base={displayedMapBase}
         endBase={hasPlan ? dayEndBase : null}
@@ -231,7 +260,28 @@ export default function TripMap({
         selectedStopId={inspector?.kind === "stop" ? inspector.stopId : inspector?.kind === "hotel" ? displayedMapBase?.id ?? null : mapFocusedStopId}
         stops={displayedMapStops}
         warningStopIds={mapWarningStopIds}
-      /> : null}
+      /> : (
+        <ZeroCostMap
+          coordinatePick={manualPinCoordinate}
+          coordinatePickActive={!hasPlan && inputStep === "conditions" && manualPinTarget !== null}
+          dayIndex={activeDay}
+          dayLayers={fallbackLayers}
+          destination={activeDestination}
+          foodPins={P0_CORE_ONLY ? [] : foodPins}
+          hotelPins={P0_CORE_ONLY ? [] : hotelPins}
+          locale={locale}
+          onPickCoordinate={onPickCoordinate}
+          onSelectDayStop={onSelectDayStop}
+          onSelectFood={onSelectFood}
+          onSelectHotelCandidate={onSelectHotelCandidate}
+          onSelectRecommendation={onSelectRecommendation}
+          recommendationPins={P0_CORE_ONLY ? [] : recommendationPins}
+          selectedFoodPinId={inspector?.kind === "food" ? inspector.candidateId ?? null : null}
+          selectedHotelPinId={selectedHotel?.id ?? null}
+          selectedRecommendationPinId={selectedRouteRecommendationId}
+          selectedStopId={inspector?.kind === "stop" ? inspector.stopId : inspector?.kind === "hotel" ? displayedMapBase?.id ?? null : mapFocusedStopId}
+        />
+      ) : null}
 
       {!day && !hasPlan && !isBuilding && displayedMapStops.length === 0 ? <div className="planner-map-empty"><span aria-hidden="true"><Icon name="pin" size={16} /></span><p>{text.mapEmpty}</p></div> : null}
 

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { browserGoogleMapsApiKey } from "../../lib/browser-map-provider";
 import StructuredData from "../StructuredData";
 import TripPlannerApp from "../TripPlannerApp";
 
@@ -11,5 +12,5 @@ export const metadata: Metadata = {
 };
 
 export default function JapaneseHome() {
-  return <div lang="ja"><StructuredData locale="ja" /><TripPlannerApp initialLocale="ja" mapsApiKey={process.env.GOOGLE_MAPS_BROWSER_API_KEY ?? ""} /></div>;
+  return <div lang="ja"><StructuredData locale="ja" /><TripPlannerApp initialLocale="ja" mapsApiKey={browserGoogleMapsApiKey()} /></div>;
 }

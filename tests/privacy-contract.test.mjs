@@ -172,7 +172,7 @@ test("discloses bounded AI enrichment and on-demand public-web search", async ()
   assert.match(source, /rejects sources verifiably older than 90 days/);
   assert.match(source, /hotel-search anchor coordinates to Rakuten Web Service/);
   assert.match(source, /does not send your itinerary text, travel dates, airport details or completed schedule to Rakuten/);
-  assert.match(source, /automatically sends only the origin and destination coordinates/);
+  assert.match(source, /TripCheck sends only the origin and destination coordinates/);
   assert.match(source, /encoded route geometry so the map can follow actual roads and transit paths/);
   assert.match(source, /supplied candidate names, public addresses, place types, meal period and area to Anthropic/);
   assert.match(source, /AI cannot add a restaurant or invent ratings, opening hours, prices or menu facts/);
@@ -244,7 +244,7 @@ test("every paid client endpoint is disclosed on the privacy page", async () => 
   const disclosed = {
     "live-routes": /travel times|route/,
     "place-suggestions": /a short candidate list/,
-    "place-resolution": /so Google Maps Platform can resolve them/,
+    "place-resolution": /Paid Google resolution can likewise be enabled/,
     "place-intelligence": /opening-hour fields/,
     "place-intelligence/fresh": /AI only writes short explanation labels/,
     "hotel-recommendations": /Automatic hotel discovery sends/,
@@ -278,4 +278,18 @@ test("every paid client endpoint is disclosed on the privacy page", async () => 
   assert.ok(transportStart >= 0 && transportEnd > transportStart, "suggestion transport slice anchors missing");
   const transport = suggestionClient.slice(transportStart, transportEnd);
   assert.doesNotMatch(transport, /itinerary|queries|hotelQuery|resolvedStops/);
+});
+
+test("discloses the key-free map and explicit OpenStreetMap lookup", async () => {
+  const privacySource = await readFile(privacySourceUrl, "utf8");
+
+  assert.match(privacySource, /OpenFreeMap style by default/);
+  assert.match(privacySource, /tiles\.openfreemap\.org/);
+  assert.match(privacySource, /Wikipedia and Wikidata \(operated by the Wikimedia Foundation\)/);
+  assert.match(privacySource, /Photon search service operated by komoot/);
+  assert.match(privacySource, /public OpenStreetMap Nominatim service/);
+  assert.match(privacySource, /never receive your dates, times, notes or the rest of your itinerary/);
+  assert.match(privacySource, /Nominatim is never used for autocomplete/);
+  assert.match(privacySource, /Paid Google place resolution, Google autocomplete and Google Maps display are disabled by default/);
+  assert.match(privacySource, /© OpenStreetMap contributors/);
 });

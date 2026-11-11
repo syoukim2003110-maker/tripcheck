@@ -63,7 +63,6 @@ async function freezeAndCalm(page) {
     }
     FrozenDate.parse = RealDate.parse;
     FrozenDate.UTC = RealDate.UTC;
-    // eslint-disable-next-line no-global-assign
     window.Date = FrozenDate;
   }, FROZEN_MS);
 }

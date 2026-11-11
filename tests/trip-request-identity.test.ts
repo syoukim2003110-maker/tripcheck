@@ -89,7 +89,7 @@ test("sessionStorage failures fall back to a stable in-memory identity", () => {
   assert.equal(identity.rotateToken(), "trip_rotated00000000");
 });
 
-test("all paid planning clients send the same trip header and planning uses the narrow scope", async () => {
+test("all planning provider clients send the same trip header and planning uses the narrow scope", async () => {
   const calls: Array<{ url: string; tripToken: string | null; body: Record<string, unknown> }> = [];
   const originalFetch = globalThis.fetch;
   const fakeFetch = (async (input: string | URL | Request, init?: RequestInit) => {
@@ -103,9 +103,9 @@ test("all paid planning clients send the same trip header and planning uses the 
       body,
     });
 
-    if (url === "/api/place-resolution") {
+    if (url === "/api/place-resolution/open") {
       return Response.json({
-        provider: "google_maps",
+        provider: "openstreetmap_nominatim",
         fetchedAt: "2026-08-09T00:00:00.000Z",
         places: [],
         hotel: null,
@@ -170,7 +170,7 @@ test("all paid planning clients send the same trip header and planning uses the 
   }
 
   assert.deepEqual(calls.map((call) => call.url), [
-    "/api/place-resolution",
+    "/api/place-resolution/open",
     "/api/place-intelligence",
     "/api/place-intelligence/fresh",
     "/api/live-routes",

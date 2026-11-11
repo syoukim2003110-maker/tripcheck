@@ -197,7 +197,7 @@ function policies(overrides: Partial<DurableQuotaPolicies["live_routes"]> = {}):
 }
 
 function environment(overrides: Record<string, string | undefined> = {}) {
-  return { TRIPCHECK_QUOTA_HASH_SECRET: secret, ...overrides };
+  return { TRIPCHECK_PAID_API_ENABLED: "true", TRIPCHECK_QUOTA_HASH_SECRET: secret, ...overrides };
 }
 
 test("schema keeps only constrained opaque counters and uses CHECK for atomic cap rollback", () => {
@@ -279,7 +279,7 @@ test("missing, unconfigured, or unavailable D1 fails closed", async () => {
   assert.equal(missing.ok, false);
   if (!missing.ok) assert.equal(missing.code, "quota_store_unavailable");
 
-  const missingSecret = await enforceDurableProviderQuota(baseRequest, new FakeD1(), {});
+  const missingSecret = await enforceDurableProviderQuota(baseRequest, new FakeD1(), { TRIPCHECK_PAID_API_ENABLED: "true" });
   assert.equal(missingSecret.ok, false);
   if (!missingSecret.ok) assert.equal(missingSecret.code, "quota_store_unavailable");
 
@@ -298,6 +298,7 @@ test("missing, unconfigured, or unavailable D1 fails closed", async () => {
 
 test("global and provider kill switches deny without touching D1", async () => {
   for (const [request, env] of [
+    [baseRequest, { TRIPCHECK_QUOTA_HASH_SECRET: secret }],
     [baseRequest, environment({ TRIPCHECK_PAID_API_DISABLED: "true" })],
     [baseRequest, environment({ TRIPCHECK_GOOGLE_API_DISABLED: "1" })],
     [{ ...baseRequest, provider: "anthropic", operation: "fresh_voices" }, environment({ TRIPCHECK_ANTHROPIC_API_DISABLED: "yes" })],

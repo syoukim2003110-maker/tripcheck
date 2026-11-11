@@ -7,6 +7,12 @@
 export const PLANNING_BUDGET = Object.freeze({
   routeEvents: 20,
   placeResolutions: 12,
+  /**
+   * Keyless lookups cost nothing per call, so the ceiling is about being a
+   * polite client and a bounded request, not about money. Thirty names is a
+   * full week's wishlist.
+   */
+  openPlaceResolutions: 30,
   openingHours: 10,
 });
 

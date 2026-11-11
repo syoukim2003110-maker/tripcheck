@@ -49,6 +49,7 @@ export const PROCESS_LOCAL_QUOTA_METADATA = Object.freeze({
 });
 
 export const PAID_API_KILL_SWITCHES = Object.freeze({
+  optIn: "TRIPCHECK_PAID_API_ENABLED",
   global: "TRIPCHECK_PAID_API_DISABLED",
   google: "TRIPCHECK_GOOGLE_API_DISABLED",
   anthropic: "TRIPCHECK_ANTHROPIC_API_DISABLED",
@@ -423,7 +424,11 @@ export class PaidProviderGateway {
     if (!requestIsSameOrigin(request, environment)) {
       return { ok: false, code: "forbidden", status: 403, headers: quotaHeaders() };
     }
-    if (enabledFlag(environment[PAID_API_KILL_SWITCHES.global])) {
+    // Positive authorization and an emergency off switch are deliberately
+    // separate. Missing environment cannot silently become permission to
+    // spend merely because a provider key was configured.
+    if (!enabledFlag(environment[PAID_API_KILL_SWITCHES.optIn])
+      || enabledFlag(environment[PAID_API_KILL_SWITCHES.global])) {
       return { ok: false, code: "paid_api_disabled", status: 503, headers: quotaHeaders() };
     }
     if (enabledFlag(environment[PAID_API_KILL_SWITCHES[provider]])) {

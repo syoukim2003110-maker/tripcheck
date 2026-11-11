@@ -42,7 +42,7 @@ test("server-renders the input-first TripCheck itinerary builder", async () => {
   assert.match(html, /Not decided/);
   assert.match(html, /Set hotel, airport or pace/);
   assert.doesNotMatch(html, /Build it for me|Fine-tune it/);
-  assert.match(html, /One place per line\. Pause to see matches, then choose one to avoid same-name mix-ups\./);
+  assert.match(html, /One place per line\. Key-free search runs only when you build; same-name matches are reviewed next\./);
   assert.match(html, /Places &amp; days/);
   assert.match(html, />Itinerary</);
   assert.doesNotMatch(html, />Conditions</);

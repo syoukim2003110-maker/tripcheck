@@ -9,7 +9,7 @@
 // This file is intentionally scanned by the planner-surface contract tests
 // (app/**/*.tsx), which pin the lifecycle rotation, hydration and storage
 // contracts to the code wherever it lives.
-import { useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
 import Icon from "../../PlannerIcons";
 import ErrorState from "./states/ErrorState";
 import LoadingState from "./states/LoadingState";
@@ -322,6 +322,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
   const shareDialogRef = useRef<HTMLElement | null>(null);
   const shareTriggerRef = useRef<HTMLButtonElement | null>(null);
   const analyticsMilestonesRef = useRef<Set<ProductEventName>>(new Set());
+  const pendingSharedBuildSetterRef = useRef<(pending: boolean) => void>(() => undefined);
   const text = ui[locale];
   // The destination model (active destination, request destination and the
   // combobox options) lives in useDestinationModel, called here at the old
@@ -488,10 +489,9 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
     setLockedOrderByDay(Object.fromEntries(Object.entries(shared.lockedOrderByDay ?? {}).map(([day, ids]) => [Number(day), ids])));
     setRemovedStops(safeRemovedStopLabels(shared.removedStops, shared.itinerary, locale));
     setResolutionOverrides(shared.resolutionOverrides ?? []);
-    setPendingSharedBuild(true);
-    // setPendingSharedBuild is stable, but it is destructured from a hook that
-    // runs further down this component, so naming it here would read it in the
-    // temporal dead zone. The callback only ever calls it after a render.
+    // Persistence is wired further down, after the derived trip model. Its
+    // layout-synced bridge is ready before share hydration's passive effect.
+    pendingSharedBuildSetterRef.current(true);
   }, [locale, placeReviewAbortRef, setAmbiguousPlaces, setArrivalAirport, setArrivalTime, setDayEndTarget, setDayEndTimes, setDayOverrides, setDayStartDefault, setDayStartTimes, setDepartureAirport, setDepartureTime, setDestinationChoice, setDetectedDestinationId, setFlightKind, setHasPlan, setHotelQuery, setHotelUsesRecommendations, setInputStep, setIsResolvingPlaces, setItinerary, setLastEntryTimes, setLegModeOverrides, setLockedOrderByDay, setManualAddressResolution, setManualPinTarget, setManualPlaceDrafts, setMaxTransfersPerLeg, setMaxWalkingMinutesPerLeg, setMealPlan, setPace, setPlaceWarning, setPlanReady, setPreviewStops, setRemovedStops, setResolutionOverrides, setResolvedBase, setResolvedStops, setReviewedInputSignature, setTransferBufferMinutes, setTravelPreference, setTripDateTouched, setTripDays, setTripStartDate, setUserStayMinutes]);
 
   useEffect(() => {
@@ -716,6 +716,9 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
     // buildPlan was declared inline here.
     buildPlan: (options) => buildPlanRef.current(options),
   });
+  useLayoutEffect(() => {
+    pendingSharedBuildSetterRef.current = setPendingSharedBuild;
+  }, [setPendingSharedBuild]);
   const updatePassportExpiry = (value: string) => {
     setPassportExpiry(value);
     try {
@@ -1666,6 +1669,11 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
   // paid lookup is owned here with the rest of the provider calls.
   const { placeSuggestions, requestSuggestionsFor } = usePlaceSuggestions({ locale, destination: destinationChoice });
 
+  // This imperative epoch intentionally resets the browser-route budget even
+  // when a rebuild has identical planner inputs.
+  // eslint-disable-next-line react-hooks/refs
+  const routeBudgetKey = `${buildRunRef.current}:${transitConvergenceInputKey}`;
+
   return (
     <main className={`trip-planner-app ${isBuilding ? "is-building" : hasPlan ? `is-result is-mobile-${mobileResultView}` : inputStep === "conditions" ? "is-conditions" : "is-places"}`}>
       {printMode && plan ? (
@@ -1696,6 +1704,26 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
           <span className="planner-brand-mark" aria-hidden="true"><Icon name="mark" size={19} /></span>
           <b>TripCheck</b><small>{text.brandNote(activeDestination.id === "worldwide" ? "" : destinationName(activeDestination, locale))}</small>
         </button>
+        {hasPlan ? (
+          <div className="planner-mobile-planbar">
+            <button
+              aria-label={locale === "ja" ? "入力に戻る" : "Back to trip input"}
+              className="planner-mobile-planbar-back"
+              onClick={() => { setHasPlan(false); setInputStep("conditions"); setInspector(null); }}
+              type="button"
+            >‹</button>
+            <b>{locale === "ja" ? "旅程プラン" : "Itinerary"}</b>
+            <span className="planner-mobile-saved"><Icon name="check" size={12} />{locale === "ja" ? "保存済み" : "Saved"}</span>
+            <details className="planner-mobile-top-menu">
+              <summary aria-label={locale === "ja" ? "その他の操作" : "More actions"}>•••</summary>
+              <div>
+                <button onClick={() => { setMobileResultView("timeline"); setShareDialogOpen(true); }} type="button">{text.share}</button>
+                <button onClick={() => setPrintMode(true)} type="button">{text.print}</button>
+                <button onClick={resetTrip} type="button">{text.newTrip}</button>
+              </div>
+            </details>
+          </div>
+        ) : null}
         <div className="planner-top-actions">
           <a aria-label={text.privacyTitle} className="planner-privacy" href="/privacy" title={text.privacyTitle}><i aria-hidden="true"><Icon name="check" size={10} /></i><span>{text.privacy}</span></a>
           <div className="planner-language" role="group" aria-label={text.language}>
@@ -1765,7 +1793,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
         plan={plan}
         primaryRecommendationGap={primaryRecommendationGap}
         recommendationPins={recommendationPins}
-        routeBudgetKey={`${buildRunRef.current}:${transitConvergenceInputKey}`}
+        routeBudgetKey={routeBudgetKey}
         routeDepartureTimes={routeDepartureTimes}
         routeModes={routeModes}
         routeTransitGeometry={routeTransitGeometry}
@@ -1792,6 +1820,7 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
             onMoveStopToDay={moveStopToDay}
             onPhotoError={handlePhotoError}
             onRemoveStop={removeStopFromPlan}
+            onSelectStop={(stopId) => handleSelectStop(stopId)}
             onToggleSheet={() => setInspectorSheetState((current) => current === "full" ? "half" : "full")}
             onToggleSheetPeek={() => setInspectorSheetState((current) => current === "peek" ? "half" : "peek")}
             panelRef={inspectorPanelRef}
@@ -2208,6 +2237,12 @@ export default function TripPlannerShell({ initialLocale = "en", mapsApiKey = ""
                 weekdayLabel={day.date ? weekdayInfo(day.date, locale)?.label ?? null : null}
               />
             </ItineraryTimeline>
+
+            <button className="planner-map-teaser" onClick={() => setMobileResultView("map")} type="button">
+              <span aria-hidden="true" className="planner-map-teaser-route"><i /><i /><i /></span>
+              <b>{locale === "ja" ? "ルートを地図で確認" : "Check the route on the map"}</b>
+              <Icon name="arrow" size={17} />
+            </button>
 
             {/* Planner first, report second: the things to check sit under the
                 itinerary they are about. Above it, the card was 123px of the

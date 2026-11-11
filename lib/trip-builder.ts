@@ -1709,8 +1709,9 @@ type DayAssignmentScore = readonly [
   totalOverrunMinutes: number,
   emptyDayCount: number,
   overloadMinutes: number,
+  travelAndThinDayMinutes: number,
+  routeDistanceDecimetres: number,
   underfillMinutes: number,
-  travelMinutes: number,
   maximumDayMinutes: number,
   loadSpreadMinutes: number,
   deterministicTieBreak: string,
@@ -1790,8 +1791,18 @@ function scoreDayAssignment(
     totalOverrunMinutes,
     emptyDayCount,
     overloadMinutes,
+    // Travel and thin days are one trade, not a strict order. Ranked strictly
+    // above travel, a 30-minute shortfall used to drag Senso-ji out of its
+    // own neighbourhood (Ueno, Skytree) into a Tsukiji/Toyosu day across the
+    // city just to top that day up. The squared deficit is converted into
+    // minutes a traveller would pay to avoid it: half an hour short is worth
+    // about eight minutes of detour, a nearly empty day about eight hours.
+    travelMinutes + Math.round(underfillMinutes / 120),
+    // Estimated minutes are rounded to five and a short taxi costs nearly the
+    // same as a long one, so two very different maps can tie on minutes. The
+    // tie goes to the one that keeps each day in one part of town.
+    Math.round(days.reduce((sum, day) => sum + day.legs.reduce((daySum, leg) => daySum + straightLineDistanceKm(leg.from, leg.to), 0), 0) * 10),
     underfillMinutes,
-    travelMinutes,
     maximumDayMinutes,
     maximumDayMinutes - minimumDayMinutes,
     dayAssignmentSignature(clusters),

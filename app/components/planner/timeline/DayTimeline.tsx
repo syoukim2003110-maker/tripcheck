@@ -174,10 +174,12 @@ export default function DayTimeline({
                 {leg && recommended ? (
                   <MovementCard
                     boarding={prefetchTransitSteps[routeLegKey(leg.from.id, leg.to.id)]}
+                    endTime={builtStop.arrival}
                     leg={leg}
                     locale={locale}
                     onHoverChange={onHoverLeg ? (legKey, hovered) => onHoverLeg(hovered ? legKey : null) : undefined}
                     onSetLegMode={onSetLegMode}
+                    startTime={day.stops[index - 1]?.departure ?? ""}
                     travelPreference={travelPreference}
                   />
                 ) : null}

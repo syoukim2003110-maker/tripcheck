@@ -52,15 +52,13 @@ export function useTripEnrichments({ plan, activeDestination }: {
     return payload ? JSON.stringify(payload) : "";
   }, [plan]);
   useEffect(() => {
-    if (!P1_TRAVEL_ENRICHMENTS) {
-      setWeatherByDay({});
-      return;
-    }
-    if (!weatherSignature) {
-      setWeatherByDay({});
-      return;
-    }
     let stale = false;
+    if (!P1_TRAVEL_ENRICHMENTS || !weatherSignature) {
+      queueMicrotask(() => {
+        if (!stale) setWeatherByDay({});
+      });
+      return () => { stale = true; };
+    }
     void requestWeatherPayload(JSON.parse(weatherSignature)).then((result) => {
       if (!stale) setWeatherByDay(result);
     });
@@ -77,15 +75,13 @@ export function useTripEnrichments({ plan, activeDestination }: {
     return payload ? JSON.stringify(payload) : "";
   }, [plan, activeDestination]);
   useEffect(() => {
-    if (!P1_TRAVEL_ENRICHMENTS) {
-      setHolidaysByDate({});
-      return;
-    }
-    if (!holidaysSignature) {
-      setHolidaysByDate({});
-      return;
-    }
     let stale = false;
+    if (!P1_TRAVEL_ENRICHMENTS || !holidaysSignature) {
+      queueMicrotask(() => {
+        if (!stale) setHolidaysByDate({});
+      });
+      return () => { stale = true; };
+    }
     void requestHolidays(JSON.parse(holidaysSignature)).then((result) => {
       if (!stale) setHolidaysByDate(result);
     });

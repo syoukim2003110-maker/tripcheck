@@ -87,6 +87,7 @@ export const API_ROUTE_POLICIES: Readonly<Record<ApiRouteKey, ApiRoutePolicy>> =
     route({ method: "POST", path: "/api/live-routes", class: "paid", provider: "google", operation: "live_routes", origin: "strict_same_origin", cache: "no_store" }),
     route({ method: "POST", path: "/api/place-suggestions", class: "paid", provider: "google", operation: "place_suggestions", origin: "strict_same_origin", cache: "no_store" }),
     route({ method: "POST", path: "/api/place-resolution", class: "paid", provider: "google", operation: "place_resolution", origin: "strict_same_origin", cache: "no_store" }),
+    route({ method: "POST", path: "/api/place-resolution/open", class: "free_public", origin: "handler_guarded", cache: "no_store" }),
     route({ method: "POST", path: "/api/place-intelligence", class: "paid", provider: "google", operation: "place_intelligence", origin: "strict_same_origin", cache: "no_store" }),
     route({ method: "POST", path: "/api/place-intelligence/fresh", class: "paid", provider: "anthropic", operation: "fresh_voices", origin: "strict_same_origin", cache: "no_store" }),
     route({ method: "POST", path: "/api/hotel-recommendations", class: "paid", provider: "google", operation: "hotel_recommendations", featureFlags: HOTEL_ON, origin: "strict_same_origin", cache: "no_store" }),

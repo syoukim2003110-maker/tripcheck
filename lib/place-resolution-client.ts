@@ -7,10 +7,15 @@ import { PLANNING_BUDGET, takeWithinPlanningBudget } from "./planning-budget.ts"
 import type { ShareableResolutionOverride } from "./share-link.ts";
 import { tripRequestHeaders } from "./trip-request-identity.ts";
 import type { AmbiguousPlaceResolution } from "./google-place-resolver.ts";
+import { paidPlaceResolutionEnabled } from "./paid-place-opt-in.ts";
 export type { AmbiguousPlaceResolution } from "./google-place-resolver.ts";
 
 export type PlaceResolutionResponse = {
-  provider: "google_maps";
+  provider: "google_maps" | "open_place_data";
+  attribution?: {
+    label: string;
+    url: string;
+  };
   fetchedAt: string;
   places: ResolvedInputStop[];
   hotel: ResolvedInputStop | null;
@@ -82,9 +87,16 @@ export function buildPlaceResolutionPayload(
   resolutionOverrides: ShareableResolutionOverride[] = [],
 ) {
   // The shared wishlist parser strips day headings, times and marker words, so
-  // Google receives clean place names and never any schedule detail.
+  // a resolver receives clean place names and never any schedule detail.
   const places = parsedWishlistPlaces(raw);
   const normalizedHotelQuery = hotelQuery.trim() || null;
+  // The keyless resolver is not metered per call, so it may place a whole
+  // week's wishlist. The paid ceiling applies only once a deployment has
+  // opted into paid resolution, because the same payload may then be replayed
+  // against the metered route.
+  const budget = paidPlaceResolutionEnabled()
+    ? PLANNING_BUDGET.placeResolutions
+    : PLANNING_BUDGET.openPlaceResolutions;
   const usedInputIndexes = new Set<number>();
   const overriddenInputIndexes = new Set<number>();
   const providerChoices: Array<{ inputIndex: number; input: string; providerRef: string }> = [];
@@ -94,7 +106,7 @@ export function buildPlaceResolutionPayload(
   // client, while an exact provider lookup must never degrade to a fuzzy
   // lookup if its ID has expired or been deleted.
   for (const override of resolutionOverrides) {
-    if (overriddenInputIndexes.size >= PLANNING_BUDGET.placeResolutions) break;
+    if (overriddenInputIndexes.size >= budget) break;
     const inputIndex = override?.inputIndex;
     if (
       typeof inputIndex !== "number"
@@ -129,7 +141,7 @@ export function buildPlaceResolutionPayload(
   const hotelEvents = normalizedHotelQuery ? 1 : 0;
   const providerOverrides = takeWithinPlanningBudget(
     providerChoices,
-    PLANNING_BUDGET.placeResolutions,
+    budget,
     hotelEvents,
   );
   const queries = places.flatMap(({ name }, inputIndex) => (
@@ -142,7 +154,7 @@ export function buildPlaceResolutionPayload(
     // units instead of creating a request the gateway must reject as 13/12.
     queries: takeWithinPlanningBudget(
       [...new Set(queries)],
-      PLANNING_BUDGET.placeResolutions,
+      budget,
       hotelEvents + providerOverrides.length,
     ),
     providerOverrides,
@@ -162,27 +174,68 @@ export async function requestPlaceResolution(
 ): Promise<PlaceResolutionResponse> {
   const payload = buildPlaceResolutionPayload(raw, hotelQuery, locale, destination, resolutionOverrides);
   if (payload.queries.length === 0 && payload.providerOverrides.length === 0 && !payload.hotelQuery) {
-    return { provider: "google_maps", fetchedAt: "", places: [], hotel: null, ambiguous: [] };
+    return { provider: "open_place_data", fetchedAt: "", places: [], hotel: null, ambiguous: [] };
   }
-  let response: Response;
+  const encodedPayload = JSON.stringify(payload);
+  const postResolution = (path: string) => fetch(path, {
+    method: "POST",
+    headers: tripRequestHeaders({ "Content-Type": "application/json" }),
+    body: encodedPayload,
+    signal,
+  });
+
+  let openResponse: Response | null = null;
   try {
-    response = await fetch("/api/place-resolution", {
-      method: "POST",
-      headers: tripRequestHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify(payload),
-      signal,
-    });
+    openResponse = await postResolution("/api/place-resolution/open");
   } catch {
+    if (signal?.aborted) throw new PlaceResolutionError("unavailable");
+  }
+
+  const openBody = openResponse
+    ? await openResponse.json().catch(() => null) as (PlaceResolutionResponse & { code?: string }) | null
+    : null;
+  const openSucceeded = Boolean(openResponse?.ok && openBody);
+  const exactGoogleChoiceNeedsOptedInProvider = payload.providerOverrides.length > 0
+    && paidPlaceResolutionEnabled();
+  if (openSucceeded && openBody && !exactGoogleChoiceNeedsOptedInProvider) {
+    return { ...openBody, ambiguous: Array.isArray(openBody.ambiguous) ? openBody.ambiguous : [] };
+  }
+
+  // A malformed or cross-origin request must never be retried through a
+  // different boundary. Provider failure may use Google only after the
+  // deployment explicitly opts into paid place resolution.
+  const openMayUsePaidFallback = openResponse === null
+    || openResponse.status === 429
+    || openResponse.status >= 500
+    || (openResponse.ok && openBody === null);
+  if (!paidPlaceResolutionEnabled() || (!openMayUsePaidFallback && !exactGoogleChoiceNeedsOptedInProvider)) {
+    if (openBody?.code === "invalid_request" || openResponse?.status === 400) {
+      throw new PlaceResolutionError("invalid_request");
+    }
+    if (openResponse?.status === 429) throw new PlaceResolutionError("quota_exhausted");
     throw new PlaceResolutionError("unavailable");
   }
-  const body = await response.json().catch(() => null) as (PlaceResolutionResponse & { code?: string }) | null;
-  if (!response.ok || !body) {
-    if (body?.code === "not_configured") throw new PlaceResolutionError("not_configured");
-    if (body?.code === "invalid_request") throw new PlaceResolutionError("invalid_request");
-    // The durable provider ceiling answers 429 budget_exhausted; telling the
-    // traveller "try again tomorrow" beats a generic connection error.
-    if (response.status === 429 || body?.code === "budget_exhausted") throw new PlaceResolutionError("quota_exhausted");
+
+  let paidResponse: Response;
+  try {
+    paidResponse = await postResolution("/api/place-resolution");
+  } catch {
+    if (openSucceeded && openBody) {
+      return { ...openBody, ambiguous: Array.isArray(openBody.ambiguous) ? openBody.ambiguous : [] };
+    }
     throw new PlaceResolutionError("unavailable");
   }
-  return { ...body, ambiguous: Array.isArray(body.ambiguous) ? body.ambiguous : [] };
+  const paidBody = await paidResponse.json().catch(() => null) as (PlaceResolutionResponse & { code?: string }) | null;
+  if (!paidResponse.ok || !paidBody) {
+    if (openSucceeded && openBody) {
+      return { ...openBody, ambiguous: Array.isArray(openBody.ambiguous) ? openBody.ambiguous : [] };
+    }
+    if (paidBody?.code === "not_configured") throw new PlaceResolutionError("not_configured");
+    if (paidBody?.code === "invalid_request") throw new PlaceResolutionError("invalid_request");
+    if (paidResponse.status === 429 || paidBody?.code === "budget_exhausted") {
+      throw new PlaceResolutionError("quota_exhausted");
+    }
+    throw new PlaceResolutionError("unavailable");
+  }
+  return { ...paidBody, ambiguous: Array.isArray(paidBody.ambiguous) ? paidBody.ambiguous : [] };
 }

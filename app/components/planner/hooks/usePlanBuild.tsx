@@ -532,6 +532,18 @@ export function usePlanBuildActions({
         providerRef: candidate.providerRef!,
       }));
     }
+    // The shortlist has served its purpose. Remove exactly one matching
+    // occurrence so duplicate authored lines can still be reviewed one by
+    // one and the result checklist never repeats an already-made choice.
+    setAmbiguousPlaces((current) => {
+      const normalizedInput = candidate.input.normalize("NFKC").toLocaleLowerCase();
+      let removed = false;
+      return current.filter((entry) => {
+        if (removed || entry.input.normalize("NFKC").toLocaleLowerCase() !== normalizedInput) return true;
+        removed = true;
+        return false;
+      });
+    });
     setManualPinTarget((current) => current === placeIndex ? null : current);
     setPreviewStops((current) => [
       ...current.filter((stop) => !("inputIndex" in stop) || stop.inputIndex !== placeIndex),

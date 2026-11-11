@@ -15,6 +15,9 @@ type BuiltPlanLeg = BuiltTripPlan["days"][number]["legs"][number];
 
 type MovementCardProps = {
   leg: BuiltPlanLeg;
+  /** Scheduled bounds published by the deterministic day builder. */
+  startTime: string;
+  endTime: string;
   travelPreference: TravelPreference;
   locale: PlannerLocale;
   boarding: TransitLegBoarding | undefined;
@@ -23,7 +26,7 @@ type MovementCardProps = {
   onHoverChange?: (legKey: string, hovered: boolean) => void;
 };
 
-export default function MovementCard({ leg, travelPreference, locale, boarding, onSetLegMode, onHoverChange }: MovementCardProps) {
+export default function MovementCard({ leg, startTime, endTime, travelPreference, locale, boarding, onSetLegMode, onHoverChange }: MovementCardProps) {
   const text = ui[locale];
   const recommended = leg.comparison.recommended;
   const legKey = routeLegKey(leg.from.id, leg.to.id);
@@ -50,6 +53,11 @@ export default function MovementCard({ leg, travelPreference, locale, boarding, 
             come up to the surface; the link becomes a chevron, because a whole
             row that opens does not need a word telling you so. */}
         <summary>
+          <span className="planner-leg-times">
+            <time>{startTime}</time>
+            <i aria-hidden="true" />
+            <time>{endTime}</time>
+          </span>
           <span aria-hidden="true" className="planner-leg-mark">{modeIcon(recommended.mode, travelPreference === "car")}</span>
           <span className="planner-leg-body">
             <b>

@@ -6,6 +6,7 @@ test("uses the approved hard ceilings for one trip", () => {
   assert.deepEqual(PLANNING_BUDGET, {
     routeEvents: 20,
     placeResolutions: 12,
+    openPlaceResolutions: 30,
     openingHours: 10,
   });
 });

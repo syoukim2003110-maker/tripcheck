@@ -42,9 +42,9 @@ test("no fetch directive falls back to a bare scheme", () => {
   }
 });
 
-test("only Google hosts are named, and only where the map needs them", () => {
+test("only named map providers are allowed, on the directives they need", () => {
   const remote = (name: string) => sourceList(name).filter((value) => value.startsWith("http"));
-  for (const name of ["script-src", "img-src", "connect-src", "frame-src"]) {
+  for (const name of ["script-src", "img-src", "frame-src"]) {
     for (const value of remote(name)) {
       assert.match(
         value,
@@ -53,9 +53,20 @@ test("only Google hosts are named, and only where the map needs them", () => {
       );
     }
   }
+  const openFreeMapHosts = remote("connect-src").filter((value) => !/google|gstatic/.test(value));
+  assert.deepEqual(openFreeMapHosts, ["https://tiles.openfreemap.org"]);
+  assert.equal(remote("script-src").includes("https://tiles.openfreemap.org"), false, "MapLibre is bundled, not remotely scripted");
+  assert.equal(remote("img-src").includes("https://tiles.openfreemap.org"), false, "MapLibre fetches vector tiles through connect-src");
   assert.deepEqual(remote("default-src"), []);
   assert.deepEqual(remote("style-src"), []);
   assert.deepEqual(remote("font-src"), []);
+});
+
+test("the key-free map uses the CSP-pinned OpenFreeMap style host", () => {
+  const source = readFileSync(new URL("../app/components/planner/map/ZeroCostMap.tsx", import.meta.url), "utf8");
+  const styleUrl = /OPEN_FREE_MAP_STYLE\s*=\s*"([^"]+)"/.exec(source)?.[1];
+  assert.equal(styleUrl, "https://tiles.openfreemap.org/styles/liberty");
+  assert.ok(sourceList("connect-src").includes(new URL(styleUrl).origin));
 });
 
 test("the image hosts cover what the app actually renders", () => {

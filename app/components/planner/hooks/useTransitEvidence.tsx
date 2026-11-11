@@ -108,44 +108,53 @@ export function useTransitEvidence({
       liveDrivingMinutes: liveDrivingRef.current,
     });
     if (!tripDateTouched) {
-      setLiveTransit({});
-      setLiveTransitAbsent({});
-      setLiveTransitTransferCounts({});
-      setLiveRouteEvidence({});
+      queueMicrotask(() => {
+        if (controller.signal.aborted || transitConvergenceRunRef.current !== runId) return;
+        setLiveTransit({});
+        setLiveTransitAbsent({});
+        setLiveTransitTransferCounts({});
+        setLiveRouteEvidence({});
+        setTransitConvergence({
+          inputKey: transitConvergenceInputKey,
+          status: "complete",
+          eventCount: 0,
+          iterations: 0,
+          nonConverged: false,
+          stopReason: null,
+        });
+      });
+      return () => controller.abort();
+    }
+    queueMicrotask(() => {
+      if (controller.signal.aborted || transitConvergenceRunRef.current !== runId) return;
       setTransitConvergence({
         inputKey: transitConvergenceInputKey,
-        status: "complete",
+        status: "loading",
         eventCount: 0,
         iterations: 0,
         nonConverged: false,
         stopReason: null,
       });
-      return () => controller.abort();
-    }
-    setTransitConvergence({
-      inputKey: transitConvergenceInputKey,
-      status: "loading",
-      eventCount: 0,
-      iterations: 0,
-      nonConverged: false,
-      stopReason: null,
+      setLiveTransit({});
+      setLiveTransitAbsent({});
+      setLiveTransitTransferCounts({});
+      setLiveRouteEvidence({});
     });
-    setLiveTransit({});
-    setLiveTransitAbsent({});
-    setLiveTransitTransferCounts({});
-    setLiveRouteEvidence({});
 
     let initialPlan: BuiltTripPlan;
     try {
       initialPlan = buildTripFromWishlist(itinerary, tripDays, pace, locale, convergenceContext());
     } catch {
-      setTransitConvergence({
-        inputKey: transitConvergenceInputKey,
-        status: "complete",
-        eventCount: 0,
-        iterations: 0,
-        nonConverged: true,
-        stopReason: "max_iterations",
+      queueMicrotask(() => {
+        if (controller.signal.aborted || transitConvergenceRunRef.current !== runId) return;
+        setTransitConvergence({
+          inputKey: transitConvergenceInputKey,
+          status: "complete",
+          eventCount: 0,
+          iterations: 0,
+          nonConverged: true,
+          stopReason: "max_iterations",
+        });
       });
       return () => controller.abort();
     }

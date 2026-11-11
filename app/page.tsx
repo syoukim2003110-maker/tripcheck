@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { browserGoogleMapsApiKey } from "../lib/browser-map-provider";
 import StructuredData from "./StructuredData";
 import TripPlannerApp from "./TripPlannerApp";
 
@@ -22,5 +23,5 @@ export const metadata: Metadata = {
 const LOCALE_GATE_SCRIPT = 'try{if(localStorage.getItem("tripcheck-locale")==="ja")location.replace("/ja"+location.search+location.hash)}catch(e){}';
 
 export default function Home() {
-  return <><script dangerouslySetInnerHTML={{ __html: LOCALE_GATE_SCRIPT }} /><StructuredData locale="en" /><TripPlannerApp initialLocale="en" mapsApiKey={process.env.GOOGLE_MAPS_BROWSER_API_KEY ?? ""} /></>;
+  return <><script dangerouslySetInnerHTML={{ __html: LOCALE_GATE_SCRIPT }} /><StructuredData locale="en" /><TripPlannerApp initialLocale="en" mapsApiKey={browserGoogleMapsApiKey()} /></>;
 }

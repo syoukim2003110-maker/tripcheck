@@ -58,6 +58,12 @@ type CatalogPoi = Omit<RouteStop, "name" | "area" | "isAnchor"> & {
   area: Localized;
   aliases: RegExp[];
   reservationSensitive?: boolean;
+  /**
+   * A neighbourhood, not a venue. Its name is the first half of dozens of
+   * other places ("新宿御苑", "Shibuya Hikarie", "浅草花やしき"), so it only
+   * matches when the traveller typed the neighbourhood itself.
+   */
+  areaLevel?: true;
 };
 
 const poiCatalog: CatalogPoi[] = [
@@ -100,6 +106,7 @@ const poiCatalog: CatalogPoi[] = [
   },
   {
     id: "asakusa",
+    areaLevel: true,
     name: { en: "Asakusa", ja: "浅草", ko: "아사쿠사", zh: "浅草" },
     area: { en: "Asakusa", ja: "浅草", ko: "아사쿠사", zh: "浅草" },
     latitude: 35.7119,
@@ -124,6 +131,7 @@ const poiCatalog: CatalogPoi[] = [
   },
   {
     id: "akihabara",
+    areaLevel: true,
     name: { en: "Akihabara", ja: "秋葉原", ko: "아키하바라", zh: "秋叶原" },
     area: { en: "Akihabara", ja: "秋葉原", ko: "아키하바라", zh: "秋叶原" },
     latitude: 35.6984,
@@ -208,6 +216,7 @@ const poiCatalog: CatalogPoi[] = [
   },
   {
     id: "harajuku",
+    areaLevel: true,
     name: { en: "Harajuku", ja: "原宿", ko: "하라주쿠", zh: "原宿" },
     area: { en: "Harajuku", ja: "原宿", ko: "하라주쿠", zh: "原宿" },
     latitude: 35.6702,
@@ -233,6 +242,7 @@ const poiCatalog: CatalogPoi[] = [
   },
   {
     id: "shibuya",
+    areaLevel: true,
     name: { en: "Shibuya", ja: "渋谷", ko: "시부야", zh: "涩谷" },
     area: { en: "Shibuya", ja: "渋谷", ko: "시부야", zh: "涩谷" },
     latitude: 35.6595,
@@ -245,6 +255,7 @@ const poiCatalog: CatalogPoi[] = [
   },
   {
     id: "shinjuku",
+    areaLevel: true,
     name: { en: "Shinjuku", ja: "新宿", ko: "신주쿠", zh: "新宿" },
     area: { en: "Shinjuku", ja: "新宿", ko: "신주쿠", zh: "新宿" },
     latitude: 35.6909,
@@ -303,10 +314,41 @@ function toStop(poi: CatalogPoi, locale: Locale, line: string): RouteStop {
   };
 }
 
+const areaSuffixPattern = /^(?:駅|周辺|エリア|付近|あたり|界隈|近辺|観光|散策|散歩|地区|方面|역|站)/;
+const followingWordPattern = /^(?:station|area|district|ward|neighbou?rhood|crossing|day|stay|booked|booking|reserved|reservation|ticket|fixed|must|optional|at|from|必須|任意|予約|確定|滞在|チケット|午前|午後|朝|昼|夜|ランチ|ディナー|필수|선택|예약|必去|可选|预订|预约)/i;
+const nameCharacterPattern = /[\p{L}\p{N}]/u;
+const bareTsukijiPattern = /^(?:築地|筑地|쓰키지)$/;
+
+/**
+ * True when a neighbourhood alias matched only a fragment of a longer proper
+ * name: "新宿" inside "新宿御苑" or "西新宿", "Shinjuku" in "Shinjuku Gyoen".
+ * Generic companions ("渋谷駅", "Shibuya crossing", "浅草 必須") still count
+ * as the neighbourhood itself.
+ */
+function isFragmentOfLongerName(line: string, index: number, length: number) {
+  const before = [...line.slice(0, index)].at(-1) ?? "";
+  if (nameCharacterPattern.test(before)) return true;
+  const rest = line.slice(index + length);
+  if (!rest.trim()) return false;
+  const adjacent = [...rest][0] ?? "";
+  if (nameCharacterPattern.test(adjacent)) return !areaSuffixPattern.test(rest);
+  // A list separator ends the name: "Shibuya, Harajuku" is two places.
+  if (/^\s*[,、，;；/／→>＞|｜・]/u.test(rest)) return false;
+  const following = rest.replace(/^[\s\p{P}\p{S}]+/u, "");
+  const first = [...following][0] ?? "";
+  if (!first || /\p{N}/u.test(first)) return false;
+  return !followingWordPattern.test(following) && !areaSuffixPattern.test(following);
+}
+
 export function resolveKnownStops(line: string, locale: Locale = "en") {
   const matches = poiCatalog.flatMap((poi) => {
     const indices = poi.aliases
-      .map((alias) => alias.exec(line)?.index)
+      .map((alias) => {
+        const match = alias.exec(line);
+        if (!match) return undefined;
+        const areaMatch = poi.areaLevel || bareTsukijiPattern.test(match[0]);
+        return areaMatch && isFragmentOfLongerName(line, match.index, match[0].length) ? undefined : match.index;
+      })
       .filter((index): index is number => index !== undefined);
     return indices.length > 0 ? [{ index: Math.min(...indices), stop: toStop(poi, locale, line) }] : [];
   });

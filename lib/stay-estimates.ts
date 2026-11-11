@@ -31,6 +31,26 @@ const typeDurations: Array<[types: string[], minutes: number]> = [
   [["beach"], 120],
   [["church", "hindu_temple", "mosque", "synagogue", "buddhist_temple", "shinto_shrine", "place_of_worship"], 60],
   [["observation_deck", "lookout", "scenic_point"], 60],
+  [["street", "square", "bridge", "pier", "statue", "promenade"], 45],
+];
+
+/*
+ * What the name itself says when no source supplied a type. A keyless lookup
+ * returns an encyclopedia pin with no category at all, and a flat 90 minutes
+ * for a ferry pier, a street and a small temple alike makes every day look
+ * fuller than it is. Checked after the type table, so a typed venue keeps its
+ * own duration.
+ */
+const genericNamePatterns: Array<[RegExp, number]> = [
+  [/動物園|\bzoo\b/iu, 180],
+  [/水族館|\baquarium\b/iu, 150],
+  [/美術館|博物館|記念館|\bmuseum\b|\bgallery\b/iu, 120],
+  [/城(?:跡|址)?$|宮殿|御所|\bcastle\b|\bpalace\b/iu, 90],
+  [/市場|マーケット|商店街|横丁|夜市|\bmarket\b/iu, 75],
+  [/公園|御苑|庭園|\bpark\b|\bgardens?\b/iu, 75],
+  [/寺$|寺院|神社|大社|神宮|廟|祠$|教会|大聖堂|\btemple\b|\bshrine\b|\bchurch\b|\bcathedral\b|\bbasilica\b/iu, 60],
+  [/タワー|展望台|\btower\b|\bobservatory\b|\bobservation deck\b/iu, 60],
+  [/フェリー|桟橋|埠頭|プロムナード|遊歩道|通り$|交差点|橋$|像$|\bferry\b|\bpier\b|\bpromenade\b|\bstreet\b|\bcrossing\b|\bbridge\b|\bstatue\b/iu, 45],
 ];
 
 /* Checked after the specific venue table so a food market or a food hall keeps
@@ -58,6 +78,9 @@ export function estimateStayMinutes(name: string, types: string[] = [], fallback
   // A meal is 45 minutes, not a museum visit.
   if (isFoodPlaceTypes(types)) return 45;
   if (genericLandmarkTypes.some((type) => typeSet.has(type))) return 75;
+  for (const [pattern, minutes] of genericNamePatterns) {
+    if (pattern.test(name)) return minutes;
+  }
   return fallback;
 }
 

@@ -123,14 +123,36 @@ test("accepts an ordinary multi-day list but rejects oversized resolver batches"
   }), "the route-level gateway receives the full event count and rejects an aggregate over twelve atomically");
 });
 
-test("discloses the external lookup count and keeps hotel plus places inside twelve events", () => {
+function withPaidPlaceResolution<T>(run: () => T): T {
+  const name = "NEXT_PUBLIC_TRIPCHECK_PAID_PLACE_RESOLUTION_ENABLED";
+  const original = process.env[name];
+  process.env[name] = "true";
+  try {
+    return run();
+  } finally {
+    if (original === undefined) delete process.env[name];
+    else process.env[name] = original;
+  }
+}
+
+test("discloses the external lookup count and keeps hotel plus places inside twelve paid events", () => {
   const raw = Array.from({ length: 14 }, (_, index) => `Synthetic unknown ${index}`).join("\n");
   assert.equal(placeResolutionQueryCount(raw, "en"), 14);
+  withPaidPlaceResolution(() => {
+    const withoutHotel = buildPlaceResolutionPayload(raw, "", "en");
+    assert.equal(withoutHotel.queries.length, 12);
+    const withHotel = buildPlaceResolutionPayload(raw, "Synthetic hotel", "en");
+    assert.equal(withHotel.queries.length, 11);
+    assert.equal(withHotel.hotelQuery, "Synthetic hotel");
+  });
+});
+
+test("the keyless default places a whole week's wishlist, not just twelve lines", () => {
+  const raw = Array.from({ length: 34 }, (_, index) => `Synthetic unknown ${index}`).join("\n");
   const withoutHotel = buildPlaceResolutionPayload(raw, "", "en");
-  assert.equal(withoutHotel.queries.length, 12);
+  assert.equal(withoutHotel.queries.length, 30);
   const withHotel = buildPlaceResolutionPayload(raw, "Synthetic hotel", "en");
-  assert.equal(withHotel.queries.length, 11);
-  assert.equal(withHotel.hotelQuery, "Synthetic hotel");
+  assert.equal(withHotel.queries.length, 29);
 });
 
 test("strips stay-duration and bare-time markers before querying Google", () => {
@@ -173,7 +195,9 @@ test("bounds exact choices, searches and hotel inside the same twelve calls", ()
     inputIndex,
     providerRef: `ChIJ_choice_${inputIndex}`,
   }));
-  const payload = buildPlaceResolutionPayload(raw, "Synthetic hotel", "en", "auto", providerChoices);
+  const payload = withPaidPlaceResolution(() => (
+    buildPlaceResolutionPayload(raw, "Synthetic hotel", "en", "auto", providerChoices)
+  ));
 
   assert.equal(payload.providerOverrides.length, 10);
   assert.deepEqual(payload.queries, ["Synthetic place 10"]);

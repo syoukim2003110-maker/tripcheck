@@ -4,8 +4,9 @@ import type { PlaceSuggestion } from "./google-place-suggestions.ts";
 import type { ShareableResolutionOverride } from "./share-link.ts";
 import { parsedWishlistPlaces } from "./wishlist-parser.ts";
 import { tripRequestHeaders } from "./trip-request-identity.ts";
+import { paidPlaceResolutionEnabled } from "./paid-place-opt-in.ts";
 
-export type PlaceSuggestionFailure = "quota_exhausted" | "unavailable";
+export type PlaceSuggestionFailure = "quota_exhausted" | "unavailable" | "explicit_search_only";
 
 export class PlaceSuggestionError extends Error {
   readonly code: PlaceSuggestionFailure;
@@ -37,6 +38,10 @@ export async function requestPlaceSuggestions(
   destination: DestinationChoice,
   signal?: AbortSignal,
 ): Promise<PlaceSuggestion[]> {
+  // Public Nominatim forbids autocomplete. With paid Places disabled (the
+  // default), keep typing entirely local and hand resolution to the explicit
+  // review/build action instead of emitting any provider request.
+  if (!paidPlaceResolutionEnabled()) throw new PlaceSuggestionError("explicit_search_only");
   let response: Response;
   try {
     response = await fetch("/api/place-suggestions", {
@@ -50,6 +55,17 @@ export async function requestPlaceSuggestions(
   }
   const body = await response.json().catch(() => null) as { suggestions?: unknown[]; code?: string } | null;
   if (!response.ok || !body) {
+    // A missing Google key is not a dead end: the explicit "build trip"
+    // action can use the key-free place-resolution route. Public Nominatim
+    // must never be used for autocomplete, so keep that distinction visible
+    // instead of presenting this as a broken search request.
+    if (
+      response.status === 503
+      && ["not_configured", "paid_api_disabled", "provider_disabled", "quota_store_unavailable", "provider_circuit_open"]
+        .includes(body?.code ?? "")
+    ) {
+      throw new PlaceSuggestionError("explicit_search_only");
+    }
     if (response.status === 429 || body?.code === "budget_exhausted") {
       throw new PlaceSuggestionError("quota_exhausted");
     }

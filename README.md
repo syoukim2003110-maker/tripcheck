@@ -10,17 +10,24 @@ bookings, stay duration, locked order/mode, buffers and mobility preferences
 feed one deterministic engine. AI does not own coordinates, time arithmetic,
 opening hours, routes, feasibility or optimization.
 
-The browser resolves unknown names through protected Google Places endpoints,
-then produces a deterministic provisional result. Only the selected places and
-physical route legs are live-checked. Every consequential fact stays labelled
-confirmed, traveller-provided, estimated, unknown or failed. Worldwide inputs
-remain available as an explicitly graded preview; they do not inherit Tokyo's
-quality claim.
+An explicit build/review action resolves unknown names through a protected,
+key-free endpoint by default: Wikipedia and Wikidata for sights under the names
+travellers actually type (in any language), OpenStreetMap search (Photon, then
+Nominatim) for the rest. The wishlist itself tells the resolver where the trip
+is, so a namesake in another city does not win. It then produces a
+deterministic provisional result. Autocomplete is not sent to Nominatim. Paid
+Google resolution is an explicit deployment opt-in. Only the selected places
+and physical route legs are live-checked when their paid provider access is
+also enabled. Every consequential fact stays labelled confirmed,
+traveller-provided, estimated, unknown or failed. Worldwide inputs remain
+available as an explicitly graded preview; they do not inherit Tokyo's quality
+claim.
 
 Two different switches guard the paid surfaces, and they behave differently.
 
-Contextual hotel, meal and along-route suggestions became core in v0.3. Their
-routes run by default and each carries an individual emergency kill:
+Contextual hotel, meal and along-route suggestions became core in v0.3. After
+the global paid-provider opt-in, these core recommendation routes run by default and carry
+an individual emergency kill:
 `HOTEL_RECOMMENDATIONS_ENABLED`, `FOOD_RECOMMENDATIONS_ENABLED` and
 `ROUTE_RECOMMENDATIONS_ENABLED` stop that one route when set to exactly
 `false`. Leaving a flag unset leaves the route on.
@@ -30,8 +37,9 @@ until `TRIPCHECK_NON_CORE_APIS_ENABLED=true`. Anthropic is paused everywhere
 unless `ANTHROPIC_REQUESTS_ENABLED=true` is set exactly; storing a key alone
 enables nothing.
 
-Every paid route, core or not, still fails closed when D1, the request origin,
-the durable quota or a provider kill switch says no.
+Every paid route, core or not, requires `TRIPCHECK_PAID_API_ENABLED=true` and
+still fails closed when D1, the request origin, the durable quota or a provider
+kill switch says no. A provider key by itself never authorizes spending.
 
 ## Run locally
 
@@ -42,11 +50,13 @@ pnpm install
 pnpm dev
 ```
 
-Copy `.env.example` to `.env.local`. Use a referrer-restricted browser key for
-Maps JavaScript/Embed and server-only Places/Routes keys. Paid requests require
-the D1 `DB` binding, `TRIPCHECK_PUBLIC_ORIGIN`, and a random server-only
-`TRIPCHECK_QUOTA_HASH_SECRET` of at least 32 characters. Keep provider quotas
-and the included global/provider kill switches configured before public use.
+Copy `.env.example` to `.env.local`. The default uses OpenFreeMap plus explicit
+Nominatim search and keeps every paid provider off. If a later deployment opts
+into Google, use a referrer-restricted browser key and server-only Places/Routes
+keys. Paid requests additionally require `TRIPCHECK_PAID_API_ENABLED=true`, the
+D1 `DB` binding, `TRIPCHECK_PUBLIC_ORIGIN`, a random server-only
+`TRIPCHECK_QUOTA_HASH_SECRET` of at least 32 characters, and the emergency
+`TRIPCHECK_PAID_API_DISABLED` switch to be false.
 
 Anthropic remains outside Core and fully paused unless
 `ANTHROPIC_REQUESTS_ENABLED=true` is set exactly. Non-core server routes also

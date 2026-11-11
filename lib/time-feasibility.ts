@@ -77,8 +77,13 @@ function pickRecommended(
   // The allowance scales with the taxi's own duration: on rail-dense ground a
   // 95-minute intercity train beats an 80-minute drive on cost, parking and
   // reliability, while a fixed +10 only ever expressed that for short hops.
+  // On rail-dense ground a taxi is the exception a traveller reaches for when
+  // the train is badly slower, not the default for every 3 km hop: a quarter
+  // of an hour saved does not justify the fare, the wait for a car and the
+  // traffic an estimate cannot see. +10 used to hand most cross-town legs in
+  // Kyoto and Tokyo to a taxi (35-minute train against a 20-minute drive).
   const transitAllowance = mobility === "transit_first"
-    ? Math.max(10, Math.round(taxi.minutes * 0.25))
+    ? Math.max(15, Math.round(taxi.minutes * 0.5))
     : mobility === "balanced" ? Math.max(5, Math.round(taxi.minutes * 0.1)) : -15;
   if (!transit.unroutable && transit.minutes <= taxi.minutes + transitAllowance) return transit;
   // Asymmetric evidence guards on transit-first ground, both directions:

@@ -81,6 +81,7 @@ test("the full classification is pinned, so a reclassification is a reviewed cha
       "POST /api/live-routes": ["paid", "live_routes", "strict_same_origin"],
       "POST /api/place-suggestions": ["paid", "place_suggestions", "strict_same_origin"],
       "POST /api/place-resolution": ["paid", "place_resolution", "strict_same_origin"],
+      "POST /api/place-resolution/open": ["free_public", null, "handler_guarded"],
       "POST /api/place-intelligence": ["paid", "place_intelligence", "strict_same_origin"],
       "POST /api/place-intelligence/fresh": ["paid", "fresh_voices", "strict_same_origin"],
       "POST /api/hotel-recommendations": ["paid", "hotel_recommendations", "strict_same_origin"],

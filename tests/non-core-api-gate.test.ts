@@ -53,7 +53,9 @@ test("core recommendations ignore unrelated environment flags but retain individ
     hotel: process.env.HOTEL_RECOMMENDATIONS_ENABLED,
     food: process.env.FOOD_RECOMMENDATIONS_ENABLED,
     route: process.env.ROUTE_RECOMMENDATIONS_ENABLED,
+    paid: process.env.TRIPCHECK_PAID_API_ENABLED,
   };
+  process.env.TRIPCHECK_PAID_API_ENABLED = "true";
   process.env.HOTEL_RECOMMENDATIONS_ENABLED = "false";
   process.env.FOOD_RECOMMENDATIONS_ENABLED = "false";
   process.env.ROUTE_RECOMMENDATIONS_ENABLED = "false";
@@ -72,6 +74,7 @@ test("core recommendations ignore unrelated environment flags but retain individ
     restore("HOTEL_RECOMMENDATIONS_ENABLED", previous.hotel);
     restore("FOOD_RECOMMENDATIONS_ENABLED", previous.food);
     restore("ROUTE_RECOMMENDATIONS_ENABLED", previous.route);
+    restore("TRIPCHECK_PAID_API_ENABLED", previous.paid);
   }
 });
 
@@ -82,6 +85,8 @@ test("enabled core routes reach input validation", async () => {
   const originalRouteSwitch = process.env.ROUTE_RECOMMENDATIONS_ENABLED;
   const originalHotelSwitch = process.env.HOTEL_RECOMMENDATIONS_ENABLED;
   const originalFoodSwitch = process.env.FOOD_RECOMMENDATIONS_ENABLED;
+  const originalPaidApiEnabled = process.env.TRIPCHECK_PAID_API_ENABLED;
+  process.env.TRIPCHECK_PAID_API_ENABLED = "true";
   process.env.HOTEL_RECOMMENDATIONS_ENABLED = "true";
   process.env.FOOD_RECOMMENDATIONS_ENABLED = "true";
   process.env.GOOGLE_PLACES_API_KEY = "test-key";
@@ -101,5 +106,6 @@ test("enabled core routes reach input validation", async () => {
     restore("ROUTE_RECOMMENDATIONS_ENABLED", originalRouteSwitch);
     restore("HOTEL_RECOMMENDATIONS_ENABLED", originalHotelSwitch);
     restore("FOOD_RECOMMENDATIONS_ENABLED", originalFoodSwitch);
+    restore("TRIPCHECK_PAID_API_ENABLED", originalPaidApiEnabled);
   }
 });
