@@ -195,7 +195,8 @@ const text = {
     freeNone: "空いた日は自由行動にできます。",
     leftOut: "入りきらなかった場所",
     stayTitle: "泊まる場所",
-    stayBody: "全日程の移動がいちばん少なくなるエリアのホテルです。料金と空室は予約サイトで確認してください。",
+    stayBody: "この旅程の移動がいちばん少なくなるエリアのホテルです。候補の場所ごとに全日程を組み直して比べています。料金と空室は予約サイトで確認してください。",
+    stayAround: (name: string) => `おすすめのエリア：${name}の周辺`,
     stayLoading: "ホテルを探しています…",
     stayNone: "ホテル候補を取得できませんでした。",
     useHotel: "ここを拠点にする",
@@ -321,7 +322,8 @@ const text = {
     freeNone: "Keep the spare days open.",
     leftOut: "Did not fit",
     stayTitle: "Where to stay",
-    stayBody: "Hotels in the area that keeps the whole trip's travel shortest. Check price and availability on a booking site.",
+    stayBody: "Hotels in the area where this plan travels least — each candidate area was planned in full and compared. Check price and availability on a booking site.",
+    stayAround: (name: string) => `Suggested area: around ${name}`,
     stayLoading: "Looking for hotels…",
     stayNone: "Could not load hotels.",
     useHotel: "Use as my base",
@@ -545,6 +547,7 @@ function StayNear({ plan, trip, locale, onHotel }: { plan: ShioriPlan; trip: Shi
   return (
     <section className="shiori-section">
       <h2><Icon name="bed" /> {t.stayTitle}</h2>
+      {plan.stayNear.nearName ? <p><b>{t.stayAround(plan.stayNear.nearName)}</b></p> : null}
       <p className="shiori-quiet">{t.stayBody}</p>
       {state === "loading" ? <p className="shiori-quiet">{t.stayLoading}</p> : null}
       {state === "failed" ? <p className="shiori-quiet">{t.stayNone}</p> : null}

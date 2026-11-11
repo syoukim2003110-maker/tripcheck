@@ -38,8 +38,13 @@ test("a theme-park day is not filled up with the other day's sights", () => {
   // Was: USJ until 17:00, then five more sights until 01:45, and one shrine on day 2.
   const osaka = trip("osaka", 7, 2, { raw: true });
   assertNoDayPastMidnight(osaka);
-  const park = osaka.days.find((day) => day.stops.some((stop) => /ユニバーサル/.test(stop.place.name)))!;
-  assert.equal(park.stops.length, 1, park.stops.map((stop) => stop.place.name).join(","));
+  // Seven sights with USJ do not fit two days. What is printed is two days
+  // a little over — never one day into the night — and it says three fit.
+  for (const day of osaka.days) assert.ok(minutes(day.stops.at(-1)!.leave) <= 19 * 60, `day ${day.index + 1} ends ${day.stops.at(-1)!.leave}`);
+  assert.ok(osaka.notices.some((notice) => notice.kind === "needs-days" && notice.days === 3));
+  const three = trip("osaka", 7, 3, { raw: true });
+  assert.equal(three.days.some((day) => day.runsLate), false);
+  assert.equal(three.days.find((day) => day.stops.some((stop) => /ユニバーサル/.test(stop.place.name)))!.stops.length, 1);
   const tokyo = trip("tokyo", 7, 2, { raw: true });
   assertNoDayPastMidnight(tokyo);
   // Seven sights with Disneyland do not fit two days; what is printed is
@@ -96,4 +101,29 @@ test("an overfull day keeps honest stays and says it is late, even past midnight
   assert.equal(plan.days[0].runsLate, true);
   for (const stop of plan.days[0].stops) assert.ok(stop.stayMinutes >= 15, `${stop.place.name} stays ${stop.stayMinutes}`);
   assert.ok(plan.notices.some((notice) => notice.kind === "needs-days" || notice.kind === "drop" || notice.kind === "too-much"));
+});
+
+test("the suggested hotel area is where this plan travels least, and a far hotel is told so", () => {
+  const free = trip("tokyo", 6, 2);
+  assert.ok(free.stayNear);
+  const city = cities.find((entry) => entry.id === "tokyo")!;
+  const places = curateSights(city.sights).slice(0, 6).map((sight) => placeFromSight(sight, "ja"));
+  const rail = networks.get("tokyo")!;
+  const travel = (plan: ShioriPlan) => plan.days.reduce((sum, day) => sum + day.travelMinutes, 0);
+  const at = (lat: number, lon: number) => buildShioriPlan({ places, days: 2, hotel: { name: "h", lat, lon }, locale: "ja" }, { rail, cities });
+  const suggested = at(free.stayNear.latitude, free.stayNear.longitude);
+  // No listed place is a better base than the suggestion by more than a few minutes.
+  for (const place of places) assert.ok(travel(suggested) <= travel(at(place.lat, place.lon)) + 15, `${place.name}: ${travel(at(place.lat, place.lon))} < ${travel(suggested)}`);
+  assert.equal(suggested.notices.some((notice) => notice.kind === "hotel-far"), false);
+  // Hachioji, 35 km out, is.
+  const far = at(35.6556, 139.3389);
+  assert.ok(far.notices.some((notice) => notice.kind === "hotel-far"));
+});
+
+test("adding the suggested hotel does not make a trip that fits run late", () => {
+  const free = trip("tokyo", 9, 3);
+  assert.equal(free.days.some((day) => day.runsLate), false);
+  const withHotel = trip("tokyo", 9, 3, { hotel: { name: "おすすめ", lat: free.stayNear!.latitude, lon: free.stayNear!.longitude } });
+  assert.equal(withHotel.days.some((day) => day.runsLate), false, withHotel.days.map((day) => `${day.start}-${day.end}`).join(" "));
+  assert.equal(withHotel.leftOut.length, 0);
 });

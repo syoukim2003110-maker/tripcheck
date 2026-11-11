@@ -155,7 +155,7 @@ export type ShioriPlan = {
   /** Places the engine could not schedule. */
   leftOut: string[];
   /** Where a hotel would make the whole trip travel least. */
-  stayNear: { latitude: number; longitude: number; routePoints: GeoPoint[] } | null;
+  stayNear: { latitude: number; longitude: number; routePoints: GeoPoint[]; /** The listed place the area is around, when it is one. */ nearName?: string } | null;
   hotel: ShioriHotel | null;
   notices: ShioriNotice[];
 };
@@ -168,6 +168,7 @@ const paceSettings: Record<ShioriPace, { engine: Pace; dayEnd: string }> = {
 const OUTDOOR_KIND = /park|garden|shrine|temple|pagoda|mountain|hill|beach|island|zoo|castle|bridge|square|plaza|street|market|monument|statue|ruins|palace|amusement|theme park|lake|river|waterfall|cemetery|neighbou?rhood/;
 const INDOOR_KIND = /museum|gallery|aquarium|planetarium|department store|shopping (mall|centre|center)|library|theat|opera|concert hall|science cent/;
 const DAY_START = "09:00";
+const HOTEL_DAY_START = "08:30";
 const LUNCH_MINUTES = 60;
 /** A day with a dinner the traveller chose is meant to run into the evening. */
 const DINNER_DAY_END = "21:30";
@@ -245,24 +246,49 @@ function timeline(day: EngineDay) {
  * ends by the day's end. A chosen dinner may run to 21:30 — the dinner, not
  * the day: the last sight before it still has to be over by the day's end.
  */
-function overrunOf(day: EngineDay, dayEnd: string, dinnerIds: ReadonlySet<string>) {
+function overrunOf(day: EngineDay, dayEnd: string, dinnerIds: ReadonlySet<string>, lunch?: { pending: ReadonlySet<string> }) {
   if (day.stops.length === 0) return 0;
-  const hasDinner = day.stops.some((stop) => dinnerIds.has(stop.stop.id));
-  // Without a dinner the engine's own figure is the one (it is not a clock,
-  // so it does not wrap).
-  if (!hasDinner) return Math.max(0, day.deadlineOverrunMinutes);
   const times = timeline(day);
   const lastSight = day.stops.findLastIndex((stop) => !dinnerIds.has(stop.stop.id));
-  const sights = lastSight >= 0 ? times[lastSight].leave - clockMinutes(dayEnd) : 0;
-  return Math.max(0, sights, times.at(-1)!.leave - clockMinutes(DINNER_DAY_END));
+  const sightsEnd = lastSight >= 0 ? times[lastSight].leave : 0;
+  // Before lunch has been given its hour, a day that will get one is an
+  // hour longer than its clock says. Judged without it, a day ending 17:11
+  // "fits" and then runs to 18:11 — reported late although regrouping could
+  // have fixed it. (`lunch.pending` holds the restaurants chosen for lunch;
+  // the rule is the one that places lunch.)
+  const lunchDue = lunch !== undefined
+    && !day.stops.some((stop) => lunch.pending.has(stop.stop.id))
+    && (day.stops.length >= 2 || times.at(-1)!.leave <= 15 * 60)
+    && day.stops.some((stop, index) => !dinnerIds.has(stop.stop.id) && times[index].leave >= 11 * 60 && times[index].leave <= 14 * 60 + 30);
+  // Sightseeing — not the ride back to the hotel — is what has to be over by
+  // the day's end: the same nine hours with a hotel as without one.
+  const sights = lastSight >= 0 ? sightsEnd + (lunchDue ? LUNCH_MINUTES : 0) - clockMinutes(dayEnd) : 0;
+  const hasDinner = lastSight < day.stops.length - 1;
+  return Math.max(0, sights, hasDinner ? times.at(-1)!.leave - clockMinutes(DINNER_DAY_END) : 0);
 }
 
-function dayLate(day: EngineDay, dayEnd: string, dinnerIds: ReadonlySet<string>) {
-  return overrunOf(day, dayEnd, dinnerIds) > 0;
+function dayLate(day: EngineDay, dayEnd: string, dinnerIds: ReadonlySet<string>, lunch?: { pending: ReadonlySet<string> }) {
+  return overrunOf(day, dayEnd, dinnerIds, lunch) > 0;
 }
 
-function dayRunsLate(plan: BuiltTripPlan, dayEnd: string, dinnerIds: ReadonlySet<string>) {
-  return plan.days.some((day) => dayLate(day, dayEnd, dinnerIds));
+function dayRunsLate(plan: BuiltTripPlan, dayEnd: string, dinnerIds: ReadonlySet<string>, lunch?: { pending: ReadonlySet<string> }) {
+  return plan.days.some((day) => dayLate(day, dayEnd, dinnerIds, lunch));
+}
+
+function lunchIdsOf(input: ShioriInput) {
+  return new Set(input.places.filter((place) => place.meal === "lunch").map((place) => place.id));
+}
+
+/** What the booklet calls a packed day, read off an engine day. Single-stop days (a theme park) are never it. */
+function tightDay(day: EngineDay, dinnerIds: ReadonlySet<string>) {
+  const sights = day.stops.filter((stop) => !dinnerIds.has(stop.stop.id)).length;
+  if (sights < 2) return false;
+  const legs = [...day.legs.map((leg) => leg.comparison.recommended.minutes), day.hotelOutboundMinutes ?? 0, day.hotelInboundMinutes ?? 0];
+  const times = timeline(day);
+  return day.stops.length >= 6
+    || legs.reduce((sum, minutes) => sum + minutes, 0) >= 150
+    || legs.filter((minutes) => minutes >= 45).length >= 2
+    || times.at(-1)!.leave - times[0].arrive > 600;
 }
 
 function dinnerIdsOf(input: ShioriInput) {
@@ -305,7 +331,9 @@ function buildWithEngine(input: ShioriInput, extra: Partial<TripPlannerContext>,
     resolvedStops: stops,
     resolvedBase: base,
     ...(base ? { hotelQuery: base.input } : {}),
-    defaultDayStart: DAY_START,
+    // From a hotel the day starts at its door, half an hour before the
+    // first place would otherwise open the day.
+    defaultDayStart: input.hotel ? HOTEL_DAY_START : DAY_START,
     dayEndTarget: settings.dayEnd,
     mealPlan: "all",
     // The grouping is refined afterwards by this module's own search (cheap
@@ -382,22 +410,22 @@ function chooseDays(input: ShioriInput, extra: Partial<TripPlannerContext>, rail
   // days with an hour for lunch; one day below that estimate is still tried.)
   const estimate = Math.ceil((stays + 15 * input.places.length) / 480);
   const first = Math.min(requested, Math.max(pinned, estimate - 1, 1));
-  // The fewest days that fit — but not at the price of a crammed day when
-  // the traveller has another day to give: six places, or more than ten
-  // hours out, is what people later say ruined the trip.
-  const crammed = (plan: BuiltTripPlan) => plan.days.some((day) => {
-    if (day.stops.length === 0) return false;
-    const times = timeline(day);
-    return day.stops.length >= 6 || times.at(-1)!.leave - times[0].arrive > 600;
-  });
-  let fits: Built | null = null;
+  // The fewest days that fit — but not at the price of a packed day when
+  // the traveller has another day to give: packed days are what people
+  // later say ruined the trip. Among the day counts that fit, the first
+  // with no packed day wins; failing that, the one with the fewest.
+  const lunch = { pending: lunchIdsOf(input) };
+  let best: { built: Built; tight: number } | null = null;
   for (let days = first; days <= requested; days += 1) {
     last = free(days);
-    if (dayRunsLate(last.plan, settings.dayEnd, dinnerIds)) continue;
-    if (!crammed(last.plan)) return last;
-    fits ??= last;
+    if (dayRunsLate(last.plan, settings.dayEnd, dinnerIds, lunch)) continue;
+    const tight = last.plan.days.filter((day) => tightDay(day, dinnerIds)).length;
+    // (Long lists stop at the first count that fits: each further count is
+    // a full engine run of about a second.)
+    if (tight === 0 || input.places.length > 16) return last;
+    if (!best || tight < best.tight) best = { built: last, tight };
   }
-  return fits ?? last ?? free(requested);
+  return best?.built ?? last ?? free(requested);
 }
 
 const orderOf = (plan: BuiltTripPlan) => Object.fromEntries(plan.days.flatMap((day, index) => (
@@ -549,29 +577,45 @@ function planOnce(input: ShioriInput, options: PlanOptions): ShioriPlan {
    * days beat one crammed and one nearly empty). A day nobody can keep, or
    * a place left out, outweighs all of it.
    */
+  const lunchPending = { pending: lunchIdsOf(input) };
   const cost = (plan: BuiltTripPlan) => {
     const used = plan.days.filter((day) => day.stops.length > 0);
+    // A day's length is its sightseeing: first arrival to the last sight.
+    // (Measured to the end of a chosen dinner, the dinner's day is always
+    // "long", and piling sights onto it looks free.)
     const spans = used.map((day) => {
       const times = timeline(day);
-      return times.at(-1)!.leave - times[0].arrive;
+      const lastSight = day.stops.findLastIndex((stop) => !dinnerIds.has(stop.stop.id));
+      return times[Math.max(0, lastSight)].leave - times[0].arrive;
     });
-    const total = used.reduce((sum, day) => {
+    const total = used.reduce((sum, day, dayIndex) => {
       const times = timeline(day);
       const travel = day.legs.reduce((minutes, leg) => minutes + leg.comparison.recommended.minutes, 0)
         + (day.hotelOutboundMinutes ?? 0) + (day.hotelInboundMinutes ?? 0);
       const waiting = day.stops.reduce((minutes, stop, index) => {
         if (index === 0 || !mealOf.has(stop.stop.id)) return minutes;
-        return minutes + Math.max(0, times[index].arrive - times[index - 1].leave - (day.legs[index - 1]?.comparison.recommended.minutes ?? 0));
+        const gap = Math.max(0, times[index].arrive - times[index - 1].leave - (day.legs[index - 1]?.comparison.recommended.minutes ?? 0));
+        // Free time before a chosen dinner is an afternoon off, up to three hours of it.
+        return minutes + (dinnerIds.has(stop.stop.id) ? Math.max(0, gap - 180) : gap);
       }, 0);
       const missed = day.stops.filter((stop) => mealOf.has(stop.stop.id) && stop.openingStatus !== "verified_open").length;
       // The later a day runs, the more each further minute costs: two days
       // fifty minutes over are a nuisance, one day eight hours over is not a
       // day anyone has.
-      const over = overrunOf(day, settings.dayEnd, dinnerIds);
-      return sum + travel + waiting / 2 + (over > 0 ? 500 + over * 10 + (over * over) / 6 : 0) + missed * 1000;
+      const over = overrunOf(day, settings.dayEnd, dinnerIds, lunchPending);
+      // A day that will end after about 16:30 (six and a half hours before
+      // lunch is added) is charged for it directly.
+      const long = Math.max(0, spans[dayIndex] - 390) / 2;
+      return sum + travel + waiting / 2 + long + (over > 0 ? 500 + over * 10 + (over * over) / 6 : 0) + missed * 1000;
     }, 0);
     const scheduled = used.reduce((count, day) => count + day.stops.length, 0);
-    return total + (spans.length > 1 ? (Math.max(...spans) - Math.min(...spans)) / 2 : 0) + (input.places.length - scheduled) * 5000;
+    // Evenness matters far less than a long day: only a spread beyond two
+    // hours counts, lightly — a sight is not sent across town to even out
+    // two days. One short visit left alone on a day beside full days is the
+    // exception worth a small charge.
+    const spread = spans.length > 1 ? Math.max(...spans) - Math.min(...spans) : 0;
+    const lonely = used.some((day) => day.stops.length === 1 && day.stops[0].stop.planningDurationMinutes < 240) && used.some((day) => day.stops.length >= 4) ? 40 : 0;
+    return total + Math.max(0, spread - 120) / 8 + lonely + (input.places.length - scheduled) * 5000;
   };
   const assignmentOf = (plan: BuiltTripPlan) => Object.fromEntries(plan.days.flatMap((day, index) => day.stops.map((stop) => [stop.stop.id, index + 1] as const)));
   /**
@@ -685,10 +729,16 @@ function planOnce(input: ShioriInput, options: PlanOptions): ShioriPlan {
   const shelf = structures.get(rail ?? NO_RAIL) ?? new Map<string, Structure>();
   structures.set(rail ?? NO_RAIL, shelf);
   let known = shelf.get(cacheKey);
-  if (!known) {
+  if (known) {
+    // Most recently used last: the trip on screen is asked for again with
+    // every batch of street paths and must outlive the variants tried
+    // around it (one per candidate hotel area alone).
+    shelf.delete(cacheKey);
+    shelf.set(cacheKey, known);
+  } else {
     known = structure();
     shelf.set(cacheKey, known);
-    if (shelf.size > 24) shelf.delete(shelf.keys().next().value as string);
+    if (shelf.size > 120) shelf.delete(shelf.keys().next().value as string);
   }
   const { journeys, transit, walking, walkAdvised, driving, pins, durationOverrides, legModeOverrides, lunchAfter } = known;
   let built = known.built;
@@ -917,7 +967,8 @@ export function buildShioriPlan(input: ShioriInput, options: PlanOptions = {}): 
   if (!fits(plan)) {
     let found = false;
     for (let days = requested + 1; days <= Math.min(7, requested + 2) && !found; days += 1) {
-      if (fits(planOnce({ ...input, days }, quick))) {
+      // Said only if the plan the traveller would then get — the full one — fits.
+      if (fits(planOnce({ ...input, days }, options))) {
         notices.push({ kind: "needs-days", days });
         found = true;
       }
@@ -935,7 +986,7 @@ export function buildShioriPlan(input: ShioriInput, options: PlanOptions = {}): 
     const droppable = costly.find(({ place }) => {
       const without = { ...input, places: input.places.filter((entry) => entry.id !== place.id) };
       const kept = Object.fromEntries(Object.entries(grouping).filter(([id]) => id !== place.id));
-      return fits(planOnce(without, { ...quick, seed: { pins: kept, days: usedDays } })) && fits(planOnce(without, quick));
+      return fits(planOnce(without, { ...quick, seed: { pins: kept, days: usedDays } })) && fits(planOnce(without, options));
     });
     if (droppable) notices.push({ kind: "drop", placeId: droppable.place.id, name: droppable.place.name });
     if (!found && !droppable) notices.push({ kind: "too-much" });
@@ -961,16 +1012,53 @@ export function buildShioriPlan(input: ShioriInput, options: PlanOptions = {}): 
     });
   }
 
-  if (input.hotel && plan.stayNear) {
-    const hotelMinutes = (candidate: ShioriPlan) => candidate.days.reduce((sum, day) => sum + (day.fromHotel?.minutes ?? 0) + (day.toHotel?.minutes ?? 0), 0);
-    const mine = hotelMinutes(plan);
-    const oneWay = Math.round(mine / (plan.days.length * 2));
-    if (oneWay >= 30) {
-      // The same days and places with the hotel moved: only the hotel legs differ.
-      const central = planOnce({ ...input, hotel: { name: input.hotel.name, lat: plan.stayNear.latitude, lon: plan.stayNear.longitude } }, { ...quick, seed: { pins: grouping, days: usedDays } });
-      const saved = mine - hotelMinutes(central);
-      if (saved >= 20 * plan.days.length) notices.push({ kind: "hotel-far", oneWayMinutes: oneWay, savedMinutes: Math.round(saved / 10) * 10 });
+  // Where to stay: the listed place around which a hotel makes this very
+  // plan travel least. Each candidate is the same days and places with the
+  // hotel there, planned and summed — not a midpoint of coordinates, which
+  // lands in Central Park or the harbour and knows nothing of train lines.
+  let stayNear = plan.stayNear;
+  const travelOf = (candidate: ShioriPlan) => candidate.days.reduce((sum, day) => sum + day.travelMinutes, 0);
+  const lateOf = (candidate: ShioriPlan) => candidate.days.filter((day) => day.runsLate).length;
+  if (plan.stayNear) {
+    // Short lists are re-planned exactly as the booklet would plan them
+    // (regrouping included); long ones without the regrouping search.
+    const thorough = input.places.length <= 10 ? { ...options, routes: undefined } : { ...quick, routes: undefined };
+    const withHotelAt = (name: string, lat: number, lon: number) => planOnce({ ...input, hotel: { name, lat, lon } }, { ...quick, routes: undefined, seed: { pins: grouping, days: usedDays } });
+    const candidates = [
+      { name: null as string | null, lat: plan.stayNear.latitude, lon: plan.stayNear.longitude },
+      ...input.places.map((place) => ({ name: place.name as string | null, lat: place.lat, lon: place.lon })),
+    ].map((candidate) => ({ ...candidate, plan: withHotelAt(candidate.name ?? "", candidate.lat, candidate.lon) }))
+      .filter((candidate) => candidate.plan.leftOut.length === 0);
+    const fewestLate = Math.min(...candidates.map((candidate) => lateOf(candidate.plan)));
+    // The few best by that quick measure are then planned for real — a
+    // hotel changes which places go on which day — and the least travel of
+    // those wins.
+    const finalists = candidates
+      .filter((candidate) => lateOf(candidate.plan) === fewestLate)
+      .sort((left, right) => travelOf(left.plan) - travelOf(right.plan))
+      .slice(0, input.places.length > 16 ? 1 : input.places.length > 12 ? 2 : input.places.length > 10 ? 4 : 6)
+      // (Beyond 16 places the quick measure decides alone.)
+      .map((candidate) => (input.places.length > 16 ? candidate : { ...candidate, plan: planOnce({ ...input, hotel: { name: candidate.name ?? "", lat: candidate.lat, lon: candidate.lon } }, thorough) }))
+      .filter((candidate) => candidate.plan.leftOut.length === 0);
+    const leastLate = Math.min(...finalists.map((candidate) => lateOf(candidate.plan)));
+    const winner = finalists
+      .filter((candidate) => lateOf(candidate.plan) === leastLate)
+      .sort((left, right) => travelOf(left.plan) - travelOf(right.plan))[0];
+    if (winner) {
+      stayNear = { ...plan.stayNear, latitude: winner.lat, longitude: winner.lon, ...(winner.name ? { nearName: winner.name } : {}) };
+      // The traveller's own hotel against that: said when it costs twenty
+      // minutes a day or more, and half an hour each way.
+      if (input.hotel) {
+        const hotelLegs = plan.days.reduce((sum, day) => sum + (day.fromHotel?.minutes ?? 0) + (day.toHotel?.minutes ?? 0), 0);
+        const oneWay = Math.round(hotelLegs / (plan.days.length * 2));
+        const apart = Math.hypot((input.hotel.lat - winner.lat) * 111, (input.hotel.lon - winner.lon) * 111 * Math.cos((winner.lat * Math.PI) / 180));
+        const mine = input.places.length > 16 ? withHotelAt(input.hotel.name, input.hotel.lat, input.hotel.lon) : planOnce(input, thorough);
+        const saved = travelOf(mine) - travelOf(winner.plan);
+        if (oneWay >= 30 && apart > 0.5 && saved >= 20 * plan.days.length && lateOf(winner.plan) <= lateOf(mine)) {
+          notices.push({ kind: "hotel-far", oneWayMinutes: oneWay, savedMinutes: Math.round(saved / 10) * 10 });
+        }
+      }
     }
   }
-  return { ...plan, notices };
+  return { ...plan, stayNear, notices };
 }
