@@ -203,14 +203,17 @@ test("the rest of the wishlist settles the same namesake", async () => {
   assert.ok(Math.abs(result.places.find((place) => place.input === "清水寺")!.longitude - 135.785) < 0.001);
 });
 
-test("an alias is the place: 金閣寺 is 鹿苑寺", async () => {
+test("an alias finds the place and keeps the name the traveller typed: 金閣寺 is 鹿苑寺", async () => {
   const { resolver } = world([
     { title: "鹿苑寺", aliases: ["金閣寺"], latitude: 35.0395, longitude: 135.7285, wikidata: { id: "Q20", sitelinks: 80 } },
     { title: "二条城", latitude: 35.0142, longitude: 135.7475, wikipedia: { language: "ja", pageid: 21 }, wikidata: { id: "Q21" } },
     { title: "錦市場", latitude: 35.005, longitude: 135.765, wikipedia: { language: "ja", pageid: 22 }, wikidata: { id: "Q22" } },
   ]);
   const result = await resolver.resolve(request(["金閣寺", "二条城", "錦市場"]));
-  assert.equal(result.places.find((place) => place.input === "金閣寺")?.name, "鹿苑寺");
+  const kinkakuji = result.places.find((place) => place.input === "金閣寺");
+  assert.equal(kinkakuji?.name, "金閣寺");
+  assert.equal(kinkakuji?.id, "wikidata-Q20");
+  assert.ok(Math.abs(kinkakuji!.latitude - 35.0395) < 0.001);
 });
 
 test("a name nothing knows stays unresolved instead of becoming a guess", async () => {

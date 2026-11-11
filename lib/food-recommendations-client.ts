@@ -6,8 +6,9 @@ import type { FoodRankingItem } from "./ai-food-ranking.ts";
 import { tripRequestHeaders } from "./trip-request-identity.ts";
 
 export type FoodRecommendationsResponse = {
-  provider: "google_maps";
-  ranking: "evidence_weighted";
+  provider: "google_maps" | "apple_maps";
+  /** Google ranks on rating evidence; Apple carries none and orders by distance. */
+  ranking: "evidence_weighted" | "distance";
   fetchedAt: string;
   candidates: FoodCandidate[];
 };
@@ -207,20 +208,30 @@ export async function requestFoodRecommendations(
   const maybeLocale = typeof localeOrOptions === "string" ? localeOrOptions : undefined;
   const options = typeof localeOrOptions === "string" ? maybeOptions : localeOrOptions;
   const destination = options?.destination ?? "auto";
+  const body = JSON.stringify(maybeLocale
+    ? buildFoodSearchPayload(slot, queryOrLocale, maybeLocale, destination)
+    : buildFoodSearchPayload(slot, queryOrLocale as Locale, destination));
+  const post = (path: string) => fetch(path, {
+    method: "POST",
+    headers: tripRequestHeaders({ "Content-Type": "application/json" }),
+    signal: options?.signal,
+    body,
+  });
   let response: Response;
+  let payload: (FoodRecommendationsResponse & { code?: string }) | null;
   try {
-    response = await fetch("/api/food-recommendations", {
-      method: "POST",
-      headers: tripRequestHeaders({ "Content-Type": "application/json" }),
-      signal: options?.signal,
-      body: JSON.stringify(maybeLocale
-        ? buildFoodSearchPayload(slot, queryOrLocale, maybeLocale, destination)
-        : buildFoodSearchPayload(slot, queryOrLocale as Locale, destination)),
-    });
+    // The quota-metered keyless route answers first. Only a deployment that
+    // has not configured it (`not_configured`) falls through to the paid
+    // route, which then applies its own opt-in, origin and budget gates.
+    response = await post("/api/food-recommendations/open");
+    payload = await response.json().catch(() => null) as typeof payload;
+    if (!response.ok && (payload?.code === "not_configured" || response.status === 404)) {
+      response = await post("/api/food-recommendations");
+      payload = await response.json().catch(() => null) as typeof payload;
+    }
   } catch {
     throw new FoodRecommendationsError("unavailable");
   }
-  const payload = await response.json().catch(() => null) as (FoodRecommendationsResponse & { code?: string }) | null;
   if (!response.ok || !payload) {
     if (payload?.code === "not_configured") throw new FoodRecommendationsError("not_configured");
     if (payload?.code === "invalid_request") throw new FoodRecommendationsError("invalid_request");

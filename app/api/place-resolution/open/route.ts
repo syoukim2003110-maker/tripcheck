@@ -4,6 +4,7 @@ import {
   OPEN_PLACE_ATTRIBUTION,
 } from "../../../../lib/open-place-resolver";
 import { PLANNING_BUDGET } from "../../../../lib/planning-budget";
+import { appleMapsPlaceSearch } from "../../../../lib/server/apple-maps-places";
 
 const noStoreHeaders = { "Cache-Control": "no-store, max-age=0" };
 
@@ -43,10 +44,15 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = await fetchOpenPlaceResolutions(parsed, request.signal);
+    // Apple Maps joins only when its credentials are configured, and only
+    // for the lines the open sources could not settle.
+    const mapsSearch = appleMapsPlaceSearch();
+    const result = await fetchOpenPlaceResolutions(parsed, request.signal, undefined, mapsSearch);
     return Response.json({
       provider: "open_place_data",
-      attribution: OPEN_PLACE_ATTRIBUTION,
+      attribution: mapsSearch
+        ? { ...OPEN_PLACE_ATTRIBUTION, label: `${OPEN_PLACE_ATTRIBUTION.label} · Apple Maps` }
+        : OPEN_PLACE_ATTRIBUTION,
       fetchedAt: new Date().toISOString(),
       ...result,
     }, { headers: noStoreHeaders });

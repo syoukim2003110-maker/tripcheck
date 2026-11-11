@@ -210,7 +210,9 @@ test("an entirely unavailable live-route batch is retryable at the Worker bounda
         id: "leg-1",
         origin: { latitude: 35.6812, longitude: 139.7671 },
         destination: { latitude: 35.7101, longitude: 139.8107 },
-        departureTime: "2026-08-10T01:00:00.000Z",
+        // Relative to today: the route rejects a departure in the past, and a
+        // fixed calendar date turned this test into a time bomb.
+        departureTime: new Date(Date.now() + 24 * 60 * 60 * 1_000).toISOString(),
       }],
       languageCode: "en",
       travelMode: "TRANSIT",

@@ -61,7 +61,7 @@ const HOST_COOLDOWN_MS = 5 * 60 * 1_000;
 const INPUT_CONCURRENCY = 4;
 const DEFAULT_CONTACT_URL = "https://github.com/syoukim2003110-maker/tripcheck";
 
-type CandidateSource = "wikipedia" | "wikidata" | "photon" | "nominatim";
+type CandidateSource = "wikipedia" | "wikidata" | "photon" | "nominatim" | "maps";
 
 type Candidate = {
   source: CandidateSource;
@@ -80,6 +80,48 @@ type Candidate = {
 };
 
 type Region = { latitude: number; longitude: number; countryCode?: string };
+
+/** One result from a quota-metered maps search (Apple Maps Server API). */
+export type MapsSearchPlace = Readonly<{
+  id: string | null;
+  name: string;
+  latitude: number;
+  longitude: number;
+  address: string;
+  area: string | null;
+  countryCode: string | null;
+  category: string | null;
+}>;
+
+/**
+ * Optional maps search the deployment may plug in. It is metered by a daily
+ * quota, so the resolver only asks it about lines the open sources could not
+ * settle. `null` means "could not answer", an empty array "nothing found".
+ */
+export type MapsPlaceSearch = (
+  input: string,
+  languageCode: "en" | "ja",
+  near: { latitude: number; longitude: number } | null,
+  signal?: AbortSignal,
+) => Promise<MapsSearchPlace[] | null>;
+
+const mapsCategoryTypes: Record<string, string> = {
+  religioussite: "place_of_worship",
+  landmark: "landmark",
+  theater: "performing_arts_theater",
+  musicvenue: "concert_hall",
+  store: "store",
+  foodmarket: "food_market",
+  hotel: "lodging",
+  nationalmonument: "monument",
+  fairground: "amusement_park",
+};
+
+function mapsPlaceTypes(category: string | null) {
+  if (!category) return [];
+  const snake = category.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLocaleLowerCase("en-US");
+  return [mapsCategoryTypes[category.toLocaleLowerCase("en-US")] ?? snake];
+}
 
 export type OpenPlaceResolverOptions = Partial<{
   fetcher: typeof fetch;
@@ -583,7 +625,11 @@ export class OpenPlaceResolver {
         entity.labels?.[language]?.value,
         ...(entity.aliases?.[language] ?? []).map((alias) => alias.value),
       ]).flatMap((value) => typeof value === "string" && value.trim() ? [value.trim()] : []);
-      const name = entity.labels?.[languageCode]?.value?.trim()
+      // A sight the traveller named by a well-known alias keeps that name on
+      // the itinerary: they typed 金閣寺, not its formal headword 鹿苑寺.
+      const typedAlias = names.find((candidate) => foldPlaceName(candidate) === foldPlaceName(input));
+      const name = typedAlias
+        ?? entity.labels?.[languageCode]?.value?.trim()
         ?? entity.labels?.en?.value?.trim()
         ?? names[0];
       if (!name) return [];
@@ -744,12 +790,63 @@ export class OpenPlaceResolver {
     });
   }
 
+  private async mapsCandidates(
+    search: MapsPlaceSearch,
+    input: string,
+    languageCode: "en" | "ja",
+    near: Region | null,
+    signal?: AbortSignal,
+  ): Promise<Candidate[] | null> {
+    let found: MapsSearchPlace[] | null;
+    try {
+      found = await search(input, languageCode, near, signal);
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      return null;
+    }
+    if (!found) return null;
+    const verifiedAt = new Date(this.now()).toISOString();
+    return found.slice(0, 6).flatMap((place, rank): Candidate[] => {
+      if (!place.name.trim() || !validCoordinate(place.latitude, place.longitude)) return [];
+      const placeTypes = mapsPlaceTypes(place.category);
+      const countryCode = profileCountryCode(place.latitude, place.longitude, place.countryCode ?? undefined);
+      const coordinate = `${place.latitude.toFixed(5)},${place.longitude.toFixed(5)}`;
+      return [{
+        source: "maps",
+        similarity: placeNameSimilarity(input, place.name),
+        rank,
+        // A categorised point of interest is something to visit; a bare
+        // address match may be anything.
+        visitWeight: place.category ? 1 : 0.6,
+        corroborated: false,
+        prominence: 0,
+        stop: {
+          id: `maps-${place.id ?? coordinate}`.slice(0, 120),
+          input,
+          name: place.name.trim(),
+          area: place.area ?? "",
+          address: place.address,
+          ...(countryCode ? { countryCode } : {}),
+          latitude: place.latitude,
+          longitude: place.longitude,
+          sourceUrl: `https://maps.apple.com/?ll=${coordinate}&q=${encodeURIComponent(place.name.trim())}`,
+          verifiedAt,
+          confidence: "medium",
+          planningDurationMinutes: estimateStayMinutes(`${input} ${place.name}`, placeTypes, 90),
+          isAnchor: false,
+          placeTypes,
+        },
+      }];
+    });
+  }
+
   private async gather(
     input: string,
     languageCode: "en" | "ja",
     destination: Destination,
     near: Region | null,
     signal?: AbortSignal,
+    mapsSearch: MapsPlaceSearch | null = null,
   ) {
     const languages = wikipediaLanguages(input, languageCode);
     // The first pass asks one encyclopedia; the regional second pass can
@@ -758,6 +855,7 @@ export class OpenPlaceResolver {
     const batches = await Promise.all([
       this.photonCandidates(input, near, signal),
       this.wikidataCandidates(input, languageCode, near, signal),
+      mapsSearch ? this.mapsCandidates(mapsSearch, input, languageCode, near, signal) : Promise.resolve(null),
       ...wikiLanguages.map((language) => this.wikipediaCandidates(input, language, near, signal)),
     ]);
     const answered = batches.some((batch) => batch !== null);
@@ -766,7 +864,7 @@ export class OpenPlaceResolver {
     return { answered, candidates };
   }
 
-  async resolve(request: PlaceResolutionRequest, signal?: AbortSignal) {
+  async resolve(request: PlaceResolutionRequest, signal?: AbortSignal, mapsSearch: MapsPlaceSearch | null = null) {
     const destination = destinationById(request.destination === "auto" ? "worldwide" : request.destination);
     const inputs = [...request.queries, ...(request.hotelQuery ? [request.hotelQuery] : [])];
     const pools: Candidate[][] = inputs.map(() => []);
@@ -800,10 +898,23 @@ export class OpenPlaceResolver {
       const leftovers = inputs.map((_input, index) => index).filter((index) => !settled(index, region));
       const knownRegion = region;
       await forEachInput(leftovers, async (index) => {
-        const { candidates } = await this.gather(inputs[index], request.languageCode, destination, knownRegion, signal);
+        const { candidates } = await this.gather(
+          inputs[index], request.languageCode, destination, knownRegion, signal, mapsSearch,
+        );
         pools[index] = [...pools[index], ...candidates];
       });
       region = inferRegion(pools) ?? region;
+    } else if (mapsSearch) {
+      // No region emerged (a single line, or nothing confident yet). The
+      // maps search is the one source that knows ordinary shops and hotels
+      // by name, so it gets the unsettled lines directly.
+      const leftovers = inputs.map((_input, index) => index).filter((index) => !settled(index, null));
+      await forEachInput(leftovers, async (index) => {
+        const found = await this.mapsCandidates(mapsSearch, inputs[index], request.languageCode, null, signal);
+        pools[index] = [...pools[index], ...(found ?? [])
+          .filter((candidate) => withinBounds(destination.bounds, candidate.stop.latitude, candidate.stop.longitude))];
+      });
+      region = inferRegion(pools);
     }
 
     // A descriptive tail the map does not carry ("尖沙咀プロムナード") still
@@ -1113,8 +1224,9 @@ export async function fetchOpenPlaceResolutions(
   request: PlaceResolutionRequest,
   signal?: AbortSignal,
   resolver: OpenPlaceResolver = publicOpenPlaceResolver,
+  mapsSearch: MapsPlaceSearch | null = null,
 ) {
   // providerOverrides are Google Place IDs. An exact choice that cannot be
   // rehydrated stays unresolved; it never degrades to a fuzzy text match.
-  return resolver.resolve(request, signal);
+  return resolver.resolve(request, signal, mapsSearch);
 }

@@ -93,6 +93,7 @@ export const API_ROUTE_POLICIES: Readonly<Record<ApiRouteKey, ApiRoutePolicy>> =
     route({ method: "POST", path: "/api/hotel-recommendations", class: "paid", provider: "google", operation: "hotel_recommendations", featureFlags: HOTEL_ON, origin: "strict_same_origin", cache: "no_store" }),
     route({ method: "POST", path: "/api/hotel-recommendations/ai", class: "paid", provider: "anthropic", operation: "hotel_ranking", featureFlags: HOTEL_AI_ON, origin: "strict_same_origin", cache: "no_store" }),
     route({ method: "POST", path: "/api/food-recommendations", class: "paid", provider: "google", operation: "food_recommendations", featureFlags: FOOD_ON, origin: "strict_same_origin", cache: "no_store" }),
+    route({ method: "POST", path: "/api/food-recommendations/open", class: "free_public", origin: "handler_guarded", cache: "no_store" }),
     route({ method: "POST", path: "/api/food-recommendations/ai", class: "paid", provider: "anthropic", operation: "food_ranking", featureFlags: FOOD_AI_ON, origin: "strict_same_origin", cache: "no_store" }),
     route({ method: "POST", path: "/api/route-recommendations", class: "paid", provider: "google", operation: "route_recommendations", featureFlags: ROUTE_ON, origin: "strict_same_origin", cache: "no_store" }),
     // An `<img>` sends neither Origin nor a custom header, so this one is
