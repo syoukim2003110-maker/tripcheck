@@ -114,6 +114,16 @@ export function bundledSightIndex(destinations: readonly PopularDestination[]) {
   };
 }
 
+/**
+ * Where a visitor actually stands, for sights whose catalogue coordinate is
+ * the middle of grounds nobody may cross. The Imperial Palace's centre is
+ * closed: routed to it, walking directions fail and every leg becomes a taxi
+ * around the moat. Its visit is Nijubashi and the outer garden.
+ */
+const VISITOR_POINT: Record<string, readonly [number, number]> = {
+  Q500681: [35.6798, 139.7576],
+};
+
 const NOT_A_VISIT = /\bformer\b|demolished|destroyed|dynasty|historical (period|country|state|region)|\bera\b/;
 const CONTAINER_KIND = /\bpark\b|square|plaza|neighbou?rhood|district|island|quarter/;
 
@@ -140,7 +150,13 @@ export function curateSights(sights: readonly PopularSight[]): PopularSight[] {
     // A Japanese "name" that is really a description ("a museum in
     // Florence, Italy") is a bad label upstream; the English name is at
     // least the place's name.
-    if (!twin) kept.push(/にある|に位置する|に所在する/.test(sight.ja) ? { ...sight, ja: sight.en } : sight);
+    if (twin) continue;
+    const point = VISITOR_POINT[sight.q];
+    kept.push({
+      ...sight,
+      ...(point ? { lat: point[0], lon: point[1] } : {}),
+      ...(/にある|に位置する|に所在する/.test(sight.ja) ? { ja: sight.en } : {}),
+    });
   }
   return kept;
 }

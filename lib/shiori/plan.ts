@@ -1,7 +1,7 @@
 import { bundledSightsNearRoute } from "../bundled-route-recommendations.ts";
 import { destinationForCoordinate } from "../destinations.ts";
 import type { PopularDestination, PopularSight } from "../popular-sights.ts";
-import { RailNetwork, type GeoPoint, type RailJourney } from "../rail-router.ts";
+import { RailNetwork, walkMinutes, type GeoPoint, type RailAdvice, type RailJourney } from "../rail-router.ts";
 import type { ResolvedInputStop, RouteStop } from "../route-optimizer.ts";
 import { estimateTravelOptions } from "../time-feasibility.ts";
 import { cafeBreakFor, type CafeBreak } from "./cafes.ts";
@@ -269,6 +269,17 @@ function dinnerIdsOf(input: ShioriInput) {
   return new Set(input.places.filter((place) => place.meal === "dinner").map((place) => place.id));
 }
 
+/**
+ * The taxi time to plan with on a leg that has a train. Someone reading a
+ * trip booklet takes the train unless a taxi saves real time: up to 25
+ * minutes slower, the train is the plan. The engine's own rule gives a train
+ * 15 minutes of grace, so within that band the taxi is counted as no better
+ * than the train less 14 — beyond it, the taxi's own time stands and wins.
+ */
+function taxiAgainstTrain(taxiMinutes: number, trainMinutes: number) {
+  return trainMinutes <= taxiMinutes + 25 ? Math.max(taxiMinutes, trainMinutes - 14) : taxiMinutes;
+}
+
 function hotelId(hotel: ShioriHotel) {
   return `shiori-hotel@${hotel.lat.toFixed(4)},${hotel.lon.toFixed(4)}`;
 }
@@ -371,11 +382,22 @@ function chooseDays(input: ShioriInput, extra: Partial<TripPlannerContext>, rail
   // days with an hour for lunch; one day below that estimate is still tried.)
   const estimate = Math.ceil((stays + 15 * input.places.length) / 480);
   const first = Math.min(requested, Math.max(pinned, estimate - 1, 1));
+  // The fewest days that fit — but not at the price of a crammed day when
+  // the traveller has another day to give: six places, or more than ten
+  // hours out, is what people later say ruined the trip.
+  const crammed = (plan: BuiltTripPlan) => plan.days.some((day) => {
+    if (day.stops.length === 0) return false;
+    const times = timeline(day);
+    return day.stops.length >= 6 || times.at(-1)!.leave - times[0].arrive > 600;
+  });
+  let fits: Built | null = null;
   for (let days = first; days <= requested; days += 1) {
     last = free(days);
-    if (!dayRunsLate(last.plan, settings.dayEnd, dinnerIds)) return last;
+    if (dayRunsLate(last.plan, settings.dayEnd, dinnerIds)) continue;
+    if (!crammed(last.plan)) return last;
+    fits ??= last;
   }
-  return last ?? free(requested);
+  return fits ?? last ?? free(requested);
 }
 
 const orderOf = (plan: BuiltTripPlan) => Object.fromEntries(plan.days.flatMap((day, index) => (
@@ -388,6 +410,7 @@ type Structure = {
   transit: Record<string, number>;
   walking: Record<string, number>;
   walkAdvised: Set<string>;
+  driving: Record<string, number>;
   pins: Record<string, number>;
   durationOverrides: Record<string, number>;
   legModeOverrides: Record<string, "transit">;
@@ -443,6 +466,7 @@ function planOnce(input: ShioriInput, options: PlanOptions): ShioriPlan {
   const journeys = new Map<string, RailJourney>();
   const walking: Record<string, number> = {};
   const walkAdvised = new Set<string>();
+  const driving: Record<string, number> = {};
   /**
    * Prices every pair of places (and the hotel) with the bundled network
    * before anything is planned: a train journey becomes that pair's transit
@@ -452,7 +476,7 @@ function planOnce(input: ShioriInput, options: PlanOptions): ShioriPlan {
    * it only appeared in the last rebuild.
    */
   const transit: Record<string, number> = {};
-  if (rail) {
+  {
     const points: RouteStop[] = [
       ...input.places.map(resolvedStop),
       // The engine renames the base "base-<id>"; priced under any other id,
@@ -463,17 +487,32 @@ function planOnce(input: ShioriInput, options: PlanOptions): ShioriPlan {
       for (const to of points) {
         if (from.id === to.id) continue;
         const key = routeLegKey(from.id, to.id);
-        const advice = rail.advise(from, to, input.locale);
-        const estimate = estimateTravelOptions(from, to).options.find((option) => option.mode === "transit")?.minutes ?? null;
-        if (advice.kind === "rail" && (estimate === null || advice.journey.totalMinutes <= estimate * 1.8 + 10)) {
-          // A rail answer far slower than a typical transit estimate means the
-          // real answer is a bus this data does not know; keep the estimate.
+        const onFoot = walkMinutes(from, to);
+        const advice: RailAdvice = rail ? rail.advise(from, to, input.locale) : onFoot <= 30 ? { kind: "walk", minutes: onFoot } : { kind: "none" };
+        const estimates = estimateTravelOptions(from, to).options;
+        const estimate = estimates.find((option) => option.mode === "transit")?.minutes ?? null;
+        const taxi = estimates.find((option) => option.mode === "taxi")?.minutes;
+        // With no train, it is a bus through city streets: a quarter of an
+        // hour to reach, wait for and leave it, then about 14 km/h along
+        // roads a third longer than the straight line. The engine's generic
+        // estimate assumes urban rail (26 km/h) and makes every cross-town
+        // hop look alike — which is how Kinkaku-ji and Ginkaku-ji, at
+        // opposite ends of Kyoto, ended up on the same day.
+        const bus = Math.ceil((12 + onFoot * 75 / 1.3 / 1_000 * 1.3 * 4.2) / 5) * 5;
+        if (advice.kind === "rail" && advice.journey.totalMinutes <= bus + 10) {
+          // (A rail answer slower than the bus means the real answer is a
+          // bus this data does not know: 82 minutes by three trains from
+          // Yasaka Shrine to Kinkaku-ji, against 50 by bus.)
           journeys.set(key, advice.journey);
           transit[key] = advice.journey.totalMinutes;
+          if (taxi !== undefined) driving[key] = taxiAgainstTrain(taxi, advice.journey.totalMinutes);
         } else if (advice.kind === "walk") {
           walking[key] = advice.minutes;
           walkAdvised.add(key);
           transit[key] = advice.minutes + 8;
+        } else if (estimate === null || bus > estimate) {
+          transit[key] = bus;
+          if (taxi !== undefined) driving[key] = taxiAgainstTrain(taxi, bus);
         }
       }
     }
@@ -488,6 +527,7 @@ function planOnce(input: ShioriInput, options: PlanOptions): ShioriPlan {
   const run = (days: number, lock?: BuiltTripPlan, more: Partial<TripPlannerContext> = {}) => buildWithEngine(input, {
     liveTransitMinutes: transit,
     liveWalkingMinutes: walking,
+    liveDrivingMinutes: driving,
     durationOverrides,
     dayOverrides: pins,
     legModeOverrides,
@@ -498,8 +538,8 @@ function planOnce(input: ShioriInput, options: PlanOptions): ShioriPlan {
   // A seeded variant keeps another plan's grouping (so it costs one cheap
   // run); otherwise the engine chooses the days.
   let built = options.seed
-    ? buildWithEngine(input, { liveTransitMinutes: transit, liveWalkingMinutes: walking, dayOverrides: options.seed.pins }, options.seed.days)
-    : chooseDays(input, { liveTransitMinutes: transit, liveWalkingMinutes: walking }, rail ?? NO_RAIL);
+    ? buildWithEngine(input, { liveTransitMinutes: transit, liveWalkingMinutes: walking, liveDrivingMinutes: driving, dayOverrides: options.seed.pins }, options.seed.days)
+    : chooseDays(input, { liveTransitMinutes: transit, liveWalkingMinutes: walking, liveDrivingMinutes: driving }, rail ?? NO_RAIL);
   if (options.seed) pins = options.seed.pins;
 
   /**
@@ -571,7 +611,7 @@ function planOnce(input: ShioriInput, options: PlanOptions): ShioriPlan {
       for (const candidatePins of candidates) {
         if (tries >= LIMIT) break;
         tries += 1;
-        const candidate = buildWithEngine(input, { liveTransitMinutes: transit, liveWalkingMinutes: walking, dayOverrides: candidatePins }, built.usedDays);
+        const candidate = buildWithEngine(input, { liveTransitMinutes: transit, liveWalkingMinutes: walking, liveDrivingMinutes: driving, dayOverrides: candidatePins }, built.usedDays);
         const candidateCost = cost(candidate.plan);
         if (candidateCost < (improved?.cost ?? bestCost) - 5) improved = { built: candidate, cost: candidateCost, pins: candidatePins };
       }
@@ -639,7 +679,7 @@ function planOnce(input: ShioriInput, options: PlanOptions): ShioriPlan {
     }
   }
   if (Object.keys(legModeOverrides).length > 0) built = run(built.usedDays, built.plan);
-  return { built, journeys, transit, walking, walkAdvised, pins, durationOverrides, legModeOverrides, lunchAfter };
+  return { built, journeys, transit, walking, walkAdvised, driving, pins, durationOverrides, legModeOverrides, lunchAfter };
   };
   const cacheKey = `${structureKey(input, Boolean(options.quick))}|${options.seed ? JSON.stringify(options.seed) : ""}`;
   const shelf = structures.get(rail ?? NO_RAIL) ?? new Map<string, Structure>();
@@ -650,7 +690,7 @@ function planOnce(input: ShioriInput, options: PlanOptions): ShioriPlan {
     shelf.set(cacheKey, known);
     if (shelf.size > 24) shelf.delete(shelf.keys().next().value as string);
   }
-  const { journeys, transit, walking, walkAdvised, pins, durationOverrides, legModeOverrides, lunchAfter } = known;
+  const { journeys, transit, walking, walkAdvised, driving, pins, durationOverrides, legModeOverrides, lunchAfter } = known;
   let built = known.built;
   const run = (days: number, lock: BuiltTripPlan, more: Partial<TripPlannerContext>) => buildWithEngine(input, {
     durationOverrides,
@@ -675,7 +715,15 @@ function planOnce(input: ShioriInput, options: PlanOptions): ShioriPlan {
     built = run(built.usedDays, built.plan, {
       liveTransitMinutes: measuredTransit,
       liveWalkingMinutes: { ...walking, ...measuredWalking },
-      liveDrivingMinutes: measuredDriving,
+      // A measured drive is held to the same rule as an estimated one: it
+      // does not beat a train the traveller could simply take.
+      liveDrivingMinutes: {
+        ...driving,
+        ...Object.fromEntries(Object.entries(measuredDriving).map(([key, minutes]) => {
+          const journey = journeys.get(key);
+          return [key, journey ? taxiAgainstTrain(minutes, journey.totalMinutes) : minutes];
+        })),
+      },
     });
   }
   const plan = built.plan;
