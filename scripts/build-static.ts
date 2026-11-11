@@ -12,7 +12,7 @@
  */
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -139,6 +139,19 @@ if (credentials) {
   writeFileSync(configPath, `<?php\n// Generated from .env.local. Keep private; blocked from the web by .htaccess.\nreturn [\n  'team_id' => ${quote(credentials.teamId)},\n  'key_id' => ${quote(credentials.keyId)},\n  'private_key' => ${quote(credentials.privateKey)},\n];\n`);
   chmodSync(configPath, 0o600);
 }
+// The deploy token lets api/deploy.php unpack an uploaded build. It is made
+// once, kept in .env.local, and written next to the script on the server.
+const environment = localEnvironment();
+let deployToken = environment.TRIPCHECK_DEPLOY_TOKEN ?? "";
+if (!/^[0-9a-f]{48}$/.test(deployToken)) {
+  deployToken = randomBytes(24).toString("hex");
+  appendFileSync(join(root, ".env.local"), `\n# サイト更新用の合言葉(api/deploy.php)。他人に教えないでください。\nTRIPCHECK_DEPLOY_TOKEN=${deployToken}\n`);
+}
+const deployConfigPath = join(output, "api", "deploy-config.php");
+writeFileSync(deployConfigPath, `<?php\n// Generated. Keep private; blocked from the web by .htaccess.\nreturn ['token' => '${deployToken}'];\n`);
+chmodSync(deployConfigPath, 0o600);
+// A local file the site owner can open; the token is not printed anywhere.
+writeFileSync(join(root, "dist-static", "deploy-url.txt"), `${origin}/api/deploy.php?key=${deployToken}\n`);
 rmSync(work, { recursive: true, force: true });
 
 // One file to upload. It carries the Apple key, and until it is extracted and
@@ -150,7 +163,10 @@ const zipName = `tripcheck-site-${randomBytes(6).toString("hex")}.zip`;
 const zipped = spawnSync("zip", ["-qr", join("..", zipName), "."], { cwd: output, stdio: "inherit" });
 
 console.log(`\nStatic site written to dist-static/site for ${origin}`);
-if (zipped.status === 0) console.log(`Upload file: dist-static/${zipName} (extract on the server, then delete it there)`);
+if (zipped.status === 0) {
+  console.log(`Upload file: dist-static/${zipName}`);
+  console.log("Then run: pnpm deploy:finish   (or open the address in dist-static/deploy-url.txt)");
+}
 console.log(credentials
   ? "Apple Maps relay: keys included (api/apple-config.php). Do not share this folder."
   : "Apple Maps relay: no keys in .env.local — meals and shop lookup stay off until api/apple-config.php is added.");

@@ -1,6 +1,7 @@
-# The Apple keys are never served. (apple-config.php also prints nothing when
-# executed, so this is a second lock, written for both Apache syntaxes.)
-<Files "apple-config.php">
+# The Apple keys and the deploy token are never served. (Both files also
+# print nothing when executed, so this is a second lock, written for both
+# Apache syntaxes.)
+<FilesMatch "^(apple|deploy)-config\.php$">
   <IfModule mod_authz_core.c>
     Require all denied
   </IfModule>
@@ -8,4 +9,4 @@
     Order allow,deny
     Deny from all
   </IfModule>
-</Files>
+</FilesMatch>

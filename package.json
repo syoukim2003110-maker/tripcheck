@@ -17,7 +17,8 @@
     "ai:local": "node scripts/claude-local-proxy.mjs",
     "relay:dev": "node --experimental-strip-types scripts/apple-relay-dev.ts",
     "build:static": "node --experimental-strip-types scripts/build-static.ts",
-    "sights:generate": "node --experimental-strip-types scripts/generate-popular-sights.ts"
+    "sights:generate": "node --experimental-strip-types scripts/generate-popular-sights.ts",
+    "deploy:finish": "node --experimental-strip-types scripts/deploy-finish.ts"
   },
   "dependencies": {
     "@fontsource/anton": "5.2.7",
