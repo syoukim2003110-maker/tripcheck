@@ -3,6 +3,7 @@ import { destinationForCoordinate } from "../destinations.ts";
 import type { PopularDestination, PopularSight } from "../popular-sights.ts";
 import { RailNetwork, type GeoPoint, type RailJourney } from "../rail-router.ts";
 import type { ResolvedInputStop, RouteStop } from "../route-optimizer.ts";
+import { estimateTravelOptions } from "../time-feasibility.ts";
 import {
   buildTripFromWishlist,
   hotelRouteContextForDraft,
@@ -43,6 +44,8 @@ export type ShioriPlace = {
   desc?: string;
   /** 1-based day the traveller pinned this place to. */
   day?: number | null;
+  /** A restaurant the traveller wants to eat at: it is that day's lunch or dinner. */
+  meal?: "lunch" | "dinner";
 };
 
 export type ShioriHotel = { name: string; lat: number; lon: number };
@@ -50,7 +53,8 @@ export type ShioriHotel = { name: string; lat: number; lon: number };
 export type ShioriInput = {
   places: ShioriPlace[];
   days: number;
-  pace: ShioriPace;
+  /** Kept for trips saved earlier; the booklet plans at the standard pace. */
+  pace?: ShioriPace;
   hotel: ShioriHotel | null;
   locale: "ja" | "en";
 };
@@ -84,7 +88,31 @@ export type ShioriStop = {
   arrive: string;
   leave: string;
   stayMinutes: number;
+  /** Idle minutes before this stop: a restaurant that is not serving yet. */
+  waitMinutes: number;
+  /** The restaurant could not be reached inside its meal hours on this day. */
+  mealMissed: boolean;
 };
+
+/**
+ * Where the traveller's own wishes pull against each other, each with the
+ * way out the numbers support. This is what a list of places cannot show.
+ */
+export type ShioriNotice =
+  /** The list does not fit the days asked for; it does in `days`. */
+  | { kind: "needs-days"; days: number }
+  /** It fits the days asked for once this one place is left out. */
+  | { kind: "drop"; placeId: string; name: string }
+  /** Neither one more day nor one place less is enough. */
+  | { kind: "too-much" }
+  /** The chosen hotel costs this much travel; the suggested area saves `savedMinutes` over the trip. */
+  | { kind: "hotel-far"; oneWayMinutes: number; savedMinutes: number }
+  /** Eating here adds this much travel to its day. */
+  | { kind: "meal-detour"; placeId: string; name: string; meal: "lunch" | "dinner"; minutes: number }
+  /** No day can reach this restaurant during the meal. */
+  | { kind: "meal-time"; placeId: string; name: string; meal: "lunch" | "dinner" }
+  /** The way back to the hotel after dinner here. */
+  | { kind: "meal-hotel"; placeId: string; name: string; minutes: number };
 
 export type ShioriMeal = { kind: "lunch" | "dinner"; start: string; end: string | null; near: GeoPoint; nearName: string };
 
@@ -118,6 +146,7 @@ export type ShioriPlan = {
   /** Where a hotel would make the whole trip travel least. */
   stayNear: { latitude: number; longitude: number; routePoints: GeoPoint[] } | null;
   hotel: ShioriHotel | null;
+  notices: ShioriNotice[];
 };
 
 const paceSettings: Record<ShioriPace, { engine: Pace; dayEnd: string }> = {
@@ -127,6 +156,13 @@ const paceSettings: Record<ShioriPace, { engine: Pace; dayEnd: string }> = {
 };
 const DAY_START = "09:00";
 const LUNCH_MINUTES = 60;
+/** A day with a dinner the traveller chose is meant to run into the evening. */
+const DINNER_DAY_END = "21:30";
+/** When a restaurant can be the meal: seated by 14:00 for lunch, from 17:30 for dinner. */
+const MEAL_HOURS = {
+  lunch: { openMinutes: 11 * 60 + 30, lastSeatMinutes: 14 * 60 },
+  dinner: { openMinutes: 17 * 60 + 30, lastSeatMinutes: 20 * 60 },
+} as const;
 
 function clockMinutes(value: string) {
   const [hours, minutes] = value.split(":").map(Number);
@@ -173,22 +209,36 @@ function resolvedStop(place: ShioriPlace, index: number): ResolvedInputStop {
   };
 }
 
-function dayRunsLate(plan: BuiltTripPlan, dayEnd: string) {
-  return plan.days.some((day) => day.stops.length > 0 && (
-    day.deadlineOverrunMinutes > 0 || clockMinutes(day.finishTime) > clockMinutes(dayEnd)
-  ));
+function dayLate(day: BuiltTripPlan["days"][number], dayEnd: string, dinnerIds: ReadonlySet<string>) {
+  if (day.stops.length === 0) return false;
+  // The engine's own overrun, not the printed clock: a day that runs past
+  // midnight prints "02:30", which reads as early.
+  const hasDinner = day.stops.some((stop) => dinnerIds.has(stop.stop.id));
+  return day.deadlineOverrunMinutes > (hasDinner ? clockMinutes(DINNER_DAY_END) - clockMinutes(dayEnd) : 0);
+}
+
+function dayRunsLate(plan: BuiltTripPlan, dayEnd: string, dinnerIds: ReadonlySet<string>) {
+  return plan.days.some((day) => dayLate(day, dayEnd, dinnerIds));
+}
+
+function dinnerIdsOf(input: ShioriInput) {
+  return new Set(input.places.filter((place) => place.meal === "dinner").map((place) => place.id));
+}
+
+function hotelId(hotel: ShioriHotel) {
+  return `shiori-hotel@${hotel.lat.toFixed(4)},${hotel.lon.toFixed(4)}`;
 }
 
 type Built = { plan: BuiltTripPlan; context: TripPlannerContext; raw: string; usedDays: number };
 
 function buildWithEngine(input: ShioriInput, extra: Partial<TripPlannerContext>, usedDays: number): Built {
-  const settings = paceSettings[input.pace];
+  const settings = paceSettings.standard;
   const stops = input.places.map(resolvedStop);
   const raw = stops.map((stop) => stop.input).join("\n");
   const base: ResolvedInputStop | null = input.hotel ? {
     // The id carries the position: a leg to another hotel is another leg,
     // and a street path looked up for the old one must not be reused.
-    ...resolvedStop({ id: `shiori-hotel@${input.hotel.lat.toFixed(4)},${input.hotel.lon.toFixed(4)}`, name: input.hotel.name, lat: input.hotel.lat, lon: input.hotel.lon, stayMinutes: 15 }, 9_999),
+    ...resolvedStop({ id: hotelId(input.hotel), name: input.hotel.name, lat: input.hotel.lat, lon: input.hotel.lon, stayMinutes: 15 }, 9_999),
     input: input.hotel.name,
     inputIndex: undefined,
     planningDurationMinutes: 0,
@@ -203,31 +253,38 @@ function buildWithEngine(input: ShioriInput, extra: Partial<TripPlannerContext>,
     defaultDayStart: DAY_START,
     dayEndTarget: settings.dayEnd,
     mealPlan: "all",
-    dayOverrides,
+    // A restaurant is only a meal during the meal: the engine waits for it to
+    // open and will not seat anyone after the kitchen's last order.
+    openingWindowsByDay: Object.fromEntries(input.places.flatMap((place) => {
+      if (!place.meal) return [];
+      const hours = MEAL_HOURS[place.meal];
+      const window = { openMinutes: hours.openMinutes, closeMinutes: hours.lastSeatMinutes + Math.max(15, Math.round(place.stayMinutes)) };
+      return [[place.id, Object.fromEntries(Array.from({ length: usedDays }, (_, day) => [day, [window]]))] as const];
+    })),
     ...extra,
+    // The traveller's own pins outrank any grouping passed in.
+    dayOverrides: { ...extra.dayOverrides, ...dayOverrides },
   };
-  return { plan: buildTripFromWishlist(raw, usedDays, settings.engine, input.locale, context), context, raw, usedDays };
-}
-
-function legKeysOf(plan: BuiltTripPlan) {
-  const pairs: Array<{ from: RouteStop; to: RouteStop }> = [];
-  for (const day of plan.days) {
-    for (const leg of day.legs) pairs.push({ from: leg.from, to: leg.to });
-    const first = day.stops[0]?.stop;
-    const last = day.stops.at(-1)?.stop;
-    if (day.startBase && first) pairs.push({ from: day.startBase, to: first });
-    if (day.endBase && last) pairs.push({ from: last, to: day.endBase });
+  // Every day keeps the ordinary end, the day of a chosen dinner included:
+  // told that one day may run to 21:30, the engine fills that day with
+  // everything and puts a shrine after dinner. The dinner itself is what
+  // runs late, and dayLate() allows exactly that.
+  let plan = buildTripFromWishlist(raw, usedDays, settings.engine, input.locale, context);
+  // Nothing comes after a chosen dinner. Where the engine put a temple after
+  // it, that day is rebuilt in the same order with the dinner moved last.
+  const dinnerIds = dinnerIdsOf(input);
+  const reordered = Object.fromEntries(plan.days.flatMap((day, index) => {
+    const ids = day.stops.map((stop) => stop.stop.id);
+    const lastSight = ids.findLastIndex((id) => !dinnerIds.has(id));
+    const firstDinner = ids.findIndex((id) => dinnerIds.has(id));
+    if (firstDinner < 0 || firstDinner > lastSight) return [];
+    return [[index, [...ids.filter((id) => !dinnerIds.has(id)), ...ids.filter((id) => dinnerIds.has(id))]] as const];
+  }));
+  if (Object.keys(reordered).length > 0) {
+    context.lockedOrderByDay = { ...extra.lockedOrderByDay, ...reordered };
+    plan = buildTripFromWishlist(raw, usedDays, settings.engine, input.locale, context);
   }
-  return pairs;
-}
-
-function estimatedTransitMinutes(from: RouteStop, to: RouteStop, plan: BuiltTripPlan) {
-  for (const day of plan.days) {
-    const leg = day.legs.find((candidate) => candidate.from.id === from.id && candidate.to.id === to.id);
-    const transit = leg?.comparison.options.find((option) => option.mode === "transit");
-    if (transit) return transit.minutes;
-  }
-  return null;
+  return { plan, context, raw, usedDays };
 }
 
 /**
@@ -238,28 +295,30 @@ function estimatedTransitMinutes(from: RouteStop, to: RouteStop, plan: BuiltTrip
 function chooseDays(input: ShioriInput, extra: Partial<TripPlannerContext>): Built {
   const requested = Math.max(1, Math.min(14, Math.round(input.days)));
   const pinned = input.places.reduce((maximum, place) => Math.max(maximum, typeof place.day === "number" ? place.day : 1), 1);
-  const settings = paceSettings[input.pace];
+  const settings = paceSettings.standard;
+  const dinnerIds = dinnerIdsOf(input);
   let last: Built | null = null;
   for (let days = Math.min(requested, pinned); days <= requested; days += 1) {
     last = buildWithEngine(input, extra, days);
-    if (!dayRunsLate(last.plan, settings.dayEnd)) return last;
+    if (!dayRunsLate(last.plan, settings.dayEnd, dinnerIds)) return last;
   }
   return last ?? buildWithEngine(input, extra, requested);
 }
 
-export function buildShioriPlan(
-  input: ShioriInput,
-  options: {
-    rail?: RailNetwork | null;
-    cities?: readonly PopularDestination[];
-    /** Street paths already looked up, keyed "walk|<leg key>" / "drive|<leg key>". */
-    routes?: ReadonlyMap<string, ShioriRoute | null>;
-  } = {},
-): ShioriPlan {
+type PlanOptions = {
+  rail?: RailNetwork | null;
+  cities?: readonly PopularDestination[];
+  /** Street paths already looked up, keyed "walk|<leg key>" / "drive|<leg key>". */
+  routes?: ReadonlyMap<string, ShioriRoute | null>;
+};
+
+function planOnce(input: ShioriInput, options: PlanOptions): ShioriPlan {
   if (input.places.length === 0) {
-    return { days: [], freeDays: Math.max(0, input.days), freeDayIdeas: [], leftOut: [], stayNear: null, hotel: input.hotel };
+    return { days: [], freeDays: Math.max(0, input.days), freeDayIdeas: [], leftOut: [], stayNear: null, hotel: input.hotel, notices: [] };
   }
-  const settings = paceSettings[input.pace];
+  const settings = paceSettings.standard;
+  const dinnerIds = dinnerIdsOf(input);
+  const mealOf = new Map(input.places.flatMap((place) => place.meal ? [[place.id, place.meal] as const] : []));
   const rail = options.rail ?? null;
   const journeys = new Map<string, RailJourney>();
 
@@ -274,104 +333,186 @@ export function buildShioriPlan(
     else if (routeKey.startsWith("drive|")) measuredDriving[routeKey.slice(6)] = route.minutes;
   }
   /**
-   * Looks up every leg the plan has that was not looked up yet. A train
-   * journey is fed back as that leg's transit time. "Just walk" is fed back
-   * as the walking time, with transit made a little slower, so the engine
-   * stops proposing a train for a 20-minute stroll.
+   * Prices every pair of places (and the hotel) with the bundled network
+   * before anything is planned: a train journey becomes that pair's transit
+   * time, "no train helps, just walk" its walking time. With every pair
+   * known up front, whatever order the planning below settles on, each leg
+   * in the booklet has its route — none is left as a bare estimate because
+   * it only appeared in the last rebuild.
    */
-  const routeNewLegs = (plan: BuiltTripPlan) => {
-    if (!rail) return false;
-    let changed = false;
-    for (const { from, to } of legKeysOf(plan)) {
-      const key = routeLegKey(from.id, to.id);
-      if (key in transit) continue;
-      const advice = rail.advise(from, to, input.locale);
-      const estimate = estimatedTransitMinutes(from, to, plan);
-      if (advice.kind === "rail" && (estimate === null || advice.journey.totalMinutes <= estimate * 1.8 + 10)) {
-        // A rail answer far slower than a typical transit estimate means the
-        // real answer is a bus this data does not know; keep the estimate.
-        journeys.set(key, advice.journey);
-        transit[key] = advice.journey.totalMinutes;
-        changed = true;
-      } else if (advice.kind === "walk") {
-        walking[key] = advice.minutes;
-        walkAdvised.add(key);
-        transit[key] = advice.minutes + 8;
-        changed = true;
+  const transit: Record<string, number> = {};
+  if (rail) {
+    const points: RouteStop[] = [
+      ...input.places.map(resolvedStop),
+      ...(input.hotel ? [resolvedStop({ id: hotelId(input.hotel), name: input.hotel.name, lat: input.hotel.lat, lon: input.hotel.lon, stayMinutes: 15 }, 9_999)] : []),
+    ];
+    for (const from of points) {
+      for (const to of points) {
+        if (from.id === to.id) continue;
+        const key = routeLegKey(from.id, to.id);
+        const advice = rail.advise(from, to, input.locale);
+        const estimate = estimateTravelOptions(from, to).options.find((option) => option.mode === "transit")?.minutes ?? null;
+        if (advice.kind === "rail" && (estimate === null || advice.journey.totalMinutes <= estimate * 1.8 + 10)) {
+          // A rail answer far slower than a typical transit estimate means the
+          // real answer is a bus this data does not know; keep the estimate.
+          journeys.set(key, advice.journey);
+          transit[key] = advice.journey.totalMinutes;
+        } else if (advice.kind === "walk") {
+          walking[key] = advice.minutes;
+          walkAdvised.add(key);
+          transit[key] = advice.minutes + 8;
+        }
       }
     }
-    return changed;
-  };
-
-  // Train legs first, with no lunch in the day yet: ask the bundled network,
-  // feed the minutes back so the order and the clock use them, and look
-  // again at whatever legs that produced.
-  const transit: Record<string, number> = {};
-  let built = chooseDays(input, {});
-  for (let pass = 0; pass < 3; pass += 1) {
-    if (!routeNewLegs(built.plan)) break;
-    built = chooseDays(input, { liveTransitMinutes: transit, liveWalkingMinutes: walking });
   }
+
+  // Which day each place is on, once the grouping below has improved on the
+  // engine's. Empty means "as the engine decided".
+  let pins: Record<string, number> = {};
+  const durationOverrides: Record<string, number> = {};
+  const legModeOverrides: Record<string, "transit"> = {};
+  const orderOf = (plan: BuiltTripPlan) => Object.fromEntries(plan.days.flatMap((day, index) => (
+    day.stops.length > 0 ? [[index, day.stops.map((stop) => stop.stop.id)] as const] : []
+  )));
+  /** One engine run with everything decided so far; `lock` keeps that plan's days and order. */
+  const run = (days: number, lock?: BuiltTripPlan, more: Partial<TripPlannerContext> = {}) => buildWithEngine(input, {
+    liveTransitMinutes: transit,
+    liveWalkingMinutes: walking,
+    durationOverrides,
+    dayOverrides: pins,
+    legModeOverrides,
+    ...(lock ? { lockedOrderByDay: orderOf(lock) } : {}),
+    ...more,
+  }, days);
+
+  let built = chooseDays(input, { liveTransitMinutes: transit, liveWalkingMinutes: walking });
+
+  /**
+   * What a plan costs a traveller, in minutes: every leg, the way out of and
+   * back to the hotel, half of any time spent waiting for a restaurant, and
+   * half of the gap between the longest and the shortest day (two even
+   * days beat one crammed and one nearly empty). A day nobody can keep, or
+   * a place left out, outweighs all of it.
+   */
+  const cost = (plan: BuiltTripPlan) => {
+    const used = plan.days.filter((day) => day.stops.length > 0);
+    const spans = used.map((day) => clockMinutes(day.stops.at(-1)!.departure) - clockMinutes(day.stops[0].arrival) + (day.deadlineOverrunMinutes > 0 ? day.deadlineOverrunMinutes : 0));
+    const total = used.reduce((sum, day) => {
+      const travel = day.legs.reduce((minutes, leg) => minutes + leg.comparison.recommended.minutes, 0)
+        + (day.hotelOutboundMinutes ?? 0) + (day.hotelInboundMinutes ?? 0);
+      const waiting = day.stops.reduce((minutes, stop, index) => {
+        if (index === 0 || !mealOf.has(stop.stop.id)) return minutes;
+        const gap = clockMinutes(stop.arrival) - clockMinutes(day.stops[index - 1].departure) - (day.legs[index - 1]?.comparison.recommended.minutes ?? 0);
+        return minutes + Math.max(0, gap);
+      }, 0);
+      const missed = day.stops.filter((stop) => mealOf.has(stop.stop.id) && stop.openingStatus !== "verified_open").length;
+      return sum + travel + waiting / 2 + (dayLate(day, settings.dayEnd, dinnerIds) ? 2000 : 0) + missed * 1000;
+    }, 0);
+    const scheduled = used.reduce((count, day) => count + day.stops.length, 0);
+    return total + (spans.length > 1 ? (Math.max(...spans) - Math.min(...spans)) / 2 : 0) + (input.places.length - scheduled) * 5000;
+  };
+  const assignmentOf = (plan: BuiltTripPlan) => Object.fromEntries(plan.days.flatMap((day, index) => day.stops.map((stop) => [stop.stop.id, index + 1] as const)));
+  /**
+   * The engine groups places into days by balance as much as by distance,
+   * and a restaurant's hours can pull a neighbourhood apart: Senso-ji on one
+   * day and the Skytree, a 25-minute walk away, on the other. So each place
+   * is tried on every other day that already has places, and two places on
+   * different days are tried swapped; a change is kept when the whole trip
+   * costs less. Bounded: each try is a full engine run.
+   */
+  const regroup = () => {
+    const usedDays = built.plan.days.flatMap((day, index) => day.stops.length > 0 ? [index + 1] : []);
+    if (usedDays.length < 2 || input.places.length > 16) return;
+    let best = built;
+    let bestCost = cost(best.plan);
+    let tries = 0;
+    const LIMIT = 160;
+    const movable = (id: string) => typeof input.places.find((place) => place.id === id)?.day !== "number";
+    for (let round = 0; round < 6 && tries < LIMIT; round += 1) {
+      const current = assignmentOf(best.plan);
+      const ids = Object.keys(current).filter(movable);
+      const candidates: Array<Record<string, number>> = [];
+      for (const id of ids) {
+        // Never the last place of its day: that is a shorter trip, which is
+        // the day count's decision, not this one's.
+        if (Object.values(current).filter((day) => day === current[id]).length < 2) continue;
+        for (const day of usedDays) if (day !== current[id]) candidates.push({ ...current, [id]: day });
+      }
+      for (let left = 0; left < ids.length; left += 1) {
+        for (let right = left + 1; right < ids.length; right += 1) {
+          if (current[ids[left]] !== current[ids[right]]) candidates.push({ ...current, [ids[left]]: current[ids[right]], [ids[right]]: current[ids[left]] });
+        }
+      }
+      let improved: { built: Built; cost: number; pins: Record<string, number> } | null = null;
+      for (const candidatePins of candidates) {
+        if (tries >= LIMIT) break;
+        tries += 1;
+        const candidate = buildWithEngine(input, { liveTransitMinutes: transit, liveWalkingMinutes: walking, dayOverrides: candidatePins }, built.usedDays);
+        const candidateCost = cost(candidate.plan);
+        if (candidateCost < (improved?.cost ?? bestCost) - 5) improved = { built: candidate, cost: candidateCost, pins: candidatePins };
+      }
+      if (!improved) break;
+      best = improved.built;
+      bestCost = improved.cost;
+      pins = improved.pins;
+    }
+    built = best;
+  };
+  regroup();
 
   // Lunch takes an hour of the day. It goes after the stop that ends nearest
   // 12:30 (within 11:00–14:30); a day that is one long visit, or over before
-  // lunchtime, gets no lunch line. The hour is lent to that stop's stay so
-  // the engine moves everything after it, and handed back to the reader as
-  // its own line.
+  // lunchtime, gets no lunch line. The hour is lent to that stop's stay, and
+  // the day is rebuilt in the SAME order: left free, the engine reshuffles
+  // around the longer stay and lunch ends up at 10:15 or on no day at all.
   const lunchAfter = new Map<number, string>();
-  const durationOverrides: Record<string, number> = {};
   const stayOf = new Map(input.places.map((place) => [place.id, Math.max(15, Math.round(place.stayMinutes))]));
-  built.plan.days.forEach((day, dayIndex) => {
-    if (day.stops.length < 2 && clockMinutes(day.finishTime) > 15 * 60) return;
-    const candidates = day.stops
-      .map((stop) => ({ id: stop.stop.id, leave: clockMinutes(stop.departure) }))
-      .filter((stop) => stop.leave >= 11 * 60 && stop.leave <= 14 * 60 + 30)
-      .sort((left, right) => Math.abs(left.leave - 750) - Math.abs(right.leave - 750));
-    const anchor = candidates[0];
-    if (!anchor) return;
-    lunchAfter.set(dayIndex, anchor.id);
-    durationOverrides[anchor.id] = (stayOf.get(anchor.id) ?? 60) + LUNCH_MINUTES;
-  });
-  if (lunchAfter.size > 0) {
-    const daysBefore = built.usedDays;
-    built = buildWithEngine(input, { liveTransitMinutes: transit, liveWalkingMinutes: walking, durationOverrides }, daysBefore);
+  const assignLunch = () => {
+    lunchAfter.clear();
+    for (const id of Object.keys(durationOverrides)) delete durationOverrides[id];
+    built.plan.days.forEach((day, dayIndex) => {
+      // A day with a restaurant chosen for lunch already has its lunch.
+      if (day.stops.some((stop) => mealOf.get(stop.stop.id) === "lunch")) return;
+      if (day.stops.length < 2 && clockMinutes(day.finishTime) > 15 * 60) return;
+      const anchor = day.stops
+        .map((stop) => ({ id: stop.stop.id, leave: clockMinutes(stop.departure) }))
+        .filter((stop) => stop.leave >= 11 * 60 && stop.leave <= 14 * 60 + 30 && !mealOf.has(stop.id))
+        .sort((left, right) => Math.abs(left.leave - 750) - Math.abs(right.leave - 750))[0];
+      if (!anchor) return;
+      lunchAfter.set(dayIndex, anchor.id);
+      durationOverrides[anchor.id] = (stayOf.get(anchor.id) ?? 60) + LUNCH_MINUTES;
+    });
+    return lunchAfter.size > 0;
+  };
+  if (assignLunch()) {
+    const withLunch = run(built.usedDays, built.plan);
     // Lunch can tip a full day past its end; one more day is better than a
     // day nobody can keep, when the traveller has one to give.
-    if (dayRunsLate(built.plan, settings.dayEnd) && daysBefore < Math.max(1, Math.min(14, Math.round(input.days)))) {
-      built = buildWithEngine(input, { liveTransitMinutes: transit, liveWalkingMinutes: walking, durationOverrides }, daysBefore + 1);
-    }
-    // The rebuild may have moved a stop to another day. Lunch follows the
-    // stop that carries its hour; a day never gets two.
-    const settle = () => {
+    if (dayRunsLate(withLunch.plan, settings.dayEnd, dinnerIds) && built.usedDays < Math.max(1, Math.min(14, Math.round(input.days)))) {
+      // The grouping was made for the old number of days; the engine regroups
+      // without lunch first, and lunch is placed again on what it decides.
+      pins = {};
       lunchAfter.clear();
-      let dropped = false;
-      built.plan.days.forEach((day, dayIndex) => {
-        const carrying = day.stops.filter((stop) => stop.stop.id in durationOverrides);
-        if (carrying.length === 0) return;
-        lunchAfter.set(dayIndex, carrying[0].stop.id);
-        for (const extra of carrying.slice(1)) {
-          delete durationOverrides[extra.stop.id];
-          dropped = true;
-        }
-      });
-      return dropped;
-    };
-    if (settle()) {
-      built = buildWithEngine(input, { liveTransitMinutes: transit, liveWalkingMinutes: walking, durationOverrides }, built.usedDays);
-      settle();
+      for (const id of Object.keys(durationOverrides)) delete durationOverrides[id];
+      built = run(built.usedDays + 1);
+      regroup();
+      if (assignLunch()) built = run(built.usedDays, built.plan);
+    } else {
+      built = withLunch;
     }
   }
-  // Lunch and the day count can reorder a day, which creates legs the first
-  // rounds never saw. Every leg that ends up in the booklet gets its route.
-  for (let pass = 0; pass < 2; pass += 1) {
-    if (!routeNewLegs(built.plan)) break;
-    built = buildWithEngine(input, { liveTransitMinutes: transit, liveWalkingMinutes: walking, durationOverrides }, built.usedDays);
-    lunchAfter.clear();
-    built.plan.days.forEach((day, dayIndex) => {
-      const carrying = day.stops.find((stop) => stop.stop.id in durationOverrides);
-      if (carrying) lunchAfter.set(dayIndex, carrying.stop.id);
-    });
+
+  // Where the engine would send a traveller by taxi although the bundled
+  // network has a train about as fast (it assumes thin rail in New York or
+  // Sydney), the train is the plan.
+  for (const day of built.plan.days) {
+    for (const leg of day.legs) {
+      const key = routeLegKey(leg.from.id, leg.to.id);
+      const journey = journeys.get(key);
+      if (journey && leg.comparison.recommended.mode === "taxi" && journey.totalMinutes <= leg.comparison.recommended.minutes + 15) legModeOverrides[key] = "transit";
+    }
   }
+  if (Object.keys(legModeOverrides).length > 0) built = run(built.usedDays, built.plan);
 
   // What a map service measured for a leg — the walk up to Victoria Peak is
   // 87 minutes, not the 25 a straight line suggests — corrects that leg's
@@ -379,22 +520,17 @@ export function buildShioriPlan(
   // planned above, so the booklet does not rearrange itself a moment after
   // it appears on screen.
   if (Object.keys(measuredWalking).length + Object.keys(measuredDriving).length > 0) {
-    const lockedOrderByDay = Object.fromEntries(built.plan.days.flatMap((day, index) => (
-      day.stops.length > 0 ? [[index, day.stops.map((stop) => stop.stop.id)] as const] : []
-    )));
     const measuredTransit = { ...transit };
     // "No train helps, just walk" was priced as the walk plus a wait; it
     // follows the walk's real length.
     for (const [key, minutes] of Object.entries(measuredWalking)) {
       if (walkAdvised.has(key)) measuredTransit[key] = minutes + 8;
     }
-    built = buildWithEngine(input, {
+    built = run(built.usedDays, built.plan, {
       liveTransitMinutes: measuredTransit,
       liveWalkingMinutes: { ...walking, ...measuredWalking },
       liveDrivingMinutes: measuredDriving,
-      durationOverrides,
-      lockedOrderByDay,
-    }, built.usedDays);
+    });
   }
   const plan = built.plan;
 
@@ -449,11 +585,23 @@ export function buildShioriPlan(
       if (lunchHere) {
         meals.push({ kind: "lunch", afterStop: stopIndex, start: clock(leaveMinutes), end: entry.departure, near: { latitude: place.lat, longitude: place.lon }, nearName: place.name });
       }
-      return [{ place, arrive: entry.arrival, leave: clock(leaveMinutes), stayMinutes: leaveMinutes - clockMinutes(entry.arrival) }];
+      // The engine holds a traveller at the door until the restaurant opens;
+      // the booklet says how long that is instead of hiding it in the clock.
+      const previous = day.stops[stopIndex - 1];
+      const travel = previous ? day.legs[stopIndex - 1]?.comparison.recommended.minutes ?? 0 : 0;
+      const waitMinutes = previous && place.meal ? Math.max(0, clockMinutes(entry.arrival) - clockMinutes(previous.departure) - travel) : 0;
+      return [{
+        place,
+        arrive: entry.arrival,
+        leave: clock(leaveMinutes),
+        stayMinutes: leaveMinutes - clockMinutes(entry.arrival),
+        waitMinutes: waitMinutes >= 20 ? waitMinutes : 0,
+        mealMissed: Boolean(place.meal) && entry.openingStatus !== "verified_open",
+      }];
     });
     if (stops.length === 0) return [];
     const lastPlace = stops.at(-1)!.place;
-    if (clockMinutes(day.finishTime) >= 16 * 60 + 30) {
+    if (clockMinutes(day.finishTime) >= 16 * 60 + 30 && !stops.some((stop) => stop.place.meal === "dinner")) {
       meals.push({ kind: "dinner", afterStop: stops.length - 1, start: stops.at(-1)!.leave, end: null, near: { latitude: lastPlace.lat, longitude: lastPlace.lon }, nearName: lastPlace.name });
     }
     const legs = day.legs.map((leg) => legView(leg.from, leg.to, leg, { mode: null, minutes: null }));
@@ -470,7 +618,8 @@ export function buildShioriPlan(
       leg.mode === "walk" ? leg.minutes : leg.rail ? leg.rail.walkToMinutes + leg.rail.walkFromMinutes + leg.rail.transferMinutes : 0
     ), 0);
     const routePoints = stops.map((stop) => ({ latitude: stop.place.lat, longitude: stop.place.lon }));
-    const endsEarly = clockMinutes(day.finishTime) <= clockMinutes(settings.dayEnd) - 120;
+    // A long gap before a chosen dinner is room for one more place, too.
+    const endsEarly = clockMinutes(day.finishTime) <= clockMinutes(settings.dayEnd) - 120 || stops.some((stop) => stop.waitMinutes >= 120);
     const ideas = endsEarly && cities.length > 0
       ? bundledSightsNearRoute({ routePoints, excludedNames: listedNames, languageCode: input.locale, cities })
         .slice(0, 4)
@@ -492,7 +641,7 @@ export function buildShioriPlan(
       meals,
       walkMinutes,
       ideas,
-      runsLate: day.deadlineOverrunMinutes > 0 || clockMinutes(day.finishTime) > clockMinutes(settings.dayEnd),
+      runsLate: dayLate(day, settings.dayEnd, dinnerIds),
     }];
   }).map((day, position) => ({ ...day, index: position }));
 
@@ -516,5 +665,78 @@ export function buildShioriPlan(
     leftOut: input.places.filter((place) => !scheduled.has(place.id)).map((place) => place.name),
     stayNear: hotelContext ? { latitude: hotelContext.latitude, longitude: hotelContext.longitude, routePoints: hotelContext.routePoints } : null,
     hotel: input.hotel,
+    notices: [],
   };
+}
+
+function straightMinutes(from: GeoPoint, to: GeoPoint) {
+  const stop = (point: GeoPoint) => ({ latitude: point.latitude, longitude: point.longitude }) as RouteStop;
+  return estimateTravelOptions(stop(from), stop(to)).recommended.minutes;
+}
+
+/**
+ * The trip as planned, plus where the traveller's wishes collide: too much
+ * for the days, a hotel far from everything, a restaurant across town. Each
+ * notice is backed by a second plan that was actually computed — "one more
+ * day fits" is only said when the plan with one more day does fit.
+ */
+export function buildShioriPlan(input: ShioriInput, options: PlanOptions = {}): ShioriPlan {
+  const plan = planOnce(input, options);
+  if (plan.days.length === 0) return plan;
+  const notices: ShioriNotice[] = [];
+  const requested = Math.max(1, Math.min(14, Math.round(input.days)));
+  const fits = (candidate: ShioriPlan) => candidate.leftOut.length === 0 && !candidate.days.some((day) => day.runsLate);
+
+  if (!fits(plan)) {
+    let found = false;
+    for (let days = requested + 1; days <= Math.min(7, requested + 2) && !found; days += 1) {
+      if (fits(planOnce({ ...input, days }, options))) {
+        notices.push({ kind: "needs-days", days });
+        found = true;
+      }
+    }
+    // The places that cost the most — a long stay, or far from the rest —
+    // are the ones whose absence can save a day.
+    const centre = input.places.reduce((sum, place) => ({ lat: sum.lat + place.lat / input.places.length, lon: sum.lon + place.lon / input.places.length }), { lat: 0, lon: 0 });
+    const costly = input.places
+      .filter((place) => !place.meal)
+      .map((place) => ({ place, cost: place.stayMinutes + 2 * straightMinutes({ latitude: centre.lat, longitude: centre.lon }, { latitude: place.lat, longitude: place.lon }) }))
+      .sort((left, right) => right.cost - left.cost)
+      .slice(0, 6);
+    const droppable = costly.find(({ place }) => fits(planOnce({ ...input, places: input.places.filter((entry) => entry.id !== place.id) }, options)));
+    if (droppable) notices.push({ kind: "drop", placeId: droppable.place.id, name: droppable.place.name });
+    if (!found && !droppable) notices.push({ kind: "too-much" });
+  }
+
+  for (const day of plan.days) {
+    day.stops.forEach((stop, index) => {
+      const meal = stop.place.meal;
+      if (!meal) return;
+      if (stop.mealMissed) {
+        notices.push({ kind: "meal-time", placeId: stop.place.id, name: stop.place.name, meal });
+        return;
+      }
+      // What the day would travel between its neighbours without this stop.
+      const before = index > 0 ? day.legs[index - 1] : day.fromHotel;
+      const after = index < day.stops.length - 1 ? day.legs[index] : day.toHotel;
+      const direct = before && after ? straightMinutes(before.from, after.to) : 0;
+      const detour = (before?.minutes ?? 0) + (after?.minutes ?? 0) - direct;
+      if (detour >= 45) notices.push({ kind: "meal-detour", placeId: stop.place.id, name: stop.place.name, meal, minutes: Math.round(detour / 5) * 5 });
+      if (meal === "dinner" && index === day.stops.length - 1 && day.toHotel && day.toHotel.minutes >= 45) {
+        notices.push({ kind: "meal-hotel", placeId: stop.place.id, name: stop.place.name, minutes: day.toHotel.minutes });
+      }
+    });
+  }
+
+  if (input.hotel && plan.stayNear) {
+    const hotelMinutes = (candidate: ShioriPlan) => candidate.days.reduce((sum, day) => sum + (day.fromHotel?.minutes ?? 0) + (day.toHotel?.minutes ?? 0), 0);
+    const mine = hotelMinutes(plan);
+    const oneWay = Math.round(mine / (plan.days.length * 2));
+    if (oneWay >= 30) {
+      const central = planOnce({ ...input, hotel: { name: input.hotel.name, lat: plan.stayNear.latitude, lon: plan.stayNear.longitude } }, options);
+      const saved = mine - hotelMinutes(central);
+      if (saved >= 20 * plan.days.length) notices.push({ kind: "hotel-far", oneWayMinutes: oneWay, savedMinutes: Math.round(saved / 10) * 10 });
+    }
+  }
+  return { ...plan, notices };
 }

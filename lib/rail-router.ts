@@ -95,7 +95,13 @@ export function walkMinutes(from: GeoPoint, to: GeoPoint) {
 
 type Link = { to: number; line: number; minutes: number };
 
+export type RailAdvice =
+  | { kind: "rail"; journey: RailJourney }
+  | { kind: "walk"; minutes: number }
+  | { kind: "none" };
+
 export class RailNetwork {
+  private readonly advice = new Map<string, RailAdvice>();
   readonly id: string;
   private readonly data: RailNetworkData;
   private readonly points: GeoPoint[];
@@ -148,14 +154,17 @@ export class RailNetwork {
    * a train journey, "just walk" (it is close, and the train saves nothing),
    * or nothing — this network has no opinion.
    */
-  advise(from: GeoPoint, to: GeoPoint, language: "ja" | "en" = "ja"):
-    | { kind: "rail"; journey: RailJourney }
-    | { kind: "walk"; minutes: number }
-    | { kind: "none" } {
+  advise(from: GeoPoint, to: GeoPoint, language: "ja" | "en" = "ja"): RailAdvice {
+    // The same pair is asked about on every re-plan; the network does not change.
+    const key = `${language}|${from.latitude.toFixed(5)},${from.longitude.toFixed(5)}|${to.latitude.toFixed(5)},${to.longitude.toFixed(5)}`;
+    const known = this.advice.get(key);
+    if (known) return known;
     const journey = this.route(from, to, language);
-    if (journey) return { kind: "rail", journey };
-    const direct = walkMinutes(from, to);
-    return direct <= 30 ? { kind: "walk", minutes: direct } : { kind: "none" };
+    const direct = journey ? 0 : walkMinutes(from, to);
+    const advice: RailAdvice = journey ? { kind: "rail", journey } : direct <= 30 ? { kind: "walk", minutes: direct } : { kind: "none" };
+    if (this.advice.size > 4000) this.advice.clear();
+    this.advice.set(key, advice);
+    return advice;
   }
 
   get stationCount() {
@@ -174,11 +183,24 @@ export class RailNetwork {
   }
 
   private nearestStations(point: GeoPoint) {
-    return this.points
+    const reachable = this.points
       .map((station, index) => ({ index, distance: meters(point, station) }))
       .filter((entry) => entry.distance <= MAX_ACCESS_METERS && this.links[entry.index].length > 0)
-      .sort((left, right) => left.distance - right.distance)
-      .slice(0, ACCESS_CANDIDATES);
+      .sort((left, right) => left.distance - right.distance);
+    // The four nearest, plus any farther station (up to eight in all) that
+    // offers a line none of the kept ones has. Beside the Hong Kong botanical
+    // gardens the four nearest are all Peak Tram stops; the MTR that crosses
+    // the harbour is the fifth.
+    const kept = reachable.slice(0, ACCESS_CANDIDATES);
+    const lines = new Set(kept.flatMap((entry) => this.links[entry.index].map((link) => link.line)));
+    for (const entry of reachable.slice(ACCESS_CANDIDATES)) {
+      if (kept.length >= ACCESS_CANDIDATES * 2) break;
+      const fresh = this.links[entry.index].filter((link) => link.line < 0 || !lines.has(link.line));
+      if (fresh.length === 0) continue;
+      kept.push(entry);
+      for (const link of this.links[entry.index]) lines.add(link.line);
+    }
+    return kept;
   }
 
   /**

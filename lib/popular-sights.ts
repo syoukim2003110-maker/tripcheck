@@ -113,3 +113,34 @@ export function bundledSightIndex(destinations: readonly PopularDestination[]) {
     },
   };
 }
+
+const NOT_A_VISIT = /\bformer\b|demolished|destroyed|dynasty|historical (period|country|state|region)|\bera\b/;
+const CONTAINER_KIND = /\bpark\b|square|plaza|neighbou?rhood|district|island|quarter/;
+
+/**
+ * The list a traveller picks from. The bundled data ranks what is well
+ * known, which is not the same as what can be visited: a temple that burned
+ * down in 1580 on the site of Osaka Castle, a dynasty, and the castle, its
+ * park and its ruin as three stops at one spot. Those are dropped here; a
+ * place already on someone's trip is unaffected.
+ */
+export function curateSights(sights: readonly PopularSight[]): PopularSight[] {
+  const kept: PopularSight[] = [];
+  for (const sight of sights) {
+    if (NOT_A_VISIT.test(sight.kind.toLowerCase())) continue;
+    const twin = kept.find((other) => {
+      const meters = Math.hypot((sight.lat - other.lat) * 111_000, (sight.lon - other.lon) * 111_000 * Math.cos((sight.lat * Math.PI) / 180));
+      if (meters > 60) return false;
+      // Two real sights can share a square (a basilica and its bell tower);
+      // only the same place under two names, or a place and the grounds
+      // around it, count as one.
+      return sight.ja.includes(other.ja) || other.ja.includes(sight.ja) || sight.en.includes(other.en) || other.en.includes(sight.en)
+        || CONTAINER_KIND.test(sight.kind.toLowerCase()) || CONTAINER_KIND.test(other.kind.toLowerCase());
+    });
+    // A Japanese "name" that is really a description ("a museum in
+    // Florence, Italy") is a bad label upstream; the English name is at
+    // least the place's name.
+    if (!twin) kept.push(/にある|に位置する|に所在する/.test(sight.ja) ? { ...sight, ja: sight.en } : sight);
+  }
+  return kept;
+}

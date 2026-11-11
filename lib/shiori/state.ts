@@ -58,7 +58,7 @@ type Wire = {
   n: string;
   d: number;
   p: ShioriPace;
-  s: Array<[id: string, name: string, lat: number, lon: number, stay: number, day: number | null, kind: string | null, img: string | null]>;
+  s: Array<[id: string, name: string, lat: number, lon: number, stay: number, day: number | null, kind: string | null, img: string | null, meal?: "lunch" | "dinner" | null]>;
   h: [name: string, lat: number, lon: number] | null;
 };
 
@@ -86,6 +86,7 @@ export function encodeTrip(trip: ShioriTrip): string {
       place.day ?? null,
       place.kind ?? null,
       place.img ?? null,
+      place.meal ?? null,
     ]),
     h: trip.hotel ? [trip.hotel.name, Number(trip.hotel.lat.toFixed(5)), Number(trip.hotel.lon.toFixed(5))] : null,
   };
@@ -111,7 +112,7 @@ export function decodeTrip(encoded: string): ShioriTrip | null {
     const places: ShioriPlace[] = [];
     for (const entry of wire.s) {
       if (!Array.isArray(entry)) return null;
-      const [id, name, lat, lon, stay, day, kind, img] = entry;
+      const [id, name, lat, lon, stay, day, kind, img, meal] = entry;
       if (typeof id !== "string" || !/^[\w.:,@-]{1,160}$/.test(id) || seen.has(id)) return null;
       if (typeof name !== "string" || name.trim().length === 0 || name.length > 120) return null;
       if (!finite(lat, -90, 90) || !finite(lon, -180, 180) || !finite(stay, 15, 720)) return null;
@@ -126,6 +127,7 @@ export function decodeTrip(encoded: string): ShioriTrip | null {
         ...(typeof kind === "string" && kind.length <= 80 ? { kind } : {}),
         // A file name, never a URL: it is only ever appended to the Commons path.
         ...(typeof img === "string" && img.length <= 240 && !/[\\/?#]|\.\./.test(img) ? { img } : {}),
+        ...(meal === "lunch" || meal === "dinner" ? { meal } : {}),
       });
     }
     const hotel = Array.isArray(wire.h) && typeof wire.h[0] === "string" && wire.h[0].length <= 120
@@ -148,6 +150,7 @@ export function decodeTrip(encoded: string): ShioriTrip | null {
 /* ------------------------------------------------------------------ labels */
 
 const kindLabels: Array<[RegExp, string, string]> = [
+  [/restaurant|cafe|food/, "飲食店", "Restaurant"],
   [/amusement|theme park/, "テーマパーク", "Theme park"],
   [/\bzoo\b|safari/, "動物園", "Zoo"],
   [/aquarium/, "水族館", "Aquarium"],

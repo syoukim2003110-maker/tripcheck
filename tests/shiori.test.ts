@@ -5,6 +5,7 @@ import { RailNetwork, plainStationName, type RailNetworkData } from "../lib/rail
 import { buildShioriPlan, type ShioriPlace, type ShioriRoute } from "../lib/shiori/plan.ts";
 import { decodeTrip, encodeTrip, kindLabel, placeFromSight, togglePlace, emptyTrip, MAX_PLACES, type ShioriTrip } from "../lib/shiori/state.ts";
 import { shioriStayMinutes } from "../lib/shiori/stay.ts";
+import { curateSights, type PopularSight } from "../lib/popular-sights.ts";
 
 /*
  * A toy city: two lines crossing at Central.
@@ -248,4 +249,116 @@ test("stay and label follow the kind of place", () => {
   assert.equal(kindLabel("shinto shrine", "ja"), "神社");
   assert.equal(kindLabel("observation tower", "en"), "Viewpoint");
   assert.equal(kindLabel(undefined, "ja"), "観光スポット");
+});
+
+/* ------------------------------------------------ the traveller's own picks */
+
+const clockOf = (value: string) => Number(value.slice(0, 2)) * 60 + Number(value.slice(3));
+
+test("a restaurant chosen for lunch is that day's lunch, eaten at lunchtime", () => {
+  const soba: ShioriPlace = { id: "r-soba", name: "祇園のそば屋", lat: 35.0035, lon: 135.7755, stayMinutes: 60, kind: "restaurant", meal: "lunch" };
+  const plan = buildShioriPlan({ places: [...kyotoFive, soba], days: 1, hotel: null, locale: "ja" });
+  const day = plan.days.find((entry) => entry.stops.some((stop) => stop.place.id === soba.id))!;
+  const stop = day.stops.find((entry) => entry.place.id === soba.id)!;
+  assert.ok(clockOf(stop.arrive) >= 11 * 60 + 30 && clockOf(stop.arrive) <= 14 * 60, stop.arrive);
+  assert.equal(stop.mealMissed, false);
+  // No second, invented lunch on the day that already has the chosen one.
+  assert.equal(day.meals.filter((meal) => meal.kind === "lunch").length, 0);
+});
+
+test("a restaurant chosen for dinner ends its day, which may run into the evening", () => {
+  const izakaya: ShioriPlace = { id: "r-izakaya", name: "先斗町の居酒屋", lat: 35.0052, lon: 135.7709, stayMinutes: 90, kind: "restaurant", meal: "dinner" };
+  const plan = buildShioriPlan({ places: [...kyotoFive, izakaya], days: 2, hotel: null, locale: "ja" });
+  const day = plan.days.find((entry) => entry.stops.some((stop) => stop.place.id === izakaya.id))!;
+  assert.equal(day.stops.at(-1)!.place.id, izakaya.id);
+  assert.ok(clockOf(day.stops.at(-1)!.arrive) >= 17 * 60 + 30);
+  assert.equal(day.runsLate, false);
+  assert.equal(day.meals.some((meal) => meal.kind === "dinner"), false);
+  assert.deepEqual(plan.notices, []);
+});
+
+test("too much for the days says how many days it takes, and the plan with that many fits", () => {
+  const many = Array.from({ length: 9 }, (_, index) => place(`場所${index}`, 35.0 + (index % 3) * 0.02, 135.76 + Math.floor(index / 3) * 0.03, 120));
+  const plan = buildShioriPlan({ places: many, days: 1, hotel: null, locale: "ja" });
+  const notice = plan.notices.find((entry) => entry.kind === "needs-days");
+  assert.ok(notice && notice.kind === "needs-days");
+  const longer = buildShioriPlan({ places: many, days: notice.days, hotel: null, locale: "ja" });
+  assert.equal(longer.days.some((day) => day.runsLate), false);
+  assert.equal(longer.notices.some((entry) => entry.kind === "needs-days" || entry.kind === "too-much"), false);
+});
+
+test("a day that runs past midnight is late, whatever the clock prints", () => {
+  const many = Array.from({ length: 12 }, (_, index) => place(`長居${index}`, 35.0 + (index % 4) * 0.02, 135.76 + Math.floor(index / 4) * 0.03, 150));
+  const plan = buildShioriPlan({ places: many, days: 1, hotel: null, locale: "ja" });
+  assert.equal(plan.days[0].runsLate, true);
+});
+
+test("a hotel far from everything is called out with what a closer one saves", () => {
+  const far = buildShioriPlan({ places: kyotoFive, days: 2, hotel: { name: "大阪のホテル", lat: 34.7025, lon: 135.4959 }, locale: "ja" });
+  const notice = far.notices.find((entry) => entry.kind === "hotel-far");
+  assert.ok(notice && notice.kind === "hotel-far");
+  assert.ok(notice.oneWayMinutes >= 30 && notice.savedMinutes > 0);
+  const near = buildShioriPlan({ places: kyotoFive, days: 2, hotel: { name: "祇園のホテル", lat: 35.0037, lon: 135.778 }, locale: "ja" });
+  assert.equal(near.notices.some((entry) => entry.kind === "hotel-far"), false);
+});
+
+test("a dinner across the region is priced: the detour, and the way back to the hotel", () => {
+  const kobe: ShioriPlace = { id: "r-kobe", name: "神戸のステーキ", lat: 34.6913, lon: 135.1956, stayMinutes: 90, kind: "restaurant", meal: "dinner" };
+  const plan = buildShioriPlan({ places: [...kyotoFive, kobe], days: 2, hotel: { name: "祇園のホテル", lat: 35.0037, lon: 135.778 }, locale: "ja" });
+  const kinds = plan.notices.map((entry) => entry.kind);
+  assert.ok(kinds.includes("meal-detour"), JSON.stringify(plan.notices));
+  assert.ok(kinds.includes("meal-hotel"), JSON.stringify(plan.notices));
+});
+
+test("a chosen restaurant survives the share link as the meal it is", () => {
+  const trip: ShioriTrip = { ...emptyTrip, places: [{ id: "r-1", name: "店", lat: 35, lon: 135, stayMinutes: 90, kind: "restaurant", meal: "dinner" }] };
+  assert.equal(decodeTrip(encodeTrip(trip))?.places[0].meal, "dinner");
+  // A link written before restaurants existed still opens.
+  const legacy = encodeTrip({ ...emptyTrip, places: [{ id: "wikidata-Q1", name: "寺", lat: 35, lon: 135, stayMinutes: 50 }] });
+  assert.equal(decodeTrip(legacy)?.places[0].meal, undefined);
+});
+
+test("places that are near each other end up on the same day", () => {
+  // Two neighbourhoods 9 km apart, two long visits in each: two days.
+  const east = [place("東の寺", 35.0, 135.8, 180), place("東の庭", 35.003, 135.802, 180)];
+  const west = [place("西の城", 35.02, 135.7, 180), place("西の塔", 35.022, 135.703, 180)];
+  // Listed interleaved, so the grouping cannot come from the input order.
+  const plan = buildShioriPlan({ places: [east[0], west[0], east[1], west[1]], days: 2, hotel: null, locale: "ja" });
+  assert.equal(plan.days.length, 2);
+  for (const day of plan.days) {
+    const sides = new Set(day.stops.map((stop) => stop.place.name[0]));
+    assert.equal(sides.size, 1, day.stops.map((stop) => stop.place.name).join(","));
+  }
+});
+
+test("the picker drops what cannot be visited and the same spot under two names", () => {
+  const sight = (q: string, ja: string, en: string, lat: number, lon: number, kind: string): PopularSight => ({ q, ja, en, lat, lon, kind });
+  const kept = curateSights([
+    sight("Q1", "大阪城", "Osaka Castle", 34.6873, 135.5262, "castle"),
+    sight("Q2", "大阪城公園", "Osaka Castle Park", 34.6875, 135.5263, "park"),
+    sight("Q3", "石山本願寺", "Ishiyama Hongan-ji", 34.6874, 135.5261, "former buddhist temple"),
+    sight("Q4", "元", "Yuan dynasty", 39.9, 116.4, "dynasty"),
+    sight("Q5", "サン・マルコ寺院", "St Mark's Basilica", 45.4345, 12.3397, "basilica"),
+    sight("Q6", "鐘楼", "St Mark's Campanile", 45.434, 12.339, "bell tower"),
+    sight("Q7", "イタリア、フィレンツェにある美術館", "Gallerie dell'Accademia", 45.431, 12.328, "art museum"),
+  ]);
+  assert.deepEqual(kept.map((entry) => entry.q), ["Q1", "Q5", "Q6", "Q7"]);
+  assert.equal(kept.at(-1)!.ja, "Gallerie dell'Accademia");
+});
+
+test("a station on another line is reachable when the nearest ones all share one line", () => {
+  // Four tram stops beside the start, all on one line that goes nowhere
+  // useful; the metro is the fifth-nearest station.
+  const network = new RailNetwork({
+    id: "toy2",
+    stations: [
+      ["路面1", "Tram 1", 35.0005, 139.0], ["路面2", "Tram 2", 35.001, 139.0], ["路面3", "Tram 3", 35.0015, 139.0], ["路面4", "Tram 4", 35.002, 139.0],
+      ["地下鉄 西", "Metro West", 35.004, 139.0], ["地下鉄 東", "Metro East", 35.004, 139.08],
+    ],
+    lines: [["路面線", "Tram"], ["地下鉄線", "Metro"]],
+    edges: [[0, 1, 0], [1, 2, 0], [2, 3, 0], [4, 5, 1]],
+  });
+  const journey = network.route({ latitude: 35.0, longitude: 139.0 }, { latitude: 35.004, longitude: 139.081 });
+  assert.ok(journey);
+  assert.equal(journey.rides[0].line, "地下鉄線");
 });

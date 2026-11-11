@@ -154,11 +154,16 @@ function access_token(array $config, bool $forceRefresh = false): string
     });
 }
 
-/** Process-wide daily ceiling and a per-client minute window. */
-function admit(): void
+/**
+ * Process-wide daily ceiling and a per-client minute window. Lines on the
+ * map ($reserveForSearch) stop at 70% of the day's ceiling: the page can
+ * draw them from another source, while place, hotel and food search cannot
+ * be answered by anything else.
+ */
+function admit(bool $reserveForSearch = false): void
 {
     $client = hash('sha256', ($_SERVER['REMOTE_ADDR'] ?? 'unknown') . '|' . date('Y-m-d'));
-    $allowed = with_state('quota', function (array $state, callable $save) use ($client): bool {
+    $allowed = with_state('quota', function (array $state, callable $save) use ($client, $reserveForSearch): bool {
         $day = gmdate('Y-m-d');
         $minute = (int) floor(time() / 60);
         if (($state['day'] ?? '') !== $day) $state = ['day' => $day, 'calls' => 0, 'clients' => []];
@@ -167,6 +172,7 @@ function admit(): void
             $state['clients'] = [];
         }
         if ($state['calls'] >= DAILY_CALL_CEILING) return false;
+        if ($reserveForSearch && $state['calls'] >= (int) (DAILY_CALL_CEILING * 0.7)) return false;
         $used = $state['clients'][$client] ?? 0;
         if ($used >= PER_CLIENT_PER_MINUTE) return false;
         $state['calls'] += 1;
@@ -255,7 +261,7 @@ if (($_GET['op'] ?? '') === 'route') {
     ) {
         respond(400, ['code' => 'invalid_request']);
     }
-    admit();
+    admit(true);
     $routeUrl = APPLE_ORIGIN . '/v1/directions?' . http_build_query([
         'origin' => sprintf('%.6F,%.6F', (float) $from[1], (float) $from[2]),
         'destination' => sprintf('%.6F,%.6F', (float) $to[1], (float) $to[2]),
@@ -268,6 +274,8 @@ if (($_GET['op'] ?? '') === 'route') {
         respond(502, ['code' => 'unavailable']);
     }
     if ($status === 429) respond(429, ['code' => 'budget_exhausted']);
+    // Apple being down is not "no route": the page must be free to ask again.
+    if ($status >= 500) respond(502, ['code' => 'unavailable']);
     $empty = ['minutes' => null, 'distanceMeters' => null, 'path' => []];
     $route = is_array($body) && is_array($body['routes'] ?? null) ? ($body['routes'][0] ?? null) : null;
     $seconds = is_array($route) && is_numeric($route['durationSeconds'] ?? null) ? (float) $route['durationSeconds'] : 0;

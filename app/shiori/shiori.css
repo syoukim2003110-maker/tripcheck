@@ -79,7 +79,9 @@
 .shiori-more { background: none; border: 0; color: var(--ink); display: block; font-weight: 700; margin: 12px auto 0; min-height: 44px; text-decoration: underline; text-underline-offset: 3px; }
 .shiori-other { background: var(--card); border: 1px solid var(--line); border-radius: 16px; margin-top: 18px; padding: 12px; }
 .shiori-other label { display: block; font-size: 13px; font-weight: 800; margin-bottom: 6px; }
-.shiori-other > div { display: flex; gap: 8px; }
+.shiori-other > .shiori-other-row { display: flex; gap: 8px; margin-top: 8px; }
+.shiori-other .shiori-pace { flex-wrap: wrap; }
+.shiori-other .shiori-pace button { flex: 1 1 auto; }
 .shiori-other input { background: var(--soft); border: 1px solid transparent; border-radius: 10px; flex: 1 1 auto; font-size: 16px; min-height: 44px; min-width: 0; padding: 0 12px; }
 .shiori-other button[type="submit"] { background: var(--ink); border: 0; border-radius: 10px; color: #fff; font-weight: 700; min-height: 44px; padding: 0 16px; }
 .shiori-other button:disabled { opacity: 0.45; }
@@ -188,4 +190,23 @@
   .shiori { background: #fff; padding: 0; }
   .shiori-top, .shiori-plan-actions, .shiori-controls, .shiori-plan-map, .shiori-meal-head button, .shiori-stop-edit, .shiori-leg-link, .shiori-ideas, .shiori-hotel-actions, .shiori-tabs { display: none !important; }
   .shiori-plan { display: block; }
+}
+
+/* Where the traveller's wishes collide, and the way out. */
+.shiori-notices { background: #fff4e5; border: 1px solid #f0c98a; border-radius: 16px; margin: 14px 0; padding: 12px 14px; }
+.shiori-notices h2 { color: #7a4a00; font-size: 15px; margin: 0 0 6px; }
+.shiori-notices ul { list-style: none; margin: 0; padding: 0; }
+.shiori-notices li { align-items: center; border-top: 1px solid #f0c98a; color: #4d3000; display: flex; flex-wrap: wrap; font-size: 14px; gap: 8px 12px; justify-content: space-between; line-height: 1.6; padding: 8px 0; }
+.shiori-notices li:first-child { border-top: 0; }
+.shiori-notices li span { flex: 1 1 240px; }
+.shiori-notices button { background: #7a4a00; border: 0; border-radius: 10px; color: #fff; font-size: 13px; font-weight: 700; min-height: 40px; padding: 0 14px; }
+.shiori-wait { color: var(--muted); font-size: 12px; margin: 0 0 6px; padding-left: 4px; }
+.shiori-stop-text small.shiori-warn { display: inline-block; margin-top: 4px; }
+
+/* Every day is in the page; the screen shows the one being read, paper shows all. */
+.shiori-day:not(.is-current) { display: none; }
+@media print {
+  .shiori-day { display: block !important; }
+  .shiori-day + .shiori-day { break-before: page; }
+  .shiori-notices button, .shiori-other { display: none !important; }
 }

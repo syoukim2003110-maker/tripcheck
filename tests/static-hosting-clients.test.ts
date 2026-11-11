@@ -212,10 +212,11 @@ test("a leg Apple cannot route is asked of the open router, once", async () => {
   }) as typeof fetch;
   const options = { origin: { latitude: 35.69396, longitude: 139.74269 }, destination: { latitude: 35.6825, longitude: 139.7521 }, mode: "walk" as const };
   const dependencies = { relayUrl: "https://example.test/street-a.php", fetcher };
-  const route = await fetchStreetRoute(options, dependencies);
-  assert.equal(route?.source, "osm");
-  assert.equal(route?.minutes, 42);
-  assert.deepEqual(route?.path[1], { latitude: 35.69, longitude: 139.75 });
+  const answer = await fetchStreetRoute(options, dependencies);
+  assert.ok(answer.status === "found");
+  assert.equal(answer.route.source, "osm");
+  assert.equal(answer.route.minutes, 42);
+  assert.deepEqual(answer.route.path[1], { latitude: 35.69, longitude: 139.75 });
   await fetchStreetRoute(options, dependencies);
   assert.deepEqual(seen, ["apple walk", "osm routed-foot"]);
 });
@@ -226,15 +227,46 @@ test("with no relay the open router draws the road, without a drive time to plan
     assert.match(String(input), /routed-car\/route\/v1\/driving/);
     return Response.json({ code: "Ok", routes: [{ duration: 600, geometry: { coordinates: [[2, 1], [2.01, 1.01]] } }] });
   }) as typeof fetch;
-  const route = await fetchStreetRoute({ origin: { latitude: 1, longitude: 2 }, destination: { latitude: 1.01, longitude: 2.01 }, mode: "drive" }, { relayUrl: null, fetcher });
-  assert.equal(route?.minutes, null);
-  assert.equal(route?.path.length, 2);
+  const answer = await fetchStreetRoute({ origin: { latitude: 1, longitude: 2 }, destination: { latitude: 1.01, longitude: 2.01 }, mode: "drive" }, { relayUrl: null, fetcher });
+  assert.ok(answer.status === "found");
+  assert.equal(answer.route.minutes, null);
+  assert.equal(answer.route.path.length, 2);
 });
 
-test("a leg nobody can route is a null, never an error", async () => {
+test("no route is an answer that is remembered; a failure is neither and is asked again", async () => {
   const { fetchStreetRoute } = await import("../lib/street-route-client.ts");
-  const noRoute = (async () => Response.json({ code: "NoRoute" }, { status: 400 })) as typeof fetch;
-  assert.equal(await fetchStreetRoute({ origin: { latitude: 3, longitude: 4 }, destination: { latitude: 3.1, longitude: 4.1 }, mode: "walk" }, { relayUrl: null, fetcher: noRoute }), null);
+  let calls = 0;
+  const noRoute = (async () => { calls += 1; return Response.json({ code: "NoRoute" }, { status: 400 }); }) as typeof fetch;
+  const pair = { origin: { latitude: 3, longitude: 4 }, destination: { latitude: 3.1, longitude: 4.1 }, mode: "walk" as const };
+  assert.deepEqual(await fetchStreetRoute(pair, { relayUrl: null, fetcher: noRoute }), { status: "none" });
+  await fetchStreetRoute(pair, { relayUrl: null, fetcher: noRoute });
+  assert.equal(calls, 1);
+
+  // Busy, broken or offline: never an error thrown at the page, never cached.
+  let attempts = 0;
+  const busy = (async () => { attempts += 1; return Response.json({ message: "Too Many Requests" }, { status: 429 }); }) as typeof fetch;
+  const other = { origin: { latitude: 5, longitude: 6 }, destination: { latitude: 5.1, longitude: 6.1 }, mode: "walk" as const };
+  assert.deepEqual(await fetchStreetRoute(other, { relayUrl: null, fetcher: busy }), { status: "failed" });
+  assert.deepEqual(await fetchStreetRoute(other, { relayUrl: null, fetcher: busy }), { status: "failed" });
+  assert.equal(attempts, 2);
   const offline = (async () => { throw new TypeError("offline"); }) as typeof fetch;
-  assert.equal(await fetchStreetRoute({ origin: { latitude: 5, longitude: 6 }, destination: { latitude: 5.1, longitude: 6.1 }, mode: "walk" }, { relayUrl: "https://example.test/street-b.php", fetcher: offline }), null);
+  assert.deepEqual(await fetchStreetRoute({ ...other, mode: "drive" }, { relayUrl: null, fetcher: offline }), { status: "failed" });
+});
+
+test("a relay that fails is left alone for a while, and the open router answers instead", async () => {
+  const { fetchStreetRoute, OPEN_ROUTER_ORIGIN } = await import("../lib/street-route-client.ts");
+  const seen: string[] = [];
+  const fetcher = (async (input: RequestInfo | URL) => {
+    const url = new URL(String(input));
+    seen.push(url.origin === OPEN_ROUTER_ORIGIN ? "osm" : "relay");
+    if (url.origin !== OPEN_ROUTER_ORIGIN) return Response.json({ code: "unavailable" }, { status: 502 });
+    return Response.json({ code: "Ok", routes: [{ duration: 600, geometry: { coordinates: [[8, 7], [8.01, 7.01]] } }] });
+  }) as typeof fetch;
+  const dependencies = { relayUrl: "https://example.test/street-down.php", fetcher };
+  const first = await fetchStreetRoute({ origin: { latitude: 7, longitude: 8 }, destination: { latitude: 7.01, longitude: 8.01 }, mode: "walk" }, dependencies);
+  const second = await fetchStreetRoute({ origin: { latitude: 7.2, longitude: 8 }, destination: { latitude: 7.21, longitude: 8.01 }, mode: "walk" }, dependencies);
+  assert.equal(first.status, "found");
+  assert.equal(second.status, "found");
+  // One wait on the broken relay, not one per leg.
+  assert.deepEqual(seen, ["relay", "osm", "osm"]);
 });
