@@ -267,3 +267,41 @@ test("Apple only sees the wishlist lines the open sources could not settle", asy
   assert.equal(shop?.planningDurationMinutes, 45);
   assert.equal(result.places.length, 3);
 });
+
+test("hotel candidates are ordered by how little the whole trip has to travel", async () => {
+  const { fetchAppleHotelCandidates } = await import("../lib/apple-hotels.ts");
+  const hotel = (name: string, latitude: number, longitude: number) => ({
+    id: name, name, latitude, longitude, formattedAddress: "東京都", poiCategory: "Hotel",
+  });
+  const searches: Array<{ query: string; withinMeters: number; poiCategories: readonly string[] }> = [];
+  const client = {
+    search: async (options: { query: string; withinMeters: number; poiCategories: readonly string[] }) => {
+      searches.push(options);
+      return options.withinMeters === 2_500
+        ? [hotel("駅前ホテル", 35.6812, 139.7671), hotel("遠いホテル", 35.72, 139.82)]
+        : [hotel("駅前ホテル", 35.6812, 139.7671), hotel("中間のホテル", 35.69, 139.75), hotel("渋谷のホテル", 35.659, 139.7)];
+    },
+  };
+  const candidates = await fetchAppleHotelCandidates({
+    latitude: 35.6812,
+    longitude: 139.7671,
+    area: "東京駅",
+    // Day centres: Shibuya/Shinjuku side, Asakusa side, the bay.
+    routePoints: [{ latitude: 35.67, longitude: 139.70 }, { latitude: 35.712, longitude: 139.79 }, { latitude: 35.65, longitude: 139.78 }],
+    languageCode: "ja",
+    destination: "japan",
+  }, client);
+
+  // Too few nearby, so the wider search ran; the duplicate merged.
+  assert.deepEqual(searches.map((entry) => [entry.query, entry.withinMeters, [...entry.poiCategories]]), [["ホテル", 2_500, ["Hotel"]], ["ホテル", 5_000, ["Hotel"]]]);
+  assert.equal(candidates.length, 4);
+  // A hotel between the day centres beats one beside a single day's sights
+  // and one out past all of them.
+  assert.equal(candidates[0].name, "中間のホテル");
+  assert.equal(candidates.at(-1)?.name, "遠いホテル");
+  for (let index = 1; index < candidates.length; index += 1) {
+    assert.ok(candidates[index - 1].routeBurdenMeters <= candidates[index].routeBurdenMeters);
+  }
+  // Nothing Apple did not supply is claimed.
+  assert.ok(candidates.every((candidate) => candidate.rating === null && candidate.priceLevel === null && candidate.styles.length === 0));
+});

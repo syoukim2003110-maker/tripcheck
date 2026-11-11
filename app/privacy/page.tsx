@@ -37,12 +37,12 @@ export default function PrivacyPage() {
       </section>
       <section>
         <h2>Weather outlook</h2>
-        <p>For trip days inside the forecast horizon, TripCheck may send the calendar date and the approximate geographic centre coordinates of that day to Open-Meteo after the route is already usable. It does not send place names, itinerary text, hotel text or reservation notes. The forecast is shown as optional planning context and never moves a stop or decides whether a plan is feasible.</p>
+        <p>For trip days inside the forecast horizon, TripCheck may send the calendar date and the approximate geographic centre coordinates of that day to Open-Meteo after the route is already usable (directly from your browser where this site is served as static files). It does not send place names, itinerary text, hotel text or reservation notes. The forecast is shown as optional planning context and never moves a stop or decides whether a plan is feasible.</p>
         <p>Open-Meteo weather data is attributed under CC BY 4.0. Its free service may process request IP addresses and coordinate-bearing web-server logs for service protection and troubleshooting; Open-Meteo states that those logs are deleted after up to 90 days. See the <a href="https://open-meteo.com/en/terms" rel="noreferrer" target="_blank">Open-Meteo terms and privacy information</a>.</p>
       </section>
       <section>
         <h2>Public holidays</h2>
-        <p>To warn about public-holiday closures, TripCheck sends only the destination&apos;s two-letter country code and the bare calendar dates of the trip to the <a href="https://date.nager.at" rel="noreferrer" target="_blank">Nager.Date</a> public-holiday service through a protected TripCheck endpoint. No place names, itinerary text or coordinates are included in the request, and it is optional context that never gates the plan.</p>
+        <p>To warn about public-holiday closures, TripCheck sends only the destination&apos;s two-letter country code and the bare calendar dates of the trip to the <a href="https://date.nager.at" rel="noreferrer" target="_blank">Nager.Date</a> public-holiday service — directly from your browser where this site is served as static files, otherwise through a protected TripCheck endpoint. No place names, itinerary text or coordinates are included in the request, and it is optional context that never gates the plan.</p>
       </section>
       <section>
         <h2>Map and key-free place lookup</h2>

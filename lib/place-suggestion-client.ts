@@ -1,3 +1,4 @@
+import { notHostedResponse, serverRoutesUnavailable } from "./hosting-mode.ts";
 import type { DestinationChoice } from "./destinations.ts";
 import type { Locale } from "./i18n.ts";
 import type { PlaceSuggestion } from "./google-place-suggestions.ts";
@@ -44,7 +45,7 @@ export async function requestPlaceSuggestions(
   if (!paidPlaceResolutionEnabled()) throw new PlaceSuggestionError("explicit_search_only");
   let response: Response;
   try {
-    response = await fetch("/api/place-suggestions", {
+    response = serverRoutesUnavailable() ? notHostedResponse() : await fetch("/api/place-suggestions", {
       method: "POST",
       headers: tripRequestHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ query, languageCode: locale === "ja" ? "ja" : "en", destination }),

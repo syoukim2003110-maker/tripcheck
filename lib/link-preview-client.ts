@@ -1,3 +1,4 @@
+import { notHostedResponse, serverRoutesUnavailable } from "./hosting-mode.ts";
 import type { LinkPreview } from "./link-preview.ts";
 
 export class LinkPreviewError extends Error {}
@@ -5,7 +6,7 @@ export class LinkPreviewError extends Error {}
 export async function requestLinkPreview(url: string, signature: string): Promise<LinkPreview> {
   let response: Response;
   try {
-    response = await fetch("/api/link-preview", {
+    response = serverRoutesUnavailable() ? notHostedResponse() : await fetch("/api/link-preview", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ url, sig: signature }),

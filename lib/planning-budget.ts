@@ -24,3 +24,10 @@ export function takeWithinPlanningBudget<T>(
   const remaining = Math.max(0, Math.floor(budget) - Math.max(0, Math.floor(alreadyUsed)));
   return values.slice(0, remaining);
 }
+
+/**
+ * How many places one trip may hold. The day-assignment search is exact
+ * enough and fast enough (under a second) up to here; beyond it the answer
+ * would be a rough grouping presented as a plan.
+ */
+export const MAX_WISHLIST_PLACES = 24;

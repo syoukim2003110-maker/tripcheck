@@ -1,3 +1,4 @@
+import { notHostedResponse, serverRoutesUnavailable } from "./hosting-mode.ts";
 import { tripRequestHeaders } from "./trip-request-identity.ts";
 
 /**
@@ -66,7 +67,7 @@ export async function requestMapRouteGeometry(input: Readonly<{
   const results = new Map<string, MapRouteLegResult>();
   if (input.legs.length === 0) return results;
   try {
-    const response = await fetch("/api/live-routes", {
+    const response = serverRoutesUnavailable() ? notHostedResponse() : await fetch("/api/live-routes", {
       method: "POST",
       headers: tripRequestHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify(buildMapRouteGeometryPayload(input)),

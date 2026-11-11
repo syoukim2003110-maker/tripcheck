@@ -141,3 +141,29 @@ test("travel times: one request per pair, mode and hour; no answer stays no answ
     depart: "2026-11-14T10:11:00+08:00",
   });
 });
+
+test("a region where transit never answers stops being asked about transit", async () => {
+  const { appleRelayEta } = await import("../lib/apple-relay-client.ts");
+  const calls: string[] = [];
+  const fetcher = (async (input: RequestInfo | URL) => {
+    const url = new URL(String(input));
+    calls.push(url.searchParams.get("mode")!);
+    return url.searchParams.get("mode") === "transit"
+      ? Response.json({ minutes: null, distanceMeters: null })
+      : Response.json({ minutes: 20, distanceMeters: 1500 });
+  }) as typeof fetch;
+  const relay = "https://example.test/coverage-test/apple.php";
+  const leg = (index: number, mode: "transit" | "walk") => appleRelayEta({
+    origin: { latitude: 35.0 + index * 0.01, longitude: 135.75 },
+    destination: { latitude: 35.2, longitude: 135.70 + index * 0.01 },
+    mode,
+  }, relay, fetcher);
+
+  for (let index = 0; index < 6; index += 1) assert.equal(await leg(index, "transit"), null);
+  // Three unanswered lookups were enough; the other three cost nothing.
+  assert.equal(calls.filter((mode) => mode === "transit").length, 3);
+  // Walking is unaffected, and so is transit somewhere else entirely.
+  assert.deepEqual(await leg(9, "walk"), { minutes: 20, distanceMeters: 1500 });
+  await appleRelayEta({ origin: { latitude: 22.3, longitude: 114.17 }, destination: { latitude: 22.28, longitude: 114.15 }, mode: "transit" }, relay, fetcher);
+  assert.equal(calls.filter((mode) => mode === "transit").length, 4);
+});

@@ -24,6 +24,10 @@ export const OPEN_PLACE_DATA_HOSTS = [
   "https://query.wikidata.org",
   "https://photon.komoot.io",
   "https://nominatim.openstreetmap.org",
+  // Forecast and public holidays for the trip's own dates, asked for directly
+  // when the site is hosted as static files.
+  "https://api.open-meteo.com",
+  "https://date.nager.at",
 ] as const;
 
 /** Tiles, markers, Street View and the photo redirect's destination. */

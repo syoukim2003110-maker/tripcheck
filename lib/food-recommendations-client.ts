@@ -1,3 +1,4 @@
+import { notHostedResponse, serverRoutesUnavailable } from "./hosting-mode.ts";
 import type { DestinationChoice } from "./destinations.ts";
 import type { Locale } from "./i18n.ts";
 import type { FoodRecommendationSlot } from "./trip-builder.ts";
@@ -265,7 +266,7 @@ export async function requestFoodRanking(
   candidates: FoodCandidate[],
   locale: Locale,
 ): Promise<FoodRankingResponse> {
-  const response = await fetch("/api/food-recommendations/ai", {
+  const response = serverRoutesUnavailable() ? notHostedResponse() : await fetch("/api/food-recommendations/ai", {
     method: "POST",
     headers: tripRequestHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify(buildFoodRankingPayload(slot, query, candidates, locale)),

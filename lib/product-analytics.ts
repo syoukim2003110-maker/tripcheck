@@ -1,3 +1,4 @@
+import { serverRoutesUnavailable } from "./hosting-mode.ts";
 /**
  * Privacy-minimal product telemetry for the P0 funnel.
  *
@@ -98,6 +99,8 @@ export function parseProductEvent(input: unknown): ProductEvent | null {
 export function trackProductEvent(event: ProductEventName, fields: ProductEventFields = {}) {
   const parsed = parseProductEvent({ event, fields });
   if (!parsed || typeof window === "undefined") return false;
+  // A statically hosted site has nowhere to send product events.
+  if (serverRoutesUnavailable()) return false;
   const body = JSON.stringify(parsed);
   try {
     if (typeof navigator.sendBeacon === "function") {

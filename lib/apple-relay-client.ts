@@ -111,6 +111,7 @@ export async function appleRelaySearch(
 export type AppleRelayEta = Readonly<{ minutes: number; distanceMeters: number | null }>;
 
 const etaCache = new Map<string, AppleRelayEta | null>();
+const transitCoverage = new Map<string, { answered: number; unanswered: number }>();
 
 /**
  * Travel time for one leg and one mode. `null` means Apple has no answer for
@@ -138,11 +139,23 @@ export async function appleRelayEta(
   // Feeding measured minutes back into the schedule nudges every later
   // departure, and the planner asks again for the same pair a few minutes
   // on. Within the same hour the first answer stands.
+  // Apple has no transit timetable for some countries (Japan). After a few
+  // unanswered transit lookups around the same area and not one answer,
+  // further ones there are not worth a quota unit each.
+  const area = `${relayUrl}|${Math.round(options.origin.latitude)},${Math.round(options.origin.longitude)}`;
+  const coverage = options.mode === "transit" ? transitCoverage.get(area) : undefined;
+  if (coverage && coverage.answered === 0 && coverage.unanswered >= 3) return null;
   const hour = options.departureTime ? options.departureTime.slice(0, 13) : "now";
   const cacheKey = [relayUrl, point(options.origin), point(options.destination), options.mode, hour].join("|");
   const cached = etaCache.get(cacheKey);
   if (cached !== undefined) return cached;
   const remember = (value: AppleRelayEta | null) => {
+    if (options.mode === "transit") {
+      const seen = transitCoverage.get(area) ?? { answered: 0, unanswered: 0 };
+      if (value) seen.answered += 1;
+      else seen.unanswered += 1;
+      transitCoverage.set(area, seen);
+    }
     etaCache.set(cacheKey, value);
     if (etaCache.size > 600) etaCache.delete(etaCache.keys().next().value as string);
     return value;

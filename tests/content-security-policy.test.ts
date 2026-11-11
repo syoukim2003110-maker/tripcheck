@@ -63,6 +63,8 @@ test("only named map providers are allowed, on the directives they need", () => 
     "https://query.wikidata.org",
     "https://photon.komoot.io",
     "https://nominatim.openstreetmap.org",
+    "https://api.open-meteo.com",
+    "https://date.nager.at",
   ]);
   assert.equal(remote("script-src").includes("https://tiles.openfreemap.org"), false, "MapLibre is bundled, not remotely scripted");
   assert.equal(remote("img-src").includes("https://tiles.openfreemap.org"), false, "MapLibre fetches vector tiles through connect-src");

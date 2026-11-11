@@ -2540,3 +2540,24 @@ div.planner-route-ideas-empty { display: grid; gap: 8px; }
   letter-spacing: 0.01em;
 }
 .planner-transit-line svg { flex-shrink: 0; opacity: 0.7; }
+
+/* Pick-from-a-destination: the first thing on the start screen, so a traveller
+ * who knows only where they are going still has something to tap. */
+.planner-sights { background: var(--pl-panel); border: 1px solid var(--pl-line); border-radius: 16px; margin-bottom: 12px; padding: 12px 12px 10px; }
+.planner-sights-head { align-items: center; display: flex; flex-wrap: wrap; gap: 8px 10px; }
+.planner-sights-head label { color: var(--pl-ink); flex: 0 0 auto; font-size: 13px; font-weight: 800; letter-spacing: 0.01em; }
+.planner-sights-head input { background: var(--pl-tile); border: 1px solid transparent; border-radius: 10px; color: var(--pl-ink); flex: 1 1 200px; font: inherit; font-size: 16px; min-height: 40px; min-width: 0; padding: 0 12px; }
+.planner-sights-head input:focus-visible { background: white; border-color: var(--pl-focus); outline: 2px solid color-mix(in srgb, var(--pl-focus) 30%, transparent); outline-offset: 0; }
+.planner-sights-cities, .planner-sights-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.planner-sights-city, .planner-sights-chip, .planner-sights-more { border-radius: 999px; cursor: pointer; font: inherit; font-size: 13px; line-height: 1.2; min-height: 36px; padding: 0 12px; }
+.planner-sights-city { background: var(--pl-tile); border: 1px solid var(--pl-line); color: var(--pl-ink); font-weight: 700; }
+.planner-sights-city:hover { background: var(--pl-tile-deep); }
+.planner-sights-chip { align-items: center; background: white; border: 1px solid var(--pl-control-border); color: var(--pl-ink); display: inline-flex; gap: 5px; text-align: left; }
+.planner-sights-chip span { color: var(--pl-muted); font-size: 12px; font-weight: 800; }
+.planner-sights-chip:hover { border-color: var(--pl-ink); }
+.planner-sights-chip.is-chosen { background: var(--pl-ink); border-color: var(--pl-ink); color: white; }
+.planner-sights-chip.is-chosen span { color: white; }
+.planner-sights-hint, .planner-sights-empty { color: var(--pl-muted); font-size: 12px; line-height: 1.6; margin: 10px 2px 0; }
+.planner-sights-foot { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.planner-sights-more { background: transparent; border: 0; color: var(--pl-ink); font-weight: 700; padding: 0 6px; text-decoration: underline; text-underline-offset: 3px; }
+.planner-sights-city:focus-visible, .planner-sights-chip:focus-visible, .planner-sights-more:focus-visible { outline: 2px solid var(--pl-focus); outline-offset: 2px; }

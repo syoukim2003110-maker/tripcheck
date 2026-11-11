@@ -1,6 +1,9 @@
+import { notHostedResponse, serverRoutesUnavailable } from "./hosting-mode.ts";
 import type { DestinationChoice } from "./destinations.ts";
 import type { Locale } from "./i18n.ts";
-import type { HotelCandidate } from "./google-hotels.ts";
+import { parseHotelSearchRequest, type HotelCandidate } from "./google-hotels.ts";
+import { fetchAppleHotelCandidates } from "./apple-hotels.ts";
+import { AppleRelayError, appleRelayClient } from "./apple-relay-client.ts";
 import { tripRequestHeaders } from "./trip-request-identity.ts";
 
 export type HotelSearchInput = {
@@ -12,7 +15,7 @@ export type HotelSearchInput = {
 };
 
 export type HotelRecommendationsResponse = {
-  provider: "google_maps";
+  provider: "google_maps" | "apple_maps";
   evidenceProviders: { rakuten: boolean };
   fetchedAt: string;
   candidates: HotelCandidate[];
@@ -120,7 +123,7 @@ export async function requestHotelRanking(
 ): Promise<HotelRankingResponse> {
   let response: Response;
   try {
-    response = await fetch("/api/hotel-recommendations/ai", {
+    response = serverRoutesUnavailable() ? notHostedResponse() : await fetch("/api/hotel-recommendations/ai", {
       method: "POST",
       headers: tripRequestHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify(buildHotelRankingPayload(input, locale)),
@@ -144,6 +147,23 @@ export async function requestHotelRecommendations(
   destination: DestinationChoice = "auto",
   signal?: AbortSignal,
 ): Promise<HotelRecommendationsResponse> {
+  // A statically hosted build has no server routes: the page asks the Apple
+  // relay itself. Only the trip's centre coordinate, the day centres and the
+  // search words leave the browser.
+  const relay = appleRelayClient();
+  if (relay) {
+    const parsed = parseHotelSearchRequest(buildHotelSearchPayload(input, locale, destination));
+    if (!parsed) throw new HotelRecommendationsError("invalid_request");
+    try {
+      const candidates = await fetchAppleHotelCandidates(parsed, relay, signal);
+      return { provider: "apple_maps", evidenceProviders: { rakuten: false }, fetchedAt: new Date().toISOString(), candidates };
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      if (error instanceof AppleRelayError && error.code === "quota_exhausted") throw new HotelRecommendationsError("quota_exhausted");
+      if (error instanceof AppleRelayError && error.code === "not_configured") throw new HotelRecommendationsError("not_configured");
+      throw new HotelRecommendationsError("unavailable");
+    }
+  }
   let response: Response;
   try {
     response = await fetch("/api/hotel-recommendations", {

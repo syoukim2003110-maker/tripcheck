@@ -1,3 +1,4 @@
+import { notHostedResponse, serverRoutesUnavailable } from "./hosting-mode.ts";
 import type { DestinationChoice } from "./destinations.ts";
 import type { GapSuggestionKind } from "./gap-detection.ts";
 import type { RouteRecommendation, RouteRecommendationPoint } from "./route-recommendations.ts";
@@ -25,7 +26,7 @@ type Request = {
 export async function requestRouteRecommendations(request: Request, signal?: AbortSignal) {
   let response: Response;
   try {
-    response = await fetch("/api/route-recommendations", {
+    response = serverRoutesUnavailable() ? notHostedResponse() : await fetch("/api/route-recommendations", {
       method: "POST",
       headers: tripRequestHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify(request),

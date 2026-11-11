@@ -44,7 +44,7 @@ import {
   type AmbiguousPlaceResolution,
   type PlaceReviewStatus,
 } from "../../../../lib/place-resolution-client";
-import { PLANNING_BUDGET, takeWithinPlanningBudget } from "../../../../lib/planning-budget";
+import { MAX_WISHLIST_PLACES, PLANNING_BUDGET, takeWithinPlanningBudget } from "../../../../lib/planning-budget";
 import { resolveKnownStops, type ResolvedInputStop, type RouteStop } from "../../../../lib/route-optimizer";
 import { resolveProvisionalTripLength } from "../../../../lib/provisional-trip-length";
 import { rankHotelCandidates, safestHotelCandidate } from "../../../../lib/hotel-handover";
@@ -508,7 +508,7 @@ export function usePlanBuildActions({
       placesInputRef.current?.focus();
       return;
     }
-    if (parsedPlaceCount > 12) {
+    if (parsedPlaceCount > MAX_WISHLIST_PLACES) {
       setStartInputError("limit");
       placesInputRef.current?.focus();
       return;

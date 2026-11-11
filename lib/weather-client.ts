@@ -1,5 +1,6 @@
 import type { BuiltTripPlan } from "./trip-builder.ts";
-import type { TripWeatherDay, TripWeatherResult, WeatherRequest } from "./weather.ts";
+import { fetchTripWeather, parseWeatherRequest, type TripWeatherDay, type TripWeatherResult, type WeatherRequest } from "./weather.ts";
+import { serverRoutesUnavailable } from "./hosting-mode.ts";
 
 /*
  * Client side of the trip-day forecast. The payload is coordinate-only by
@@ -68,18 +69,27 @@ function validTripWeatherDay(value: unknown): value is TripWeatherDay {
  * forecast chips instead of surfacing an error.
  */
 export async function requestWeatherPayload(payload: WeatherRequest): Promise<Record<number, TripWeatherDay>> {
-  let response: Response;
-  try {
-    response = await fetch("/api/weather", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-  } catch {
-    return {};
+  let body: TripWeatherResult | null;
+  if (serverRoutesUnavailable()) {
+    // Static hosting: the page asks keyless Open-Meteo itself, with the same
+    // validation the server route applies. Only day coordinates and dates go.
+    const parsed = parseWeatherRequest(payload);
+    if (!parsed) return {};
+    body = await fetchTripWeather(parsed).catch(() => null);
+  } else {
+    let response: Response;
+    try {
+      response = await fetch("/api/weather", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+    } catch {
+      return {};
+    }
+    if (!response.ok) return {};
+    body = await response.json().catch(() => null) as TripWeatherResult | null;
   }
-  if (!response.ok) return {};
-  const body = await response.json().catch(() => null) as TripWeatherResult | null;
   if (!body || !Array.isArray(body.days)) return {};
   const result: Record<number, TripWeatherDay> = {};
   for (const day of body.days) {

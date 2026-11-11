@@ -1,3 +1,4 @@
+import { notHostedResponse, serverRoutesUnavailable } from "./hosting-mode.ts";
 import type { DestinationChoice } from "./destinations.ts";
 import type { FreshVoicesDepth, FreshVoicesIntent, FreshVoicesResult } from "./fresh-voices.ts";
 import type { Locale } from "./i18n.ts";
@@ -21,7 +22,7 @@ export async function requestPlaceIntelligence(
   signal?: AbortSignal,
 ): Promise<PlaceIntelligenceResult> {
   const providerRef = stop.providerRef ?? (stop.id.startsWith("google-") ? stop.id.slice("google-".length) : undefined);
-  const response = await fetch("/api/place-intelligence", {
+  const response = serverRoutesUnavailable() ? notHostedResponse() : await fetch("/api/place-intelligence", {
     method: "POST",
     headers: tripRequestHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({
@@ -56,7 +57,7 @@ export async function requestFreshVoices(
     signal?: AbortSignal;
   } = {},
 ): Promise<FreshVoicesResult> {
-  const response = await fetch("/api/place-intelligence/fresh", {
+  const response = serverRoutesUnavailable() ? notHostedResponse() : await fetch("/api/place-intelligence/fresh", {
     method: "POST",
     headers: tripRequestHeaders({ "Content-Type": "application/json" }),
     cache: "no-store",

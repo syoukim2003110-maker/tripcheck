@@ -1,5 +1,6 @@
 import type { BuiltTripPlan } from "./trip-builder.ts";
-import type { HolidaysRequest, TripHoliday, TripHolidaysResult } from "./holidays.ts";
+import { fetchTripHolidays, parseHolidaysRequest, type HolidaysRequest, type TripHoliday, type TripHolidaysResult } from "./holidays.ts";
+import { serverRoutesUnavailable } from "./hosting-mode.ts";
 
 /*
  * Client side of the holiday overlay. The payload is a country code and bare
@@ -31,18 +32,27 @@ function validTripHoliday(value: unknown): value is TripHoliday {
  * record and the plan renders without holiday warnings.
  */
 export async function requestHolidays(payload: HolidaysRequest): Promise<Record<string, TripHoliday>> {
-  let response: Response;
-  try {
-    response = await fetch("/api/holidays", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-  } catch {
-    return {};
+  let body: TripHolidaysResult | null;
+  if (serverRoutesUnavailable()) {
+    // Static hosting: the page asks the keyless public-holiday service
+    // itself. Only a country code and the trip's dates go.
+    const parsed = parseHolidaysRequest(payload);
+    if (!parsed) return {};
+    body = await fetchTripHolidays(parsed).catch(() => null);
+  } else {
+    let response: Response;
+    try {
+      response = await fetch("/api/holidays", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+    } catch {
+      return {};
+    }
+    if (!response.ok) return {};
+    body = await response.json().catch(() => null) as TripHolidaysResult | null;
   }
-  if (!response.ok) return {};
-  const body = await response.json().catch(() => null) as TripHolidaysResult | null;
   if (!body || !Array.isArray(body.holidays)) return {};
   const result: Record<string, TripHoliday> = {};
   for (const holiday of body.holidays) {

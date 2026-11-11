@@ -80,6 +80,7 @@ const build = spawnSync(process.execPath, [join(root, "node_modules", "next", "d
     NEXT_TELEMETRY_DISABLED: "1",
     NEXT_PUBLIC_SITE_ORIGIN: origin,
     NEXT_PUBLIC_APPLE_RELAY_URL: "/api/apple.php",
+    NEXT_PUBLIC_TRIPCHECK_STATIC_HOSTING: "1",
     NEXT_PUBLIC_MAPLIBRE_WORKER_URL: "/maplibre/maplibre-gl-worker.mjs",
   },
 });

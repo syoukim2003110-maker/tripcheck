@@ -9,6 +9,8 @@ import type { RefObject } from "react";
 import Icon from "../../../PlannerIcons";
 import SearchableCombobox, { type SearchableOption } from "../../../SearchableCombobox";
 import PlaceInputAutocomplete from "./PlaceInputAutocomplete";
+import PopularSightsPicker from "./PopularSightsPicker";
+import { MAX_WISHLIST_PLACES } from "../../../../lib/planning-budget";
 import StartPreviewAside from "./StartPreviewAside";
 import type { Pace } from "../../../../lib/trip-builder.ts";
 import type { TravelPreference } from "../../../../lib/time-feasibility.ts";
@@ -112,6 +114,7 @@ export default function PlacesStep({
   return (
     <div className="planner-place-step">
       <div className="planner-place-main">
+      <PopularSightsPicker itinerary={itinerary} locale={locale} onItineraryChange={onItineraryChange} />
       <PlaceInputAutocomplete
         describedBy={startInputError ? "planner-start-error" : undefined}
         inputRef={placesInputRef}
@@ -147,7 +150,7 @@ export default function PlacesStep({
         <p className="planner-inline-status is-warning" id="planner-start-error" role="alert">
           {startInputError === "empty"
             ? locale === "ja" ? "行きたい場所を入力してください。1行に1か所です。" : "Add the places you want to visit — one per line."
-            : locale === "ja" ? `${parsedPlaceCount}件あります。現在は1回最大12件です。12件以下に分けてください。` : `${parsedPlaceCount} places were found. Up to 12 are checked at a time — split the list first.`}
+            : locale === "ja" ? `${parsedPlaceCount}件あります。一度に組めるのは${MAX_WISHLIST_PLACES}件までです。${MAX_WISHLIST_PLACES}件以下に分けてください。` : `${parsedPlaceCount} places were found. One trip can hold up to ${MAX_WISHLIST_PLACES} — split the list first.`}
         </p>
       ) : null}
 
@@ -224,11 +227,11 @@ export default function PlacesStep({
           </ul>
         </div>
       ) : null}
-      {parsedPlaceCount > 12 ? (
+      {parsedPlaceCount > MAX_WISHLIST_PLACES ? (
         <p className="planner-inline-status is-warning" role="alert">
           {locale === "ja"
-            ? `${parsedPlaceCount}件あります。現在は1回最大12件です。場所を黙って切り捨てないため、12件以下のまとまりに分けてください。`
-            : `${parsedPlaceCount} places were found. This alpha checks up to 12 at a time. Split the list into groups of 12 or fewer so no place is silently omitted.`}
+            ? `${parsedPlaceCount}件あります。一度に組めるのは${MAX_WISHLIST_PLACES}件までです。場所を黙って切り捨てないため、${MAX_WISHLIST_PLACES}件以下に分けてください。`
+            : `${parsedPlaceCount} places were found. One trip can hold up to ${MAX_WISHLIST_PLACES}. Split the list so no place is silently omitted.`}
         </p>
       ) : null}
 

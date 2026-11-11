@@ -84,6 +84,35 @@ Request and response shapes are identical to production, so every AI feature
 exercises its real code path; per-call timeouts stretch automatically while a
 base-URL override is active because CLI answers take tens of seconds.
 
+## Deploy to shared hosting (static files + PHP relay)
+
+The planner, its engine and the keyless place lookup run in the browser, so
+the app can be hosted as plain files on shared PHP hosting:
+
+```bash
+pnpm build:static -- --origin https://your-subdomain.example
+```
+
+This writes `dist-static/site/`. Upload its contents to the site's public
+folder. It contains the static export, an `.htaccess` with the security
+headers, and `api/apple.php` — a small relay that keeps the Apple Maps key off
+the page (place search and travel times). When `.env.local` holds the three
+`APPLE_MAPS_*` values, the build also writes `api/apple-config.php`; without
+it the site runs on open data alone (no meal or hotel candidates, estimated
+travel times).
+
+For local development against the real Apple service:
+
+```bash
+pnpm relay:dev      # Node stand-in for apple.php on http://localhost:8792
+```
+
+with `NEXT_PUBLIC_APPLE_RELAY_URL=http://localhost:8792/apple.php` in
+`.env.local`.
+
+`pnpm sights:generate` refreshes `lib/popular-sights-data.json`, the bundled
+"pick from a destination" list (Wikidata, CC0).
+
 ## Verify
 
 ```bash

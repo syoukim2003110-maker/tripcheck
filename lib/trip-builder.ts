@@ -962,23 +962,53 @@ function clusterStops(stops: RouteStop[], requestedDays: number) {
     seeds.push(next);
   }
 
-  const capacity = Math.ceil(stops.length / activeDayCount);
-  const clusters = seeds.map((seed) => [seed]);
-  const remaining = stops.filter((stop) => !seeds.some((seed) => seed.id === stop.id));
-  remaining.sort((a, b) => {
-    const aDistance = Math.min(...seeds.map((seed) => straightLineDistanceKm(seed, a)));
-    const bDistance = Math.min(...seeds.map((seed) => straightLineDistanceKm(seed, b)));
-    return bDistance - aDistance;
-  });
-
-  for (const stop of remaining) {
-    const eligible = clusters.map((cluster, index) => ({ cluster, index })).filter(({ cluster }) => cluster.length < capacity);
-    const destination = eligible.reduce((best, candidate) => {
-      const average = candidate.cluster.reduce((sum, member) => sum + straightLineDistanceKm(member, stop), 0) / candidate.cluster.length;
-      const bestAverage = best.cluster.reduce((sum, member) => sum + straightLineDistanceKm(member, stop), 0) / best.cluster.length;
-      return average < bestAverage ? candidate : best;
+  /*
+   * Balanced k-means, seeded from the spread-out seeds above.
+   *
+   * The seed used to be "nearest average member, at most ceil(n/days) stops
+   * per day": a count cap that put a theme park and a street corner on equal
+   * footing, and a single greedy pass that never revisited an early mistake.
+   * On a 20-place Tokyo list it left Senso-ji a day away from the Skytree
+   * next door. Days are now balanced by TIME (stay plus a per-stop travel
+   * allowance), stops with the clearest home are placed first, and the
+   * centres are re-estimated a few times. The local search that follows
+   * still has the final word; it simply starts from a map that makes sense.
+   */
+  const load = (stop: RouteStop) => stop.planningDurationMinutes + 25;
+  const totalLoad = stops.reduce((sum, stop) => sum + load(stop), 0);
+  const heaviest = stops.reduce((maximum, stop) => Math.max(maximum, load(stop)), 0);
+  const capacity = Math.max(heaviest, (totalLoad / activeDayCount) * 1.2);
+  let centres = seeds.map((seed) => ({ latitude: seed.latitude, longitude: seed.longitude }));
+  let clusters: RouteStop[][] = seeds.map((seed) => [seed]);
+  const distanceTo = (stop: RouteStop, centre: { latitude: number; longitude: number }) => (
+    straightLineDistanceKm(stop, { ...stop, latitude: centre.latitude, longitude: centre.longitude })
+  );
+  for (let iteration = 0; iteration < 6; iteration += 1) {
+    const ranked = stops.map((stop) => {
+      const distances = centres.map((centre) => distanceTo(stop, centre));
+      const sorted = [...distances].sort((left, right) => left - right);
+      return { stop, distances, regret: (sorted[1] ?? sorted[0]) - sorted[0] };
+    }).sort((left, right) => right.regret - left.regret || left.stop.id.localeCompare(right.stop.id));
+    const next: RouteStop[][] = centres.map(() => []);
+    const loads = centres.map(() => 0);
+    for (const { stop, distances } of ranked) {
+      const order = distances.map((distance, index) => ({ distance, index }))
+        .sort((left, right) => left.distance - right.distance || left.index - right.index);
+      const fits = order.find(({ index }) => loads[index] + load(stop) <= capacity);
+      // Nothing has room: the day that is least full takes it, so an
+      // over-packed wishlist degrades evenly instead of piling onto one day.
+      const target = fits?.index ?? loads.indexOf(Math.min(...loads));
+      next[target].push(stop);
+      loads[target] += load(stop);
+    }
+    const signature = (value: RouteStop[][]) => value.map((cluster) => cluster.map((stop) => stop.id).sort().join(",")).join("|");
+    const settled = signature(next) === signature(clusters);
+    clusters = next;
+    if (settled) break;
+    centres = clusters.map((cluster, index) => cluster.length === 0 ? centres[index] : {
+      latitude: cluster.reduce((sum, stop) => sum + stop.latitude, 0) / cluster.length,
+      longitude: cluster.reduce((sum, stop) => sum + stop.longitude, 0) / cluster.length,
     });
-    clusters[destination.index].push(stop);
   }
   return [...clusters, ...Array.from({ length: dayCount - activeDayCount }, () => [] as RouteStop[])];
 }
@@ -1699,8 +1729,8 @@ function buildDay(
   };
 }
 
-const MAX_DAY_ASSIGNMENT_STOPS = 12;
-const MAX_DAY_ASSIGNMENT_EVALUATIONS = 600;
+const MAX_DAY_ASSIGNMENT_STOPS = 24;
+const MAX_DAY_ASSIGNMENT_EVALUATIONS = 6000;
 
 type DayAssignmentScore = readonly [
   hardViolationCount: number,
