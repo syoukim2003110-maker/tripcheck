@@ -219,6 +219,12 @@ export type TripPlannerContext = {
   lockedOrderByDay?: Record<number, string[]>;
   /** Counterfactual-only switch: keep Day assignments but release pasted line order. */
   optimizeExistingOrder?: boolean;
+  /**
+   * Upper bound on full day rebuilds the day-assignment search may spend
+   * (default and ceiling: 6000). A caller that refines the grouping itself
+   * can ask for less: the search is what makes a 24-place run take a second.
+   */
+  dayAssignmentEvaluationLimit?: number;
   /** Default day start clock used when a day has no explicit start time. */
   defaultDayStart?: string;
   /** Soft end-of-day target ("21:30"); overruns are flagged, never hidden. */
@@ -1758,6 +1764,7 @@ function compareDayAssignmentScore(left: DayAssignmentScore, right: DayAssignmen
 type DayAssignmentLimits = {
   paceCapacity: number;
   dayBudgetMinutes: number;
+  evaluationLimit?: number;
 };
 
 function dayAssignmentSignature(clusters: RouteStop[][]) {
@@ -1858,12 +1865,13 @@ function optimizeDayAssignments(
   }
 
   const scoreCache = new Map<string, DayAssignmentScore>();
+  const evaluationLimit = Math.max(1, Math.min(MAX_DAY_ASSIGNMENT_EVALUATIONS, limits.evaluationLimit ?? MAX_DAY_ASSIGNMENT_EVALUATIONS));
   let evaluationCount = 0;
   const score = (clusters: RouteStop[][]) => {
     const signature = dayAssignmentSignature(clusters);
     const cached = scoreCache.get(signature);
     if (cached) return cached;
-    if (evaluationCount >= MAX_DAY_ASSIGNMENT_EVALUATIONS) return null;
+    if (evaluationCount >= evaluationLimit) return null;
     evaluationCount += 1;
     const value = scoreDayAssignment(clusters.map((cluster, dayIndex) => build(cluster, dayIndex)), clusters, limits);
     scoreCache.set(signature, value);
@@ -1879,7 +1887,7 @@ function optimizeDayAssignments(
   let currentScore = score(current);
   if (!currentScore) return current;
 
-  for (let pass = 0; pass < stopCount && evaluationCount < MAX_DAY_ASSIGNMENT_EVALUATIONS; pass += 1) {
+  for (let pass = 0; pass < stopCount && evaluationCount < evaluationLimit; pass += 1) {
     let best: RouteStop[][] | null = null;
     let bestScore: DayAssignmentScore = currentScore;
     const consider = (candidate: RouteStop[][]) => {
@@ -1893,10 +1901,10 @@ function optimizeDayAssignments(
     // Relocation handles overloaded days and can make deliberate use of an
     // otherwise empty day. Stable ID/day ordering keeps the bounded cutoff
     // reproducible.
-    for (let sourceDay = 0; sourceDay < current.length && evaluationCount < MAX_DAY_ASSIGNMENT_EVALUATIONS; sourceDay += 1) {
+    for (let sourceDay = 0; sourceDay < current.length && evaluationCount < evaluationLimit; sourceDay += 1) {
       const sourceStops = current[sourceDay].filter(movable).sort((left, right) => left.id.localeCompare(right.id));
       for (const stop of sourceStops) {
-        for (let targetDay = 0; targetDay < current.length && evaluationCount < MAX_DAY_ASSIGNMENT_EVALUATIONS; targetDay += 1) {
+        for (let targetDay = 0; targetDay < current.length && evaluationCount < evaluationLimit; targetDay += 1) {
           if (targetDay === sourceDay) continue;
           // No hard capacity bound here: overloadMinutes in the score tuple
           // already penalizes over-capacity days BELOW hard booking/opening
@@ -1914,13 +1922,13 @@ function optimizeDayAssignments(
     // A duration-heavy geographic cluster often needs a long/short exchange,
     // not another centroid move. Evaluate every movable cross-day pair while
     // staying inside the shared hard evaluation ceiling.
-    for (let leftDay = 0; leftDay < current.length && evaluationCount < MAX_DAY_ASSIGNMENT_EVALUATIONS; leftDay += 1) {
-      for (let rightDay = leftDay + 1; rightDay < current.length && evaluationCount < MAX_DAY_ASSIGNMENT_EVALUATIONS; rightDay += 1) {
+    for (let leftDay = 0; leftDay < current.length && evaluationCount < evaluationLimit; leftDay += 1) {
+      for (let rightDay = leftDay + 1; rightDay < current.length && evaluationCount < evaluationLimit; rightDay += 1) {
         const leftStops = current[leftDay].filter(movable).sort((left, right) => left.id.localeCompare(right.id));
         const rightStops = current[rightDay].filter(movable).sort((left, right) => left.id.localeCompare(right.id));
         for (const leftStop of leftStops) {
           for (const rightStop of rightStops) {
-            if (evaluationCount >= MAX_DAY_ASSIGNMENT_EVALUATIONS) break;
+            if (evaluationCount >= evaluationLimit) break;
             const candidate = copy(current);
             candidate[leftDay] = candidate[leftDay].map((stop) => stop.id === leftStop.id ? rightStop : stop);
             candidate[rightDay] = candidate[rightDay].map((stop) => stop.id === rightStop.id ? leftStop : stop);
@@ -2284,6 +2292,7 @@ export function buildTripFromWishlist(
   const optimizedClusters = optimizeDayAssignments(clusters, constraints, lockedDayByStop, buildCandidateDay, {
     paceCapacity,
     dayBudgetMinutes,
+    evaluationLimit: context.dayAssignmentEvaluationLimit,
   });
   clusters.splice(0, clusters.length, ...optimizedClusters);
   // A swap can still assemble an over-budget day out of two in-budget ones;

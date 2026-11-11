@@ -74,9 +74,11 @@ export function cafeBreakFor(day: {
   legs: readonly ShioriLeg[];
   meals: ReadonlyArray<ShioriMeal & { afterStop: number }>;
 }): CafeBreak | null {
-  if (day.stops.length === 0) return null;
+  // One place all day (a theme park) has its own cafés; a break is between places.
+  if (day.stops.length < 2) return null;
   const span = minutesOf(day.stops.at(-1)!.leave) - minutesOf(day.stops[0].arrive);
-  // A day that prints past midnight has other problems than coffee.
+  // (A day that prints past midnight gives a negative span: it has other
+  // problems than coffee.)
   if (span < 300) return null;
   const lunchEnds = day.meals.flatMap((meal) => meal.kind === "lunch" && meal.end ? [minutesOf(meal.end)] : []);
   const candidates = day.stops.flatMap((stop, index) => {

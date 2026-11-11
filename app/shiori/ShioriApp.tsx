@@ -123,6 +123,8 @@ const text = {
     noticeMealTime: (name: string, meal: string) => `「${name}」に${meal}の時間帯に着ける日がありません。日数を増やすか、近くの場所と同じ日にしてください。`,
     noticeMealHotel: (name: string, minutes: string) => `夜ごはんの「${name}」からホテルまで約${minutes}かかります。`,
     mealShort: { lunch: "昼ごはん", dinner: "夜ごはん" },
+    working: "しおりを作っています…",
+    updating: "組み直しています…",
     cafe: "ひと休み",
     cafeOnTheWay: (from: string, to: string) => `${from}から${to}へ歩く途中`,
     cafeAfter: (from: string) => `${from}を出たあたり`,
@@ -247,6 +249,8 @@ const text = {
     noticeMealTime: (name: string, meal: string) => `No day reaches “${name}” at ${meal} time. Add a day, or plan places near it on the same day.`,
     noticeMealHotel: (name: string, minutes: string) => `From dinner at “${name}” it is about ${minutes} back to the hotel.`,
     mealShort: { lunch: "lunch", dinner: "dinner" },
+    working: "Building your booklet…",
+    updating: "Re-planning…",
     cafe: "Take a break",
     cafeOnTheWay: (from: string, to: string) => `on the walk from ${from} to ${to}`,
     cafeAfter: (from: string) => `around ${from}`,
@@ -578,6 +582,8 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
   const [railCities, setRailCities] = useState<string[] | null>(null);
   const [trip, setTrip] = useState<ShioriTrip>(emptyTrip);
   const [screen, setScreen] = useState<Screen>("home");
+  // Counts entries to the plan screen.
+  const [planVisit, setPlanVisit] = useState(0);
   const [saved, setSaved] = useState<ShioriTrip | null>(null);
   const [previous, setPrevious] = useState<ShioriTrip | null>(null);
   const [query, setQuery] = useState("");
@@ -666,10 +672,21 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
 
   const city = cities.find((candidate) => candidate.id === trip.cityId) ?? null;
   const matches = useMemo(() => filterDestinations(cities, query, FEATURED), [cities, query]);
-  const plan = useMemo(
-    () => screen === "plan" ? buildShioriPlan({ places: trip.places, days: trip.days, hotel: trip.hotel, locale }, { rail, cities, routes }) : null,
-    [screen, trip, rail, cities, locale, routes],
-  );
+  // Planning a long list takes a second or two. It runs after the screen
+  // has painted, so a tap shows "working" at once instead of a frozen page;
+  // the plan on screen stays until its replacement is ready.
+  const planKey = useMemo(() => screen === "plan" ? `${planVisit}|${locale}|${encodeTrip(trip)}` : null, [screen, planVisit, locale, trip]);
+  const [planned, setPlanned] = useState<{ key: string; visit: number; plan: ShioriPlan } | null>(null);
+  useEffect(() => {
+    if (!planKey) return;
+    const handle = window.setTimeout(() => {
+      setPlanned({ key: planKey, visit: planVisit, plan: buildShioriPlan({ places: trip.places, days: trip.days, hotel: trip.hotel, locale }, { rail, cities, routes }) });
+    }, 0);
+    return () => window.clearTimeout(handle);
+  }, [planKey, planVisit, trip, rail, cities, locale, routes]);
+  // A plan made on an earlier visit to this screen is another trip's plan.
+  const plan = screen === "plan" && planned && planned.visit === planVisit ? planned.plan : null;
+  const planning = screen === "plan" && planned?.key !== planKey;
 
   // Every leg that is not a train ride gets the way along the streets, so
   // the map shows where one actually walks or drives and the clock uses the
@@ -720,13 +737,16 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
   // The stop being edited decides the day on screen: lengthening a stay or
   // moving it can put it on another day, and its card must not vanish.
   const openDay = openStop ? plan?.days.find((entry) => entry.stops.some((stop) => stop.place.id === openStop))?.index : undefined;
-  const activeDay = openDay ?? Math.min(selectedDay, Math.max(0, (plan?.days.length ?? 1) - 1));
+  // Days carry their own number (a pinned "Day 3" stays 3 with Day 2 free),
+  // so the day on screen is looked up by number, not by position.
+  const activeDay = openDay ?? (plan?.days.some((entry) => entry.index === selectedDay) ? selectedDay : plan?.days[0]?.index ?? 0);
 
   const update = useCallback((change: (current: ShioriTrip) => ShioriTrip) => setTrip(change), []);
   // Each screen is a history entry, so the phone's back gesture goes to the
   // previous screen instead of leaving the site with the plan.
   const go = useCallback((next: Screen) => {
     setScreen(next);
+    if (next === "plan") setPlanVisit((visit) => visit + 1);
     window.history.pushState({ shiori: next }, "");
     window.scrollTo({ top: 0 });
   }, []);
@@ -976,6 +996,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
       {header}
       <div className="shiori-plan">
         <div className="shiori-plan-main">
+          {planning ? <p aria-live="polite" className={`shiori-working${plan ? " is-update" : ""}`}>{plan ? t.updating : t.working}</p> : null}
           <div className="shiori-plan-head">
             <h1>{t.planTitle(trip.cityName || trip.places[0]?.name || "", trip.days)}</h1>
             <div className="shiori-plan-actions">
