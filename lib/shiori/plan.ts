@@ -4,6 +4,7 @@ import type { PopularDestination, PopularSight } from "../popular-sights.ts";
 import { RailNetwork, type GeoPoint, type RailJourney } from "../rail-router.ts";
 import type { ResolvedInputStop, RouteStop } from "../route-optimizer.ts";
 import { estimateTravelOptions } from "../time-feasibility.ts";
+import { cafeBreakFor, type CafeBreak } from "./cafes.ts";
 import {
   buildTripFromWishlist,
   hotelRouteContextForDraft,
@@ -131,6 +132,14 @@ export type ShioriDay = {
   walkMinutes: number;
   /** Well-known places near this day's route that are not on the list. */
   ideas: PopularSight[];
+  /** Where a coffee break fits, if the day has room for one. */
+  cafe: CafeBreak | null;
+  /** Door-to-door minutes spent moving on this day, hotel legs included. */
+  travelMinutes: number;
+  /** How the day will feel: travellers' most common regret is the packed day. */
+  load: "easy" | "normal" | "tight";
+  /** Indoor places near this day's route, for a day when it rains. */
+  rainIdeas: PopularSight[];
   /** The day runs past the pace's comfortable end. */
   runsLate: boolean;
 };
@@ -154,6 +163,8 @@ const paceSettings: Record<ShioriPace, { engine: Pace; dayEnd: string }> = {
   standard: { engine: "balanced", dayEnd: "18:00" },
   packed: { engine: "fast", dayEnd: "20:00" },
 };
+const OUTDOOR_KIND = /park|garden|shrine|temple|pagoda|mountain|hill|beach|island|zoo|castle|bridge|square|plaza|street|market|monument|statue|ruins|palace|amusement|theme park|lake|river|waterfall|cemetery|neighbou?rhood/;
+const INDOOR_KIND = /museum|gallery|aquarium|planetarium|department store|shopping (mall|centre|center)|library|theat|opera|concert hall|science cent/;
 const DAY_START = "09:00";
 const LUNCH_MINUTES = 60;
 /** A day with a dinner the traveller chose is meant to run into the evening. */
@@ -629,6 +640,26 @@ function planOnce(input: ShioriInput, options: PlanOptions): ShioriPlan {
         })
       : [];
     const names = stops.map((stop) => stop.place.name);
+    const travelMinutes = allLegs.reduce((sum, leg) => sum + leg.minutes, 0);
+    const late = dayLate(day, settings.dayEnd, dinnerIds);
+    const span = clockMinutes(stops.at(-1)!.leave) - clockMinutes(stops[0].arrive);
+    const longLegs = allLegs.filter((leg) => leg.minutes >= 45).length;
+    // Tight: the things people say ruined a day — over two and a half hours
+    // in transit, an hour and a half on foot, six places, two long hauls.
+    const load: ShioriDay["load"] = late || travelMinutes >= 150 || walkMinutes >= 90 || stops.length >= 6 || longLegs >= 2
+      ? "tight"
+      : span <= 300 && travelMinutes <= 60 && stops.length <= 3 ? "easy" : "normal";
+    // For a wet day: roofed places within about 2.5 km of this day's stops,
+    // offered only when the day is mostly out of doors.
+    const outdoors = stops.filter((stop) => OUTDOOR_KIND.test((stop.place.kind ?? "").toLowerCase())).length;
+    const rainIdeas = outdoors * 2 >= stops.length && cities.length > 0
+      ? cities.flatMap((city) => city.sights).filter((sight) => (
+        INDOOR_KIND.test(sight.kind.toLowerCase())
+        && !placeById.has(`wikidata-${sight.q}`)
+        && !listedNames.includes(input.locale === "ja" ? sight.ja : sight.en)
+        && routePoints.some((point) => Math.hypot((point.latitude - sight.lat) * 111, (point.longitude - sight.lon) * 111 * Math.cos((point.latitude * Math.PI) / 180)) <= 2.5)
+      )).slice(0, 3)
+      : [];
     return [{
       index,
       title: names.length <= 2 ? names.join("・") : `${names.slice(0, 2).join("・")} ${input.locale === "ja" ? "ほか" : "and more"}`,
@@ -641,6 +672,10 @@ function planOnce(input: ShioriInput, options: PlanOptions): ShioriPlan {
       meals,
       walkMinutes,
       ideas,
+      cafe: cafeBreakFor({ stops, legs, meals }),
+      travelMinutes,
+      load,
+      rainIdeas,
       runsLate: dayLate(day, settings.dayEnd, dinnerIds),
     }];
   }).map((day, position) => ({ ...day, index: position }));

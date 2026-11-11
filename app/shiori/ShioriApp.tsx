@@ -13,6 +13,7 @@ import { curateSights, filterDestinations, type PopularDestination, type Popular
 import { loadRailNetwork } from "../../lib/rail-network-client";
 import type { RailNetwork } from "../../lib/rail-router";
 import { fetchStreetRoute } from "../../lib/street-route-client";
+import { findCafes, type CafeBreak, type CafePick } from "../../lib/shiori/cafes";
 import { buildShioriPlan, type ShioriDay, type ShioriLeg, type ShioriMeal, type ShioriNotice, type ShioriPlace, type ShioriPlan, type ShioriRoute } from "../../lib/shiori/plan";
 import {
   MAX_DAYS,
@@ -91,7 +92,7 @@ const text = {
   ja: {
     tagline: "旅のしおりメーカー",
     heroTitle: "行きたい場所を選ぶだけ。\n旅のしおりが、すぐできる。",
-    heroBody: "どの日にどこを、どの順番で、どうやって回るか。ホテルとごはんの候補まで、地図と一緒にまとめます。無料・登録なし。",
+    heroBody: "どの日にどこを、どの順番で、どうやって回るか。行きたい店や泊まりたいホテルも入れて、無理がないかまで地図と一緒に確かめます。無料・登録なし・広告なし・件数の課金なし。",
     where: "どこに行く？",
     wherePlaceholder: "行き先を入力（例：香港、京都、パリ）",
     popular: "人気の行き先",
@@ -122,6 +123,17 @@ const text = {
     noticeMealTime: (name: string, meal: string) => `「${name}」に${meal}の時間帯に着ける日がありません。日数を増やすか、近くの場所と同じ日にしてください。`,
     noticeMealHotel: (name: string, minutes: string) => `夜ごはんの「${name}」からホテルまで約${minutes}かかります。`,
     mealShort: { lunch: "昼ごはん", dinner: "夜ごはん" },
+    cafe: "ひと休み",
+    cafeOnTheWay: (from: string, to: string) => `${from}から${to}へ歩く途中`,
+    cafeAfter: (from: string) => `${from}を出たあたり`,
+    showCafes: "近くのカフェを見る",
+    hideCafes: "閉じる",
+    cafeDetour: (minutes: number) => minutes <= 1 ? "道の途中" : `寄り道 約${minutes}分`,
+    cafeWalk: (minutes: number) => `徒歩約${Math.max(1, minutes)}分`,
+    cafeAdd: "予定に入れる",
+    cafeNote: "この日の動線から近い順です（歩く途中なら寄り道が少ない順）。評判や営業時間は地図で確認してください。",
+    cafeNone: "近くにカフェが見つかりませんでした。",
+    cafeKinds: { cafe: "カフェ", bakery: "ベーカリー" },
     add: "追加",
     adding: "探しています…",
     addFailed: "見つかりませんでした。正式な名前や地名を付けて試してください。",
@@ -137,7 +149,13 @@ const text = {
     print: "印刷",
     dayTab: (index: number) => `${index + 1}日目`,
     freeTab: "空き日",
-    dayMeta: (day: ShioriDay) => `${day.start}〜${day.end} ・ ${day.stops.length}か所${day.walkMinutes > 0 ? ` ・ 歩き約${day.walkMinutes}分` : ""}`,
+    dayMeta: (day: ShioriDay) => `${day.start}〜${day.end} ・ ${day.stops.length}か所${day.travelMinutes > 0 ? ` ・ 移動 計${durationText(day.travelMinutes, "ja")}` : ""}${day.walkMinutes > 0 ? `（うち歩き約${day.walkMinutes}分・約${(Math.round(day.walkMinutes / 10) * 1000).toLocaleString("ja-JP")}歩）` : ""}`,
+    loads: { easy: "ゆとりのある日", normal: "ちょうどいい日", tight: "詰まっている日" },
+    loadTight: "移動や立ち寄りが多めです。1か所を別の日に移すか、減らすと楽になります。",
+    rainTitle: "雨の日なら（屋内の候補）",
+    checkHours: "営業日・営業時間・予約を地図で確認 ↗",
+    hoursNote: "このしおりは営業時間・定休日・予約の要否を知りません。行く前に各スポットを開いて確認してください。",
+    shareLine: "LINEで送る",
     late: "この日は予定が多めです。日数を増やすか、場所を減らすと楽になります。",
     stay: "滞在",
     shorter: "滞在を15分短く",
@@ -198,7 +216,7 @@ const text = {
   en: {
     tagline: "Trip booklet maker",
     heroTitle: "Pick the places.\nGet a day-by-day trip booklet.",
-    heroBody: "Which day, what order, how to get between them — with hotel and meal ideas, on a map. Free, no account.",
+    heroBody: "Which day, what order, how to get between them — with your own restaurants and hotel, checked for whether it all really fits, on a map. Free, no account, no ads, no paid tier.",
     where: "Where to?",
     wherePlaceholder: "Type a destination (e.g. Kyoto, Paris)",
     popular: "Popular destinations",
@@ -229,6 +247,17 @@ const text = {
     noticeMealTime: (name: string, meal: string) => `No day reaches “${name}” at ${meal} time. Add a day, or plan places near it on the same day.`,
     noticeMealHotel: (name: string, minutes: string) => `From dinner at “${name}” it is about ${minutes} back to the hotel.`,
     mealShort: { lunch: "lunch", dinner: "dinner" },
+    cafe: "Take a break",
+    cafeOnTheWay: (from: string, to: string) => `on the walk from ${from} to ${to}`,
+    cafeAfter: (from: string) => `around ${from}`,
+    showCafes: "Cafés nearby",
+    hideCafes: "Close",
+    cafeDetour: (minutes: number) => minutes <= 1 ? "on your way" : `${minutes} min off your way`,
+    cafeWalk: (minutes: number) => `${Math.max(1, minutes)} min walk`,
+    cafeAdd: "Add to the plan",
+    cafeNote: "Nearest to this day's route first (on a walk: least off your way). Check reviews and hours on the map.",
+    cafeNone: "No café found nearby.",
+    cafeKinds: { cafe: "Café", bakery: "Bakery" },
     add: "Add",
     adding: "Searching…",
     addFailed: "Not found. Try the full name or add the area.",
@@ -244,7 +273,13 @@ const text = {
     print: "Print",
     dayTab: (index: number) => `Day ${index + 1}`,
     freeTab: "Free",
-    dayMeta: (day: ShioriDay) => `${day.start}–${day.end} · ${day.stops.length} places${day.walkMinutes > 0 ? ` · ~${day.walkMinutes} min on foot` : ""}`,
+    dayMeta: (day: ShioriDay) => `${day.start}–${day.end} · ${day.stops.length} places${day.travelMinutes > 0 ? ` · ${durationText(day.travelMinutes, "en")} moving` : ""}${day.walkMinutes > 0 ? ` (~${day.walkMinutes} min on foot, ~${(Math.round(day.walkMinutes / 10) * 1000).toLocaleString("en-US")} steps)` : ""}`,
+    loads: { easy: "An easy day", normal: "A comfortable day", tight: "A packed day" },
+    loadTight: "A lot of moving or many stops. Moving one place to another day, or dropping one, makes it easier.",
+    rainTitle: "If it rains (indoor ideas)",
+    checkHours: "Check opening days, hours and booking on the map ↗",
+    hoursNote: "This booklet does not know opening hours, closed days or whether you need a booking. Open each place and check before you go.",
+    shareLine: "Send on LINE",
     late: "This day is full. Add a day or drop a place to ease it.",
     stay: "Stay",
     shorter: "15 minutes shorter",
@@ -421,6 +456,56 @@ function MealRow({ meal, locale }: { meal: ShioriMeal; locale: Locale }) {
             ))}
           </ul>
           <p className="shiori-quiet">{t.foodNote}</p>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+function CafeRow({ cafe, locale, onAdd }: { cafe: CafeBreak; locale: Locale; onAdd: (pick: CafePick) => void }) {
+  const t = text[locale];
+  const [state, setState] = useState<"closed" | "loading" | "ready" | "failed">("closed");
+  const [picks, setPicks] = useState<CafePick[]>([]);
+  const relay = useMemo(() => appleRelayClient(), []);
+  const open = async () => {
+    if (state !== "closed") { setState("closed"); return; }
+    if (!relay) { setState("failed"); return; }
+    setState("loading");
+    try {
+      const found = await findCafes(cafe, relay, locale);
+      setPicks(found);
+      setState(found.length > 0 ? "ready" : "failed");
+    } catch {
+      setState("failed");
+    }
+  };
+  const mapsSearch = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${locale === "ja" ? "カフェ" : "cafe"} ${cafe.search.latitude.toFixed(5)},${cafe.search.longitude.toFixed(5)}`)}`;
+  return (
+    <div className="shiori-meal is-cafe">
+      <div className="shiori-meal-head">
+        <Icon name="meal" />
+        <span>
+          <b>{t.cafe}</b> {cafe.time}{locale === "ja" ? "ごろ" : ""}
+          <small> ・ {cafe.reason === "on-the-way" && cafe.toName ? t.cafeOnTheWay(cafe.fromName, cafe.toName) : t.cafeAfter(cafe.fromName)}</small>
+        </span>
+        <button onClick={() => void open()} type="button">{state === "closed" ? t.showCafes : t.hideCafes}</button>
+      </div>
+      {state === "loading" ? <p className="shiori-quiet">{t.foodLoading}</p> : null}
+      {state === "failed" ? <p className="shiori-quiet">{t.cafeNone} <a href={mapsSearch} rel="noreferrer" target="_blank">Google Maps ↗</a></p> : null}
+      {state === "ready" ? (
+        <>
+          <ul className="shiori-food">
+            {picks.map((pick) => (
+              <li className="has-action" key={pick.id}>
+                <a href={pick.mapsUrl} rel="noreferrer" target="_blank">
+                  <b>{pick.name}</b>
+                  <small>{t.cafeKinds[pick.kind]} ・ {cafe.reason === "on-the-way" ? t.cafeDetour(pick.detourMinutes) : t.cafeWalk(pick.detourMinutes)}</small>
+                </a>
+                <button onClick={() => onAdd(pick)} type="button">{t.cafeAdd}</button>
+              </li>
+            ))}
+          </ul>
+          <p className="shiori-quiet">{t.cafeNote}</p>
         </>
       ) : null}
     </div>
@@ -896,6 +981,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
             <div className="shiori-plan-actions">
               <button onClick={() => go(city ? "pick" : "home")} type="button">{t.editPlaces}</button>
               <button onClick={() => void share()} type="button">{copied ? t.shared : t.share}</button>
+              <a className="shiori-action-link" href={`https://line.me/R/share?text=${encodeURIComponent(`${t.planTitle(trip.cityName || trip.places[0]?.name || "", trip.days)} ${typeof window === "undefined" ? "" : `${window.location.origin}${window.location.pathname}#s=${encodeTrip(trip)}`}`)}`} rel="noreferrer" target="_blank">{t.shareLine}</a>
               <button onClick={() => window.print()} type="button">{t.print}</button>
             </div>
             <div className="shiori-controls">
@@ -938,6 +1024,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
               <header>
                 <h2>{t.dayTab(day.index)} <span>{day.title}</span></h2>
                 <p>{t.dayMeta(day)}</p>
+                <p className={`shiori-load is-${day.load}`}><b>{t.loads[day.load]}</b>{day.load === "tight" && !day.runsLate ? ` ・ ${t.loadTight}` : ""}</p>
                 {day.runsLate ? <p className="shiori-warn">{t.late}</p> : null}
               </header>
               <ol className="shiori-timeline">
@@ -975,11 +1062,24 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
                             </select>
                           </label>
                           <button className="is-danger" onClick={() => update((current) => togglePlace(current, stop.place))} type="button">{t.remove}</button>
+                          <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${stop.place.name} ${stop.place.lat.toFixed(5)},${stop.place.lon.toFixed(5)}`)}`} rel="noreferrer" target="_blank">{t.checkHours}</a>
                           {stop.place.img ? <a href={photoCreditUrl(stop.place.img)} rel="noreferrer" target="_blank">{t.photo}: Wikimedia Commons ↗</a> : null}
                         </div>
                       ) : null}
                     </article>
                     {day.meals.filter((meal) => meal.afterStop === index).map((meal) => <MealRow key={`${meal.kind}-${day.index}-${trip.places.length}`} locale={locale} meal={meal} />)}
+                    {day.cafe && day.cafe.afterStop === index ? (
+                      <CafeRow
+                        cafe={day.cafe}
+                        key={`cafe-${day.index}-${stop.place.id}`}
+                        locale={locale}
+                        onAdd={(pick) => update((current) => current.places.length >= MAX_PLACES || current.places.some((place) => place.id === pick.id) ? current : {
+                          ...current,
+                          // On this day, as a half-hour stop; the order is the planner's.
+                          places: [...current.places, { id: pick.id, name: pick.name, lat: pick.latitude, lon: pick.longitude, stayMinutes: 30, kind: pick.kind === "bakery" ? "bakery cafe" : "cafe", day: day.index + 1 }],
+                        })}
+                      />
+                    ) : null}
                     {day.legs[index] ? <LegCard leg={day.legs[index]} locale={locale} /> : null}
                   </li>
                 ))}
@@ -995,6 +1095,17 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
                   </ul>
                 </div>
               ) : null}
+              {day.rainIdeas.length > 0 ? (
+                <div className="shiori-ideas is-rain">
+                  <h3>{t.rainTitle}</h3>
+                  <ul className="shiori-chips">
+                    {day.rainIdeas.map((sight) => (
+                      <li key={sight.q}><button onClick={() => addSight(sight)} type="button">＋ {locale === "ja" ? sight.ja : sight.en}</button></li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              <p className="shiori-quiet shiori-hours-note">{t.hoursNote}</p>
             </section>
           ))}
 

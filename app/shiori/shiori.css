@@ -210,3 +210,17 @@
   .shiori-day + .shiori-day { break-before: page; }
   .shiori-notices button, .shiori-other { display: none !important; }
 }
+
+.shiori-meal.is-cafe { background: #f1f6f1; border-color: #cfe0cf; }
+.shiori-food li.has-action { align-items: center; display: flex; gap: 10px; justify-content: space-between; }
+.shiori-food li.has-action a { flex: 1 1 auto; min-width: 0; }
+.shiori-food li.has-action button { background: var(--card); border: 1px solid #9aa0a8; border-radius: 10px; color: var(--ink); flex: 0 0 auto; font-size: 12px; font-weight: 700; min-height: 40px; padding: 0 10px; }
+
+.shiori-load { font-size: 13px; margin: 4px 0 0; }
+.shiori-load b { border-radius: 999px; display: inline-block; font-size: 12px; padding: 2px 10px; }
+.shiori-load.is-easy b { background: #e6f4ea; color: #1d5c33; }
+.shiori-load.is-normal b { background: var(--soft); color: var(--ink); }
+.shiori-load.is-tight b { background: #fff4e5; color: #7a4a00; }
+.shiori-hours-note { margin-top: 14px; }
+.shiori-action-link { align-items: center; background: var(--card); border: 1px solid #9aa0a8; border-radius: 10px; color: var(--ink); display: inline-flex; font-size: 13px; font-weight: 700; min-height: 40px; padding: 0 12px; text-decoration: none; }
+@media print { .shiori-action-link, .shiori-ideas, .shiori-meal.is-cafe button { display: none !important; } }

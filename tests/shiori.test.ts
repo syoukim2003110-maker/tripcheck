@@ -5,6 +5,7 @@ import { RailNetwork, plainStationName, type RailNetworkData } from "../lib/rail
 import { buildShioriPlan, type ShioriPlace, type ShioriRoute } from "../lib/shiori/plan.ts";
 import { decodeTrip, encodeTrip, kindLabel, placeFromSight, togglePlace, emptyTrip, MAX_PLACES, type ShioriTrip } from "../lib/shiori/state.ts";
 import { shioriStayMinutes } from "../lib/shiori/stay.ts";
+import { cafeBreakFor, findCafes } from "../lib/shiori/cafes.ts";
 import { curateSights, type PopularSight } from "../lib/popular-sights.ts";
 
 /*
@@ -361,4 +362,53 @@ test("a station on another line is reachable when the nearest ones all share one
   const journey = network.route({ latitude: 35.0, longitude: 139.0 }, { latitude: 35.004, longitude: 139.081 });
   assert.ok(journey);
   assert.equal(journey.rides[0].line, "地下鉄線");
+});
+
+test("a long day gets one coffee break in mid-afternoon, never right after lunch", () => {
+  const sights = [
+    place("朝の寺", 35.0, 135.78, 120), place("昼前の庭", 35.004, 135.781, 90),
+    place("午後の城", 35.012, 135.776, 90), place("夕方の塔", 35.018, 135.772, 60),
+  ];
+  const day = buildShioriPlan({ places: sights, days: 1, hotel: null, locale: "ja" }).days[0];
+  assert.ok(day.cafe, "a 09:00–16:00 day has room for a break");
+  assert.equal(cafeBreakFor(day)?.afterStop, day.cafe.afterStop);
+  // The day's summary adds up: every leg counted once, on foot never more than in all.
+  assert.equal(day.travelMinutes, day.legs.reduce((sum, leg) => sum + leg.minutes, 0));
+  assert.ok(day.walkMinutes <= day.travelMinutes);
+  assert.ok(["easy", "normal", "tight"].includes(day.load));
+  const leave = clockOf(day.cafe.time);
+  assert.ok(leave >= 13 * 60 + 30 && leave <= 17 * 60, day.cafe.time);
+  const lunch = day.meals.find((meal) => meal.kind === "lunch");
+  assert.ok(!lunch || lunch.afterStop !== day.cafe.afterStop);
+  // A morning-only day does not.
+  const short = buildShioriPlan({ places: sights.slice(0, 2), days: 1, hotel: null, locale: "ja" }).days[0];
+  assert.equal(short.cafe, null);
+});
+
+test("cafés are ordered by how little they take the traveller off the way", async () => {
+  const from = { latitude: 35.0, longitude: 135.0 };
+  const to = { latitude: 35.0, longitude: 135.01 };
+  const brk = { afterStop: 0, time: "15:00", reason: "on-the-way" as const, from, fromName: "A", to, toName: "B", search: { latitude: 35.0, longitude: 135.005 } };
+  const asked: number[] = [];
+  const client = {
+    search: async (options: { withinMeters: number; poiCategories: readonly string[] }) => {
+      asked.push(options.withinMeters);
+      assert.deepEqual(options.poiCategories, ["Cafe", "Bakery"]);
+      return [
+        { id: "far", name: "遠回りの店", latitude: 35.004, longitude: 135.005, formattedAddress: "", poiCategory: "Cafe" },
+        { id: "on", name: "道沿いの店", latitude: 35.0001, longitude: 135.006, formattedAddress: "", poiCategory: "Bakery" },
+        { id: "on", name: "道沿いの店", latitude: 35.0001, longitude: 135.006, formattedAddress: "", poiCategory: "Bakery" },
+        { id: "mid", name: "少し入った店", latitude: 35.0012, longitude: 135.004, formattedAddress: "", poiCategory: "Cafe" },
+      ];
+    },
+  };
+  const picks = await findCafes(brk, client, "ja");
+  assert.deepEqual(picks.map((pick) => pick.name), ["道沿いの店", "少し入った店", "遠回りの店"]);
+  assert.equal(picks[0].detourMinutes, 0);
+  assert.equal(picks[0].kind, "bakery");
+  assert.ok(picks[2].detourMinutes >= 5);
+  assert.deepEqual(asked, [500]);
+  // Before a train ride the same cafés are ordered by the walk from the place just left.
+  const after = await findCafes({ ...brk, reason: "after", to: { latitude: 35.0, longitude: 135.05 }, search: from }, client, "ja");
+  assert.deepEqual(after.map((pick) => pick.name), ["少し入った店", "道沿いの店", "遠回りの店"]);
 });
