@@ -1,5 +1,24 @@
 import { defaultFoodDiscoveryQuery, type FoodCandidate, type FoodSearchRequest } from "./google-food.ts";
-import type { AppleMapsClient, AppleMapsPlace } from "./server/apple-maps.ts";
+/** What this module needs from a place search, server client or browser relay alike. */
+type AppleMapsPlace = Readonly<{
+  id: string | null;
+  name: string;
+  latitude: number;
+  longitude: number;
+  formattedAddress: string;
+  poiCategory: string | null;
+}>;
+type AppleFoodSearch = {
+  search(options: {
+    query: string;
+    language: string;
+    near: { latitude: number; longitude: number };
+    withinMeters: number;
+    poiCategories: readonly string[];
+    poiOnly: boolean;
+    signal?: AbortSignal;
+  }): Promise<AppleMapsPlace[]>;
+};
 
 /*
  * Meal candidates from Apple Maps. Apple returns places, not ratings, so a
@@ -59,7 +78,7 @@ function candidateFromPlace(place: AppleMapsPlace, request: FoodSearchRequest): 
 
 export async function fetchAppleFoodCandidates(
   request: FoodSearchRequest,
-  client: Pick<AppleMapsClient, "search">,
+  client: AppleFoodSearch,
   signal?: AbortSignal,
 ): Promise<FoodCandidate[]> {
   // The built-in discovery phrase is written for a text-search ranker. Apple

@@ -3,8 +3,6 @@ import { browserGoogleMapsApiKey } from "../lib/browser-map-provider";
 import StructuredData from "./StructuredData";
 import TripPlannerApp from "./TripPlannerApp";
 
-export const dynamic = "force-dynamic";
-
 export const metadata: Metadata = {
   title: "TripCheck — build a realistic itinerary from saved places",
   description:

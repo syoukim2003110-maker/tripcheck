@@ -13,8 +13,10 @@
     "golden:check": "node scripts/generate-golden-feasibility.mjs --check",
     "golden:write": "node scripts/generate-golden-feasibility.mjs --write",
     "test:golden": "pnpm run golden:check && node --experimental-strip-types --test tests/golden-feasibility.test.ts",
-    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
-    "ai:local": "node scripts/claude-local-proxy.mjs"
+    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next --ignore-pattern .static-build --ignore-pattern dist-static",
+    "ai:local": "node scripts/claude-local-proxy.mjs",
+    "relay:dev": "node --experimental-strip-types scripts/apple-relay-dev.ts",
+    "build:static": "node --experimental-strip-types scripts/build-static.ts"
   },
   "dependencies": {
     "@fontsource/anton": "5.2.7",

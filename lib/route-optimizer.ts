@@ -328,6 +328,15 @@ const bareTsukijiPattern = /^(?:築地|筑地|쓰키지)$/;
 function isFragmentOfLongerName(line: string, index: number, length: number) {
   const before = [...line.slice(0, index)].at(-1) ?? "";
   if (nameCharacterPattern.test(before)) return true;
+  // "一蘭 渋谷" is the Shibuya branch of a shop, not Shibuya: a name word in
+  // front of the neighbourhood, with no list separator between them, makes
+  // the neighbourhood a qualifier. A day heading or a time is not a name.
+  const leading = line.slice(0, index).trimEnd();
+  const lastLeading = [...leading].at(-1) ?? "";
+  if (leading !== line.slice(0, index) && /\p{L}/u.test(lastLeading)) {
+    const word = leading.split(/[\s,、，;；/／→>＞|｜・:：]+/u).at(-1) ?? "";
+    if (!/^(?:day|booked|must|optional|必須|任意|予約)$/iu.test(word) && !/[日目天]$/u.test(word)) return true;
+  }
   const rest = line.slice(index + length);
   if (!rest.trim()) return false;
   const adjacent = [...rest][0] ?? "";

@@ -131,6 +131,12 @@ export type OpenPlaceResolverOptions = Partial<{
   userAgent: string;
   /** Minimum spacing between requests to one host. Tests set this to 0. */
   hostIntervalMs: number;
+  /**
+   * Running inside a web page rather than on a server. A page may not set
+   * User-Agent (it would turn every lookup into a CORS preflight) and must
+   * ask the Wikimedia APIs for anonymous cross-origin access explicitly.
+   */
+  browser: boolean;
 }>;
 
 /* ------------------------------------------------------------------ text */
@@ -396,8 +402,10 @@ export class OpenPlaceResolver {
   private readonly hostDownUntil = new Map<string, number>();
   private readonly hostIntervalMs: number;
   private readonly sleep: (delayMs: number) => Promise<void>;
+  private readonly browser: boolean;
 
   constructor(options: OpenPlaceResolverOptions = {}) {
+    this.browser = options.browser ?? (typeof window !== "undefined" && typeof document !== "undefined");
     this.fetcher = options.fetcher ?? ((input, init) => globalThis.fetch(input, init));
     this.now = options.now ?? Date.now;
     this.sleep = options.sleep ?? ((delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs)));
@@ -405,17 +413,19 @@ export class OpenPlaceResolver {
       fetcher: this.fetcher,
       now: this.now,
       sleep: this.sleep,
+      browser: this.browser,
     }) : options.nominatim;
     this.hostIntervalMs = Math.max(0, Math.floor(options.hostIntervalMs ?? 80));
     this.userAgent = (options.userAgent ?? this.defaultUserAgent()).replace(/[\r\n]+/g, " ").trim().slice(0, 256);
   }
 
   private defaultUserAgent() {
-    const explicit = (process.env.TRIPCHECK_NOMINATIM_USER_AGENT ?? "").replace(/[\r\n]+/g, " ").trim();
+    const environment: Record<string, string | undefined> = typeof process !== "undefined" && process.env ? process.env : {};
+    const explicit = (environment.TRIPCHECK_NOMINATIM_USER_AGENT ?? "").replace(/[\r\n]+/g, " ").trim();
     if (explicit) return explicit;
     let contact = DEFAULT_CONTACT_URL;
     try {
-      const publicOrigin = process.env.TRIPCHECK_PUBLIC_ORIGIN?.trim();
+      const publicOrigin = environment.TRIPCHECK_PUBLIC_ORIGIN?.trim();
       if (publicOrigin) contact = new URL(publicOrigin).origin;
     } catch {
       // A malformed origin must not produce an invalid header.
@@ -425,6 +435,9 @@ export class OpenPlaceResolver {
 
   /** Cached GET. A failure is `null`, never an exception: one source being down must not sink the others. */
   private async getJson(url: URL, signal?: AbortSignal): Promise<unknown | null> {
+    if (this.browser && /(?:^|\.)(?:wikipedia|wikidata)\.org$/.test(url.host) && url.host !== "query.wikidata.org") {
+      url.searchParams.set("origin", "*");
+    }
     const key = url.toString();
     const cached = this.cache.get(key);
     if (cached && cached.expiresAt > this.now()) {
@@ -443,7 +456,9 @@ export class OpenPlaceResolver {
         const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
         const response = await this.fetcher(url, {
           method: "GET",
-          headers: { Accept: "application/json", "User-Agent": this.userAgent },
+          headers: this.browser
+            ? { Accept: "application/json" }
+            : { Accept: "application/json", "User-Agent": this.userAgent },
           signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
         });
         if (!response.ok) {
@@ -1103,8 +1118,16 @@ export function inferRegion(pools: ReadonlyArray<ReadonlyArray<Pick<Candidate, "
     }
   }
   if (!best || best.members.length < 2) return null;
-  const latitude = best.members.reduce((sum, member) => sum + member.stop.latitude, 0) / best.members.length;
-  const longitude = best.members.reduce((sum, member) => sum + member.stop.longitude, 0) / best.members.length;
+  const centroid = (members: typeof best.members) => ({
+    latitude: members.reduce((sum, member) => sum + member.stop.latitude, 0) / members.length,
+    longitude: members.reduce((sum, member) => sum + member.stop.longitude, 0) / members.length,
+  });
+  // A namesake at the edge of the radius (Guangzhou's temple on a Hong Kong
+  // list) must not drag the centre toward itself: once the rough centre is
+  // known, only the members actually clustered around it define it.
+  const rough = centroid(best.members);
+  const core = best.members.filter((member) => distanceKm(member.stop, rough) <= REGION_CORE_KM * 2);
+  const { latitude, longitude } = centroid(core.length >= 2 ? core : best.members);
   const codes = new Map<string, number>();
   for (const member of best.members) {
     if (member.stop.countryCode) codes.set(member.stop.countryCode, (codes.get(member.stop.countryCode) ?? 0) + 1);
@@ -1146,7 +1169,7 @@ function score(candidate: Candidate, region: Region | null) {
 function mergeSamePlace(pool: Candidate[], region: Region | null) {
   const merged: Candidate[] = [];
   const ordered = [...pool].sort((left, right) => score(right, region) - score(left, region));
-  for (const candidate of ordered) {
+  for (let candidate of ordered) {
     const twin = merged.find((existing) => distanceKm(existing.stop, candidate.stop) <= SAME_PLACE_KM);
     if (!twin) {
       merged.push({ ...candidate, stop: { ...candidate.stop } });
@@ -1154,6 +1177,16 @@ function mergeSamePlace(pool: Candidate[], region: Region | null) {
     }
     if (twin.stop.id === candidate.stop.id) continue;
     if (twin.source !== candidate.source && candidate.similarity >= USABLE_SIMILARITY) twin.corroborated = true;
+    // Two sources, one spot, different things: the Shibuya article and the
+    // ramen shop a block away. The pin keeps the identity of whichever name
+    // is closer to what was typed, and the other's supporting evidence.
+    if (candidate.similarity > twin.similarity + 0.05) {
+      const supporting = twin.stop;
+      twin.stop = { ...candidate.stop };
+      twin.source = candidate.source;
+      if (!twin.stop.area && supporting.area) twin.stop.area = supporting.area;
+      candidate = { ...candidate, stop: supporting, similarity: twin.similarity };
+    }
     twin.similarity = Math.max(twin.similarity, candidate.similarity);
     twin.visitWeight = Math.max(twin.visitWeight, candidate.visitWeight);
     twin.prominence = Math.max(twin.prominence, candidate.prominence);

@@ -18,6 +18,8 @@
 /.next/
 /.vinext/
 /out/
+/.static-build/
+/dist-static/
 
 # misc
 .DS_Store

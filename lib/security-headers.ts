@@ -13,6 +13,19 @@ const OPEN_FREE_MAP_HOSTS = [
   "https://tiles.openfreemap.org",
 ] as const;
 
+/**
+ * The keyless place lookup runs in the page itself, so the page talks to
+ * these public data services directly. Place names and an approximate trip
+ * area go there; itinerary text does not.
+ */
+export const OPEN_PLACE_DATA_HOSTS = [
+  "https://*.wikipedia.org",
+  "https://www.wikidata.org",
+  "https://query.wikidata.org",
+  "https://photon.komoot.io",
+  "https://nominatim.openstreetmap.org",
+] as const;
+
 /** Tiles, markers, Street View and the photo redirect's destination. */
 const GOOGLE_IMAGE_HOSTS = [
   ...GOOGLE_MAPS_HOSTS,
@@ -21,7 +34,7 @@ const GOOGLE_IMAGE_HOSTS = [
   "https://*.ggpht.com",
 ] as const;
 
-const productionContentSecurityPolicy = [
+export const productionContentSecurityPolicy = [
   "default-src 'self'",
   "base-uri 'self'",
   "object-src 'none'",
@@ -43,7 +56,7 @@ const productionContentSecurityPolicy = [
   // the Maps runtime's own tile and metadata traffic. There are no websockets
   // in production — that allowance existed for local HMR, which never sees
   // this policy.
-  `connect-src 'self' data: blob: ${GOOGLE_MAPS_HOSTS.join(" ")} ${OPEN_FREE_MAP_HOSTS.join(" ")}`,
+  `connect-src 'self' data: blob: ${GOOGLE_MAPS_HOSTS.join(" ")} ${OPEN_FREE_MAP_HOSTS.join(" ")} ${OPEN_PLACE_DATA_HOSTS.join(" ")}`,
   "worker-src 'self' blob:",
   "frame-src 'self' https://www.google.com https://maps.google.com",
 ].join("; ");

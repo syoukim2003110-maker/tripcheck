@@ -289,6 +289,8 @@ test("discloses the key-free map and explicit OpenStreetMap lookup", async () =>
   assert.match(privacySource, /Photon search service operated by komoot/);
   assert.match(privacySource, /public OpenStreetMap Nominatim service/);
   assert.match(privacySource, /never receive your dates, times, notes or the rest of your itinerary/);
+  // The lookup runs in the page, so the page must say these services see the IP.
+  assert.match(privacySource, /your browser makes these requests itself[\s\S]{0,260}together with your IP address/);
   assert.match(privacySource, /Nominatim is never used for autocomplete/);
   assert.match(privacySource, /Paid Google place resolution, Google autocomplete and Google Maps display are disabled by default/);
   assert.match(privacySource, /© OpenStreetMap contributors/);

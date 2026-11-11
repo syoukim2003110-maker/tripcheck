@@ -1,0 +1,5 @@
+# The Apple keys and the relay's small state files are never served.
+<Files "apple-config.php">
+  Require all denied
+</Files>
+Options -Indexes

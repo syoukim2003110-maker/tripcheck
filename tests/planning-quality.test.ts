@@ -27,7 +27,7 @@ function stop(name: string, latitude: number, longitude: number, minutes = 90): 
 test("a neighbourhood name does not swallow the longer place that starts with it", () => {
   const names = (line: string) => resolveKnownStops(line, "ja").map((entry) => entry.name);
   // These are their own places and must reach the real lookup.
-  for (const line of ["新宿御苑", "西新宿", "Shinjuku Gyoen", "渋谷ヒカリエ", "築地本願寺", "浅草花やしき", "秋葉原電気街"]) {
+  for (const line of ["新宿御苑", "西新宿", "Shinjuku Gyoen", "渋谷ヒカリエ", "築地本願寺", "浅草花やしき", "秋葉原電気街", "一蘭 渋谷", "Ichiran Shibuya"]) {
     assert.deepEqual(names(line), [], line);
   }
   // The neighbourhood itself, with the generic words people add to it.
@@ -38,6 +38,8 @@ test("a neighbourhood name does not swallow the longer place that starts with it
   assert.deepEqual(names("Asakusa 10:00 booked"), ["浅草"]);
   assert.deepEqual(names("築地"), ["築地場外市場"]);
   assert.deepEqual(names("Day 1: Shibuya, Harajuku"), ["渋谷", "原宿"]);
+  assert.deepEqual(names("1日目 渋谷"), ["渋谷"]);
+  assert.deepEqual(names("Day 2 Shinjuku"), ["新宿"]);
   // Venue entries are untouched.
   assert.deepEqual(names("浅草寺"), ["浅草寺"]);
   assert.deepEqual(names("築地場外市場"), ["築地場外市場"]);

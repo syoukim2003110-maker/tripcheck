@@ -16,6 +16,11 @@ import { API_ROUTE_KEYS, API_ROUTE_POLICIES } from "../lib/server/api-route-poli
 
 /** Browser-side modules whose entire job is to make one request. */
 const BROWSER_TRANSPORT = [
+  // Static hosting: the page itself performs the keyless place lookup
+  // (Wikipedia, Wikidata, OpenStreetMap) and reaches Apple through the relay.
+  "lib/apple-relay-client.ts",
+  "lib/nominatim-place-resolver.ts",
+  "lib/open-place-resolver.ts",
   "lib/food-recommendations-client.ts",
   "lib/holidays-client.ts",
   "lib/hotel-recommendations-client.ts",

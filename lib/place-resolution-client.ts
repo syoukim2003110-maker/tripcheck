@@ -9,6 +9,45 @@ import { tripRequestHeaders } from "./trip-request-identity.ts";
 import type { AmbiguousPlaceResolution } from "./google-place-resolver.ts";
 import { paidPlaceResolutionEnabled } from "./paid-place-opt-in.ts";
 export type { AmbiguousPlaceResolution } from "./google-place-resolver.ts";
+import { parsePlaceResolutionRequest } from "./google-place-resolver.ts";
+import { fetchOpenPlaceResolutions, OPEN_PLACE_ATTRIBUTION } from "./open-place-resolver.ts";
+import { appleRelayPlaceSearch } from "./apple-relay-client.ts";
+
+/**
+ * Where the keyless lookup runs.
+ *
+ * "browser" (the default): the page itself asks Wikipedia, Wikidata and
+ * OpenStreetMap. That is what lets the app be hosted as plain static files,
+ * and it spreads lookups over travellers' own connections instead of funnelling
+ * them through one server address that the public services throttle.
+ * "http": the same lookup behind this origin's /api/place-resolution/open,
+ * for a deployment that runs the server routes.
+ */
+export type OpenPlaceResolutionTransport = "browser" | "http";
+let openTransport: OpenPlaceResolutionTransport = "browser";
+export function setOpenPlaceResolutionTransport(transport: OpenPlaceResolutionTransport) {
+  openTransport = transport;
+}
+
+async function resolveOpenInBrowser(encodedPayload: string, signal?: AbortSignal) {
+  const parsed = parsePlaceResolutionRequest(JSON.parse(encodedPayload), PLANNING_BUDGET.openPlaceResolutions);
+  if (!parsed) return Response.json({ code: "invalid_request" }, { status: 400 });
+  try {
+    const mapsSearch = appleRelayPlaceSearch();
+    const result = await fetchOpenPlaceResolutions(parsed, signal, undefined, mapsSearch);
+    return Response.json({
+      provider: "open_place_data",
+      attribution: mapsSearch
+        ? { ...OPEN_PLACE_ATTRIBUTION, label: `${OPEN_PLACE_ATTRIBUTION.label} · Apple Maps` }
+        : OPEN_PLACE_ATTRIBUTION,
+      fetchedAt: new Date().toISOString(),
+      ...result,
+    });
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    return Response.json({ code: "unavailable" }, { status: 502 });
+  }
+}
 
 export type PlaceResolutionResponse = {
   provider: "google_maps" | "open_place_data";
@@ -186,7 +225,9 @@ export async function requestPlaceResolution(
 
   let openResponse: Response | null = null;
   try {
-    openResponse = await postResolution("/api/place-resolution/open");
+    openResponse = openTransport === "browser"
+      ? await resolveOpenInBrowser(encodedPayload, signal)
+      : await postResolution("/api/place-resolution/open");
   } catch {
     if (signal?.aborted) throw new PlaceResolutionError("unavailable");
   }

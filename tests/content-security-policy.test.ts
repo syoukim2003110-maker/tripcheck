@@ -53,8 +53,17 @@ test("only named map providers are allowed, on the directives they need", () => 
       );
     }
   }
-  const openFreeMapHosts = remote("connect-src").filter((value) => !/google|gstatic/.test(value));
-  assert.deepEqual(openFreeMapHosts, ["https://tiles.openfreemap.org"]);
+  // connect-src is the one directive with non-Google hosts: the key-free map,
+  // and the public data services the in-page place lookup asks directly.
+  const keyFreeHosts = remote("connect-src").filter((value) => !/google|gstatic/.test(value));
+  assert.deepEqual(keyFreeHosts, [
+    "https://tiles.openfreemap.org",
+    "https://*.wikipedia.org",
+    "https://www.wikidata.org",
+    "https://query.wikidata.org",
+    "https://photon.komoot.io",
+    "https://nominatim.openstreetmap.org",
+  ]);
   assert.equal(remote("script-src").includes("https://tiles.openfreemap.org"), false, "MapLibre is bundled, not remotely scripted");
   assert.equal(remote("img-src").includes("https://tiles.openfreemap.org"), false, "MapLibre fetches vector tiles through connect-src");
   assert.deepEqual(remote("default-src"), []);

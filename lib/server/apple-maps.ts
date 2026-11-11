@@ -13,6 +13,7 @@
  *   - GET /v1/search   q, lang, searchLocation, searchRegion,
  *                      searchRegionPriority, includePoiCategories,
  *                      resultTypeFilter → {results: Place[]}.
+ * Checked against the live service on 2026-11-11 (token exchange, search).
  *
  * Apple place data is fetched at request time and never written to storage.
  */
@@ -155,7 +156,16 @@ export class AppleMapsClient {
     try {
       response = await this.fetcher(url, {
         method: "GET",
-        headers: { Accept: "application/json", Authorization: `Bearer ${bearer}` },
+        headers: {
+          Accept: "application/json",
+          Authorization: `Bearer ${bearer}`,
+          // The Workers runtime sends no User-Agent of its own; identify the
+          // client. (Known issue, 2026-11-11: from the local workerd runtime
+          // Apple's edge answers every request "403 Forbidden" before the API
+          // sees it, with or without this header, while the identical request
+          // from Node or curl succeeds. Not yet tested from a deployed host.)
+          "User-Agent": "TripCheck/0.1",
+        },
         signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
       });
     } catch (error) {
@@ -215,8 +225,12 @@ export class AppleMapsClient {
     if (options.poiCategories?.length) url.searchParams.set("includePoiCategories", options.poiCategories.join(","));
     if (options.near) {
       const { latitude, longitude } = options.near;
-      url.searchParams.set("searchLocation", `${latitude.toFixed(5)},${longitude.toFixed(5)}`);
-      if (options.withinMeters) {
+      // The live service rejects a request carrying both hints ("Cannot
+      // specify both searchRegion and searchLocation"), so a bounded search
+      // sends the region alone and an unbounded one the point alone.
+      if (!options.withinMeters) {
+        url.searchParams.set("searchLocation", `${latitude.toFixed(5)},${longitude.toFixed(5)}`);
+      } else {
         const latitudeSpan = options.withinMeters / 111_320;
         const longitudeSpan = options.withinMeters / (111_320 * Math.max(0.2, Math.cos(latitude * Math.PI / 180)));
         // north-latitude, east-longitude, south-latitude, west-longitude.

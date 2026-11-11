@@ -53,18 +53,26 @@ type ResolverOptions = Partial<{
   maximumCacheEntries: number;
   timeoutMs: number;
   userAgent: string;
+  /** In a web page the browser's own Referer identifies the application. */
+  browser: boolean;
 }>;
+
+/** The one place this module reaches the network when no fetcher is injected. */
+export function defaultNominatimFetch(input: RequestInfo | URL, init?: RequestInit) {
+  return globalThis.fetch(input, init);
+}
 
 function normalizedHeaderValue(value: string) {
   return value.replace(/[\r\n]+/g, " ").trim().slice(0, 256);
 }
 
 function configuredUserAgent() {
-  const explicit = normalizedHeaderValue(process.env.TRIPCHECK_NOMINATIM_USER_AGENT ?? "");
+  const environment: Record<string, string | undefined> = typeof process !== "undefined" && process.env ? process.env : {};
+  const explicit = normalizedHeaderValue(environment.TRIPCHECK_NOMINATIM_USER_AGENT ?? "");
   if (explicit) return explicit;
   let contact = DEFAULT_CONTACT_URL;
   try {
-    const publicOrigin = process.env.TRIPCHECK_PUBLIC_ORIGIN?.trim();
+    const publicOrigin = environment.TRIPCHECK_PUBLIC_ORIGIN?.trim();
     if (publicOrigin) contact = new URL(publicOrigin).origin;
   } catch {
     // A malformed deployment origin must not produce an invalid HTTP header.
@@ -181,12 +189,13 @@ export class NominatimPlaceResolver {
   private readonly maximumCacheEntries: number;
   private readonly timeoutMs: number;
   private readonly userAgent: string;
+  private readonly browser: boolean;
   private readonly cache = new Map<string, CacheEntry>();
   private queue: Promise<void> = Promise.resolve();
   private nextNetworkStartAt = 0;
 
   constructor(options: ResolverOptions = {}) {
-    this.fetcher = options.fetcher ?? ((input, init) => globalThis.fetch(input, init));
+    this.fetcher = options.fetcher ?? defaultNominatimFetch;
     this.now = options.now ?? Date.now;
     this.sleep = options.sleep ?? ((delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs)));
     this.intervalMs = Math.max(1_000, Math.floor(options.intervalMs ?? DEFAULT_INTERVAL_MS));
@@ -194,6 +203,7 @@ export class NominatimPlaceResolver {
     this.maximumCacheEntries = Math.max(1, Math.floor(options.maximumCacheEntries ?? DEFAULT_CACHE_ENTRIES));
     this.timeoutMs = Math.max(1, Math.floor(options.timeoutMs ?? DEFAULT_TIMEOUT_MS));
     this.userAgent = normalizedHeaderValue(options.userAgent ?? configuredUserAgent()) || configuredUserAgent();
+    this.browser = options.browser ?? false;
   }
 
   private cachedCandidates(key: string, input: string) {
@@ -282,11 +292,9 @@ export class NominatimPlaceResolver {
       const providerSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
       const response = await this.fetcher(url, {
         method: "GET",
-        headers: {
-          Accept: "application/json",
-          "Accept-Language": languageCode,
-          "User-Agent": this.userAgent,
-        },
+        headers: this.browser
+          ? { Accept: "application/json", "Accept-Language": languageCode }
+          : { Accept: "application/json", "Accept-Language": languageCode, "User-Agent": this.userAgent },
         signal: providerSignal,
       });
       if (!response.ok) throw new Error("nominatim_unavailable");

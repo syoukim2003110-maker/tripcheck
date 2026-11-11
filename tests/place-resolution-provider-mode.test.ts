@@ -3,14 +3,19 @@ import test from "node:test";
 import {
   PlaceResolutionError,
   requestPlaceResolution,
+  setOpenPlaceResolutionTransport,
 } from "../lib/place-resolution-client.ts";
+
+// These tests pin the HTTP boundary of a deployment that runs server routes;
+// the default transport resolves inside the page and is covered separately.
+setOpenPlaceResolutionTransport("http");
 
 function restoreOptIn(value: string | undefined) {
   if (value === undefined) delete process.env.NEXT_PUBLIC_TRIPCHECK_PAID_PLACE_RESOLUTION_ENABLED;
   else process.env.NEXT_PUBLIC_TRIPCHECK_PAID_PLACE_RESOLUTION_ENABLED = value;
 }
 
-function successfulResolution(provider: "google_maps" | "openstreetmap_nominatim") {
+function successfulResolution(provider: "google_maps" | "open_place_data") {
   return Response.json({
     provider,
     fetchedAt: "2026-08-15T00:00:00.000Z",
@@ -27,12 +32,12 @@ test("zero-cost mode resolves through the open endpoint and never probes Google"
   delete process.env.NEXT_PUBLIC_TRIPCHECK_PAID_PLACE_RESOLUTION_ENABLED;
   globalThis.fetch = (async (input) => {
     calls.push(String(input));
-    if (String(input) === "/api/place-resolution/open") return successfulResolution("openstreetmap_nominatim");
+    if (String(input) === "/api/place-resolution/open") return successfulResolution("open_place_data");
     throw new Error("paid endpoint must not be reached");
   }) as typeof fetch;
   try {
     const result = await requestPlaceResolution("Synthetic open place", "", "en");
-    assert.equal(result.provider, "openstreetmap_nominatim");
+    assert.equal(result.provider, "open_place_data");
     assert.deepEqual(calls, ["/api/place-resolution/open"]);
   } finally {
     globalThis.fetch = originalFetch;
@@ -96,7 +101,7 @@ test("an opted-in exact Google choice is rehydrated exactly, never text-searched
       body: JSON.parse(String(init?.body)) as Record<string, unknown>,
     });
     return url.endsWith("/open")
-      ? successfulResolution("openstreetmap_nominatim")
+      ? successfulResolution("open_place_data")
       : successfulResolution("google_maps");
   }) as typeof fetch;
   try {

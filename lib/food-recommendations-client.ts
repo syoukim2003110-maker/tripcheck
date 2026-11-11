@@ -1,7 +1,9 @@
 import type { DestinationChoice } from "./destinations.ts";
 import type { Locale } from "./i18n.ts";
 import type { FoodRecommendationSlot } from "./trip-builder.ts";
-import { defaultFoodDiscoveryQuery, type FoodCandidate } from "./google-food.ts";
+import { defaultFoodDiscoveryQuery, parseFoodSearchRequest, type FoodCandidate } from "./google-food.ts";
+import { fetchAppleFoodCandidates } from "./apple-food.ts";
+import { AppleRelayError, appleRelayClient } from "./apple-relay-client.ts";
 import type { FoodRankingItem } from "./ai-food-ranking.ts";
 import { tripRequestHeaders } from "./trip-request-identity.ts";
 
@@ -217,6 +219,22 @@ export async function requestFoodRecommendations(
     signal: options?.signal,
     body,
   });
+  // A statically hosted build has no server routes: the page asks the Apple
+  // relay itself. Only the meal area's coordinate, the search words and the
+  // language leave the browser.
+  const relay = appleRelayClient();
+  if (relay) {
+    const parsed = parseFoodSearchRequest(JSON.parse(body));
+    if (!parsed) throw new FoodRecommendationsError("invalid_request");
+    try {
+      const candidates = await fetchAppleFoodCandidates(parsed, relay, options?.signal);
+      return { provider: "apple_maps", ranking: "distance", fetchedAt: new Date().toISOString(), candidates };
+    } catch (error) {
+      if (error instanceof AppleRelayError && error.code === "quota_exhausted") throw new FoodRecommendationsError("quota_exhausted");
+      if (error instanceof AppleRelayError && error.code === "not_configured") throw new FoodRecommendationsError("not_configured");
+      throw new FoodRecommendationsError("unavailable");
+    }
+  }
   let response: Response;
   let payload: (FoodRecommendationsResponse & { code?: string }) | null;
   try {

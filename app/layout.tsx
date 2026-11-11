@@ -5,10 +5,16 @@ import "./base.css";
 import "./planner.css";
 
 export async function generateMetadata(): Promise<Metadata> {
-  const requestHeaders = await headers();
-  const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host") ?? "tripcheck-japan-tokyo.syoki.chatgpt.site";
-  const protocol = requestHeaders.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
-  const origin = `${protocol}://${host}`;
+  // A static export has no request to read a host from: the site's address
+  // is fixed at build time. A server deployment still derives it per request.
+  const fixedOrigin = process.env.NEXT_PUBLIC_SITE_ORIGIN?.trim();
+  let origin = fixedOrigin ?? "";
+  if (!origin) {
+    const requestHeaders = await headers();
+    const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host") ?? "tripcheck-japan-tokyo.syoki.chatgpt.site";
+    const protocol = requestHeaders.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
+    origin = `${protocol}://${host}`;
+  }
   const title = "TripCheck — build a realistic itinerary from saved places";
   const description = "Drop in the places you want. TripCheck groups them into days, orders the route, suggests a practical base and schedule-checked meal candidates, and checks what actually fits.";
 

@@ -246,6 +246,12 @@ export default function ZeroCostMap({
     void import("maplibre-gl").then((maplibre) => {
       if (cancelled) return;
       maplibreRef.current = maplibre;
+      // A static export hashes the worker's file name but not the sibling
+      // module the worker imports, so the bundled worker 404s and the basemap
+      // stays blank. The static build ships an unhashed worker pair and
+      // points MapLibre at it; other builds keep the bundler's own worker.
+      const workerUrl = process.env.NEXT_PUBLIC_MAPLIBRE_WORKER_URL;
+      if (workerUrl) maplibre.setWorkerUrl(workerUrl);
       map = new maplibre.Map({
         attributionControl: { compact: true },
         center: [destination.center.longitude, destination.center.latitude],

@@ -30,16 +30,18 @@ function decode(part: string) {
   return JSON.parse(Buffer.from(part, "base64url").toString("utf8")) as Record<string, unknown>;
 }
 
-type Fake = { calls: URL[]; authorizations: string[]; fetcher: typeof fetch };
+type Fake = { calls: URL[]; authorizations: string[]; userAgents: string[]; fetcher: typeof fetch };
 
 function fakeApple(handler: (url: URL, call: number) => Response): Fake {
   const fake: Fake = {
     calls: [],
     authorizations: [],
+    userAgents: [],
     fetcher: (async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(String(input));
       fake.calls.push(url);
       fake.authorizations.push(new Headers(init?.headers).get("Authorization") ?? "");
+      fake.userAgents.push(new Headers(init?.headers).get("User-Agent") ?? "");
       return handler(url, fake.calls.length);
     }) as typeof fetch,
   };
@@ -120,12 +122,18 @@ test("one token exchange serves concurrent searches, and search sends the docume
   assert.equal(search.searchParams.get("lang"), "ja-JP");
   assert.equal(search.searchParams.get("resultTypeFilter"), "Poi");
   assert.equal(search.searchParams.get("includePoiCategories"), "Restaurant,Cafe");
-  assert.equal(search.searchParams.get("searchLocation"), "22.28000,114.18000");
+  // Apple answers 400 when both hints are sent: a bounded search carries the
+  // region only, an unbounded one the point only.
+  assert.equal(search.searchParams.get("searchLocation"), null);
+  const unbounded = fake.calls.find((url) => url.searchParams.get("q") === "カフェ")!;
+  assert.equal(unbounded.searchParams.get("searchRegion"), null);
   assert.equal(search.searchParams.get("searchRegionPriority"), "required");
   // north, east, south, west — and the box actually surrounds the point.
   const [north, east, south, west] = search.searchParams.get("searchRegion")!.split(",").map(Number);
   assert.ok(north > 22.28 && south < 22.28 && east > 114.18 && west < 114.18);
   assert.equal(fake.authorizations.at(-1), "Bearer access-1");
+  // The Workers runtime sends no User-Agent of its own.
+  assert.ok(fake.userAgents.every((value) => value.startsWith("TripCheck/")));
   // A result with no coordinate is dropped, never given an invented one.
   assert.deepEqual(first, [{
     id: "I123",

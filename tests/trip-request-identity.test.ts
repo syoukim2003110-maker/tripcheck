@@ -6,7 +6,10 @@ import {
   TRIP_REQUEST_HEADER,
   TRIP_REQUEST_STORAGE_KEY,
 } from "../lib/trip-request-identity.ts";
-import { requestPlaceResolution } from "../lib/place-resolution-client.ts";
+import { requestPlaceResolution, setOpenPlaceResolutionTransport } from "../lib/place-resolution-client.ts";
+
+// These tests pin the HTTP boundary of a deployment that runs server routes.
+setOpenPlaceResolutionTransport("http");
 import {
   requestFreshVoices,
   requestPlaceIntelligence,
