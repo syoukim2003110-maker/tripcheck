@@ -285,7 +285,11 @@ function tightDay(day: EngineDay, dinnerIds: ReadonlySet<string>) {
   if (sights < 2) return false;
   const legs = [...day.legs.map((leg) => leg.comparison.recommended.minutes), day.hotelOutboundMinutes ?? 0, day.hotelInboundMinutes ?? 0];
   const times = timeline(day);
+  const lastSight = day.stops.findLastIndex((stop) => !dinnerIds.has(stop.stop.id));
   return day.stops.length >= 6
+    // Still sightseeing at 16:00 before lunch has its hour: a day that ends
+    // around 17:00 or later.
+    || times[lastSight].leave >= 16 * 60
     || legs.reduce((sum, minutes) => sum + minutes, 0) >= 150
     || legs.filter((minutes) => minutes >= 45).length >= 2
     || times.at(-1)!.leave - times[0].arrive > 600;
