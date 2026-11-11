@@ -11,7 +11,8 @@
  * app/api/ belong to the Workers deployment and are left out of this build.
  */
 import { spawnSync } from "node:child_process";
-import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -140,7 +141,16 @@ if (credentials) {
 }
 rmSync(work, { recursive: true, force: true });
 
+// One file to upload. It carries the Apple key, and until it is extracted and
+// deleted it sits in a public folder, so its name is not guessable.
+for (const stale of readdirSync(join(root, "dist-static"))) {
+  if (/^tripcheck-site.*\.zip$/.test(stale)) rmSync(join(root, "dist-static", stale));
+}
+const zipName = `tripcheck-site-${randomBytes(6).toString("hex")}.zip`;
+const zipped = spawnSync("zip", ["-qr", join("..", zipName), "."], { cwd: output, stdio: "inherit" });
+
 console.log(`\nStatic site written to dist-static/site for ${origin}`);
+if (zipped.status === 0) console.log(`Upload file: dist-static/${zipName} (extract on the server, then delete it there)`);
 console.log(credentials
   ? "Apple Maps relay: keys included (api/apple-config.php). Do not share this folder."
   : "Apple Maps relay: no keys in .env.local — meals and shop lookup stay off until api/apple-config.php is added.");
