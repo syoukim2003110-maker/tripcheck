@@ -11,6 +11,10 @@ export type PopularSight = {
   lat: number;
   lon: number;
   kind: string;
+  /** Wikimedia Commons file name of a representative photo. */
+  img?: string;
+  /** One-line Japanese description from Wikidata. */
+  desc?: string;
 };
 
 export type PopularDestination = {

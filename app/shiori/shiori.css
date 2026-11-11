@@ -1,0 +1,191 @@
+@import "maplibre-gl/dist/maplibre-gl.css";
+
+/* The booklet. Mobile first: one column, the map above the day. From 960px
+ * the day reads on the left and the map stays in view on the right. */
+.shiori {
+  --ink: #1a1d21;
+  --muted: #5d646d;
+  --line: #e4e2dc;
+  --paper: #faf8f3;
+  --card: #ffffff;
+  --accent: #e0603c;
+  --accent-deep: #b9482a;
+  --soft: #f2efe8;
+  --focus: #2563eb;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", "Segoe UI", sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
+  min-height: 100vh;
+  padding: 0 16px 96px;
+}
+.shiori *, .shiori *::before, .shiori *::after { box-sizing: border-box; }
+.shiori button, .shiori input, .shiori select { font: inherit; }
+.shiori button { cursor: pointer; }
+.shiori a { color: inherit; }
+.shiori :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.shiori h1, .shiori h2, .shiori h3, .shiori p { margin: 0; }
+.shiori-icon { flex: 0 0 auto; vertical-align: -3px; }
+.shiori-quiet { color: var(--muted); font-size: 13px; }
+.shiori-warn { background: #fff4e5; border-radius: 10px; color: #7a4a00; font-size: 13px; padding: 8px 10px; }
+
+.shiori-top { align-items: center; display: flex; justify-content: space-between; margin: 0 auto; max-width: 1180px; padding: 14px 0; }
+.shiori-brand { align-items: baseline; background: none; border: 0; color: var(--ink); display: flex; gap: 8px; padding: 0; }
+.shiori-brand b { font-size: 18px; letter-spacing: -0.01em; }
+.shiori-brand small { color: var(--muted); font-size: 12px; }
+.shiori-lang { display: flex; gap: 2px; }
+.shiori-lang a { border-radius: 999px; color: var(--muted); font-size: 12px; font-weight: 700; padding: 6px 10px; text-decoration: none; }
+.shiori-lang a[aria-current] { background: var(--ink); color: #fff; }
+
+/* Home */
+.shiori-hero { margin: 0 auto; max-width: 760px; padding: 20px 0 8px; }
+.shiori-hero h1 { font-size: clamp(26px, 6.4vw, 44px); font-weight: 800; letter-spacing: -0.02em; line-height: 1.25; white-space: pre-line; }
+.shiori-hero > p { color: var(--muted); margin-top: 12px; max-width: 34em; }
+.shiori-search { display: block; margin-top: 22px; }
+.shiori-search span { display: block; font-size: 13px; font-weight: 800; margin-bottom: 6px; }
+.shiori-search input { background: var(--card); border: 2px solid var(--ink); border-radius: 16px; font-size: 17px; min-height: 56px; padding: 0 18px; width: 100%; }
+.shiori-resume { background: var(--soft); border: 1px solid var(--line); border-radius: 12px; color: var(--ink); font-size: 13px; font-weight: 700; margin-top: 12px; min-height: 44px; padding: 0 14px; text-align: left; width: 100%; }
+.shiori-cities { margin: 26px auto 0; max-width: 1180px; }
+.shiori-cities h2 { font-size: 14px; margin-bottom: 10px; }
+.shiori-city-grid { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.shiori-city { background: var(--soft); border: 0; border-radius: 16px; color: #fff; overflow: hidden; padding: 0; position: relative; aspect-ratio: 4 / 3; }
+.shiori-city .shiori-photo { height: 100%; object-fit: cover; width: 100%; }
+.shiori-city::after { background: linear-gradient(to top, rgb(0 0 0 / 62%), rgb(0 0 0 / 0%) 60%); content: ""; inset: 0; position: absolute; }
+.shiori-city span:last-child { bottom: 10px; font-size: 17px; font-weight: 800; left: 12px; position: absolute; text-shadow: 0 1px 2px rgb(0 0 0 / 50%); z-index: 1; }
+.shiori-photo { background: var(--soft); display: block; }
+.shiori-photo.is-empty { align-items: center; color: #b6b0a3; display: flex; justify-content: center; }
+.shiori-city .shiori-photo.is-empty { height: 100%; width: 100%; }
+
+/* Pick */
+.shiori-pick { margin: 0 auto; max-width: 1180px; }
+.shiori-back { background: none; border: 0; color: var(--muted); font-size: 13px; font-weight: 700; padding: 6px 0; }
+.shiori-pick h1 { font-size: clamp(22px, 5vw, 30px); font-weight: 800; letter-spacing: -0.01em; line-height: 1.3; }
+.shiori-controls { align-items: center; display: flex; flex-wrap: wrap; gap: 10px 14px; margin: 14px 0; }
+.shiori-controls label { align-items: center; display: flex; font-size: 13px; font-weight: 700; gap: 6px; }
+.shiori-controls select, .shiori-stop-edit select { background: var(--card); border: 1px solid #9aa0a8; border-radius: 10px; min-height: 40px; padding: 0 8px; }
+.shiori-pace { background: var(--soft); border-radius: 12px; display: flex; padding: 3px; }
+.shiori-pace button { background: none; border: 0; border-radius: 9px; color: var(--muted); font-size: 13px; font-weight: 700; min-height: 36px; padding: 0 12px; }
+.shiori-pace button[aria-pressed="true"] { background: var(--card); box-shadow: 0 1px 3px rgb(0 0 0 / 14%); color: var(--ink); }
+.shiori-sights { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.shiori-sight { background: var(--card); border: 2px solid transparent; border-radius: 16px; box-shadow: 0 1px 2px rgb(0 0 0 / 8%); color: var(--ink); overflow: hidden; padding: 0; position: relative; text-align: left; }
+.shiori-sight .shiori-photo { aspect-ratio: 4 / 3; height: auto; object-fit: cover; width: 100%; }
+.shiori-sight.is-chosen { border-color: var(--accent); }
+.shiori-sight-check { align-items: center; background: rgb(255 255 255 / 92%); border-radius: 999px; color: var(--ink); display: flex; height: 32px; justify-content: center; position: absolute; right: 8px; top: 8px; width: 32px; }
+.shiori-sight.is-chosen .shiori-sight-check { background: var(--accent); color: #fff; }
+.shiori-sight-text { display: block; padding: 8px 10px 10px; }
+.shiori-sight-text b { display: block; font-size: 14px; line-height: 1.35; }
+.shiori-sight-text small { color: var(--muted); display: -webkit-box; font-size: 12px; line-height: 1.4; margin-top: 2px; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.shiori-more { background: none; border: 0; color: var(--ink); display: block; font-weight: 700; margin: 12px auto 0; min-height: 44px; text-decoration: underline; text-underline-offset: 3px; }
+.shiori-other { background: var(--card); border: 1px solid var(--line); border-radius: 16px; margin-top: 18px; padding: 12px; }
+.shiori-other label { display: block; font-size: 13px; font-weight: 800; margin-bottom: 6px; }
+.shiori-other > div { display: flex; gap: 8px; }
+.shiori-other input { background: var(--soft); border: 1px solid transparent; border-radius: 10px; flex: 1 1 auto; font-size: 16px; min-height: 44px; min-width: 0; padding: 0 12px; }
+.shiori-other button[type="submit"] { background: var(--ink); border: 0; border-radius: 10px; color: #fff; font-weight: 700; min-height: 44px; padding: 0 16px; }
+.shiori-other button:disabled { opacity: 0.45; }
+.shiori-chips { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; margin: 10px 0 0; padding: 0; }
+.shiori-chips button { background: var(--card); border: 1px solid #9aa0a8; border-radius: 999px; color: var(--ink); font-size: 13px; min-height: 36px; padding: 0 12px; }
+.shiori-bar { align-items: center; background: rgb(250 248 243 / 94%); backdrop-filter: blur(8px); border-top: 1px solid var(--line); bottom: 0; display: flex; gap: 12px; justify-content: space-between; left: 0; padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); position: fixed; right: 0; z-index: 20; }
+.shiori-bar span { font-size: 13px; font-weight: 700; }
+.shiori-bar button { background: var(--accent); border: 0; border-radius: 14px; color: #fff; font-size: 16px; font-weight: 800; min-height: 50px; padding: 0 22px; }
+.shiori-bar button:disabled { background: #c9c5bb; }
+
+/* Plan */
+.shiori.is-plan { padding-bottom: 32px; }
+.shiori-plan { display: flex; flex-direction: column-reverse; gap: 14px; margin: 0 auto; max-width: 1180px; }
+.shiori-plan-map { border-radius: 16px; height: 38vh; min-height: 240px; overflow: hidden; position: sticky; top: 0; z-index: 5; }
+.shiori-map, .shiori-map-canvas { height: 100%; width: 100%; }
+.shiori-map { background: #e9e6df; position: relative; }
+/* Top left: the bottom edge belongs to the map's own credit line and zoom buttons. */
+.shiori-map-legend { background: rgb(255 255 255 / 92%); border-radius: 10px; top: 10px; display: flex; flex-wrap: wrap; font-size: 11px; gap: 4px 12px; left: 10px; list-style: none; margin: 0; max-width: calc(100% - 20px); padding: 6px 10px; position: absolute; }
+.shiori-map-legend:empty { display: none; }
+.shiori-map-legend li { align-items: center; color: var(--ink); display: flex; gap: 6px; }
+.shiori-map-legend i { border-top: 3px solid var(--ink); display: inline-block; width: 22px; }
+.shiori-map-legend i.is-rail { border-top-width: 5px; }
+.shiori-map-legend i.is-straight { border-top: 2px dashed #7b8089; }
+.shiori-map-note { background: rgb(255 255 255 / 92%); border-radius: 10px; bottom: 10px; font-size: 12px; left: 10px; padding: 6px 10px; position: absolute; }
+.shiori-pin { background: var(--pin, #2f6fed); border: 2px solid #fff; border-radius: 999px; box-shadow: 0 1px 4px rgb(0 0 0 / 35%); color: #fff; cursor: pointer; font-size: 0; height: 14px; opacity: 0.55; padding: 0; width: 14px; }
+.shiori-pin.is-selected { font-size: 13px; font-weight: 800; height: 30px; line-height: 26px; opacity: 1; text-align: center; width: 30px; }
+.shiori-pin.is-hotel { background: var(--ink); cursor: default; font-size: 12px; font-weight: 800; height: 28px; line-height: 24px; opacity: 1; text-align: center; width: 28px; }
+.shiori-plan-head h1 { font-size: clamp(20px, 4.6vw, 28px); font-weight: 800; letter-spacing: -0.01em; line-height: 1.3; }
+.shiori-plan-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.shiori-plan-actions button { background: var(--card); border: 1px solid #9aa0a8; border-radius: 10px; color: var(--ink); font-size: 13px; font-weight: 700; min-height: 40px; padding: 0 12px; }
+.shiori-tabs { display: flex; gap: 6px; margin: 4px 0 12px; overflow-x: auto; padding-bottom: 2px; }
+.shiori-tabs button { background: var(--card); border: 2px solid var(--line); border-radius: 12px; color: var(--ink); flex: 0 0 auto; font-weight: 800; min-height: 44px; padding: 0 16px; }
+.shiori-tabs button[aria-selected="true"] { background: var(--day); border-color: var(--day); color: #fff; }
+.shiori-tab-free { align-items: center; border: 2px dashed var(--line); border-radius: 12px; color: var(--muted); display: inline-flex; flex: 0 0 auto; font-size: 13px; font-weight: 700; padding: 0 14px; }
+.shiori-day > header h2 { font-size: 18px; font-weight: 800; }
+.shiori-day > header h2 span { color: var(--muted); font-size: 14px; font-weight: 600; margin-left: 6px; }
+.shiori-day > header p { color: var(--muted); font-size: 13px; margin-top: 2px; }
+.shiori-timeline { list-style: none; margin: 12px 0 0; padding: 0; }
+.shiori-timeline > li { margin: 0; }
+.shiori-stop { background: var(--card); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+.shiori-stop-main { align-items: center; background: none; border: 0; color: var(--ink); display: flex; gap: 12px; padding: 10px; text-align: left; width: 100%; }
+.shiori-stop-number { align-items: center; background: var(--day); border-radius: 999px; color: #fff; display: flex; flex: 0 0 auto; font-weight: 800; height: 30px; justify-content: center; width: 30px; }
+.shiori-stop-text { flex: 1 1 auto; min-width: 0; }
+.shiori-stop-text b { display: block; font-size: 16px; line-height: 1.35; }
+.shiori-stop-text small { color: var(--muted); display: block; font-size: 12px; }
+.shiori-stop-text small:first-child { color: var(--ink); font-size: 13px; font-variant-numeric: tabular-nums; font-weight: 700; }
+.shiori-stop .shiori-photo { border-radius: 10px; flex: 0 0 auto; height: 64px; object-fit: cover; width: 64px; }
+.shiori-stop-edit { align-items: center; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; font-size: 13px; gap: 10px 14px; padding: 10px; }
+.shiori-stop-edit > div { align-items: center; display: flex; gap: 8px; }
+.shiori-stop-edit label { align-items: center; display: flex; gap: 6px; }
+.shiori-stop-edit button { background: var(--soft); border: 1px solid var(--line); border-radius: 10px; color: var(--ink); min-height: 40px; padding: 0 10px; }
+.shiori-stop-edit button.is-danger { color: #b42318; }
+.shiori-stop-edit a { color: var(--muted); font-size: 12px; }
+.shiori-leg { border-left: 3px dotted #c9c5bb; color: var(--muted); font-size: 13px; margin: 0 0 0 24px; padding: 10px 0 10px 18px; }
+.shiori-leg.is-rail { border-left: 3px solid var(--day); }
+.shiori-leg-head { align-items: center; color: var(--ink); display: flex; font-weight: 700; gap: 8px; }
+.shiori-leg-head small { color: var(--muted); font-weight: 500; }
+.shiori-rail { list-style: none; margin: 8px 0 0; padding: 0; }
+.shiori-rail li { background: var(--card); border: 1px solid var(--line); border-radius: 12px; color: var(--ink); margin-top: 6px; padding: 8px 10px; }
+.shiori-rail li.is-walk { background: none; border: 0; color: var(--muted); padding: 2px 2px; }
+.shiori-rail li b { color: var(--day); display: block; font-size: 13px; }
+.shiori-rail li span { display: block; font-size: 15px; font-weight: 700; }
+.shiori-rail li small { color: var(--muted); display: block; font-size: 12px; }
+.shiori-rail li em { background: var(--soft); border-radius: 6px; color: var(--muted); display: inline-block; font-size: 11px; font-style: normal; font-weight: 700; margin-bottom: 4px; padding: 1px 6px; }
+.shiori-leg-link { color: var(--muted); display: inline-block; font-size: 12px; margin-top: 6px; }
+.shiori-timeline > li.is-leg .shiori-leg { margin-left: 24px; }
+.shiori-meal { background: #fff7ec; border: 1px solid #f1dfc2; border-radius: 14px; margin: 8px 0 0 24px; padding: 8px 10px; }
+.shiori-meal-head { align-items: center; display: flex; gap: 8px; }
+.shiori-meal-head > span { flex: 1 1 auto; font-size: 14px; min-width: 0; }
+.shiori-meal-head small { color: var(--muted); }
+.shiori-meal-head button { background: var(--card); border: 1px solid #d9c9a8; border-radius: 10px; color: var(--ink); flex: 0 0 auto; font-size: 12px; font-weight: 700; min-height: 36px; padding: 0 10px; }
+.shiori-food { list-style: none; margin: 8px 0 4px; padding: 0; }
+.shiori-food li + li { border-top: 1px solid #f1dfc2; }
+.shiori-food a { display: block; padding: 8px 2px; text-decoration: none; }
+.shiori-food b { display: block; font-size: 14px; }
+.shiori-food small { color: var(--muted); font-size: 12px; }
+.shiori-ideas { background: var(--soft); border-radius: 14px; margin-top: 14px; padding: 12px; }
+.shiori-ideas h3 { font-size: 13px; font-weight: 800; }
+.shiori-section { background: var(--card); border: 1px solid var(--line); border-radius: 16px; margin-top: 16px; padding: 14px; }
+.shiori-section h2 { align-items: center; display: flex; font-size: 16px; font-weight: 800; gap: 8px; }
+.shiori-hotels { list-style: none; margin: 10px 0 0; padding: 0; }
+.shiori-hotels li { border-top: 1px solid var(--line); padding: 10px 0; }
+.shiori-hotels li.is-using b::after { color: var(--accent-deep); content: " ✓"; }
+.shiori-hotels b { display: block; font-size: 15px; }
+.shiori-hotels small { color: var(--muted); font-size: 12px; }
+.shiori-hotel-actions { align-items: center; display: flex; flex-wrap: wrap; gap: 6px 12px; margin-top: 6px; }
+.shiori-hotel-actions button { background: var(--card); border: 1px solid #9aa0a8; border-radius: 10px; color: var(--ink); font-size: 13px; font-weight: 700; min-height: 40px; padding: 0 12px; }
+.shiori-hotel-actions button.is-primary { background: var(--ink); border-color: var(--ink); color: #fff; }
+.shiori-hotel-actions a { color: var(--muted); font-size: 12px; }
+.shiori-foot { color: var(--muted); font-size: 12px; margin: 22px auto 0; max-width: 1180px; }
+.shiori-foot p + p { margin-top: 6px; }
+.shiori-link { background: none; border: 0; color: inherit; padding: 0; text-decoration: underline; }
+
+@media (min-width: 720px) {
+  .shiori-city-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .shiori-sights { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .shiori-bar { justify-content: center; }
+}
+@media (min-width: 960px) {
+  .shiori { padding: 0 28px 96px; }
+  .shiori-plan { align-items: flex-start; flex-direction: row; gap: 24px; }
+  .shiori-plan-main { flex: 0 0 480px; min-width: 0; }
+  .shiori-plan-map { flex: 1 1 auto; height: calc(100vh - 32px); top: 16px; }
+}
+@media print {
+  .shiori { background: #fff; padding: 0; }
+  .shiori-top, .shiori-plan-actions, .shiori-controls, .shiori-plan-map, .shiori-meal-head button, .shiori-stop-edit, .shiori-leg-link, .shiori-ideas, .shiori-hotel-actions, .shiori-tabs { display: none !important; }
+  .shiori-plan { display: block; }
+}

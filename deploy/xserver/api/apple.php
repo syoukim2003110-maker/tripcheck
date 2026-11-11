@@ -17,6 +17,10 @@
  *                 &mode=transit|walk|drive[&depart=<ISO 8601>]
  *   200 {"minutes":<int>|null,"distanceMeters":<int>|null}
  *       (null = Apple has no answer for this pair and mode)
+ *
+ *   GET apple.php?op=route&from=<lat>,<lon>&to=<lat>,<lon>&mode=walk|drive
+ *   200 {"minutes":<int>|null,"distanceMeters":<int>|null,"path":[[lat,lon],…]}
+ *       (the way along the streets; at most 160 points)
  *   4xx/5xx {"code": "..."}
  *
  * Keys live in apple-config.php next to this file (blocked from the web by
@@ -237,6 +241,63 @@ if (($_GET['op'] ?? '') === 'eta') {
     if ($status !== 200 || $seconds <= 0) respond(200, ['minutes' => null, 'distanceMeters' => null]);
     $meters = is_numeric($eta['distanceMeters'] ?? null) ? (int) round((float) $eta['distanceMeters']) : null;
     respond(200, ['minutes' => max(1, (int) round($seconds / 60)), 'distanceMeters' => $meters && $meters > 0 ? $meters : null]);
+}
+
+if (($_GET['op'] ?? '') === 'route') {
+    $mode = (string) ($_GET['mode'] ?? '');
+    $transport = ['walk' => 'Walking', 'drive' => 'Automobile'][$mode] ?? null;
+    if (
+        $transport === null
+        || !preg_match($coordinatePattern, (string) ($_GET['from'] ?? ''), $from)
+        || !preg_match($coordinatePattern, (string) ($_GET['to'] ?? ''), $to)
+        || abs((float) $from[1]) > 90 || abs((float) $to[1]) > 90
+        || abs((float) $from[2]) > 180 || abs((float) $to[2]) > 180
+    ) {
+        respond(400, ['code' => 'invalid_request']);
+    }
+    admit();
+    $routeUrl = APPLE_ORIGIN . '/v1/directions?' . http_build_query([
+        'origin' => sprintf('%.6F,%.6F', (float) $from[1], (float) $from[2]),
+        'destination' => sprintf('%.6F,%.6F', (float) $to[1], (float) $to[2]),
+        'transportType' => $transport,
+    ], '', '&', PHP_QUERY_RFC3986);
+    try {
+        [$status, $body] = apple_get($routeUrl, access_token($config));
+        if ($status === 401) [$status, $body] = apple_get($routeUrl, access_token($config, true));
+    } catch (Throwable $error) {
+        respond(502, ['code' => 'unavailable']);
+    }
+    if ($status === 429) respond(429, ['code' => 'budget_exhausted']);
+    $empty = ['minutes' => null, 'distanceMeters' => null, 'path' => []];
+    $route = is_array($body) && is_array($body['routes'] ?? null) ? ($body['routes'][0] ?? null) : null;
+    $seconds = is_array($route) && is_numeric($route['durationSeconds'] ?? null) ? (float) $route['durationSeconds'] : 0;
+    if ($status !== 200 || $seconds <= 0) respond(200, $empty);
+    $steps = is_array($body['steps'] ?? null) ? $body['steps'] : [];
+    $stepPaths = is_array($body['stepPaths'] ?? null) ? $body['stepPaths'] : [];
+    $path = [];
+    $stepIndexes = is_array($route['stepIndexes'] ?? null) ? $route['stepIndexes'] : [];
+    foreach ($stepIndexes as $stepIndex) {
+        $step = $steps[(int) $stepIndex] ?? null;
+        $points = is_array($step) ? ($stepPaths[(int) ($step['stepPathIndex'] ?? -1)] ?? null) : null;
+        if (!is_array($points)) continue;
+        foreach ($points as $point) {
+            if (!is_array($point) || !is_numeric($point['latitude'] ?? null) || !is_numeric($point['longitude'] ?? null)) continue;
+            $pair = [round((float) $point['latitude'], 5), round((float) $point['longitude'], 5)];
+            // Consecutive step paths repeat their shared point.
+            if ($path !== [] && $path[count($path) - 1] === $pair) continue;
+            $path[] = $pair;
+        }
+    }
+    // The shape survives with far fewer points than Apple sends.
+    $limit = 160;
+    if (count($path) > $limit) {
+        $thin = [];
+        $stride = (count($path) - 1) / ($limit - 1);
+        for ($index = 0; $index < $limit; $index += 1) $thin[] = $path[(int) round($index * $stride)];
+        $path = $thin;
+    }
+    $meters = is_numeric($route['distanceMeters'] ?? null) ? (int) round((float) $route['distanceMeters']) : null;
+    respond(200, ['minutes' => max(1, (int) round($seconds / 60)), 'distanceMeters' => $meters && $meters > 0 ? $meters : null, 'path' => $path]);
 }
 
 $query = trim((string) ($_GET['q'] ?? ''));

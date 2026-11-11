@@ -167,3 +167,74 @@ test("a region where transit never answers stops being asked about transit", asy
   await appleRelayEta({ origin: { latitude: 22.3, longitude: 114.17 }, destination: { latitude: 22.28, longitude: 114.15 }, mode: "transit" }, relay, fetcher);
   assert.equal(calls.filter((mode) => mode === "transit").length, 4);
 });
+
+test("the relay returns the way along the streets, and remembers it", async () => {
+  const { appleRelayRoute } = await import("../lib/apple-relay-client.ts");
+  let calls = 0;
+  const fetcher = (async (input: RequestInfo | URL) => {
+    calls += 1;
+    const url = new URL(String(input));
+    assert.equal(url.searchParams.get("op"), "route");
+    assert.equal(url.searchParams.get("from"), "35.69400,139.74400");
+    assert.equal(url.searchParams.get("mode"), "walk");
+    return Response.json({ minutes: 24, distanceMeters: 1339, path: [[35.694, 139.744], [35.69, 139.75], ["x", 1], [35.685, 139.753]] });
+  }) as typeof fetch;
+  const options = { origin: { latitude: 35.694, longitude: 139.744 }, destination: { latitude: 35.685, longitude: 139.753 }, mode: "walk" as const };
+  const route = await appleRelayRoute(options, "https://example.test/route-a.php", fetcher);
+  assert.equal(route?.minutes, 24);
+  assert.equal(route?.distanceMeters, 1339);
+  // The malformed point is dropped, not repaired.
+  assert.equal(route?.path.length, 3);
+  await appleRelayRoute(options, "https://example.test/route-a.php", fetcher);
+  assert.equal(calls, 1);
+});
+
+test("no route from the map service is an answer, a failing relay is an error", async () => {
+  const { appleRelayRoute } = await import("../lib/apple-relay-client.ts");
+  const options = { origin: { latitude: 1, longitude: 2 }, destination: { latitude: 1.01, longitude: 2.01 }, mode: "drive" as const };
+  const none = (async () => Response.json({ minutes: null, distanceMeters: null, path: [] })) as typeof fetch;
+  assert.equal(await appleRelayRoute(options, "https://example.test/route-b.php", none), null);
+  const down = (async () => Response.json({ code: "unavailable" }, { status: 502 })) as typeof fetch;
+  await assert.rejects(() => appleRelayRoute(options, "https://example.test/route-c.php", down), AppleRelayError);
+  await assert.rejects(() => appleRelayRoute(options, null), AppleRelayError);
+});
+
+test("a leg Apple cannot route is asked of the open router, once", async () => {
+  const { fetchStreetRoute, OPEN_ROUTER_ORIGIN } = await import("../lib/street-route-client.ts");
+  const seen: string[] = [];
+  const fetcher = (async (input: RequestInfo | URL) => {
+    const url = new URL(String(input));
+    seen.push(url.origin === OPEN_ROUTER_ORIGIN ? `osm ${url.pathname.split("/")[1]}` : `apple ${url.searchParams.get("mode")}`);
+    if (url.origin !== OPEN_ROUTER_ORIGIN) return Response.json({ minutes: null, distanceMeters: null, path: [] });
+    // GeoJSON order: longitude first.
+    assert.match(url.pathname, /\/139\.74269,35\.69396;139\.75210,35\.68250$/);
+    return Response.json({ code: "Ok", routes: [{ duration: 2520, geometry: { coordinates: [[139.74269, 35.69396], [139.75, 35.69], [139.7521, 35.6825]] } }] });
+  }) as typeof fetch;
+  const options = { origin: { latitude: 35.69396, longitude: 139.74269 }, destination: { latitude: 35.6825, longitude: 139.7521 }, mode: "walk" as const };
+  const dependencies = { relayUrl: "https://example.test/street-a.php", fetcher };
+  const route = await fetchStreetRoute(options, dependencies);
+  assert.equal(route?.source, "osm");
+  assert.equal(route?.minutes, 42);
+  assert.deepEqual(route?.path[1], { latitude: 35.69, longitude: 139.75 });
+  await fetchStreetRoute(options, dependencies);
+  assert.deepEqual(seen, ["apple walk", "osm routed-foot"]);
+});
+
+test("with no relay the open router draws the road, without a drive time to plan with", async () => {
+  const { fetchStreetRoute } = await import("../lib/street-route-client.ts");
+  const fetcher = (async (input: RequestInfo | URL) => {
+    assert.match(String(input), /routed-car\/route\/v1\/driving/);
+    return Response.json({ code: "Ok", routes: [{ duration: 600, geometry: { coordinates: [[2, 1], [2.01, 1.01]] } }] });
+  }) as typeof fetch;
+  const route = await fetchStreetRoute({ origin: { latitude: 1, longitude: 2 }, destination: { latitude: 1.01, longitude: 2.01 }, mode: "drive" }, { relayUrl: null, fetcher });
+  assert.equal(route?.minutes, null);
+  assert.equal(route?.path.length, 2);
+});
+
+test("a leg nobody can route is a null, never an error", async () => {
+  const { fetchStreetRoute } = await import("../lib/street-route-client.ts");
+  const noRoute = (async () => Response.json({ code: "NoRoute" }, { status: 400 })) as typeof fetch;
+  assert.equal(await fetchStreetRoute({ origin: { latitude: 3, longitude: 4 }, destination: { latitude: 3.1, longitude: 4.1 }, mode: "walk" }, { relayUrl: null, fetcher: noRoute }), null);
+  const offline = (async () => { throw new TypeError("offline"); }) as typeof fetch;
+  assert.equal(await fetchStreetRoute({ origin: { latitude: 5, longitude: 6 }, destination: { latitude: 5.1, longitude: 6.1 }, mode: "walk" }, { relayUrl: "https://example.test/street-b.php", fetcher: offline }), null);
+});

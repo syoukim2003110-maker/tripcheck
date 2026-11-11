@@ -30,7 +30,12 @@ const BROWSER_TRANSPORT = [
   "lib/place-resolution-client.ts",
   "lib/place-suggestion-client.ts",
   "lib/product-analytics.ts",
+  // The booklet's rail map: a static file of this site, not a provider.
+  "lib/rail-network-client.ts",
   "lib/route-recommendations-client.ts",
+  // The booklet's street paths: Apple through the relay, else the
+  // OpenStreetMap community router, asked by the page itself.
+  "lib/street-route-client.ts",
   "lib/weather-client.ts",
 ];
 

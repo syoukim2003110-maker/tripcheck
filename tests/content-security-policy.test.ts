@@ -44,8 +44,14 @@ test("no fetch directive falls back to a bare scheme", () => {
 
 test("only named map providers are allowed, on the directives they need", () => {
   const remote = (name: string) => sourceList(name).filter((value) => value.startsWith("http"));
+  // Sight photos are Wikimedia Commons thumbnails; nothing else may be added
+  // to img-src without a reason written here.
+  // One wildcard on Wikimedia's own domain: the thumbnail host has moved
+  // (upload → thumb) and a host-by-host list broke every photo when it did.
+  const photoHosts = ["https://*.wikimedia.org"];
+  assert.deepEqual(remote("img-src").filter((value) => !/google|gstatic|ggpht/.test(value)), photoHosts);
   for (const name of ["script-src", "img-src", "frame-src"]) {
-    for (const value of remote(name)) {
+    for (const value of remote(name).filter((entry) => !photoHosts.includes(entry))) {
       assert.match(
         value,
         /^https:\/\/(\*\.)?(googleapis|gstatic|google|googleusercontent|ggpht)\.com$|^https:\/\/(www|maps)\.google\.com$/,
@@ -63,6 +69,7 @@ test("only named map providers are allowed, on the directives they need", () => 
     "https://query.wikidata.org",
     "https://photon.komoot.io",
     "https://nominatim.openstreetmap.org",
+    "https://routing.openstreetmap.de",
     "https://api.open-meteo.com",
     "https://date.nager.at",
   ]);

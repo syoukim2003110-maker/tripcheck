@@ -1,0 +1,857 @@
+"use client";
+
+import Link from "next/link";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+import { fetchAppleFoodCandidates } from "../../lib/apple-food";
+import { appleRelayClient } from "../../lib/apple-relay-client";
+import { defaultFoodDiscoveryQuery, type FoodCandidate } from "../../lib/google-food";
+import type { HotelCandidate } from "../../lib/google-hotels";
+import { requestHotelRecommendations } from "../../lib/hotel-recommendations-client";
+import { requestPlaceResolution } from "../../lib/place-resolution-client";
+import { filterDestinations, type PopularDestination, type PopularSight } from "../../lib/popular-sights";
+import { loadRailNetwork } from "../../lib/rail-network-client";
+import type { RailNetwork } from "../../lib/rail-router";
+import { fetchStreetRoute } from "../../lib/street-route-client";
+import { buildShioriPlan, type ShioriDay, type ShioriLeg, type ShioriMeal, type ShioriPace, type ShioriPlace, type ShioriPlan, type ShioriRoute } from "../../lib/shiori/plan";
+import {
+  MAX_DAYS,
+  MAX_PLACES,
+  decodeTrip,
+  durationText,
+  emptyTrip,
+  encodeTrip,
+  kindLabel,
+  photoCreditUrl,
+  photoUrl,
+  placeFromSight,
+  togglePlace,
+  withCity,
+  type ShioriTrip,
+} from "../../lib/shiori/state";
+import ShioriMap, { DAY_COLORS } from "./ShioriMap";
+
+type Locale = "ja" | "en";
+type Screen = "home" | "pick" | "plan";
+const STORAGE_KEY = "shiori-trip-v1";
+const FEATURED = ["tokyo", "kyoto", "osaka", "hongkong", "seoul", "taipei", "bangkok", "singapore", "paris", "london", "newyork", "honolulu"];
+
+const text = {
+  ja: {
+    tagline: "旅のしおりメーカー",
+    heroTitle: "行きたい場所を選ぶだけ。\n旅のしおりが、すぐできる。",
+    heroBody: "どの日にどこを、どの順番で、どうやって回るか。ホテルとごはんの候補まで、地図と一緒にまとめます。無料・登録なし。",
+    where: "どこに行く？",
+    wherePlaceholder: "行き先を入力（例：香港、京都、パリ）",
+    popular: "人気の行き先",
+    noCity: "この行き先はまだ準備中です。近い都市を選ぶか、別の名前で試してください。",
+    resume: "前回のしおりを開く",
+    back: "もどる",
+    pickTitle: (city: string) => `${city}で行きたい場所をタップ`,
+    pickHint: "あとから追加・削除できます。まずは気になるところを選んでください。",
+    days: "日数",
+    dayUnit: "日間",
+    pace: "ペース",
+    paces: { relaxed: "ゆったり", standard: "ふつう", packed: "しっかり" } as Record<ShioriPace, string>,
+    addOther: "一覧にない場所を追加",
+    addOtherPlaceholder: "場所の名前（例：〇〇カフェ、△△ホテル）",
+    add: "追加",
+    adding: "探しています…",
+    addFailed: "見つかりませんでした。正式な名前や地名を付けて試してください。",
+    addFull: `一度に組めるのは${MAX_PLACES}か所までです。`,
+    selected: (count: number) => `${count}か所を選択中`,
+    make: "しおりを作る",
+    needOne: "場所を1つ以上選んでください",
+    showMore: "もっと見る",
+    planTitle: (city: string, days: number) => `${city} ${days}日間のしおり`,
+    editPlaces: "場所を選び直す",
+    share: "リンクをコピー",
+    shared: "コピーしました",
+    print: "印刷",
+    dayTab: (index: number) => `${index + 1}日目`,
+    freeTab: "空き日",
+    dayMeta: (day: ShioriDay) => `${day.start}〜${day.end} ・ ${day.stops.length}か所${day.walkMinutes > 0 ? ` ・ 歩き約${day.walkMinutes}分` : ""}`,
+    late: "この日は予定が多めです。日数を増やすか、場所を減らすと楽になります。",
+    stay: "滞在",
+    shorter: "滞在を15分短く",
+    longer: "滞在を15分長く",
+    remove: "しおりから外す",
+    moveDay: "日を変える",
+    auto: "おまかせ",
+    walk: "徒歩",
+    rail: "電車",
+    transit: "電車・バス",
+    taxi: "タクシー",
+    about: "約",
+    minute: "分",
+    estimate: "目安",
+    openMaps: "地図アプリで行き方・時刻を見る",
+    walkTo: (minutes: number, station: string) => `徒歩${minutes}分で ${station}`,
+    walkFrom: (minutes: number, station: string) => `${station} から徒歩${minutes}分`,
+    ride: (stops: number, minutes: number) => `${stops}駅・約${minutes}分`,
+    change: "乗り換え",
+    fromHotel: "ホテルを出発",
+    toHotel: "ホテルへ戻る",
+    lunch: "昼ごはん",
+    dinner: "夜ごはん",
+    mealNear: (name: string) => `${name}の近く`,
+    showFood: "近くのお店を見る",
+    hideFood: "閉じる",
+    foodLoading: "近くのお店を探しています…",
+    foodNone: "近くのお店の情報を取得できませんでした。地図アプリで探せます。",
+    foodNote: "近い順です。評価や営業時間は地図アプリで確認してください。",
+    walkAbout: (minutes: number) => `徒歩約${minutes}分`,
+    ideasTitle: "時間に余裕があります。近くの人気スポット",
+    ideasAdd: "追加",
+    freeTitle: (count: number) => `あと${count}日、空いています`,
+    freeBody: "無理に広げず、必要な日数にまとめました。空いた日に行けそうな場所です。",
+    freeNone: "空いた日は自由行動にできます。",
+    leftOut: "入りきらなかった場所",
+    stayTitle: "泊まる場所",
+    stayBody: "全日程の移動がいちばん少なくなるエリアのホテルです。料金と空室は予約サイトで確認してください。",
+    stayLoading: "ホテルを探しています…",
+    stayNone: "ホテル候補を取得できませんでした。",
+    useHotel: "ここを拠点にする",
+    usingHotel: "拠点にしています",
+    clearHotel: "拠点を外す",
+    searchRakuten: "楽天トラベルで探す",
+    searchBooking: "Booking.comで探す",
+    hotelDistance: (meters: number) => `各日の行き先まで平均 約${meters >= 1000 ? `${(meters / 1000).toFixed(1)}km` : `${Math.round(meters / 10) * 10}m`}`,
+    note: "所要時間は目安です。電車の区間は駅と路線のつながりから計算しており、時刻表ではありません。出発前に地図アプリで確認してください。",
+    credits: "地図 © OpenStreetMap contributors / OpenFreeMap ・ スポットと駅のデータ Wikidata ・ 写真 Wikimedia Commons",
+    photo: "写真",
+    mapLabel: "旅程の地図",
+    legendRail: "電車（駅をつないだ線）",
+    legendWalk: "徒歩・車（実際の道）",
+    legendOther: "道順を取得できなかった区間（直線）",
+    newTrip: "新しいしおり",
+    privacy: "プライバシー",
+    classic: "以前の画面",
+  },
+  en: {
+    tagline: "Trip booklet maker",
+    heroTitle: "Pick the places.\nGet a day-by-day trip booklet.",
+    heroBody: "Which day, what order, how to get between them — with hotel and meal ideas, on a map. Free, no account.",
+    where: "Where to?",
+    wherePlaceholder: "Type a destination (e.g. Kyoto, Paris)",
+    popular: "Popular destinations",
+    noCity: "This destination is not ready yet. Try a nearby city or another spelling.",
+    resume: "Open your last booklet",
+    back: "Back",
+    pickTitle: (city: string) => `Tap the places you want in ${city}`,
+    pickHint: "You can add or remove places later.",
+    days: "Days",
+    dayUnit: "days",
+    pace: "Pace",
+    paces: { relaxed: "Relaxed", standard: "Standard", packed: "Packed" } as Record<ShioriPace, string>,
+    addOther: "Add a place that is not listed",
+    addOtherPlaceholder: "Place name",
+    add: "Add",
+    adding: "Searching…",
+    addFailed: "Not found. Try the full name or add the area.",
+    addFull: `One trip holds up to ${MAX_PLACES} places.`,
+    selected: (count: number) => `${count} selected`,
+    make: "Make my booklet",
+    needOne: "Pick at least one place",
+    showMore: "Show more",
+    planTitle: (city: string, days: number) => `${city}: ${days}-day booklet`,
+    editPlaces: "Change places",
+    share: "Copy link",
+    shared: "Copied",
+    print: "Print",
+    dayTab: (index: number) => `Day ${index + 1}`,
+    freeTab: "Free",
+    dayMeta: (day: ShioriDay) => `${day.start}–${day.end} · ${day.stops.length} places${day.walkMinutes > 0 ? ` · ~${day.walkMinutes} min on foot` : ""}`,
+    late: "This day is full. Add a day or drop a place to ease it.",
+    stay: "Stay",
+    shorter: "15 minutes shorter",
+    longer: "15 minutes longer",
+    remove: "Remove",
+    moveDay: "Move to",
+    auto: "Auto",
+    walk: "Walk",
+    rail: "Train",
+    transit: "Transit",
+    taxi: "Taxi",
+    about: "~",
+    minute: " min",
+    estimate: "estimate",
+    openMaps: "Open directions and times in a maps app",
+    walkTo: (minutes: number, station: string) => `${minutes} min walk to ${station}`,
+    walkFrom: (minutes: number, station: string) => `${minutes} min walk from ${station}`,
+    ride: (stops: number, minutes: number) => `${stops} stops · ~${minutes} min`,
+    change: "Change",
+    fromHotel: "Leave the hotel",
+    toHotel: "Back to the hotel",
+    lunch: "Lunch",
+    dinner: "Dinner",
+    mealNear: (name: string) => `near ${name}`,
+    showFood: "Places to eat nearby",
+    hideFood: "Hide",
+    foodLoading: "Looking nearby…",
+    foodNone: "Could not load places nearby. A maps app can.",
+    foodNote: "Nearest first. Check ratings and hours in a maps app.",
+    walkAbout: (minutes: number) => `~${minutes} min walk`,
+    ideasTitle: "There is time left. Well-known places nearby",
+    ideasAdd: "Add",
+    freeTitle: (count: number) => `${count} more day${count === 1 ? "" : "s"} free`,
+    freeBody: "The list fits in fewer days, so it was not stretched. Ideas for the free time:",
+    freeNone: "Keep the spare days open.",
+    leftOut: "Did not fit",
+    stayTitle: "Where to stay",
+    stayBody: "Hotels in the area that keeps the whole trip's travel shortest. Check price and availability on a booking site.",
+    stayLoading: "Looking for hotels…",
+    stayNone: "Could not load hotels.",
+    useHotel: "Use as my base",
+    usingHotel: "Your base",
+    clearHotel: "Clear base",
+    searchRakuten: "Rakuten Travel",
+    searchBooking: "Booking.com",
+    hotelDistance: (meters: number) => `~${meters >= 1000 ? `${(meters / 1000).toFixed(1)} km` : `${Math.round(meters / 10) * 10} m`} on average from each day's places`,
+    note: "Durations are estimates. Train legs come from how stations and lines connect, not from a timetable. Check a maps app before you go.",
+    credits: "Map © OpenStreetMap contributors / OpenFreeMap · Sights and stations: Wikidata · Photos: Wikimedia Commons",
+    photo: "Photo",
+    mapLabel: "Trip map",
+    legendRail: "Train (through its stations)",
+    legendWalk: "On foot or by road (the actual streets)",
+    legendOther: "No route found (straight line)",
+    newTrip: "New booklet",
+    privacy: "Privacy",
+    classic: "Previous version",
+  },
+};
+
+function Icon({ name }: { name: "walk" | "rail" | "bus" | "taxi" | "meal" | "bed" | "check" | "plus" | "pin" }) {
+  const paths: Record<string, string> = {
+    walk: "M13 4.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0ZM9 9l3-1.5 2.5 2.5 2.5 1M12 7.5 11 13l2.5 3 .5 5M11 13l-2 3-2.5 4",
+    rail: "M7 4h10a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2ZM5 11h14M8.5 14.5h.01M15.5 14.5h.01M8 17l-2 3M16 17l2 3",
+    bus: "M6 5h12a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1ZM5 12h14M8 15h.01M16 15h.01M7 17v2M17 17v2",
+    taxi: "M5 16v-3l1.5-4h11L19 13v3M5 16h14M5 16v2M19 16v2M7.5 13.5h.01M16.5 13.5h.01M10 9V7h4v2",
+    meal: "M7 3v7a2 2 0 0 0 2 2v9M11 3v7M9 3v7M16 3c-1.5 2-2 4-2 7h2v11",
+    bed: "M4 18v-9M4 13h16v5M20 13v-1a3 3 0 0 0-3-3h-6v4M7.5 11.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z",
+    check: "M5 12.5 10 17.5 19 7",
+    plus: "M12 5v14M5 12h14",
+    pin: "M12 21s6.5-5.7 6.5-10.8a6.5 6.5 0 1 0-13 0C5.500 15.3 12 21 12 21ZM12 12.5a2.3 2.3 0 1 0 0-4.6 2.3 2.3 0 0 0 0 4.6Z",
+  };
+  return (
+    <svg aria-hidden="true" className="shiori-icon" fill="none" height="18" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" viewBox="0 0 24 24" width="18">
+      <path d={paths[name]} />
+    </svg>
+  );
+}
+
+function Photo({ img, alt, width }: { img?: string; alt: string; width: number }) {
+  const url = photoUrl(img, width);
+  // A photo that will not load is no photo: the card shows its plain tile,
+  // never the browser's broken-image mark.
+  const [failed, setFailed] = useState(false);
+  if (!url || failed) return <span aria-hidden="true" className="shiori-photo is-empty"><Icon name="pin" /></span>;
+  // Commons thumbnails are remote and of unknown size; next/image cannot
+  // optimise them on a static host.
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img alt={alt} className="shiori-photo" decoding="async" loading="lazy" onError={() => setFailed(true)} src={url} />;
+}
+
+function LegCard({ leg, locale, heading }: { leg: ShioriLeg; locale: Locale; heading?: string }) {
+  const t = text[locale];
+  const label = leg.mode === "walk" ? t.walk : leg.mode === "rail" ? t.rail : leg.mode === "taxi" ? t.taxi : t.transit;
+  const icon = leg.mode === "walk" ? "walk" : leg.mode === "rail" ? "rail" : leg.mode === "taxi" ? "taxi" : "bus";
+  return (
+    <div className={`shiori-leg is-${leg.mode}`}>
+      <div className="shiori-leg-head">
+        <Icon name={icon} />
+        <span>
+          {heading ? <b>{heading} · </b> : null}
+          {label} {t.about}{leg.minutes}{t.minute}
+          {leg.mode === "transit" || leg.mode === "taxi" ? <small>（{t.estimate}）</small> : null}
+        </span>
+      </div>
+      {leg.rail ? (
+        <ol className="shiori-rail">
+          <li className="is-walk">{t.walkTo(leg.rail.walkToMinutes, leg.rail.walkToStation)}</li>
+          {leg.rail.rides.map((ride, index) => (
+            <li key={`${ride.from}-${ride.to}-${index}`}>
+              {index > 0 ? <em>{t.change}</em> : null}
+              <b>{ride.line ?? t.rail}</b>
+              <span>{ride.from} → {ride.to}</span>
+              <small>{t.ride(ride.stops, ride.minutes)}</small>
+            </li>
+          ))}
+          <li className="is-walk">{t.walkFrom(leg.rail.walkFromMinutes, leg.rail.walkFromStation)}</li>
+        </ol>
+      ) : null}
+      {leg.mode !== "walk" || leg.minutes >= 12 ? (
+        <a className="shiori-leg-link" href={leg.mapsUrl} rel="noreferrer" target="_blank">{t.openMaps} ↗</a>
+      ) : null}
+    </div>
+  );
+}
+
+function MealRow({ meal, locale }: { meal: ShioriMeal; locale: Locale }) {
+  const t = text[locale];
+  const [state, setState] = useState<"closed" | "loading" | "ready" | "failed">("closed");
+  const [candidates, setCandidates] = useState<FoodCandidate[]>([]);
+  const relay = useMemo(() => appleRelayClient(), []);
+  const open = async () => {
+    if (state !== "closed") { setState("closed"); return; }
+    if (!relay) { setState("failed"); return; }
+    setState("loading");
+    try {
+      const found = await fetchAppleFoodCandidates({
+        latitude: meal.near.latitude,
+        longitude: meal.near.longitude,
+        area: meal.nearName.slice(0, 80) || "meal",
+        mealKind: meal.kind,
+        query: defaultFoodDiscoveryQuery(locale),
+        languageCode: locale,
+        destination: "auto",
+      }, relay);
+      setCandidates(found.slice(0, 5));
+      setState(found.length > 0 ? "ready" : "failed");
+    } catch {
+      setState("failed");
+    }
+  };
+  const mapsSearch = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${locale === "ja" ? "レストラン" : "restaurants"} ${meal.near.latitude.toFixed(5)},${meal.near.longitude.toFixed(5)}`)}`;
+  return (
+    <div className="shiori-meal">
+      <div className="shiori-meal-head">
+        <Icon name="meal" />
+        <span>
+          <b>{meal.kind === "lunch" ? t.lunch : t.dinner}</b> {meal.start}{meal.end ? `–${meal.end}` : locale === "ja" ? "ごろ" : ""}
+          <small> ・ {t.mealNear(meal.nearName)}</small>
+        </span>
+        <button onClick={() => void open()} type="button">{state === "closed" ? t.showFood : t.hideFood}</button>
+      </div>
+      {state === "loading" ? <p className="shiori-quiet">{t.foodLoading}</p> : null}
+      {state === "failed" ? <p className="shiori-quiet">{t.foodNone} <a href={mapsSearch} rel="noreferrer" target="_blank">Google Maps ↗</a></p> : null}
+      {state === "ready" ? (
+        <>
+          <ul className="shiori-food">
+            {candidates.map((candidate) => (
+              <li key={candidate.id}>
+                <a href={candidate.googleMapsUrl} rel="noreferrer" target="_blank">
+                  <b>{candidate.name}</b>
+                  <small>{candidate.type}{typeof candidate.distanceMeters === "number" ? ` ・ ${t.walkAbout(Math.max(1, Math.round(candidate.distanceMeters * 1.3 / 75)))}` : ""}</small>
+                </a>
+              </li>
+            ))}
+          </ul>
+          <p className="shiori-quiet">{t.foodNote}</p>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+function StayNear({ plan, trip, locale, onHotel }: { plan: ShioriPlan; trip: ShioriTrip; locale: Locale; onHotel: (hotel: ShioriTrip["hotel"]) => void }) {
+  const t = text[locale];
+  // One lookup per trip shape: a re-plan that leaves the centre where it was
+  // must not spend another request. The answer is stored with the centre it
+  // was asked for, so "loading" is simply "no answer for this centre yet".
+  const key = plan.stayNear ? `${plan.stayNear.latitude.toFixed(2)},${plan.stayNear.longitude.toFixed(2)}` : "";
+  const available = useMemo(() => appleRelayClient() !== null, []);
+  const [answer, setAnswer] = useState<{ key: string; hotels: HotelCandidate[] } | null>(null);
+  const hotels = answer?.key === key ? answer.hotels : [];
+  const state: "loading" | "ready" | "failed" = !available ? "failed" : answer?.key !== key ? "loading" : hotels.length > 0 ? "ready" : "failed";
+  useEffect(() => {
+    if (!plan.stayNear || !available) return;
+    let cancelled = false;
+    requestHotelRecommendations({
+      latitude: plan.stayNear.latitude,
+      longitude: plan.stayNear.longitude,
+      area: trip.cityName.slice(0, 80) || "trip",
+      routePoints: plan.stayNear.routePoints.slice(0, 10),
+    }, locale).then((response) => {
+      if (!cancelled) setAnswer({ key, hotels: response.candidates.slice(0, 4) });
+    }).catch(() => { if (!cancelled) setAnswer({ key, hotels: [] }); });
+    return () => { cancelled = true; };
+    // Keyed on the rounded centre; the other inputs follow from it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, locale]);
+  if (!plan.stayNear) return null;
+  return (
+    <section className="shiori-section">
+      <h2><Icon name="bed" /> {t.stayTitle}</h2>
+      <p className="shiori-quiet">{t.stayBody}</p>
+      {state === "loading" ? <p className="shiori-quiet">{t.stayLoading}</p> : null}
+      {state === "failed" ? <p className="shiori-quiet">{t.stayNone}</p> : null}
+      {state === "ready" ? (
+        <ul className="shiori-hotels">
+          {hotels.map((hotel) => {
+            const using = trip.hotel?.name === hotel.name;
+            const query = encodeURIComponent(hotel.name);
+            return (
+              <li className={using ? "is-using" : ""} key={hotel.id}>
+                <div>
+                  <b>{hotel.name}</b>
+                  <small>{t.hotelDistance(hotel.routeAverageDistanceMeters)}</small>
+                </div>
+                <div className="shiori-hotel-actions">
+                  {using
+                    ? <button onClick={() => onHotel(null)} type="button">{t.clearHotel}</button>
+                    : <button className="is-primary" onClick={() => onHotel({ name: hotel.name, lat: hotel.latitude, lon: hotel.longitude })} type="button">{t.useHotel}</button>}
+                  {locale === "ja" ? <a href={`https://kw.travel.rakuten.co.jp/keyword/Search.do?f_query=${query}`} rel="noreferrer" target="_blank">{t.searchRakuten} ↗</a> : null}
+                  <a href={`https://www.booking.com/searchresults.html?ss=${query}`} rel="noreferrer" target="_blank">{t.searchBooking} ↗</a>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+    </section>
+  );
+}
+
+export default function ShioriApp({ locale }: { locale: Locale }) {
+  const t = text[locale];
+  const [cities, setCities] = useState<PopularDestination[]>([]);
+  // Null until the list of cities with a station map has been read.
+  const [railCities, setRailCities] = useState<string[] | null>(null);
+  const [trip, setTrip] = useState<ShioriTrip>(emptyTrip);
+  const [screen, setScreen] = useState<Screen>("home");
+  const [saved, setSaved] = useState<ShioriTrip | null>(null);
+  const [query, setQuery] = useState("");
+  const [railState, setRailState] = useState<{ cityId: string; network: RailNetwork | null } | null>(null);
+  const [selectedDay, setSelectedDay] = useState(0);
+  const [focus, setFocus] = useState<{ placeId: string; token: number } | null>(null);
+  const [openStop, setOpenStop] = useState<string | null>(null);
+  const [showAll, setShowAll] = useState(false);
+  const [other, setOther] = useState("");
+  const [otherState, setOtherState] = useState<"idle" | "busy" | "failed" | "full">("idle");
+  const [copied, setCopied] = useState(false);
+  // Street paths looked up so far, keyed "walk|<leg>" / "drive|<leg>". Null
+  // means the map service had no answer; it is not asked twice.
+  const [routes, setRoutes] = useState<ReadonlyMap<string, ShioriRoute | null>>(() => new Map());
+  const askedRoutes = useRef(new Set<string>());
+  const hydrated = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void import("../../lib/popular-sights-data.json").then((module) => {
+      if (!cancelled) setCities((module.default as { cities: PopularDestination[] }).cities);
+    }).catch(() => undefined);
+    void import("../../lib/rail-network-index.json").then((module) => {
+      if (!cancelled) setRailCities((module.default as { cities: string[] }).cities);
+    }).catch(() => { if (!cancelled) setRailCities([]); });
+    return () => { cancelled = true; };
+  }, []);
+
+  // A shared link wins over the device's last trip; either opens the booklet.
+  // Reading the address bar and localStorage is a one-time sync with the
+  // browser that cannot happen during server render.
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    const fromHash = window.location.hash.startsWith("#s=") ? decodeTrip(window.location.hash.slice(3)) : null;
+    let stored: ShioriTrip | null = null;
+    try {
+      const raw = window.localStorage.getItem(STORAGE_KEY);
+      stored = raw ? decodeTrip(raw) : null;
+    } catch {
+      stored = null;
+    }
+    if (fromHash && fromHash.places.length > 0) {
+      setTrip(fromHash);
+      setScreen("plan");
+    } else if (stored && stored.places.length > 0) {
+      setSaved(stored);
+    }
+    hydrated.current = true;
+  }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  useEffect(() => {
+    if (!hydrated.current || trip.places.length === 0) return;
+    try {
+      window.localStorage.setItem(STORAGE_KEY, encodeTrip(trip));
+    } catch {
+      // Private mode: the booklet still works for this visit.
+    }
+  }, [trip]);
+
+  useEffect(() => {
+    const cityId = trip.cityId;
+    if (!cityId || !railCities?.includes(cityId)) return;
+    let cancelled = false;
+    void loadRailNetwork(cityId).then((network) => { if (!cancelled) setRailState({ cityId, network }); });
+    return () => { cancelled = true; };
+  }, [trip.cityId, railCities]);
+  // A network loaded for another city is not this trip's network.
+  const rail = railState && railState.cityId === trip.cityId ? railState.network : null;
+  // Until the station map is in (or known not to exist), a leg that will be
+  // a train ride still looks like a road leg; nothing is looked up for it.
+  const railSettled = railCities !== null && (!trip.cityId || !railCities.includes(trip.cityId) || railState?.cityId === trip.cityId);
+
+  const city = cities.find((candidate) => candidate.id === trip.cityId) ?? null;
+  const matches = useMemo(() => filterDestinations(cities, query, FEATURED), [cities, query]);
+  const plan = useMemo(
+    () => screen === "plan" ? buildShioriPlan({ places: trip.places, days: trip.days, pace: trip.pace, hotel: trip.hotel, locale }, { rail, cities, routes }) : null,
+    [screen, trip, rail, cities, locale, routes],
+  );
+
+  // Every leg that is not a train ride gets the way along the streets, so
+  // the map shows where one actually walks or drives and the clock uses the
+  // real walking time. Each leg is asked about once per visit, and a batch
+  // of answers arrives together: one redraw, not twenty.
+  useEffect(() => {
+    if (!plan || !railSettled) return;
+    const wanted: Array<[string, ShioriLeg]> = [];
+    for (const day of plan.days) {
+      for (const leg of [day.fromHotel, ...day.legs, day.toHotel]) {
+        if (!leg || leg.hasPath || leg.mode === "rail") continue;
+        const routeKey = `${leg.mode === "walk" ? "walk" : "drive"}|${leg.key}`;
+        if (askedRoutes.current.has(routeKey)) continue;
+        askedRoutes.current.add(routeKey);
+        wanted.push([routeKey, leg]);
+      }
+    }
+    if (wanted.length === 0) return;
+    const found = new Map<string, ShioriRoute | null>();
+    const worker = async () => {
+      for (let next = wanted.shift(); next; next = wanted.shift()) {
+        const [routeKey, leg] = next;
+        const route = await fetchStreetRoute({ origin: leg.from, destination: leg.to, mode: routeKey.startsWith("walk|") ? "walk" : "drive" });
+        found.set(routeKey, route ? { minutes: route.minutes, path: route.path } : null);
+      }
+    };
+    void Promise.all([worker(), worker(), worker(), worker()]).then(() => {
+      setRoutes((current) => new Map([...current, ...found]));
+    });
+  }, [plan, railSettled]);
+  // A re-plan can leave fewer days than the one being read.
+  const activeDay = Math.min(selectedDay, Math.max(0, (plan?.days.length ?? 1) - 1));
+
+  const update = useCallback((change: (current: ShioriTrip) => ShioriTrip) => setTrip(change), []);
+  const chooseCity = (destination: PopularDestination) => {
+    update((current) => withCity(current, destination, locale));
+    setQuery("");
+    setShowAll(false);
+    setScreen("pick");
+    window.scrollTo({ top: 0 });
+  };
+  const addSight = (sight: PopularSight) => update((current) => togglePlace(current, placeFromSight(sight, locale)));
+
+  const addOther = async () => {
+    const name = other.trim();
+    if (!name || otherState === "busy") return;
+    if (trip.places.length >= MAX_PLACES) { setOtherState("full"); return; }
+    setOtherState("busy");
+    try {
+      // The places already chosen go along so the lookup knows which city
+      // this is; only the new line is read back.
+      const raw = [...trip.places.map((place) => place.name), name].join("\n");
+      const result = await requestPlaceResolution(raw, "", locale);
+      const hit = result.places.find((place) => place.input === name)
+        ?? result.ambiguous.find((entry) => entry.input === name)?.candidates[0];
+      if (!hit) { setOtherState("failed"); return; }
+      update((current) => togglePlace(current, {
+        id: hit.id,
+        name: hit.name,
+        lat: hit.latitude,
+        lon: hit.longitude,
+        stayMinutes: Math.min(240, Math.max(30, hit.planningDurationMinutes)),
+        ...(hit.placeTypes?.[0] ? { kind: hit.placeTypes[0].replace(/_/g, " ") } : {}),
+      }));
+      setOther("");
+      setOtherState("idle");
+    } catch {
+      setOtherState("failed");
+    }
+  };
+
+  const share = async () => {
+    const link = `${window.location.origin}${window.location.pathname}#s=${encodeTrip(trip)}`;
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2200);
+    } catch {
+      window.prompt(t.share, link);
+    }
+  };
+
+  const header = (
+    <header className="shiori-top">
+      <button className="shiori-brand" onClick={() => { setScreen("home"); window.scrollTo({ top: 0 }); }} type="button">
+        <b>TripCheck</b>
+        <small>{t.tagline}</small>
+      </button>
+      <nav className="shiori-lang">
+        <Link aria-current={locale === "ja" ? "true" : undefined} href="/ja" onClick={() => { try { window.localStorage.setItem("tripcheck-locale", "ja"); } catch { /* ignore */ } }}>日本語</Link>
+        <Link aria-current={locale === "en" ? "true" : undefined} href="/" onClick={() => { try { window.localStorage.setItem("tripcheck-locale", "en"); } catch { /* ignore */ } }}>EN</Link>
+      </nav>
+    </header>
+  );
+
+  if (screen === "home") {
+    return (
+      <main className="shiori">
+        {header}
+        <section className="shiori-hero">
+          <h1>{t.heroTitle}</h1>
+          <p>{t.heroBody}</p>
+          <label className="shiori-search">
+            <span>{t.where}</span>
+            <input autoComplete="off" onChange={(event) => setQuery(event.target.value)} placeholder={t.wherePlaceholder} type="search" value={query} />
+          </label>
+          {saved ? (
+            <button className="shiori-resume" onClick={() => { setTrip(saved); setScreen("plan"); }} type="button">
+              {t.resume}：{saved.cityName || saved.places[0]?.name} ・ {saved.places.length}
+            </button>
+          ) : null}
+        </section>
+        <section className="shiori-cities">
+          {query ? null : <h2>{t.popular}</h2>}
+          <div className="shiori-city-grid">
+            {matches.map((destination) => (
+              <button className="shiori-city" key={destination.id} onClick={() => chooseCity(destination)} type="button">
+                <Photo alt="" img={destination.sights.find((sight) => sight.img)?.img} width={480} />
+                <span>{locale === "ja" ? destination.ja : destination.en}</span>
+              </button>
+            ))}
+          </div>
+          {cities.length > 0 && matches.length === 0 ? <p className="shiori-quiet">{t.noCity}</p> : null}
+        </section>
+        <footer className="shiori-foot">
+          <p>{t.credits}</p>
+          <p><Link href="/privacy">{t.privacy}</Link> ・ <Link href={locale === "ja" ? "/classic/ja" : "/classic"}>{t.classic}</Link></p>
+        </footer>
+      </main>
+    );
+  }
+
+  if (screen === "pick") {
+    const sights = city ? (showAll ? city.sights : city.sights.slice(0, 16)) : [];
+    const chosen = new Set(trip.places.map((place) => place.id));
+    const extras = trip.places.filter((place) => !city?.sights.some((sight) => `wikidata-${sight.q}` === place.id));
+    return (
+      <main className="shiori">
+        {header}
+        <section className="shiori-pick">
+          <button className="shiori-back" onClick={() => setScreen("home")} type="button">← {t.back}</button>
+          <h1>{t.pickTitle(trip.cityName)}</h1>
+          <p className="shiori-quiet">{t.pickHint}</p>
+          <div className="shiori-controls">
+            <label>
+              <span>{t.days}</span>
+              <select onChange={(event) => update((current) => ({ ...current, days: Number(event.target.value) }))} value={trip.days}>
+                {Array.from({ length: MAX_DAYS }, (_, index) => index + 1).map((days) => <option key={days} value={days}>{days}{t.dayUnit}</option>)}
+              </select>
+            </label>
+            <div className="shiori-pace" role="group" aria-label={t.pace}>
+              {(["relaxed", "standard", "packed"] as const).map((pace) => (
+                <button aria-pressed={trip.pace === pace} key={pace} onClick={() => update((current) => ({ ...current, pace }))} type="button">{t.paces[pace]}</button>
+              ))}
+            </div>
+          </div>
+          <div className="shiori-sights">
+            {sights.map((sight) => {
+              const id = `wikidata-${sight.q}`;
+              const isChosen = chosen.has(id);
+              return (
+                <button aria-pressed={isChosen} className={`shiori-sight${isChosen ? " is-chosen" : ""}`} key={sight.q} onClick={() => addSight(sight)} type="button">
+                  <Photo alt="" img={sight.img} width={360} />
+                  <span className="shiori-sight-check"><Icon name={isChosen ? "check" : "plus"} /></span>
+                  <span className="shiori-sight-text">
+                    <b>{locale === "ja" ? sight.ja : sight.en}</b>
+                    <small>{kindLabel(sight.kind, locale)}{locale === "ja" && sight.desc ? ` ・ ${sight.desc}` : ""}</small>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          {city && !showAll && city.sights.length > 16 ? (
+            <button className="shiori-more" onClick={() => setShowAll(true)} type="button">{t.showMore}（{city.sights.length - 16}）</button>
+          ) : null}
+          <form className="shiori-other" onSubmit={(event) => { event.preventDefault(); void addOther(); }}>
+            <label htmlFor="shiori-other">{t.addOther}</label>
+            <div>
+              <input id="shiori-other" onChange={(event) => { setOther(event.target.value); setOtherState("idle"); }} placeholder={t.addOtherPlaceholder} value={other} />
+              <button disabled={otherState === "busy" || !other.trim()} type="submit">{otherState === "busy" ? t.adding : t.add}</button>
+            </div>
+            {otherState === "failed" ? <p className="shiori-warn" role="alert">{t.addFailed}</p> : null}
+            {otherState === "full" ? <p className="shiori-warn" role="alert">{t.addFull}</p> : null}
+            {extras.length > 0 ? (
+              <ul className="shiori-chips">
+                {extras.map((place) => (
+                  <li key={place.id}><button onClick={() => update((current) => togglePlace(current, place))} type="button">{place.name} ×</button></li>
+                ))}
+              </ul>
+            ) : null}
+          </form>
+        </section>
+        <div className="shiori-bar">
+          <span>{trip.places.length > 0 ? t.selected(trip.places.length) : t.needOne}</span>
+          <button disabled={trip.places.length === 0} onClick={() => { setSelectedDay(0); setScreen("plan"); window.scrollTo({ top: 0 }); }} type="button">{t.make} →</button>
+        </div>
+      </main>
+    );
+  }
+
+  const day = plan?.days[activeDay] ?? null;
+  const usedDays = plan?.days.length ?? 0;
+  const setStay = (place: ShioriPlace, delta: number) => update((current) => ({
+    ...current,
+    places: current.places.map((entry) => entry.id === place.id ? { ...entry, stayMinutes: Math.min(720, Math.max(15, entry.stayMinutes + delta)) } : entry),
+  }));
+  const setDay = (place: ShioriPlace, value: number | null) => update((current) => ({
+    ...current,
+    places: current.places.map((entry) => entry.id === place.id ? { ...entry, day: value } : entry),
+  }));
+
+  return (
+    <main className="shiori is-plan">
+      {header}
+      <div className="shiori-plan">
+        <div className="shiori-plan-main">
+          <div className="shiori-plan-head">
+            <h1>{t.planTitle(trip.cityName || trip.places[0]?.name || "", trip.days)}</h1>
+            <div className="shiori-plan-actions">
+              <button onClick={() => setScreen(city ? "pick" : "home")} type="button">{t.editPlaces}</button>
+              <button onClick={() => void share()} type="button">{copied ? t.shared : t.share}</button>
+              <button onClick={() => window.print()} type="button">{t.print}</button>
+            </div>
+            <div className="shiori-controls">
+              <label>
+                <span>{t.days}</span>
+                <select onChange={(event) => update((current) => ({ ...current, days: Number(event.target.value) }))} value={trip.days}>
+                  {Array.from({ length: MAX_DAYS }, (_, index) => index + 1).map((days) => <option key={days} value={days}>{days}{t.dayUnit}</option>)}
+                </select>
+              </label>
+              <div className="shiori-pace" role="group" aria-label={t.pace}>
+                {(["relaxed", "standard", "packed"] as const).map((pace) => (
+                  <button aria-pressed={trip.pace === pace} key={pace} onClick={() => update((current) => ({ ...current, pace }))} type="button">{t.paces[pace]}</button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="shiori-tabs" role="tablist">
+            {plan?.days.map((entry) => (
+              <button
+                aria-selected={entry.index === activeDay}
+                key={entry.index}
+                onClick={() => setSelectedDay(entry.index)}
+                role="tab"
+                style={{ ["--day" as string]: DAY_COLORS[entry.index % DAY_COLORS.length] }}
+                type="button"
+              >
+                {t.dayTab(entry.index)}
+              </button>
+            ))}
+            {plan && plan.freeDays > 0 ? <span className="shiori-tab-free">{t.freeTab} ×{plan.freeDays}</span> : null}
+          </div>
+
+          {day ? (
+            <section className="shiori-day" style={{ ["--day" as string]: DAY_COLORS[day.index % DAY_COLORS.length] }}>
+              <header>
+                <h2>{t.dayTab(day.index)} <span>{day.title}</span></h2>
+                <p>{t.dayMeta(day)}</p>
+                {day.runsLate ? <p className="shiori-warn">{t.late}</p> : null}
+              </header>
+              <ol className="shiori-timeline">
+                {day.fromHotel ? <li className="is-leg"><LegCard heading={t.fromHotel} leg={day.fromHotel} locale={locale} /></li> : null}
+                {day.stops.map((stop, index) => (
+                  <li key={stop.place.id}>
+                    <article className={`shiori-stop${openStop === stop.place.id ? " is-open" : ""}`}>
+                      <button
+                        className="shiori-stop-main"
+                        onClick={() => { setOpenStop(openStop === stop.place.id ? null : stop.place.id); setFocus({ placeId: stop.place.id, token: Date.now() }); }}
+                        type="button"
+                      >
+                        <span className="shiori-stop-number">{index + 1}</span>
+                        <span className="shiori-stop-text">
+                          <small>{stop.arrive}–{stop.leave}</small>
+                          <b>{stop.place.name}</b>
+                          <small>{kindLabel(stop.place.kind, locale)} ・ {t.stay}{durationText(stop.stayMinutes, locale)}</small>
+                        </span>
+                        <Photo alt="" img={stop.place.img} width={160} />
+                      </button>
+                      {openStop === stop.place.id ? (
+                        <div className="shiori-stop-edit">
+                          <div>
+                            <button aria-label={t.shorter} onClick={() => setStay(stop.place, -15)} type="button">−15{t.minute}</button>
+                            <span>{t.stay} {durationText(stop.place.stayMinutes, locale)}</span>
+                            <button aria-label={t.longer} onClick={() => setStay(stop.place, 15)} type="button">+15{t.minute}</button>
+                          </div>
+                          <label>
+                            <span>{t.moveDay}</span>
+                            <select onChange={(event) => setDay(stop.place, event.target.value ? Number(event.target.value) : null)} value={stop.place.day ?? ""}>
+                              <option value="">{t.auto}</option>
+                              {Array.from({ length: trip.days }, (_, dayIndex) => <option key={dayIndex} value={dayIndex + 1}>{t.dayTab(dayIndex)}</option>)}
+                            </select>
+                          </label>
+                          <button className="is-danger" onClick={() => update((current) => togglePlace(current, stop.place))} type="button">{t.remove}</button>
+                          {stop.place.img ? <a href={photoCreditUrl(stop.place.img)} rel="noreferrer" target="_blank">{t.photo}: Wikimedia Commons ↗</a> : null}
+                        </div>
+                      ) : null}
+                    </article>
+                    {day.meals.filter((meal) => meal.afterStop === index).map((meal) => <MealRow key={`${meal.kind}-${day.index}-${trip.places.length}`} locale={locale} meal={meal} />)}
+                    {day.legs[index] ? <LegCard leg={day.legs[index]} locale={locale} /> : null}
+                  </li>
+                ))}
+                {day.toHotel ? <li className="is-leg"><LegCard heading={t.toHotel} leg={day.toHotel} locale={locale} /></li> : null}
+              </ol>
+              {day.ideas.length > 0 ? (
+                <div className="shiori-ideas">
+                  <h3>{t.ideasTitle}</h3>
+                  <ul className="shiori-chips">
+                    {day.ideas.map((sight) => (
+                      <li key={sight.q}><button onClick={() => addSight(sight)} type="button">＋ {locale === "ja" ? sight.ja : sight.en}</button></li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </section>
+          ) : null}
+
+          {plan && plan.freeDays > 0 ? (
+            <section className="shiori-section">
+              <h2>{t.freeTitle(plan.freeDays)}</h2>
+              <p className="shiori-quiet">{plan.freeDayIdeas.length > 0 ? t.freeBody : t.freeNone}</p>
+              {plan.freeDayIdeas.length > 0 ? (
+                <ul className="shiori-chips">
+                  {plan.freeDayIdeas.map((sight) => (
+                    <li key={sight.q}><button onClick={() => addSight(sight)} type="button">＋ {locale === "ja" ? sight.ja : sight.en}</button></li>
+                  ))}
+                </ul>
+              ) : null}
+            </section>
+          ) : null}
+
+          {plan && plan.leftOut.length > 0 ? (
+            <section className="shiori-section">
+              <h2>{t.leftOut}</h2>
+              <p className="shiori-warn">{plan.leftOut.join("、")}</p>
+            </section>
+          ) : null}
+
+          {plan ? <StayNear locale={locale} onHotel={(hotel) => update((current) => ({ ...current, hotel }))} plan={plan} trip={trip} /> : null}
+
+          <footer className="shiori-foot">
+            <p>{t.note}</p>
+            <p>{t.credits}</p>
+            <p>
+              <button className="shiori-link" onClick={() => { setTrip(emptyTrip); setSaved(null); setScreen("home"); try { window.localStorage.removeItem(STORAGE_KEY); } catch { /* ignore */ } window.history.replaceState({}, "", window.location.pathname); }} type="button">{t.newTrip}</button>
+              {" ・ "}<Link href="/privacy">{t.privacy}</Link>
+            </p>
+          </footer>
+        </div>
+        <aside className="shiori-plan-map">
+          {plan ? (
+            <ShioriMap
+              days={plan.days}
+              focus={focus}
+              hotel={trip.hotel}
+              label={t.mapLabel}
+              legend={{ rail: t.legendRail, street: t.legendWalk, straight: t.legendOther }}
+              onSelectStop={(dayIndex, placeId) => { setSelectedDay(dayIndex); setOpenStop(placeId); }}
+              selectedDay={activeDay}
+            />
+          ) : null}
+        </aside>
+      </div>
+      {usedDays === 0 && plan ? <p className="shiori-quiet">{t.needOne}</p> : null}
+    </main>
+  );
+}

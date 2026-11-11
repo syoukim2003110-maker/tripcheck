@@ -72,6 +72,26 @@ createServer(async (request, response) => {
     }
   }
 
+  if (url.searchParams.get("op") === "route") {
+    const from = (url.searchParams.get("from") ?? "").match(coordinate);
+    const to = (url.searchParams.get("to") ?? "").match(coordinate);
+    const mode = url.searchParams.get("mode") ?? "";
+    if (!from || !to || !["walk", "drive"].includes(mode)) return send(400, { code: "invalid_request" });
+    try {
+      const route = await client.route({
+        origin: { latitude: Number(from[1]), longitude: Number(from[2]) },
+        destination: { latitude: Number(to[1]), longitude: Number(to[2]) },
+        mode: mode as "walk" | "drive",
+      });
+      return send(200, route
+        ? { minutes: route.minutes, distanceMeters: route.distanceMeters, path: route.path.map((point) => [Number(point.latitude.toFixed(5)), Number(point.longitude.toFixed(5))]) }
+        : { minutes: null, distanceMeters: null, path: [] });
+    } catch (error) {
+      if (error instanceof AppleMapsError && error.code === "quota_exhausted") return send(429, { code: "budget_exhausted" });
+      return send(502, { code: "unavailable" });
+    }
+  }
+
   const query = (url.searchParams.get("q") ?? "").trim();
   const language = url.searchParams.get("lang") ?? "";
   const near = (url.searchParams.get("near") ?? "").match(/^(-?\d{1,2}(?:\.\d{1,6})?),(-?\d{1,3}(?:\.\d{1,6})?)$/);

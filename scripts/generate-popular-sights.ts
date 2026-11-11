@@ -100,7 +100,7 @@ function kindWeight(kind: string) {
   return 1;
 }
 
-const notASightName = /教区|Diocese|諸島$|Archipelago|取引所|国会図書館|国立.*図書館|総領事館|大使館|証券|^.{0,6}銀行$|Stock Exchange|National Library|の文化財$|^Historic Monuments of|世界遺産$/;
+const notASightName = /教区|Diocese|諸島$|Archipelago|取引所|国会図書館|国立.*図書館|総領事館|大使館|証券|^.{0,6}銀行$|Stock Exchange|National Library|の文化財$|^Historic Monuments of|世界遺産$|^(香港島|ランタオ島|九龍|新界|オアフ島|マンハッタン|シンガポール島|済州島|バリ島|セブ島|プーケット島|台湾)$/;
 
 // Wikidata's Japanese headword is the formal name; a wishlist uses the one
 // on the guidebook cover.
@@ -120,7 +120,7 @@ const familiarJa: Record<string, string> = {
 };
 
 /** Applies the naming and exclusion rules to an already generated list. */
-function polish(sights: Array<{ q: string; ja: string; en: string; lat: number; lon: number; kind: string }>, city: { ja: string; en: string }) {
+function polish(sights: Array<{ q: string; ja: string; en: string; lat: number; lon: number; kind: string; img?: string; desc?: string }>, city: { ja: string; en: string }) {
   const seen = new Set<string>();
   return sights.flatMap((sight) => {
     if (notASightName.test(sight.ja) || notASightName.test(sight.en) || sight.ja === city.ja || sight.en === city.en) return [];
@@ -167,7 +167,7 @@ async function labelClasses(ids: string[]) {
   }
 }
 
-type Sight = { q: string; ja: string; en: string; lat: number; lon: number; kind: string; links: number };
+type Sight = { q: string; ja: string; en: string; lat: number; lon: number; kind: string; links: number; img?: string; desc?: string };
 
 async function sightsFor(city: City): Promise<Sight[]> {
   const query = `SELECT ?item ?links ?c ?class WHERE { SERVICE wikibase:around { ?item wdt:P625 ?c . bd:serviceParam wikibase:center "Point(${city.lon} ${city.lat})"^^geo:wktLiteral ; wikibase:radius "${city.radiusKm}" . } ?item wikibase:sitelinks ?links . FILTER(?links >= ${city.minLinks ?? 6}) ?item wdt:P31 ?class . } ORDER BY DESC(?links) LIMIT 900`;
@@ -219,18 +219,35 @@ async function sightsFor(city: City): Promise<Sight[]> {
     const url = new URL("https://www.wikidata.org/w/api.php");
     url.searchParams.set("action", "wbgetentities");
     url.searchParams.set("ids", batch.map((entry) => entry.id).join("|"));
-    url.searchParams.set("props", "labels");
+    url.searchParams.set("props", "labels|descriptions");
     url.searchParams.set("languages", "ja|en");
     url.searchParams.set("format", "json");
     const payload = await getJson(url);
+    // One photo per sight (Wikimedia Commons file name), for the picker cards.
+    const imageUrl = new URL("https://query.wikidata.org/sparql");
+    imageUrl.searchParams.set("query", `SELECT ?item (SAMPLE(?image) AS ?img) WHERE { VALUES ?item { ${batch.map((entry) => `wd:${entry.id}`).join(" ")} } ?item wdt:P18 ?image } GROUP BY ?item`);
+    const images = new Map<string, string>();
+    try {
+      for (const row of (await getJson(imageUrl)).results.bindings as Array<{ item: { value: string }; img: { value: string } }>) {
+        const file = decodeURIComponent(row.img.value.split("/Special:FilePath/").at(-1) ?? "");
+        if (file && /\.(jpe?g|png|webp)$/i.test(file)) images.set(row.item.value.split("/").at(-1)!, file);
+      }
+    } catch {
+      // Photos are decoration; the list stands without them.
+    }
     for (const entry of batch) {
       const labels = payload.entities?.[entry.id]?.labels ?? {};
+      const description = String(payload.entities?.[entry.id]?.descriptions?.ja?.value ?? "").trim();
       const en = String(labels.en?.value ?? "").trim();
       const ja = String(labels.ja?.value ?? "").trim();
       if (!en && !ja) continue;
       // Organisations and island groups that carry a visitable-sounding class.
       if (notASightName.test(ja) || notASightName.test(en) || ja === city.ja || en === city.en) continue;
-      sights.push({ q: entry.id, ja: ja || en, en: en || ja, lat: Number(entry.lat.toFixed(5)), lon: Number(entry.lon.toFixed(5)), kind: entry.kind, links: entry.links });
+      sights.push({
+        q: entry.id, ja: ja || en, en: en || ja, lat: Number(entry.lat.toFixed(5)), lon: Number(entry.lon.toFixed(5)), kind: entry.kind, links: entry.links,
+        ...(images.has(entry.id) ? { img: images.get(entry.id) } : {}),
+        ...(description && description.length <= 40 ? { desc: description } : {}),
+      });
     }
   }
   // The same sight under two items (a temple and its main hall) reads as a
@@ -262,7 +279,7 @@ for (const city of cities) {
     const sights = await sightsFor(city);
     console.log(`${city.id}: ${sights.length}  ${sights.slice(0, 8).map((sight) => sight.ja).join(" / ")}`);
     if (sights.length >= 6) {
-      output.push({ id: city.id, ja: city.ja, en: city.en, lat: city.lat, lon: city.lon, radiusKm: city.radiusKm, sights: polish(sights.map((sight) => ({ q: sight.q, ja: sight.ja, en: sight.en, lat: sight.lat, lon: sight.lon, kind: sight.kind })), city) });
+      output.push({ id: city.id, ja: city.ja, en: city.en, lat: city.lat, lon: city.lon, radiusKm: city.radiusKm, sights: polish(sights.map(({ links: _links, ...sight }) => { void _links; return sight; }), city) });
     }
   } catch (error) {
     console.log(`${city.id}: FAILED ${error instanceof Error ? error.message : error}`);

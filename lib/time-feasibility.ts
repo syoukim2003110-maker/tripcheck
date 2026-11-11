@@ -73,6 +73,10 @@ function pickRecommended(
   const taxi = options.find((option) => option.mode === "taxi")!;
   if (preference === "car") return walk.minutes <= Math.min(10, taxi.minutes) ? walk : taxi;
   if (walk.minutes <= 25 || (walk.minutes <= transit.minutes && walk.minutes <= taxi.minutes)) return walk;
+  // Up to half an hour on foot that no train shortens is still a walk. A
+  // taxi for the 1.5 km from Yasukuni Shrine to the Imperial Palace saves ten
+  // minutes on paper and is not what anyone visiting the two would do.
+  if (walk.minutes <= 30 && (transit.unroutable || walk.minutes <= transit.minutes)) return walk;
   // How many minutes slower transit may be and still be the better answer.
   // The allowance scales with the taxi's own duration: on rail-dense ground a
   // 95-minute intercity train beats an 80-minute drive on cost, parking and

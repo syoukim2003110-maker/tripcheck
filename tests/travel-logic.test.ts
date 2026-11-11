@@ -287,3 +287,14 @@ test("car-preference legs are measured with Google DRIVE routes", async () => {
   assert.ok(requestedModes.includes("DRIVE"));
   assert.ok(Object.keys(result.drivingMinutes).length > 0);
 });
+
+test("half an hour on foot that no train shortens stays a walk, not a taxi", () => {
+  // Yasukuni Shrine to the Imperial Palace: 1.5 km, no train worth taking.
+  const estimate = estimateTravelOptions(stopAt("yasukuni", 35.69396, 139.74269), stopAt("palace", 35.6825, 139.7521));
+  const noTrain = applyLiveTransitMinutes(estimate, 35, 27, 13, "auto", "transit_first");
+  assert.equal(noTrain.recommended.mode, "walk");
+  // A train that really is quicker still wins over a 27-minute walk.
+  assert.equal(applyLiveTransitMinutes(estimate, 14, 27, 13, "auto", "transit_first").recommended.mode, "transit");
+  // Forty minutes on foot is no longer a stroll.
+  assert.notEqual(applyLiveTransitMinutes(estimate, 48, 40, 13, "auto", "transit_first").recommended.mode, "walk");
+});

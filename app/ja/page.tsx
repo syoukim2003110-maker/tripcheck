@@ -1,14 +1,13 @@
 import type { Metadata } from "next";
-import { browserGoogleMapsApiKey } from "../../lib/browser-map-provider";
-import StructuredData from "../StructuredData";
-import TripPlannerApp from "../TripPlannerApp";
+import ShioriApp from "../shiori/ShioriApp";
+import "../shiori/shiori.css";
 
 export const metadata: Metadata = {
-  title: "TripCheck — 行きたい場所から、そのまま使える旅程へ",
-  description: "行きたい場所を入れるだけ。日別の組み合わせ、順番、移動、実用的なホテル拠点、無理のない食事候補まで組み、実際に回れるか確認します。",
+  title: "TripCheck — 行きたい場所を選ぶだけで、旅のしおりができる",
+  description: "行き先を選んで、行きたい場所をタップするだけ。どの日にどこを、どの順番で、どの電車で回るか。ホテルとごはんの候補まで、地図と一緒にまとめます。無料・登録なし。",
   alternates: { canonical: "/ja" },
 };
 
 export default function JapaneseHome() {
-  return <div lang="ja"><StructuredData locale="ja" /><TripPlannerApp initialLocale="ja" mapsApiKey={browserGoogleMapsApiKey()} /></div>;
+  return <div lang="ja"><ShioriApp locale="ja" /></div>;
 }

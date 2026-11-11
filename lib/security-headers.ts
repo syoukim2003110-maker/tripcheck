@@ -24,10 +24,24 @@ export const OPEN_PLACE_DATA_HOSTS = [
   "https://query.wikidata.org",
   "https://photon.komoot.io",
   "https://nominatim.openstreetmap.org",
+  // The way along the streets for a leg Apple could not route.
+  "https://routing.openstreetmap.de",
   // Forecast and public holidays for the trip's own dates, asked for directly
   // when the site is hosted as static files.
   "https://api.open-meteo.com",
   "https://date.nager.at",
+] as const;
+
+/**
+ * Sight photos on the booklet's cards are Wikimedia Commons thumbnails. The
+ * file path on commons.wikimedia.org redirects to whichever host Wikimedia
+ * serves thumbnails from — upload.wikimedia.org for years, then
+ * thumb.wikimedia.org without notice, which blanked every photo under a
+ * policy that named the hosts one by one. The foundation's own domain is the
+ * boundary that holds.
+ */
+const SIGHT_PHOTO_HOSTS = [
+  "https://*.wikimedia.org",
 ] as const;
 
 /** Tiles, markers, Street View and the photo redirect's destination. */
@@ -55,7 +69,7 @@ export const productionContentSecurityPolicy = [
   "font-src 'self' data:",
   // Was `https:`, which let anything that got script onto the page exfiltrate
   // an itinerary through an <img src>.
-  `img-src 'self' data: blob: ${GOOGLE_IMAGE_HOSTS.join(" ")}`,
+  `img-src 'self' data: blob: ${GOOGLE_IMAGE_HOSTS.join(" ")} ${SIGHT_PHOTO_HOSTS.join(" ")}`,
   // Was `https: wss:`. Every fetch the app makes is same-origin; the rest is
   // the Maps runtime's own tile and metadata traffic. There are no websockets
   // in production — that allowance existed for local HMR, which never sees

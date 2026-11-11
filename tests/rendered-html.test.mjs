@@ -2,13 +2,13 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-async function render() {
+async function render(path = "/") {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
   workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
   const { default: worker } = await import(workerUrl.href);
 
   return worker.fetch(
-    new Request("http://localhost/", {
+    new Request(`http://localhost${path}`, {
       headers: { accept: "text/html" },
     }),
     {
@@ -23,8 +23,29 @@ async function render() {
   );
 }
 
-test("server-renders the input-first TripCheck itinerary builder", async () => {
-  const response = await render();
+test("the home page is the trip booklet: pick a destination, in the visitor's language", async () => {
+  const response = await render("/");
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  assert.match(html, /<title>TripCheck — pick places, get a day-by-day trip booklet<\/title>/i);
+  assert.match(html, /class="shiori"/);
+  assert.match(html, /Where to\?/);
+  assert.match(html, /Get a day-by-day trip booklet\./);
+  // The bare "/" honors a stored language, and a Japanese browser's first
+  // visit, before paint — ahead of hydration.
+  assert.match(html, /var l=localStorage\.getItem\("tripcheck-locale"\);if\(l==="ja"\|\|\(!l&&\/\^ja\\b\/i\.test\(navigator\.language/);
+  assert.match(html, /location\.replace\("\/ja\/"\+location\.search\+location\.hash\)/);
+  assert.match(html, /href="\/privacy\/?"/);
+  // Nothing loads a map or a paid script before a booklet exists.
+  assert.doesNotMatch(html, /maps\.googleapis\.com\/maps\/api\/js/);
+
+  const japanese = await (await render("/ja")).text();
+  assert.match(japanese, /行きたい場所を選ぶだけ。/);
+  assert.match(japanese, /どこに行く？/);
+});
+
+test("the previous planner is still served at /classic", async () => {
+  const response = await render("/classic");
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
@@ -58,11 +79,6 @@ test("server-renders the input-first TripCheck itinerary builder", async () => {
   assert.doesNotMatch(html, /SCROLL TO PLAY|Get the whole trip\.|One plan instead of six tabs/i);
   assert.match(html, />EN</);
   assert.match(html, /日本語/);
-  // TC-018: the bare "/" honors the device's stored language before paint —
-  // the inline gate must run ahead of hydration, whose locale effect would
-  // otherwise overwrite the stored key with "en".
-  assert.match(html, /var l=localStorage\.getItem\("tripcheck-locale"\);if\(l==="ja"\|\|\(!l&&\/\^ja\\b\/i\.test\(navigator\.language/);
-  assert.match(html, /location\.replace\("\/ja\/"\+location\.search\+location\.hash\)/);
   assert.match(html, /<a(?=[^>]*class="planner-privacy")(?=[^>]*href="\/privacy")[^>]*>/i);
   assert.doesNotMatch(html, /<option[^>]*value="ko"/i);
   assert.doesNotMatch(html, /<option[^>]*value="zh"/i);

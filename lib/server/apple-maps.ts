@@ -15,7 +15,9 @@
  *                      resultTypeFilter → {results: Place[]};
  *   - GET /v1/etas     origin, destinations, transportType (Automobile |
  *                      Transit | Walking), departureDate → {etas: [{
- *                      expectedTravelTimeSeconds, distanceMeters}]}.
+ *                      expectedTravelTimeSeconds, distanceMeters}]};
+ *   - GET /v1/directions origin, destination, transportType (Automobile |
+ *                      Walking) → {routes, steps, stepPaths}.
  * Checked against the live service on 2026-11-11 (token exchange, search).
  *
  * Apple place data is fetched at request time and never written to storage.
@@ -68,6 +70,19 @@ export type AppleMapsEtaOptions = Readonly<{
 }>;
 
 export type AppleMapsEta = Readonly<{ minutes: number; distanceMeters: number | null }>;
+
+export type AppleMapsRoute = Readonly<{
+  minutes: number;
+  distanceMeters: number | null;
+  path: Array<{ latitude: number; longitude: number }>;
+}>;
+
+/** Keeps a path's shape with at most `limit` points (first and last always). */
+export function thinPath<T>(path: T[], limit: number): T[] {
+  if (path.length <= limit) return path;
+  const step = (path.length - 1) / (limit - 1);
+  return Array.from({ length: limit }, (_, index) => path[Math.round(index * step)]);
+}
 
 export class AppleMapsError extends Error {
   code: "not_configured" | "unauthorized" | "quota_exhausted" | "unavailable";
@@ -265,6 +280,52 @@ export class AppleMapsClient {
     return {
       minutes: Math.max(1, Math.round(seconds / 60)),
       distanceMeters: Number.isFinite(meters) && meters > 0 ? Math.round(meters) : null,
+    };
+  }
+
+  /**
+   * The way from one point to another on foot or by car: duration, distance
+   * and the path along the streets. Null when Apple cannot route the pair.
+   * There is no transit mode in this API.
+   */
+  async route(options: Omit<AppleMapsEtaOptions, "mode" | "departureTime"> & { mode: "walk" | "drive" }): Promise<AppleMapsRoute | null> {
+    const url = new URL("/v1/directions", APPLE_MAPS_ORIGIN);
+    const point = (value: { latitude: number; longitude: number }) => `${value.latitude.toFixed(6)},${value.longitude.toFixed(6)}`;
+    url.searchParams.set("origin", point(options.origin));
+    url.searchParams.set("destination", point(options.destination));
+    url.searchParams.set("transportType", options.mode === "walk" ? "Walking" : "Automobile");
+    let payload: { routes?: unknown; steps?: unknown; stepPaths?: unknown };
+    try {
+      payload = await this.authorized(url, options.signal) as typeof payload;
+    } catch (error) {
+      if (error instanceof AppleMapsError && error.code === "unavailable") return null;
+      throw error;
+    }
+    const route = Array.isArray(payload.routes) ? payload.routes[0] as { durationSeconds?: unknown; distanceMeters?: unknown; stepIndexes?: unknown } | undefined : undefined;
+    const seconds = Number(route?.durationSeconds);
+    if (!route || !Number.isFinite(seconds) || seconds <= 0) return null;
+    const steps = Array.isArray(payload.steps) ? payload.steps as Array<{ stepPathIndex?: unknown }> : [];
+    const stepPaths = Array.isArray(payload.stepPaths) ? payload.stepPaths as unknown[] : [];
+    const path: Array<{ latitude: number; longitude: number }> = [];
+    for (const stepIndex of Array.isArray(route.stepIndexes) ? route.stepIndexes as unknown[] : []) {
+      const step = steps[Number(stepIndex)];
+      const points = stepPaths[Number(step?.stepPathIndex)];
+      if (!Array.isArray(points)) continue;
+      for (const raw of points as Array<{ latitude?: unknown; longitude?: unknown }>) {
+        const latitude = Number(raw?.latitude);
+        const longitude = Number(raw?.longitude);
+        if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) continue;
+        const last = path.at(-1);
+        // Consecutive step paths repeat their shared point.
+        if (last && last.latitude === latitude && last.longitude === longitude) continue;
+        path.push({ latitude, longitude });
+      }
+    }
+    const meters = Number(route.distanceMeters);
+    return {
+      minutes: Math.max(1, Math.round(seconds / 60)),
+      distanceMeters: Number.isFinite(meters) && meters > 0 ? Math.round(meters) : null,
+      path: thinPath(path, 160),
     };
   }
 
