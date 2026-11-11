@@ -1,3 +1,4 @@
+import { AppleRelayError, appleRelayEta, appleRelayUrl } from "./apple-relay-client.ts";
 import type { Locale } from "./i18n.ts";
 import { destinationAirport, destinationById, localDateTimeWithOffset, type MobilityProfile } from "./destinations.ts";
 import type { LiveRouteCoordinate, LiveRouteResult, LiveRouteTravelMode, TransitStepSummary } from "./google-routes.ts";
@@ -44,13 +45,19 @@ export type PlanningRouteLeg = {
 
 export type PlanningRouteResult = LiveRouteResult & {
   mode: PlanningRouteMode;
+  /**
+   * The source has no data for this pair and mode at all (Apple carries no
+   * transit timetable for Japan). Distinct from a provider that looked and
+   * found no route: this must never be read as "no such train".
+   */
+  noCoverage?: true;
   departureTime: string;
   routingEndpointKey?: string;
   accessAssumptions?: readonly PoiAccessAssumption[];
 };
 
 export type PlanningRoutePrefetch = {
-  provider: "google_maps";
+  provider: "google_maps" | "apple_maps";
   fetchedAt: string | null;
   legs: PlanningRouteResult[];
   transitMinutes: Record<string, number>;
@@ -517,13 +524,58 @@ function parseResult(value: unknown): LiveRouteResult | null {
   };
 }
 
+/**
+ * The same batch answered by the Apple relay: one travel-time lookup per leg.
+ * Apple returns a duration and a distance, never a path or boarding steps, so
+ * those stay null and the map keeps drawing the leg as an unmeasured line.
+ */
+async function requestRelayBatch(legs: PlanningRouteLeg[], mode: PlanningRouteMode, signal?: AbortSignal) {
+  let answered = false;
+  let lastError: unknown = null;
+  const results = await mapWithConcurrency(legs, 3, async (leg): Promise<PlanningRouteResult> => {
+    const base = {
+      id: leg.id,
+      encodedPolyline: null,
+      transferCount: null,
+      transitSteps: null,
+      walkToStopMinutes: null,
+      walkFromStopMinutes: null,
+      mode,
+      departureTime: leg.departureTime,
+      ...(leg.routingEndpointKey ? { routingEndpointKey: leg.routingEndpointKey } : {}),
+      ...(leg.accessAssumptions ? { accessAssumptions: leg.accessAssumptions } : {}),
+    };
+    try {
+      const eta = await appleRelayEta({ origin: leg.origin, destination: leg.destination, mode, departureTime: leg.departureTime, signal });
+      answered = true;
+      return eta
+        ? { ...base, durationMinutes: eta.minutes, distanceMeters: eta.distanceMeters, status: "ok" }
+        : { ...base, durationMinutes: null, distanceMeters: null, status: "unavailable", noCoverage: true };
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      lastError = error;
+      return { ...base, durationMinutes: null, distanceMeters: null, status: "unavailable", noCoverage: true };
+    }
+  });
+  if (!answered && legs.length > 0) {
+    throw new LiveRoutesError(lastError instanceof AppleRelayError && lastError.code === "not_configured" ? "not_configured" : "unavailable");
+  }
+  return { fetchedAt: new Date().toISOString(), legs: results };
+}
+
 async function requestBatch(
   legs: PlanningRouteLeg[],
   mode: PlanningRouteMode,
   locale: Locale,
-  fetcher: typeof fetch,
+  fetcher: typeof fetch | null,
   signal?: AbortSignal,
 ) {
+  // No injected fetcher and a configured relay: this build has no server
+  // route to post to, and the relay is the measured source.
+  if (fetcher === null) {
+    if (appleRelayUrl()) return requestRelayBatch(legs, mode, signal);
+    fetcher = fetch;
+  }
   let response: Response;
   try {
     response = await fetcher("/api/live-routes", {
@@ -578,7 +630,7 @@ export async function fetchPlanningTransitEvidence(
   options: PlanningTransitFetchOptions = {},
 ): Promise<TransitProviderObservation[]> {
   if (requests.length === 0) return [];
-  const fetcher = options.fetcher ?? fetch;
+  const fetcher = options.fetcher ?? null;
   const concurrency = boundedInteger(options.concurrency, 2, 4);
   const batches = chunks([...requests], 12);
   const results = await mapWithConcurrency(batches, concurrency, async (batch) => {
@@ -668,7 +720,7 @@ export async function prefetchPlanningRouteDurations(
     };
   }
 
-  const fetcher = options.fetcher ?? fetch;
+  const fetcher = options.fetcher ?? null;
   const concurrency = boundedInteger(options.concurrency, 2, 4);
   // One failed mode batch (a transit 502, a quota denial) must not void the
   // measurements the other batches already paid for; each task fails alone.
@@ -690,7 +742,7 @@ export async function prefetchPlanningRouteDurations(
   }
   const fetchedAt = batches.map((batch) => batch.fetchedAt).sort().at(-1) ?? null;
   return {
-    provider: "google_maps",
+    provider: !options.fetcher && appleRelayUrl() ? "apple_maps" : "google_maps",
     fetchedAt,
     legs: routeResults,
     transitMinutes,

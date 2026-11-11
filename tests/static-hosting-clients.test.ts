@@ -105,3 +105,39 @@ test("no relay configured means not available, never a guess", async () => {
     (error) => error instanceof AppleRelayError && error.code === "quota_exhausted",
   );
 });
+
+test("travel times: one request per pair, mode and hour; no answer stays no answer", async () => {
+  const { appleRelayEta } = await import("../lib/apple-relay-client.ts");
+  const calls: URL[] = [];
+  const fetcher = (async (input: RequestInfo | URL) => {
+    const url = new URL(String(input));
+    calls.push(url);
+    return url.searchParams.get("mode") === "transit"
+      ? Response.json({ minutes: null, distanceMeters: null })
+      : Response.json({ minutes: 87, distanceMeters: 3911 });
+  }) as typeof fetch;
+  const relay = "https://example.test/eta-test/apple.php";
+  const leg = {
+    origin: { latitude: 22.284, longitude: 114.15 },
+    destination: { latitude: 22.2755, longitude: 114.1438 },
+    departureTime: "2026-11-14T10:11:00+08:00",
+  };
+
+  assert.deepEqual(await appleRelayEta({ ...leg, mode: "walk" }, relay, fetcher), { minutes: 87, distanceMeters: 3911 });
+  // A few minutes later in the same hour: answered from memory.
+  assert.deepEqual(await appleRelayEta({ ...leg, mode: "walk", departureTime: "2026-11-14T10:40:00+08:00" }, relay, fetcher), { minutes: 87, distanceMeters: 3911 });
+  // Apple has no transit data here: null, and that is remembered too.
+  assert.equal(await appleRelayEta({ ...leg, mode: "transit" }, relay, fetcher), null);
+  assert.equal(await appleRelayEta({ ...leg, mode: "transit" }, relay, fetcher), null);
+  // The same point twice is not a journey.
+  assert.deepEqual(await appleRelayEta({ ...leg, destination: leg.origin, mode: "drive" }, relay, fetcher), { minutes: 1, distanceMeters: 0 });
+
+  assert.equal(calls.length, 2);
+  assert.deepEqual(Object.fromEntries(calls[0].searchParams), {
+    op: "eta",
+    from: "22.28400,114.15000",
+    to: "22.27550,114.14380",
+    mode: "walk",
+    depart: "2026-11-14T10:11:00+08:00",
+  });
+});

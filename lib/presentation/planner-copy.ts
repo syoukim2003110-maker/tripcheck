@@ -141,7 +141,7 @@ export const ui = {
     legModes: "この区間の移動手段。タップで固定、もう一度タップで自動に戻す",
     move: { walk: "徒歩", transit: "電車", taxi: "タクシー" },
     minutes: (value: number) => `${value}分`,
-    legLive: "Google Maps経路",
+    legLive: "地図サービスの所要時間",
     unknown: "地図に出せなかった場所",
     placeFallback: "見つからなかった場所があります。確認できた場所だけで組み立てています。",
     noDays: "地図に置ける場所がまだありません。名前を少し変えると見つかることがあります。",
@@ -161,7 +161,7 @@ export const ui = {
     foodLoading: "近くのお店を探しています…",
     foodUnavailable: "お店を取得できませんでした。Google Mapsで同じ条件を開けます。",
     maps: "地図で見る",
-    foodNote: "Googleの評価・口コミ量・距離・営業表示をロジックで比較。公開SNSは引用できた情報だけを補足しています。",
+    foodNote: "ルートからの近さで並べています。評価がある場合は評価と口コミ量も比較します。営業時間は出かける前に地図アプリで確認してください。",
     foodFresh: (count: number) => `最近の公開情報 ${count}件`,
     // Copy Deck plan.hotel.change: the visible change-base control.
     hotelChip: "ホテルを変える",
@@ -238,7 +238,7 @@ export const ui = {
     // Copy Deck data.estimated (verbatim headline); the provider detail is
     // secondary text, never the headline.
     estimated: "所要時間は目安です",
-    estimatedDetail: "Google Maps経路データを取得できた区間だけ自動で更新します。",
+    estimatedDetail: "地図サービスで所要時間を確認できた区間だけ自動で更新します。",
     // Copy Deck data.checkhours (verbatim): the standard unverified-hours phrasing.
     checkHours: "出発前に営業時間を確認",
     // Copy Deck scope.beta (verbatim): shown only for non-deep coverage regions.
@@ -439,7 +439,7 @@ export const ui = {
     legModes: "Travel mode for this leg. Tap to pin, tap again for automatic",
     move: { walk: "Walk", transit: "Train", taxi: "Taxi" },
     minutes: (value: number) => `${value} min`,
-    legLive: "Google route",
+    legLive: "Map-service travel time",
     unknown: "Not shown on the map",
     placeFallback: "Some places could not be found. The plan uses only the ones we could confirm.",
     noDays: "Nothing could be placed on the map yet. A slightly different name often helps.",
@@ -459,7 +459,7 @@ export const ui = {
     foodLoading: "Finding nearby places…",
     foodUnavailable: "Places did not load. Open the same search in Google Maps instead.",
     maps: "View on map",
-    foodNote: "Ranked by Google rating strength, review volume, distance and open status. Public social evidence is shown only when a cited page was found.",
+    foodNote: "Ordered by how close each place is to your route. Where a rating exists, rating strength and review volume are compared too. Check opening hours in a maps app before you go.",
     foodFresh: (count: number) => `${count} recent public signals`,
     // Copy Deck plan.hotel.change: the visible change-base control.
     hotelChip: "Change base",
@@ -536,7 +536,7 @@ export const ui = {
     // Copy Deck data.estimated (verbatim headline); the provider detail is
     // secondary text, never the headline.
     estimated: "Travel time is estimated",
-    estimatedDetail: "Legs update automatically only where Google Maps route data is available.",
+    estimatedDetail: "Legs update automatically only where a map service returned a travel time.",
     // Copy Deck data.checkhours (verbatim): the standard unverified-hours phrasing.
     checkHours: "Check opening hours before you go",
     // Copy Deck scope.beta (verbatim): shown only for non-deep coverage regions.

@@ -49,6 +49,29 @@ createServer(async (request, response) => {
   if (request.method !== "GET" || url.pathname !== "/apple.php") return send(404, { code: "not_found" });
   if (!client) return send(503, { code: "not_configured" });
 
+  const coordinate = /^(-?\d{1,2}(?:\.\d{1,6})?),(-?\d{1,3}(?:\.\d{1,6})?)$/;
+  if (url.searchParams.get("op") === "eta") {
+    const from = (url.searchParams.get("from") ?? "").match(coordinate);
+    const to = (url.searchParams.get("to") ?? "").match(coordinate);
+    const mode = url.searchParams.get("mode") ?? "";
+    const depart = url.searchParams.get("depart");
+    if (!from || !to || !["transit", "walk", "drive"].includes(mode) || (depart !== null && !Number.isFinite(Date.parse(depart)))) {
+      return send(400, { code: "invalid_request" });
+    }
+    try {
+      const eta = await client.eta({
+        origin: { latitude: Number(from[1]), longitude: Number(from[2]) },
+        destination: { latitude: Number(to[1]), longitude: Number(to[2]) },
+        mode: mode as "transit" | "walk" | "drive",
+        departureTime: depart,
+      });
+      return send(200, { minutes: eta?.minutes ?? null, distanceMeters: eta?.distanceMeters ?? null });
+    } catch (error) {
+      if (error instanceof AppleMapsError && error.code === "quota_exhausted") return send(429, { code: "budget_exhausted" });
+      return send(502, { code: "unavailable" });
+    }
+  }
+
   const query = (url.searchParams.get("q") ?? "").trim();
   const language = url.searchParams.get("lang") ?? "";
   const near = (url.searchParams.get("near") ?? "").match(/^(-?\d{1,2}(?:\.\d{1,6})?),(-?\d{1,3}(?:\.\d{1,6})?)$/);

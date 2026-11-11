@@ -12,6 +12,11 @@
  *                 [&categories=Restaurant,Cafe,Bakery,Hotel][&poi=1]
  *   200 {"results":[{id,name,latitude,longitude,formattedAddress,
  *                    locality,subLocality,countryCode,poiCategory}]}
+ *
+ *   GET apple.php?op=eta&from=<lat>,<lon>&to=<lat>,<lon>
+ *                 &mode=transit|walk|drive[&depart=<ISO 8601>]
+ *   200 {"minutes":<int>|null,"distanceMeters":<int>|null}
+ *       (null = Apple has no answer for this pair and mode)
  *   4xx/5xx {"code": "..."}
  *
  * Keys live in apple-config.php next to this file (blocked from the web by
@@ -22,7 +27,7 @@ declare(strict_types=1);
 
 const APPLE_ORIGIN = 'https://maps-api.apple.com';
 const DAILY_CALL_CEILING = 15000;      // stay inside Apple's daily quota
-const PER_CLIENT_PER_MINUTE = 40;      // one trip build is ~10–20 searches
+const PER_CLIENT_PER_MINUTE = 180;     // one trip build is ~20 searches + ~80 travel times
 const ALLOWED_CATEGORIES = ['Restaurant', 'Cafe', 'Bakery', 'Hotel'];
 
 function respond(int $status, array $body): void
@@ -40,7 +45,7 @@ function state_dir(): string
     $dir = __DIR__ . '/.state';
     if (!is_dir($dir)) {
         @mkdir($dir, 0700, true);
-        @file_put_contents($dir . '/.htaccess', "Require all denied\n");
+        @file_put_contents($dir . '/.htaccess', "<IfModule mod_authz_core.c>\nRequire all denied\n</IfModule>\n<IfModule !mod_authz_core.c>\nOrder allow,deny\nDeny from all\n</IfModule>\n");
     }
     return $dir;
 }
@@ -189,11 +194,53 @@ if (
     respond(503, ['code' => 'not_configured']);
 }
 
+$coordinatePattern = '/^(-?\d{1,2}(?:\.\d{1,6})?),(-?\d{1,3}(?:\.\d{1,6})?)$/';
+
+if (($_GET['op'] ?? '') === 'eta') {
+    $mode = (string) ($_GET['mode'] ?? '');
+    $transport = ['transit' => 'Transit', 'walk' => 'Walking', 'drive' => 'Automobile'][$mode] ?? null;
+    if (
+        $transport === null
+        || !preg_match($coordinatePattern, (string) ($_GET['from'] ?? ''), $from)
+        || !preg_match($coordinatePattern, (string) ($_GET['to'] ?? ''), $to)
+        || abs((float) $from[1]) > 90 || abs((float) $to[1]) > 90
+        || abs((float) $from[2]) > 180 || abs((float) $to[2]) > 180
+    ) {
+        respond(400, ['code' => 'invalid_request']);
+    }
+    $etaParams = [
+        'origin' => sprintf('%.6F,%.6F', (float) $from[1], (float) $from[2]),
+        'destinations' => sprintf('%.6F,%.6F', (float) $to[1], (float) $to[2]),
+        'transportType' => $transport,
+    ];
+    if (isset($_GET['depart'])) {
+        $departure = strtotime((string) $_GET['depart']);
+        if ($departure === false) respond(400, ['code' => 'invalid_request']);
+        $etaParams['departureDate'] = gmdate('Y-m-d\TH:i:s\Z', $departure);
+    }
+    admit();
+    $etaUrl = APPLE_ORIGIN . '/v1/etas?' . http_build_query($etaParams, '', '&', PHP_QUERY_RFC3986);
+    try {
+        [$status, $body] = apple_get($etaUrl, access_token($config));
+        if ($status === 401) [$status, $body] = apple_get($etaUrl, access_token($config, true));
+    } catch (Throwable $error) {
+        respond(502, ['code' => 'unavailable']);
+    }
+    if ($status === 429) respond(429, ['code' => 'budget_exhausted']);
+    // Apple answers an error for a pair it cannot route in this mode; that is
+    // "no answer", not an outage.
+    $eta = is_array($body) && is_array($body['etas'] ?? null) ? ($body['etas'][0] ?? null) : null;
+    $seconds = is_array($eta) && is_numeric($eta['expectedTravelTimeSeconds'] ?? null) ? (float) $eta['expectedTravelTimeSeconds'] : 0;
+    if ($status !== 200 || $seconds <= 0) respond(200, ['minutes' => null, 'distanceMeters' => null]);
+    $meters = is_numeric($eta['distanceMeters'] ?? null) ? (int) round((float) $eta['distanceMeters']) : null;
+    respond(200, ['minutes' => max(1, (int) round($seconds / 60)), 'distanceMeters' => $meters && $meters > 0 ? $meters : null]);
+}
+
 $query = trim((string) ($_GET['q'] ?? ''));
 $language = (string) ($_GET['lang'] ?? '');
 $near = null;
 if (isset($_GET['near'])) {
-    if (!preg_match('/^(-?\d{1,2}(?:\.\d{1,6})?),(-?\d{1,3}(?:\.\d{1,6})?)$/', (string) $_GET['near'], $match)) {
+    if (!preg_match($coordinatePattern, (string) $_GET['near'], $match)) {
         respond(400, ['code' => 'invalid_request']);
     }
     $near = [(float) $match[1], (float) $match[2]];

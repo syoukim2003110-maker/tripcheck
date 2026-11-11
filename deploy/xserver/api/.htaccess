@@ -1,5 +1,11 @@
-# The Apple keys and the relay's small state files are never served.
+# The Apple keys are never served. (apple-config.php also prints nothing when
+# executed, so this is a second lock, written for both Apache syntaxes.)
 <Files "apple-config.php">
-  Require all denied
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+  </IfModule>
 </Files>
-Options -Indexes

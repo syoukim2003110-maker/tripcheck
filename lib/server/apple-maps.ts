@@ -12,7 +12,10 @@
  *   - GET /v1/token exchanges it for {accessToken, expiresInSeconds};
  *   - GET /v1/search   q, lang, searchLocation, searchRegion,
  *                      searchRegionPriority, includePoiCategories,
- *                      resultTypeFilter → {results: Place[]}.
+ *                      resultTypeFilter → {results: Place[]};
+ *   - GET /v1/etas     origin, destinations, transportType (Automobile |
+ *                      Transit | Walking), departureDate → {etas: [{
+ *                      expectedTravelTimeSeconds, distanceMeters}]}.
  * Checked against the live service on 2026-11-11 (token exchange, search).
  *
  * Apple place data is fetched at request time and never written to storage.
@@ -54,6 +57,17 @@ export type AppleMapsSearchOptions = Readonly<{
   poiOnly?: boolean;
   signal?: AbortSignal;
 }>;
+
+export type AppleMapsEtaOptions = Readonly<{
+  origin: { latitude: number; longitude: number };
+  destination: { latitude: number; longitude: number };
+  mode: "transit" | "walk" | "drive";
+  /** ISO 8601 instant; omitted means "now". */
+  departureTime?: string | null;
+  signal?: AbortSignal;
+}>;
+
+export type AppleMapsEta = Readonly<{ minutes: number; distanceMeters: number | null }>;
 
 export class AppleMapsError extends Error {
   code: "not_configured" | "unauthorized" | "quota_exhausted" | "unavailable";
@@ -215,6 +229,43 @@ export class AppleMapsClient {
       this.accessToken = null;
       return this.request(url, await this.token(signal), signal);
     }
+  }
+
+  /**
+   * Travel time between two points for one mode. `null` means Apple has no
+   * answer for this pair and mode (no transit coverage, no walkable path) —
+   * an absence of evidence, not a claim that the journey is impossible.
+   */
+  async eta(options: AppleMapsEtaOptions): Promise<AppleMapsEta | null> {
+    const url = new URL("/v1/etas", APPLE_MAPS_ORIGIN);
+    const point = (value: { latitude: number; longitude: number }) => `${value.latitude.toFixed(6)},${value.longitude.toFixed(6)}`;
+    url.searchParams.set("origin", point(options.origin));
+    url.searchParams.set("destinations", point(options.destination));
+    url.searchParams.set("transportType", options.mode === "walk" ? "Walking" : options.mode === "drive" ? "Automobile" : "Transit");
+    if (options.departureTime) {
+      const departure = new Date(options.departureTime);
+      if (Number.isFinite(departure.getTime())) url.searchParams.set("departureDate", departure.toISOString().replace(/\.\d{3}Z$/, "Z"));
+    }
+    let payload: { etas?: unknown };
+    try {
+      payload = await this.authorized(url, options.signal) as { etas?: unknown };
+    } catch (error) {
+      // Apple answers 4xx/5xx for a pair it cannot route; quota and auth
+      // failures are still real failures.
+      if (error instanceof AppleMapsError && error.code === "unavailable") return null;
+      throw error;
+    }
+    const first = Array.isArray(payload.etas) ? payload.etas[0] as {
+      expectedTravelTimeSeconds?: unknown;
+      distanceMeters?: unknown;
+    } | undefined : undefined;
+    const seconds = Number(first?.expectedTravelTimeSeconds);
+    if (!Number.isFinite(seconds) || seconds <= 0) return null;
+    const meters = Number(first?.distanceMeters);
+    return {
+      minutes: Math.max(1, Math.round(seconds / 60)),
+      distanceMeters: Number.isFinite(meters) && meters > 0 ? Math.round(meters) : null,
+    };
   }
 
   async search(options: AppleMapsSearchOptions): Promise<AppleMapsPlace[]> {

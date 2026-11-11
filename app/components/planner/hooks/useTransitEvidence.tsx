@@ -354,7 +354,8 @@ export function usePostBuildLegPrefetching({
             setPrefetchTransit((current) => ({ ...current, ...measured.transitMinutes }));
           }
           const absent = Object.fromEntries(measured.legs.flatMap((leg) => (
-            leg.mode === "transit" && leg.status === "unavailable" ? [[leg.id, true] as const] : []
+            // "The source has no transit data here" is not "there is no train".
+            leg.mode === "transit" && leg.status === "unavailable" && !leg.noCoverage ? [[leg.id, true] as const] : []
           )));
           if (Object.keys(absent).length > 0) {
             setPrefetchTransitAbsent((current) => ({ ...current, ...absent }));

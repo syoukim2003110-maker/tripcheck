@@ -108,6 +108,69 @@ export async function appleRelaySearch(
   });
 }
 
+export type AppleRelayEta = Readonly<{ minutes: number; distanceMeters: number | null }>;
+
+const etaCache = new Map<string, AppleRelayEta | null>();
+
+/**
+ * Travel time for one leg and one mode. `null` means Apple has no answer for
+ * this pair (it has no transit data for Japan, for instance) — an absence of
+ * evidence, never a claim that the journey cannot be made.
+ */
+export async function appleRelayEta(
+  options: Readonly<{
+    origin: { latitude: number; longitude: number };
+    destination: { latitude: number; longitude: number };
+    mode: "transit" | "walk" | "drive";
+    departureTime?: string | null;
+    signal?: AbortSignal;
+  }>,
+  relayUrl: string | null = appleRelayUrl(),
+  fetcher: typeof fetch = (input, init) => globalThis.fetch(input, init),
+): Promise<AppleRelayEta | null> {
+  if (!relayUrl) throw new AppleRelayError("not_configured");
+  const base = typeof window !== "undefined" ? window.location.href : "http://localhost/";
+  const url = new URL(relayUrl, base);
+  const point = (value: { latitude: number; longitude: number }) => `${value.latitude.toFixed(5)},${value.longitude.toFixed(5)}`;
+  // The same place twice (a provisional base that is one of the stops) is
+  // not a journey and not worth a quota unit.
+  if (point(options.origin) === point(options.destination)) return { minutes: 1, distanceMeters: 0 };
+  // Feeding measured minutes back into the schedule nudges every later
+  // departure, and the planner asks again for the same pair a few minutes
+  // on. Within the same hour the first answer stands.
+  const hour = options.departureTime ? options.departureTime.slice(0, 13) : "now";
+  const cacheKey = [relayUrl, point(options.origin), point(options.destination), options.mode, hour].join("|");
+  const cached = etaCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+  const remember = (value: AppleRelayEta | null) => {
+    etaCache.set(cacheKey, value);
+    if (etaCache.size > 600) etaCache.delete(etaCache.keys().next().value as string);
+    return value;
+  };
+  url.searchParams.set("op", "eta");
+  url.searchParams.set("from", point(options.origin));
+  url.searchParams.set("to", point(options.destination));
+  url.searchParams.set("mode", options.mode);
+  if (options.departureTime) url.searchParams.set("depart", options.departureTime);
+  let response: Response;
+  try {
+    response = await fetcher(url, { method: "GET", headers: { Accept: "application/json" }, signal: options.signal });
+  } catch (error) {
+    if (options.signal?.aborted) throw error;
+    throw new AppleRelayError("unavailable");
+  }
+  const payload = await response.json().catch(() => null) as { code?: unknown; minutes?: unknown; distanceMeters?: unknown } | null;
+  if (!response.ok || !payload) {
+    if (payload?.code === "not_configured") throw new AppleRelayError("not_configured");
+    if (response.status === 429) throw new AppleRelayError("quota_exhausted");
+    throw new AppleRelayError("unavailable");
+  }
+  const minutes = Number(payload.minutes);
+  if (payload.minutes === null || !Number.isFinite(minutes) || minutes <= 0) return remember(null);
+  const meters = Number(payload.distanceMeters);
+  return remember({ minutes: Math.round(minutes), distanceMeters: Number.isFinite(meters) && meters > 0 ? Math.round(meters) : null });
+}
+
 /** The relay as a search client, shaped like the server-side Apple client. */
 export function appleRelayClient(relayUrl: string | null = appleRelayUrl()) {
   if (!relayUrl) return null;
