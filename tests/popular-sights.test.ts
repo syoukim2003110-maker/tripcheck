@@ -78,3 +78,69 @@ test("the bundled list is well-formed: real coordinates, both names, no duplicat
   }
   for (const id of ["tokyo", "kyoto", "osaka", "hongkong", "seoul", "taipei", "bangkok", "paris"]) assert.ok(ids.has(id), `featured ${id} missing`);
 });
+
+test("a line picked from the list is placed with no lookup; a name with two meanings is not", async () => {
+  const { knownStopsForQueries } = await import("../lib/bundled-sights-resolution.ts");
+  const data = {
+    generatedAt: "2026-11-11",
+    cities: [
+      { id: "kyoto", ja: "京都", en: "Kyoto", lat: 35.01, lon: 135.76, radiusKm: 13, sights: [kiyomizu, { ...kinkaku, ja: "金閣寺" }] },
+      { id: "bangkok", ja: "バンコク", en: "Bangkok", lat: 13.75, lon: 100.5, radiusKm: 16, sights: [{ q: "Q1", ja: "王宮", en: "Grand Palace", lat: 13.75, lon: 100.49, kind: "palace" }] },
+      { id: "madrid", ja: "マドリード", en: "Madrid", lat: 40.41, lon: -3.7, radiusKm: 9, sights: [{ q: "Q2", ja: "王宮", en: "Royal Palace of Madrid", lat: 40.418, lon: -3.714, kind: "palace" }] },
+    ],
+  };
+  const known = knownStopsForQueries(["清水寺", "金閣寺", "王宮", "だれも知らない店", "Grand Palace"], "ja", data);
+
+  assert.deepEqual([...known.keys()], ["清水寺", "金閣寺", "Grand Palace"]);
+  const temple = known.get("清水寺")!;
+  assert.equal(temple.id, "wikidata-Q221716");
+  assert.equal(temple.area, "京都");
+  assert.equal(temple.countryCode, "JP");
+  assert.equal(temple.planningDurationMinutes, 60);
+  assert.deepEqual(temple.placeTypes, ["buddhist_temple"]);
+  assert.equal(temple.verifiedAt, "2026-11-11T00:00:00.000Z");
+  // "王宮" is Bangkok's and Madrid's: guessing is the lookup's job, not this table's.
+  assert.equal(known.has("王宮"), false);
+});
+
+test("picked sights cost no request and still tell the lookup where the trip is", async () => {
+  const { OpenPlaceResolver } = await import("../lib/open-place-resolver.ts");
+  const { knownStopsForQueries } = await import("../lib/bundled-sights-resolution.ts");
+  const data = { generatedAt: "2026-11-11", cities: [{ id: "kyoto", ja: "京都", en: "Kyoto", lat: 35.01, lon: 135.76, radiusKm: 13, sights: [kiyomizu, { ...kinkaku, ja: "金閣寺" }] }] };
+  const searched: string[] = [];
+  const fetcher = (async (input: RequestInfo | URL) => {
+    const url = new URL(String(input));
+    if (url.host === "ja.wikipedia.org" && url.searchParams.get("list") === "search") {
+      const text = (url.searchParams.get("srsearch") ?? "").replace(/\s*nearcoord:\S+/, "");
+      searched.push(text);
+      // Two 東寺: Kyoto's, and a namesake far away.
+      return Response.json({ query: { search: text === "東寺" ? [{ pageid: 2, title: "東寺 (遠方)" }, { pageid: 1, title: "東寺" }] : [] } });
+    }
+    if (url.host === "ja.wikipedia.org") {
+      return Response.json({ query: { pages: [
+        { pageid: 1, title: "東寺", length: 30_000, coordinates: [{ lat: 34.9806, lon: 135.7478, primary: true, globe: "earth" }] },
+        { pageid: 2, title: "東寺 (遠方)", length: 30_000, coordinates: [{ lat: 38.0, lon: 140.0, primary: true, globe: "earth" }] },
+      ] } });
+    }
+    if (url.host === "www.wikidata.org") return Response.json({ query: { pages: [] } });
+    if (url.host === "query.wikidata.org") return Response.json({ results: { bindings: [] } });
+    if (url.host === "nominatim.openstreetmap.org") return Response.json([]);
+    return new Response("busy", { status: 503 });
+  }) as typeof fetch;
+  const queries = ["清水寺", "金閣寺", "東寺"];
+  const resolver = new OpenPlaceResolver({ fetcher, hostIntervalMs: 0, sleep: async () => {} });
+  const result = await resolver.resolve(
+    { queries, providerOverrides: [], hotelQuery: null, languageCode: "ja", destination: "auto" },
+    undefined,
+    null,
+    knownStopsForQueries(queries, "ja", data),
+  );
+
+  // Only the typed line was looked up.
+  assert.deepEqual([...new Set(searched)], ["東寺"]);
+  assert.deepEqual(result.ambiguous, []);
+  assert.deepEqual(result.places.map((place) => place.input).sort(), ["東寺", "清水寺", "金閣寺"]);
+  // The two picked Kyoto sights settled which 東寺 was meant.
+  assert.ok(Math.abs(result.places.find((place) => place.input === "東寺")!.latitude - 34.9806) < 0.001);
+  assert.equal(result.places.find((place) => place.input === "金閣寺")?.area, "京都");
+});

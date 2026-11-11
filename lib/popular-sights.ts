@@ -81,3 +81,31 @@ export function toggleSightLine(itinerary: string, sight: PopularSight, locale: 
   const body = itinerary.replace(/\s+$/, "");
   return `${body}${body ? "\n" : ""}${sightLineName(sight, locale)}\n`;
 }
+
+/**
+ * An index from a typed line to the one bundled sight it names.
+ *
+ * A name is only usable when it means one place: "王宮" is in Bangkok and in
+ * Madrid, and guessing between them is exactly the mistake the network
+ * lookup's region inference exists to avoid. Such names are left out and go
+ * through the normal lookup.
+ */
+export function bundledSightIndex(destinations: readonly PopularDestination[]) {
+  const byName = new Map<string, Array<{ sight: PopularSight; destination: PopularDestination }>>();
+  for (const destination of destinations) {
+    for (const sight of destination.sights) {
+      for (const name of new Set([fold(sight.ja), fold(sight.en)])) {
+        if (name.length < 2) continue;
+        const entries = byName.get(name) ?? [];
+        if (!entries.some((entry) => entry.sight.q === sight.q)) entries.push({ sight, destination });
+        byName.set(name, entries);
+      }
+    }
+  }
+  return {
+    find(line: string) {
+      const entries = byName.get(fold(line));
+      return entries && entries.length === 1 ? entries[0] : null;
+    },
+  };
+}

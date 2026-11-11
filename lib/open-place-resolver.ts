@@ -879,7 +879,18 @@ export class OpenPlaceResolver {
     return { answered, candidates };
   }
 
-  async resolve(request: PlaceResolutionRequest, signal?: AbortSignal, mapsSearch: MapsPlaceSearch | null = null) {
+  /**
+   * `known` carries lines that were already placed without the network (a
+   * sight picked from the bundled list). They are not looked up again, but
+   * they still vote on where the trip is, so the remaining lines are
+   * resolved around them.
+   */
+  async resolve(
+    request: PlaceResolutionRequest,
+    signal?: AbortSignal,
+    mapsSearch: MapsPlaceSearch | null = null,
+    known: ReadonlyMap<string, ResolvedInputStop> = new Map(),
+  ) {
     const destination = destinationById(request.destination === "auto" ? "worldwide" : request.destination);
     const inputs = [...request.queries, ...(request.hotelQuery ? [request.hotelQuery] : [])];
     const pools: Candidate[][] = inputs.map(() => []);
@@ -896,7 +907,16 @@ export class OpenPlaceResolver {
       }));
     };
 
-    await forEachInput(inputs.map((_input, index) => index), async (index) => {
+    const isKnown = (index: number) => index < request.queries.length && known.has(inputs[index]);
+    inputs.forEach((input, index) => {
+      if (!isKnown(index)) return;
+      const stop = known.get(input)!;
+      if (!withinBounds(destination.bounds, stop.latitude, stop.longitude)) return;
+      pools[index] = [{ source: "wikidata", stop: { ...stop, input }, similarity: 1, rank: 0, visitWeight: 1, corroborated: true, prominence: 1 }];
+    });
+    const unknown = inputs.map((_input, index) => index).filter((index) => pools[index].length === 0);
+    anySourceAnswered ||= unknown.length === 0;
+    await forEachInput(unknown, async (index) => {
       const { answered, candidates } = await this.gather(inputs[index], request.languageCode, destination, null, signal);
       anySourceAnswered ||= answered;
       pools[index] = candidates;
@@ -1258,8 +1278,9 @@ export async function fetchOpenPlaceResolutions(
   signal?: AbortSignal,
   resolver: OpenPlaceResolver = publicOpenPlaceResolver,
   mapsSearch: MapsPlaceSearch | null = null,
+  known: ReadonlyMap<string, ResolvedInputStop> = new Map(),
 ) {
   // providerOverrides are Google Place IDs. An exact choice that cannot be
   // rehydrated stays unresolved; it never degrades to a fuzzy text match.
-  return resolver.resolve(request, signal, mapsSearch);
+  return resolver.resolve(request, signal, mapsSearch, known);
 }

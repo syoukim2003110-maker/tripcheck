@@ -12,6 +12,7 @@ export type { AmbiguousPlaceResolution } from "./google-place-resolver.ts";
 import { parsePlaceResolutionRequest } from "./google-place-resolver.ts";
 import { fetchOpenPlaceResolutions, OPEN_PLACE_ATTRIBUTION } from "./open-place-resolver.ts";
 import { appleRelayPlaceSearch } from "./apple-relay-client.ts";
+import { knownStopsForQueries } from "./bundled-sights-resolution.ts";
 
 /**
  * Where the keyless lookup runs.
@@ -29,12 +30,27 @@ export function setOpenPlaceResolutionTransport(transport: OpenPlaceResolutionTr
   openTransport = transport;
 }
 
+/**
+ * Lines that are exactly a bundled sight (everything added from the
+ * destination picker) are placed from the bundled list. The list is a
+ * convenience: if it cannot be loaded, every line simply takes the lookup.
+ */
+async function bundledKnownStops(queries: readonly string[], languageCode: "en" | "ja") {
+  try {
+    const bundled = await import("./popular-sights-data.json", { with: { type: "json" } });
+    return knownStopsForQueries(queries, languageCode, bundled.default as Parameters<typeof knownStopsForQueries>[2]);
+  } catch {
+    return new Map<string, ResolvedInputStop>();
+  }
+}
+
 async function resolveOpenInBrowser(encodedPayload: string, signal?: AbortSignal) {
   const parsed = parsePlaceResolutionRequest(JSON.parse(encodedPayload), PLANNING_BUDGET.openPlaceResolutions);
   if (!parsed) return Response.json({ code: "invalid_request" }, { status: 400 });
   try {
     const mapsSearch = appleRelayPlaceSearch();
-    const result = await fetchOpenPlaceResolutions(parsed, signal, undefined, mapsSearch);
+    const known = await bundledKnownStops(parsed.queries, parsed.languageCode);
+    const result = await fetchOpenPlaceResolutions(parsed, signal, undefined, mapsSearch, known);
     return Response.json({
       provider: "open_place_data",
       attribution: mapsSearch

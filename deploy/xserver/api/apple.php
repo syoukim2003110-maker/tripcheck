@@ -25,6 +25,9 @@
 
 declare(strict_types=1);
 
+// Coordinates as Apple sent them (35.6611094), not PHP's 50-digit expansion.
+ini_set('serialize_precision', '-1');
+
 const APPLE_ORIGIN = 'https://maps-api.apple.com';
 const DAILY_CALL_CEILING = 15000;      // stay inside Apple's daily quota
 const PER_CLIENT_PER_MINUTE = 180;     // one trip build is ~20 searches + ~80 travel times

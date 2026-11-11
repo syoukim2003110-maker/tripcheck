@@ -18,7 +18,9 @@ export const metadata: Metadata = {
 // stored "ja" choice lands on /ja without an English flash. /ja stays an
 // explicit choice with no gate, and choosing EN in the header stores "en", so
 // the redirect can never loop.
-const LOCALE_GATE_SCRIPT = 'try{if(localStorage.getItem("tripcheck-locale")==="ja")location.replace("/ja"+location.search+location.hash)}catch(e){}';
+// A first visit has no stored choice yet; a browser set to Japanese gets the
+// Japanese planner rather than an English page it has to find the switch on.
+const LOCALE_GATE_SCRIPT = 'try{var l=localStorage.getItem("tripcheck-locale");if(l==="ja"||(!l&&/^ja\\b/i.test(navigator.language||"")))location.replace("/ja/"+location.search+location.hash)}catch(e){}';
 
 export default function Home() {
   return <><script dangerouslySetInnerHTML={{ __html: LOCALE_GATE_SCRIPT }} /><StructuredData locale="en" /><TripPlannerApp initialLocale="en" mapsApiKey={browserGoogleMapsApiKey()} /></>;
