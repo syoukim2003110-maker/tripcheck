@@ -105,7 +105,7 @@ if ($zip->open($zipPath) !== true) stop(500, 'zip を開けませんでした。
 $names = [];
 for ($index = 0; $index < $zip->numFiles; $index += 1) {
     $name = $zip->getNameIndex($index);
-    if (!is_string($name) || $name === '' || $name[0] === '/' || strpos($name, '..') !== false || strpos($name, "\0") !== false || strpos($name, '\\') !== false) {
+    if (!is_string($name) || $name === '' || $name[0] === '/' || in_array('..', explode('/', $name), true) || strpos($name, "\0") !== false || strpos($name, '\\') !== false) {
         $zip->close();
         stop(400, 'zip の中に想定外のパスがあります。展開を中止しました。');
     }
