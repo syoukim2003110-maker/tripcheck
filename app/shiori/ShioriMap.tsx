@@ -14,7 +14,7 @@ import { photoUrl } from "../../lib/shiori/state";
  * dashed so it is never mistaken for a route.
  */
 
-const STYLE = "https://tiles.openfreemap.org/styles/liberty";
+const STYLE = "https://tiles.openfreemap.org/styles/positron";
 /** 朱・藍・松葉・江戸紫・芥子・臙脂・鉄: each carries white text at AA and reads on the paper card. */
 export const DAY_COLORS = ["#b3402a", "#2b4a7a", "#3d6b47", "#6b4a8c", "#8a5f00", "#9b2c52", "#2a6c78"];
 const UNKNOWN_WAY = "#6f6a62";
@@ -38,7 +38,7 @@ type Props = {
   days: ShioriDay[];
   selectedDay: number;
   hotel: ShioriHotel | null;
-  /** Bumped to focus a stop from the timeline. */
+  /** The stop that is open in the booklet; a new token re-centres the map on it. */
   focus: { placeId: string; token: number } | null;
   onSelectStop?: (dayIndex: number, placeId: string) => void;
   label: string;
@@ -48,9 +48,10 @@ type Props = {
 };
 
 /**
- * The basemap is OpenFreeMap's own style; only its flat areas are tinted
- * toward the booklet's paper. A layer that is missing or shaped differently
- * is left exactly as it came.
+ * The basemap is OpenFreeMap's quiet grey style, so the day's line and pins
+ * are the loudest things on it; its flat areas are tinted toward the
+ * booklet's paper. A layer that is missing or shaped differently is left
+ * exactly as it came.
  */
 function tintBasemap(instance: MapLibreMap) {
   const tints: Array<[RegExp, "background-color" | "fill-color", string]> = [
@@ -58,9 +59,21 @@ function tintBasemap(instance: MapLibreMap) {
     [/^water$/, "fill-color", "#b8cfd6"],
     [/^(park|landcover_wood|landcover_grass|landuse_cemetery|landuse_pitch)$/, "fill-color", "#d2dab6"],
     [/^landuse_residential$/, "fill-color", "#ebe1cb"],
+    [/^building$/, "fill-color", "#e4d9c1"],
   ];
   try {
     for (const layer of instance.getStyle().layers ?? []) {
+      // Place names are for finding one's bearings; they stay quieter than the pins.
+      if (layer.type === "symbol" && /^label_/.test(layer.id)) {
+        instance.setPaintProperty(layer.id, "text-color", "#5c5346");
+        instance.setPaintProperty(layer.id, "text-halo-color", "#f3ecdc");
+        continue;
+      }
+      // Road numbers in boxes read like pin numbers; the map is not for driving.
+      if (layer.type === "symbol" && /shield/.test(layer.id)) {
+        instance.setLayoutProperty(layer.id, "visibility", "none");
+        continue;
+      }
       const tint = tints.find(([pattern]) => pattern.test(layer.id));
       if (!tint) continue;
       if ((tint[1] === "background-color") !== (layer.type === "background")) continue;
@@ -110,22 +123,44 @@ export default function ShioriMap({ days, selectedDay, hotel, focus, onSelectSto
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
   const [expanded, setExpanded] = useState(false);
-  // The stop whose card is shown: the latest of a pin tapped here and a stop
-  // tapped in the booklet, until it is closed.
-  const [picked, setPicked] = useState<{ placeId: string; token: number } | null>(null);
-  const [closedToken, setClosedToken] = useState(0);
-  const latest = picked && (!focus || picked.token >= focus.token) ? picked : focus;
+  // The pin that was tapped. Its card is shown until it is closed or another
+  // day is opened. A stop opened
+  // in the booklet is only ringed on the map: its card would say what the
+  // reader is already looking at.
+  const [picked, setPicked] = useState<string | null>(null);
+  const [shownDay, setShownDay] = useState(selectedDay);
+  if (shownDay !== selectedDay) {
+    setShownDay(selectedDay);
+    setPicked(null);
+  }
   const peek = (() => {
-    if (!latest || latest.token === closedToken) return null;
+    if (!picked || shownDay !== selectedDay) return null;
     for (const day of days) {
-      const position = day.stops.findIndex((stop) => stop.place.id === latest.placeId);
+      const position = day.stops.findIndex((stop) => stop.place.id === picked);
       if (position >= 0) return { day, position, stop: day.stops[position] };
     }
     return null;
   })();
   const peekId = peek?.stop.place.id ?? null;
+  const ringId = peekId ?? focus?.placeId ?? null;
   const peekShown = useRef(false);
   useEffect(() => { peekShown.current = peekId !== null; }, [peekId]);
+  const slot = useRef<HTMLDivElement | null>(null);
+  const viewButton = useRef<HTMLButtonElement | null>(null);
+  // A pin opened from the keyboard hands the focus to its card.
+  const byKeyboard = useRef(false);
+  useEffect(() => {
+    if (peekId && byKeyboard.current) viewButton.current?.focus();
+    byKeyboard.current = false;
+  }, [peekId]);
+  const closePeek = () => {
+    // Focus that was in the card goes back to its pin, not to the top of the page.
+    const pin = peekId && slot.current?.contains(document.activeElement)
+      ? markers.current.find((marker) => marker.getElement().dataset.place === peekId)?.getElement()
+      : null;
+    setPicked(null);
+    pin?.focus();
+  };
   const onSelect = useRef(onSelectStop);
   useEffect(() => { onSelect.current = onSelectStop; }, [onSelectStop]);
   // The legend names only the lines that are on the map right now.
@@ -144,7 +179,13 @@ export default function ShioriMap({ days, selectedDay, hotel, focus, onSelectSto
         center: [139.7671, 35.6812],
         zoom: 10,
         attributionControl: { compact: true },
+        // North stays up: nothing on the page says which way a turned map faces.
+        dragRotate: false,
+        pitchWithRotate: false,
+        touchPitch: false,
       });
+      instance.touchZoomRotate.disableRotation();
+      instance.keyboard.disableRotation();
       instance.addControl(new maplibre.NavigationControl({ showCompass: false }), "top-right");
       instance.on("load", () => {
         if (cancelled) return;
@@ -243,7 +284,12 @@ export default function ShioriMap({ days, selectedDay, hotel, focus, onSelectSto
         element.title = stop.place.name;
         element.dataset.place = stop.place.id;
         element.setAttribute("aria-label", text.pinLabel(day.index, position, stop.place.name));
-        element.addEventListener("click", () => setPicked({ placeId: stop.place.id, token: Date.now() }));
+        // Only the day being read is in the tab order; the other days' dots still take a tap.
+        if (!isSelected) element.tabIndex = -1;
+        element.addEventListener("click", (event) => {
+          byKeyboard.current = event.detail === 0;
+          setPicked(stop.place.id);
+        });
         markers.current.push(new maplibre.Marker({ element }).setLngLat([stop.place.lon, stop.place.lat]).addTo(instance));
         if (isSelected) {
           bounds.extend([stop.place.lon, stop.place.lat]);
@@ -266,60 +312,72 @@ export default function ShioriMap({ days, selectedDay, hotel, focus, onSelectSto
       for (const day of days) for (const stop of day.stops) { bounds.extend([stop.place.lon, stop.place.lat]); boundsCount += 1; }
     }
     if (boundsCount === 1) instance.easeTo({ center: bounds.getCenter(), zoom: 14, duration: 500 });
-    else if (boundsCount > 1) instance.fitBounds(bounds, { padding: { top: 40, right: 40, left: 40, bottom: peekShown.current ? 132 : 40 }, maxZoom: 15, duration: 500 });
+    // Only the wide layout lays the card over the map; there the pins are kept below it.
+    else if (boundsCount > 1) instance.fitBounds(bounds, { padding: { top: peekShown.current && (container.current?.clientHeight ?? 0) >= 420 ? 110 : 40, right: 40, left: 40, bottom: 40 }, maxZoom: 15, duration: 500 });
     // The pin texts are rebuilt with the days; the wording itself does not change between plans.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [days, selectedDay, hotel, ready]);
 
-  // The stop whose card is open is the larger, ringed pin.
+  // The stop whose card is open, or that is open in the booklet, is the larger, ringed pin.
   useEffect(() => {
     for (const marker of markers.current) {
       const element = marker.getElement();
-      element.classList.toggle("is-focus", peekId !== null && element.dataset.place === peekId);
+      element.classList.toggle("is-focus", ringId !== null && element.dataset.place === ringId);
     }
-  }, [peekId, days, selectedDay, hotel, ready]);
+  }, [ringId, days, selectedDay, hotel, ready]);
 
   useEffect(() => {
     if (!focus || !ready || !map.current) return;
     const stop = days.flatMap((day) => day.stops).find((candidate) => candidate.place.id === focus.placeId);
-    if (stop) map.current.easeTo({ center: [stop.place.lon, stop.place.lat], zoom: Math.max(map.current.getZoom(), 14.5), duration: 450, offset: [0, -Math.min(60, Math.round((container.current?.clientHeight ?? 180) * 0.3))] });
-    // The pin sits above the middle, clear of its card. `days` is read at focus
-    // time only; a re-plan must not re-centre the map.
+    if (stop) map.current.easeTo({ center: [stop.place.lon, stop.place.lat], zoom: Math.max(map.current.getZoom(), 14.5), duration: 450 });
+    // `days` is read at focus time only; a re-plan must not re-centre the map.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focus, ready]);
 
-  // The canvas follows the frame once it has finished opening or folding.
+  // The frame opens and folds at once; the canvas follows on the next frame.
   useEffect(() => {
-    const handle = window.setTimeout(() => map.current?.resize(), 260);
-    return () => window.clearTimeout(handle);
+    const handle = window.requestAnimationFrame(() => map.current?.resize());
+    return () => window.cancelAnimationFrame(handle);
   }, [expanded]);
 
   const peekPhoto = peek ? photoUrl(peek.stop.place.img, 160) : null;
   return (
-    <div aria-label={label} className={`shiori-map${expanded ? " is-expanded" : ""}`} role="region">
-      <div className="shiori-map-frame" id="shiori-map-frame" onTransitionEnd={(event) => { if (event.propertyName === "height") map.current?.resize(); }}>
-        <div className="shiori-map-canvas" ref={container} />
-        <span aria-hidden="true" className="shiori-map-creases" />
-        <span aria-hidden="true" className="shiori-map-compass">N</span>
-        {peek ? (
-          <div
-            className="shiori-peek"
-            onKeyDown={(event) => { if (event.key === "Escape") setClosedToken(latest?.token ?? 0); }}
-            style={{ ["--day" as string]: DAY_COLORS[peek.day.index % DAY_COLORS.length] }}
-          >
-            {peekPhoto ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img alt="" className="shiori-peek-photo" decoding="async" height={40} key={peekPhoto} loading="lazy" onError={(event) => { event.currentTarget.style.visibility = "hidden"; }} src={peekPhoto} width={40} />
-            ) : null}
-            <div className="shiori-peek-text">
-              <b><i>{peek.position + 1}</i>{peek.stop.place.name}</b>
-              <small>{text.peekMeta(peek.stop)}</small>
+    <div
+      aria-label={label}
+      className={`shiori-map${expanded ? " is-expanded" : ""}`}
+      onKeyDown={(event) => { if (event.key === "Escape" && peek) closePeek(); }}
+      role="region"
+    >
+      <div className="shiori-map-stage">
+        <div className="shiori-map-frame" id="shiori-map-frame">
+          <div className="shiori-map-canvas" ref={container} />
+          <span aria-hidden="true" className="shiori-map-creases" />
+          {failed ? <p className="shiori-map-note">{text.failed}</p> : null}
+        </div>
+        {/* Always on the page, so a screen reader hears the card when a pin fills it. */}
+        <div className="shiori-peek-slot" ref={slot} role="status">
+          {peek ? (
+            <div className="shiori-peek" style={{ ["--day" as string]: DAY_COLORS[peek.day.index % DAY_COLORS.length] }}>
+              {peekPhoto ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img alt="" className="shiori-peek-photo" decoding="async" height={40} key={peekPhoto} loading="lazy" onError={(event) => { event.currentTarget.style.visibility = "hidden"; }} src={peekPhoto} width={40} />
+              ) : null}
+              <div className="shiori-peek-text">
+                <b><i>{peek.position + 1}</i>{peek.stop.place.name}</b>
+                <small>{text.peekMeta(peek.stop)}</small>
+              </div>
+              <button
+                className="shiori-peek-view"
+                onClick={() => { setPicked(null); onSelect.current?.(peek.day.index, peek.stop.place.id); }}
+                ref={viewButton}
+                type="button"
+              >
+                {text.view}
+              </button>
+              <button aria-label={text.close} className="shiori-peek-close" onClick={closePeek} type="button">×</button>
             </div>
-            <button className="shiori-peek-view" onClick={() => onSelect.current?.(peek.day.index, peek.stop.place.id)} type="button">{text.view}</button>
-            <button aria-label={text.close} className="shiori-peek-close" onClick={() => setClosedToken(latest?.token ?? 0)} type="button">×</button>
-          </div>
-        ) : null}
-        {failed ? <p className="shiori-map-note">{text.failed}</p> : null}
+          ) : null}
+        </div>
       </div>
       <div className="shiori-map-foot">
         <ul className="shiori-map-legend">
