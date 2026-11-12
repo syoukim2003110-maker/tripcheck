@@ -290,7 +290,8 @@ export default function ShioriMap({ days, selectedDay, hotel, focus, onSelectSto
           byKeyboard.current = event.detail === 0;
           setPicked(stop.place.id);
         });
-        markers.current.push(new maplibre.Marker({ element }).setLngLat([stop.place.lon, stop.place.lat]).addTo(instance));
+        // MapLibre writes an inline opacity on every marker, so the other days' dots are dimmed through it, not the stylesheet.
+        markers.current.push(new maplibre.Marker({ element, opacity: isSelected ? "1" : "0.55" }).setLngLat([stop.place.lon, stop.place.lat]).addTo(instance));
         if (isSelected) {
           bounds.extend([stop.place.lon, stop.place.lat]);
           boundsCount += 1;

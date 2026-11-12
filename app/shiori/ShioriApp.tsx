@@ -1211,7 +1211,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
           ) : null}
 
           {plan && plan.days.length > 0 ? (
-            <ol aria-label={t.contents} className="shiori-contents">
+            <ol aria-label={t.contents} className={`shiori-contents${plan.notices.length > 1 ? " is-folded" : ""}`}>
               {plan.days.map((entry) => (
                 <li key={entry.index} style={{ ["--day" as string]: dayColor(entry.index) }}>
                   <button aria-current={entry.index === activeDay ? "true" : undefined} aria-label={`${t.dayTab(entry.index)} ${entry.title}`} onClick={() => selectDay(entry.index, true)} type="button">
