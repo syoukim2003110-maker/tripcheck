@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { RailNetwork, plainStationName, type RailNetworkData } from "../lib/rail-router.ts";
+import { daySearch, type SearchProblem } from "../lib/shiori/day-search.ts";
 import { buildShioriPlan, type ShioriPlace, type ShioriRoute } from "../lib/shiori/plan.ts";
 import { decodeTrip, encodeTrip, kindLabel, placeFromSight, togglePlace, emptyTrip, MAX_PLACES, type ShioriTrip } from "../lib/shiori/state.ts";
 import { shioriStayMinutes } from "../lib/shiori/stay.ts";
@@ -411,4 +412,156 @@ test("cafés are ordered by how little they take the traveller off the way", asy
   // Before a train ride the same cafés are ordered by the walk from the place just left.
   const after = await findCafes({ ...brk, reason: "after", to: { latitude: 35.0, longitude: 135.05 }, search: from }, client, "ja");
   assert.deepEqual(after.map((pick) => pick.name), ["少し入った店", "道沿いの店", "遠回りの店"]);
+});
+
+/*
+ * The search over days and orders, on tables of minutes written by hand.
+ */
+
+/** A table where every pair of different stops costs `minutes(from, to)`. */
+function table(count: number, minutes: (from: number, to: number) => number) {
+  return Array.from({ length: count }, (_, from) => Array.from({ length: count }, (_, to) => (from === to ? 0 : minutes(from, to))));
+}
+
+test("the order of a day is the cheapest of all orders, whatever is fixed in it", () => {
+  // Random small days — with and without a hotel, a lunch restaurant, a
+  // dinner, a day-filling stay — against every order tried one by one.
+  let state = 7;
+  const random = (below: number) => {
+    state = (state * 1_103_515_245 + 12_345) % 2_147_483_648;
+    return Math.floor((state / 2_147_483_648) * below);
+  };
+  for (let round = 0; round < 300; round += 1) {
+    const count = 2 + random(5);
+    const stops: SearchProblem["stops"] = Array.from({ length: count }, () => ({ stay: 30 + 15 * random(5), meal: null, day: null }));
+    if (random(3) === 0) stops[random(count)] = { stay: 60, meal: "lunch", day: null };
+    if (random(3) === 0) stops[count - 1] = { stay: 90, meal: "dinner", day: null };
+    if (random(6) === 0) stops[0] = { stay: 300, meal: null, day: null };
+    const minutes = table(count, () => 5 + random(50));
+    const problem: SearchProblem = {
+      stops,
+      minutes,
+      km: table(count, () => 1 + random(9)),
+      hotel: random(2) === 0 ? { out: stops.map(() => 5 + random(40)), back: stops.map(() => 5 + random(40)), km: stops.map(() => 3) } : null,
+    };
+    const search = daySearch(problem);
+    const found = search.solveDay(stops.map((_, index) => index));
+    // What an order costs, written out again: the rides, half the wait at a
+    // lunch restaurant's door, and far more for a day that cannot be kept.
+    const costOf = (day: ReturnType<typeof search.describe>) => {
+      let waiting = 0;
+      day.order.forEach((stop, position) => {
+        if (position > 0 && stops[stop].meal === "lunch") waiting += Math.max(0, day.arrive[position] - day.leave[position - 1] - minutes[day.order[position - 1]][stop]);
+      });
+      return day.travel + waiting / 2 + (day.overrun > 0 ? 500 + day.overrun * 10 + (day.overrun * day.overrun) / 6 : 0) + day.missed * 1000;
+    };
+    // A dinner is last and a day-filling stay first; every other order is a candidate.
+    const rank = (stop: number) => (stops[stop].meal === "dinner" ? 2 : !stops[stop].meal && stops[stop].stay >= 300 ? 0 : 1);
+    let least = Infinity;
+    const order: number[] = [];
+    const visit = () => {
+      if (order.length === count) {
+        least = Math.min(least, costOf(search.describe([...order])));
+        return;
+      }
+      for (let stop = 0; stop < count; stop += 1) {
+        if (order.includes(stop) || (order.length > 0 && rank(stop) < rank(order.at(-1)!))) continue;
+        order.push(stop);
+        visit();
+        order.pop();
+      }
+    };
+    visit();
+    assert.ok(Math.abs(costOf(found) - least) < 1e-6, `round ${round}: found ${costOf(found)}, best ${least}, order ${found.order.join(">")}`);
+    assert.deepEqual([...found.order].sort(), stops.map((_, index) => index));
+  }
+});
+
+test("a restaurant chosen for lunch is reached while it serves, even when a shorter route passes it at ten", () => {
+  // Restaurant — A — B — C in a row, two hours at each sight. The shortest
+  // route starts at the restaurant (and so starts the day at 11:30, with no
+  // room left for three sights); the plan sees a sight first and sits down
+  // at lunchtime.
+  const stops: SearchProblem["stops"] = [
+    { stay: 120, meal: null, day: null },
+    { stay: 60, meal: "lunch", day: null },
+    { stay: 120, meal: null, day: null },
+    { stay: 120, meal: null, day: null },
+  ];
+  const line = [1, 0, 2, 3];
+  const problem: SearchProblem = { stops, minutes: table(4, (from, to) => 10 * Math.abs(line[from] - line[to])), km: table(4, (from, to) => Math.abs(line[from] - line[to])), hotel: null };
+  const search = daySearch(problem);
+  const day = search.solveDay([0, 1, 2, 3]);
+  const lunch = day.order.indexOf(1);
+  assert.equal(day.missed, 0);
+  assert.equal(day.overrun, 0);
+  assert.ok(day.arrive[lunch] >= 11 * 60 + 30 && day.arrive[lunch] <= 14 * 60, `seated at ${day.arrive[lunch]}`);
+  assert.ok(lunch >= 1, day.order.join(">"));
+  // The shortest route of all would have run past 18:00.
+  assert.ok(search.describe([1, 0, 2, 3]).travel < day.travel);
+  assert.ok(search.describe([1, 0, 2, 3]).overrun > 0);
+});
+
+test("when two splits cost the same minutes, the days are the neighbourhoods", () => {
+  // Four places at the corners of a long rectangle; every ride is priced
+  // 30 minutes (as a bus rounds them). Only the map tells the pairs apart.
+  const at = [[0, 0], [0, 1], [8, 0], [8, 1]];
+  const km = table(4, (from, to) => Math.hypot(at[from][0] - at[to][0], at[from][1] - at[to][1]));
+  const problem: SearchProblem = { stops: at.map(() => ({ stay: 200, meal: null, day: null })), minutes: table(4, () => 30), km, hotel: null };
+  const trip = daySearch(problem).choose(2);
+  assert.deepEqual(trip.days.map((day) => [...day.order].sort()), [[0, 1], [2, 3]]);
+  // And within a day, of two equally fast orders the one that does not double back.
+  const row: SearchProblem = { stops: [0, 1, 2, 3].map(() => ({ stay: 30, meal: null, day: null })), minutes: table(4, () => 20), km: table(4, (from, to) => Math.abs(from - to)), hotel: null };
+  const day = daySearch(row).solveDay([0, 1, 2, 3]);
+  assert.ok(day.order.join("") === "0123" || day.order.join("") === "3210", day.order.join(">"));
+});
+
+test("a spare day is used when it saves real travel, and left free when it does not", () => {
+  // Three pairs of sights around a hotel, ten minutes from it. Between two
+  // pairs the only way is a 100-minute ride.
+  const pair = (stop: number) => Math.floor(stop / 2);
+  const stops: SearchProblem["stops"] = Array.from({ length: 6 }, () => ({ stay: 100, meal: null, day: null }));
+  const apart = (cross: number): SearchProblem => ({
+    stops,
+    minutes: table(6, (from, to) => (pair(from) === pair(to) ? 5 : cross)),
+    km: table(6, (from, to) => (pair(from) === pair(to) ? 1 : 5)),
+    hotel: { out: stops.map(() => 10), back: stops.map(() => 10), km: stops.map(() => 3) },
+  });
+  // Two days fit and neither is packed, but one of them crosses over; with a third day nobody does.
+  const far = daySearch(apart(100));
+  assert.equal(far.choose(2).days.length, 2);
+  const three = far.choose(3);
+  assert.equal(three.days.length, 3);
+  assert.deepEqual(three.days.map((day) => [...day.order].sort()), [[0, 1], [2, 3], [4, 5]]);
+  // Where crossing over costs no more than going back to the hotel and out again, a third day saves nothing.
+  assert.equal(daySearch(apart(20)).choose(3).days.length, 2);
+  // And a day with one short visit on it is never the day gained.
+  const lone: SearchProblem = { ...apart(100), stops: stops.slice(0, 5), minutes: apart(100).minutes.slice(0, 5).map((row) => row.slice(0, 5)), km: apart(100).km.slice(0, 5).map((row) => row.slice(0, 5)), hotel: { out: [10, 10, 10, 10, 10], back: [10, 10, 10, 10, 10], km: [3, 3, 3, 3, 3] } };
+  assert.equal(daySearch(lone).choose(3).days.length, 2);
+});
+
+test("a list too long to try every split is still split as well as one short enough to", () => {
+  // The same lists searched both ways: every split costed, and the
+  // neighbourhood search used beyond twelve places.
+  let state = 99;
+  const random = (below: number) => {
+    state = (state * 1_103_515_245 + 12_345) % 2_147_483_648;
+    return Math.floor((state / 2_147_483_648) * below);
+  };
+  for (let round = 0; round < 12; round += 1) {
+    const count = 8 + random(3);
+    const at = Array.from({ length: count }, () => [random(12), random(12)]);
+    const km = table(count, (from, to) => Math.hypot(at[from][0] - at[to][0], at[from][1] - at[to][1]));
+    const problem: SearchProblem = {
+      stops: at.map(() => ({ stay: 45 + 15 * random(6), meal: null, day: null })),
+      minutes: km.map((row) => row.map((distance) => (distance === 0 ? 0 : Math.ceil((12 + distance * 5.5) / 5) * 5))),
+      km,
+      hotel: round % 2 === 0 ? { out: at.map(([x, y]) => 10 + 5 * Math.round(Math.hypot(x - 6, y - 6))), back: at.map(([x, y]) => 10 + 5 * Math.round(Math.hypot(x - 6, y - 6))), km: at.map(([x, y]) => Math.hypot(x - 6, y - 6)) } : null,
+    };
+    const cost = (trip: ReturnType<ReturnType<typeof daySearch>["choose"]>) => trip.days.reduce((sum, day) => sum + day.cost, 0);
+    const exact = daySearch(problem).choose(3, { quick: true });
+    const searched = daySearch(problem, { exactSplits: 0 }).choose(3, { quick: true });
+    assert.equal(searched.days.length, exact.days.length, `round ${round}`);
+    assert.ok(cost(searched) <= cost(exact) + 5, `round ${round}: ${cost(searched)} against ${cost(exact)}`);
+  }
 });
