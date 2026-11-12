@@ -63,23 +63,119 @@ const RIDE_MINUTES_PER_KM = 1.85;
 const DWELL_MINUTES = 0.6;
 
 /*
- * Wikidata keeps one item per operator at a shared station and names it
- * "東京メトロ渋谷駅" or "東急電鉄・東京メトロ渋谷駅". A traveller looks for
- * 「渋谷駅」 on the signs. Only company names are removed — never a prefix that
- * is part of a real station name (京成上野, 近鉄奈良, 西武新宿).
+ * Wikidata keeps one item per operator — sometimes per line — at a shared
+ * station and names it "東京メトロ渋谷駅", "東急電鉄・東京メトロ渋谷駅" or
+ * "東京メトロ有楽町線市ケ谷駅". A traveller looks for 「渋谷駅」 and 「市ケ谷駅」
+ * on the signs. Only full company names and line names are removed — never a
+ * short prefix that is part of a real station name (京成上野, 近鉄奈良,
+ * 西武新宿, 地下鉄成増).
  */
 const operatorNames = [
-  "JR東日本", "JR西日本", "JR東海", "JR九州", "JR北海道", "JR四国", "東京メトロ", "東京地下鉄", "都営地下鉄", "東京都交通局",
+  "JR東日本", "JR西日本", "JR東海", "JR九州", "JR北海道", "JR四国", "東京メトロ", "東京地下鉄", "都営地下鉄", "東京都交通局", "都営",
   "東急電鉄", "京王電鉄", "小田急電鉄", "西武鉄道", "東武鉄道", "京成電鉄", "京浜急行電鉄", "相模鉄道", "首都圏新都市鉄道",
   "大阪メトロ", "Osaka Metro", "大阪市高速電気軌道", "京都市営地下鉄", "京都市交通局", "名古屋市営地下鉄", "名古屋市交通局",
   "福岡市地下鉄", "札幌市営地下鉄", "仙台市地下鉄", "神戸市営地下鉄", "横浜市営地下鉄", "阪急電鉄", "阪神電気鉄道",
-  "近畿日本鉄道", "南海電気鉄道", "京阪電気鉄道", "名古屋鉄道", "西日本鉄道", "東京モノレール", "東京臨海高速鉄道",
+  "近畿日本鉄道", "南海電気鉄道", "京阪電気鉄道", "京福電気鉄道", "名古屋鉄道", "西日本鉄道", "東京モノレール", "東京臨海高速鉄道",
+  "横浜高速鉄道", "名古屋臨海高速鉄道", "神戸新交通", "広島高速交通",
+  // Not companies, but the same kind of label: "新幹線名古屋駅" is 名古屋駅,
+  // and the Keiō New Line platforms at Shinjuku ("新線新宿駅") are 新宿駅.
+  "新幹線", "新線",
 ];
-const operatorPrefix = new RegExp(`^(?:(?:${operatorNames.join("|")})[・･、]?)+(?=.+駅$)`);
+/*
+ * The English labels carry the same baggage ("Tokyo Metro Ueno Station").
+ * A full company name is never part of a station's name and always comes
+ * off. A short brand can be — "JR Namba" and "Keikyū Kamata" are what the
+ * signs say — so those come off only where the generator has seen the
+ * Japanese label of the same station lose its company prefix.
+ */
+const englishCompanyNames = [
+  "JR East", "JR West", "JR Central", "JR Kyushu", "JR Hokkaido", "JR Shikoku", "Tokyo Metro", "Toei Subway",
+  "Tokyu Railways", "Tokyu Corporation", "Keio Corporation", "Odakyu Electric Railway", "Seibu Railway", "Tobu Railway",
+  "Keisei Electric Railway", "Keikyu Corporation", "Sagami Railways", "Sagami Railway",
+  "Osaka Metro", "Kyoto Municipal Subway", "Nagoya Municipal Subway", "Fukuoka City Subway", "Sapporo Municipal Subway",
+  "Sendai Subway", "Kobe City Subway", "Kobe Municipal Subway", "Kobe New Transit", "Yokohama Municipal Subway", "Hankyu Corporation", "Hankyu Railway",
+  "Hanshin Electric Railway", "Kintetsu Railway", "Nankai Electric Railway", "Keihan Electric Railway", "Keifuku Electric Railroad",
+  "Nagoya Railroad", "Nishi-Nippon Railroad", "Tokyo Monorail", "Yokohama Minatomirai Railway",
+];
+const englishBrandNames = [
+  "JR", "Toei", "Tokyu", "Keio", "Keiō", "Odakyu", "Seibu", "Tobu", "Keisei", "Keikyu", "Keikyū", "Hankyu", "Hanshin",
+  "Kintetsu", "Nankai", "Keihan", "Meitetsu", "Shinkansen",
+];
+/*
+ * Wikidata's own disambiguated labels where the name on the platform sign is
+ * plainer and no rule can tell (西武 is part of 西武新宿 but not of 練馬).
+ * Each entry was checked against the operator's station list.
+ */
+const officialStationNames: Record<string, string> = {
+  // Seibu Ikebukuro line and Toei Ōedo line: both call the station 練馬.
+  "西武練馬駅": "練馬駅",
+  // The Keiō New Line platforms: the station is Shinjuku in either language.
+  "Shinsen-Shinjuku Station": "Shinjuku Station",
+};
 
-export function plainStationName(name: string) {
-  const plain = name.replace(operatorPrefix, "").replace(/\s*[(（][^)）]*[)）]\s*$/, "").trim();
+const longestFirst = (names: readonly string[]) => [...new Set(names.filter((name) => name.length >= 2))].sort((left, right) => right.length - left.length);
+const japanesePrefixes = longestFirst(operatorNames);
+const englishCompanyPrefixes = longestFirst(englishCompanyNames);
+const englishBrandPrefixes = longestFirst([...englishCompanyNames, ...englishBrandNames]);
+/** "Osaka-Umeda Station (Hanshin)": the bracket is the company again. */
+const companyBrackets = new Set([...englishCompanyNames, ...englishBrandNames]);
+/** A bracket that only says which railway the station belongs to. */
+const transportBracket = /\b(tram|tramway|rer|m[eé]tro|subway|underground|railways?|rail|line|liner|station|mtr|lrt|mrt|bts|u-bahn|s-bahn|path|irt|ind|bmt)\b/i;
+
+function tidy(name: string) {
+  // U+2010 is a hyphen some labels use instead of "-"; one spelling is enough.
+  // "ソウル駅駅" is the metro's item for Seoul Station: the word once is the name.
+  // "Tram stop Rijksmuseum" is a description of the stop; the sign says "Rijksmuseum".
+  return name.replace(/\u2010/g, "-").replace(/[\s\u3000]+/g, " ").replace(/駅駅$/, "駅").replace(/\b(station) station$/i, "$1")
+    .replace(/^(?:Tram stop|Tramhalte|Metrostation)\s+(?=\S)/i, "").trim();
+}
+
+function withoutPrefixes(name: string, prefixes: readonly string[], ending: RegExp) {
+  if (!ending.test(name)) return name;
+  let rest = name;
+  // "東急電鉄・東京メトロ・都営地下鉄目黒駅": several owners, one after another.
+  for (let round = 0; round < 6; round += 1) {
+    // A Latin prefix must end at a word break: "Toei" is not the start of "Toeizan".
+    const hit = prefixes.find((prefix) => rest.startsWith(prefix) && rest.length - prefix.length >= 2 && (!/[A-Za-z]$/.test(prefix) || /^[\s,]/.test(rest.slice(prefix.length))));
+    if (!hit) break;
+    const next = rest.slice(hit.length).replace(/^[・･、,\s]+(?:and\s+)?/, "");
+    // What is left must still be a station name of its own.
+    if (next.length < 2 || next === "駅" || /^station$/i.test(next)) break;
+    rest = next;
+  }
+  return rest;
+}
+
+/**
+ * The name a traveller reads on the sign. `knownPrefixes` are further company
+ * and line names of this network (the generator passes the ones Wikidata
+ * lists); without them the built-in company list is used.
+ */
+export function plainStationName(name: string, knownPrefixes: readonly string[] = []) {
+  let plain = tidy(name);
+  // "代々木駅 (都営地下鉄)" is an encyclopedia's way to tell two articles
+  // apart. A bracket inside the name — 西鉄福岡（天神）駅 — is official, and a
+  // bracket after a foreign name is dropped only when it names the railway
+  // ("Laplace (Paris RER)"), not when it is the stop's own suburb.
+  const bracket = plain.match(/^(.*?)\s*[(（]([^)）]*)[)）]$/);
+  if (bracket && bracket[1].length >= 2 && (/(駅|停留場|停留所|電停)$/.test(bracket[1]) || transportBracket.test(bracket[2]) || companyBrackets.has(bracket[2].trim()))) plain = bracket[1].trim();
+  plain = officialStationNames[plain] ?? plain;
+  const prefixes = knownPrefixes.length > 0 ? longestFirst([...japanesePrefixes, ...knownPrefixes]) : japanesePrefixes;
+  plain = withoutPrefixes(plain, prefixes, /.駅$/);
+  plain = withoutPrefixes(plain, englishCompanyPrefixes, /\sStation$/i);
+  plain = officialStationNames[plain] ?? plain;
   return plain.length >= 2 ? plain : name;
+}
+
+/**
+ * For the English label of a station whose Japanese label carried a company
+ * or line prefix: the short brands and this network's line names come off
+ * too ("Keiō Line Shinjuku Station" → "Shinjuku Station").
+ */
+export function plainEnglishStationName(name: string, knownPrefixes: readonly string[] = []) {
+  const prefixes = knownPrefixes.length > 0 ? longestFirst([...englishBrandPrefixes, ...knownPrefixes]) : englishBrandPrefixes;
+  const plain = withoutPrefixes(plainStationName(name), prefixes, /\sStation$/i);
+  return officialStationNames[plain] ?? plain;
 }
 
 function meters(from: GeoPoint, to: GeoPoint) {
@@ -173,13 +269,20 @@ export class RailNetwork {
 
   private stationName(index: number, language: "ja" | "en") {
     const [ja, en] = this.data.stations[index];
-    return language === "ja" ? plainStationName(ja) : en;
+    // The bundled names are already plain; this is the safety net for a
+    // network built before that, or loaded from somewhere else. A station
+    // with a name in only one language is shown in that one.
+    return language === "ja" ? plainStationName(ja || en) : plainStationName(en || ja);
   }
 
   private lineName(index: number, language: "ja" | "en") {
     if (index < 0) return null;
     const line = this.data.lines[index];
-    return line ? (language === "ja" ? line[0] : line[1]) : null;
+    if (!line) return null;
+    // An empty name means the data has the line but no name for it. Saying
+    // so (null) lets the page write "train" instead of a blank.
+    const name = (language === "ja" ? line[0] || line[1] : line[1] || line[0]).trim();
+    return name || null;
   }
 
   private nearestStations(point: GeoPoint) {
