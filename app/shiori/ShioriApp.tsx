@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
 import { fetchAppleFoodCandidates } from "../../lib/apple-food";
-import { budgetLabel, fetchHotpepperShops, inJapan, lunchPrice, type HotpepperShop } from "../../lib/hotpepper-client";
+import { budgetLabel, fetchHotpepperShops, inJapan, lunchPrice, shopsForMeal, type HotpepperShop } from "../../lib/hotpepper-client";
 import { appleRelayClient, appleRelaySearch } from "../../lib/apple-relay-client";
 import { defaultFoodDiscoveryQuery, type FoodCandidate } from "../../lib/google-food";
 import type { HotelCandidate } from "../../lib/google-hotels";
@@ -198,10 +198,10 @@ const text = {
     foodNone: "近くのお店の情報を取得できませんでした。地図アプリで探せます。",
     foodNote: "近い順です。評価や営業時間は地図アプリで確認してください。",
     shopNote: "ホットペッパーグルメに載っている店を近い順に出しています（載っていない店は出ません）。予算は店が載せている目安で、評判や空席は店のページで確認してください。",
+    shopNoteLunch: "ホットペッパーグルメに載っている店のうち、ランチ料金の記載がある食事の店を先に、近い順で出しています（居酒屋・バーは後ろ。載っていない店は出ません）。評判や空席は店のページで確認してください。",
     shopBudget: (band: string) => `夜の予算 ${band}`,
     shopLunch: (price: string) => `ランチ ${price}〜`,
     shopAdd: "この店にする",
-    shopPhotoCredit: "【画像提供：ホットペッパー グルメ】",
     walkAbout: (minutes: number) => `徒歩約${minutes}分`,
     ideasTitle: "時間に余裕あり。近くの人気スポット",
     ideasAdd: "追加",
@@ -366,10 +366,10 @@ const text = {
     foodNone: "Could not load places nearby. A maps app can.",
     foodNote: "Nearest first. Check ratings and hours in a maps app.",
     shopNote: "Restaurants listed on HotPepper Gourmet, nearest first (unlisted places are not shown). Budgets are the restaurant's own guide; check reviews and seats on its page.",
+    shopNoteLunch: "From HotPepper Gourmet: places for eating that state a lunch price first, nearest first (izakaya and bars after; unlisted places are not shown). Check reviews and seats on the restaurant's page.",
     shopBudget: (band: string) => `dinner budget ${band}`,
     shopLunch: (price: string) => `lunch from ${price}`,
     shopAdd: "Choose this one",
-    shopPhotoCredit: "Photos: HotPepper Gourmet",
     walkAbout: (minutes: number) => `~${minutes} min walk`,
     ideasTitle: "There is time left. Well-known places nearby",
     ideasAdd: "Add",
@@ -572,7 +572,7 @@ function MealRow({ meal, locale, onAdd }: { meal: ShioriMeal; locale: Locale; on
       if (inJapan(meal.near)) {
         const listed = await fetchHotpepperShops({ near: meal.near, withinMeters: 1000, meal: meal.kind });
         if (listed.length >= 3) {
-          setShops(listed.slice(0, 6));
+          setShops(shopsForMeal(listed, meal.kind));
           setCandidates([]);
           setState("ready");
           return;
@@ -625,8 +625,9 @@ function MealRow({ meal, locale, onAdd }: { meal: ShioriMeal; locale: Locale; on
               </li>
             ))}
           </ul>
-          <p className="shiori-quiet">{t.shopNote}</p>
-          <p className="shiori-quiet shiori-credit">{t.shopPhotoCredit} Powered by <a href="http://webservice.recruit.co.jp/" rel="noreferrer" target="_blank">ホットペッパーグルメ Webサービス</a></p>
+          <p className="shiori-quiet">{meal.kind === "lunch" ? t.shopNoteLunch : t.shopNote}</p>
+          {/* The provider's credit, in its own wording and markup (its guideline forbids altering either). */}
+          <p className="shiori-quiet shiori-credit">【画像提供：ホットペッパー グルメ】 Powered by <a href="http://webservice.recruit.co.jp/">ホットペッパーグルメ Webサービス</a></p>
         </>
       ) : null}
       {state === "ready" && shops.length === 0 ? (
@@ -1174,6 +1175,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
         </section>
         <footer className="shiori-foot">
           <p>{t.credits}</p>
+          <p className="shiori-credit">Powered by <a href="http://webservice.recruit.co.jp/">ホットペッパーグルメ Webサービス</a></p>
           <p><Link href="/privacy">{t.privacy}</Link> ・ <Link href={locale === "ja" ? "/classic/ja" : "/classic"}>{t.classic}</Link></p>
         </footer>
       </main>
@@ -1615,6 +1617,8 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
           <footer className="shiori-foot">
             <p>{t.note}</p>
             <p>{t.credits}</p>
+            {/* Restaurant listings and photos in Japan come from this service; its guideline asks for this line on the site. */}
+            <p className="shiori-credit">Powered by <a href="http://webservice.recruit.co.jp/">ホットペッパーグルメ Webサービス</a></p>
             <p>
               <button className="shiori-link" onClick={() => { setTrip(emptyTrip); setSaved(null); go("home"); try { window.localStorage.removeItem(STORAGE_KEY); } catch { /* ignore */ } window.history.replaceState({}, "", window.location.pathname); }} type="button">{t.newTrip}</button>
               {" ・ "}<Link href="/privacy">{t.privacy}</Link>

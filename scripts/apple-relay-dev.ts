@@ -59,7 +59,7 @@ createServer(async (request, response) => {
     const within = Number(url.searchParams.get("within") ?? "1000");
     if (!at || name.length > 60 || !Number.isInteger(within) || within < 1 || within > 3000) return send(400, { code: "invalid_request" });
     const range = within <= 300 ? 1 : within <= 500 ? 2 : within <= 1000 ? 3 : within <= 2000 ? 4 : 5;
-    const query = new URLSearchParams({ key, lat: at[1], lng: at[2], range: String(range), order: "4", count: "30", format: "json" });
+    const query = new URLSearchParams({ key, lat: at[1], lng: at[2], range: String(range), order: "4", count: "100", format: "json" });
     if (name) query.set("keyword", name);
     if (url.searchParams.get("meal") === "lunch") query.set("lunch", "1");
     try {
@@ -71,7 +71,7 @@ createServer(async (request, response) => {
       const https = (value: unknown) => typeof value === "string" && /^https:\/\/[a-z0-9.-]+\.(hotp\.jp|hotpepper\.jp)\//.test(value) ? value : null;
       const field = (value: unknown, ...path: string[]) => path.reduce<unknown>((at, step) => at && typeof at === "object" ? (at as Record<string, unknown>)[step] : undefined, value);
       return send(200, {
-        results: shops.slice(0, 30).flatMap((shop) => {
+        results: shops.slice(0, 100).flatMap((shop) => {
           const shopName = line(shop.name);
           const latitude = Number(shop.lat);
           const longitude = Number(shop.lng);

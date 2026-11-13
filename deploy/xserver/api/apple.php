@@ -330,7 +330,7 @@ if (($_GET['op'] ?? '') === 'food') {
     admit();
     // HotPepper takes one of five radii; the smallest that covers the ask.
     $range = $within <= 300 ? 1 : ($within <= 500 ? 2 : ($within <= 1000 ? 3 : ($within <= 2000 ? 4 : 5)));
-    $params = ['key' => $key, 'lat' => $at[1], 'lng' => $at[2], 'range' => $range, 'order' => 4, 'count' => 30, 'format' => 'json'];
+    $params = ['key' => $key, 'lat' => $at[1], 'lng' => $at[2], 'range' => $range, 'order' => 4, 'count' => 100, 'format' => 'json'];
     if ($name !== '') $params['keyword'] = $name;
     if (($_GET['meal'] ?? '') === 'lunch') $params['lunch'] = 1;
     try {
@@ -343,7 +343,7 @@ if (($_GET['op'] ?? '') === 'food') {
     $line = fn ($value): ?string => is_string($value) && trim($value) !== '' ? mb_substr(trim($value), 0, 200) : null;
     $https = fn ($value): ?string => is_string($value) && preg_match('#^https://[a-z0-9.-]+\.(hotp\.jp|hotpepper\.jp)/#', $value) === 1 ? $value : null;
     $results = [];
-    foreach (array_slice($shops, 0, 30) as $shop) {
+    foreach (array_slice($shops, 0, 100) as $shop) {
         $name = $line($shop['name'] ?? null);
         if ($name === null || !is_numeric($shop['lat'] ?? null) || !is_numeric($shop['lng'] ?? null)) continue;
         $results[] = [

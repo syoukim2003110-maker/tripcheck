@@ -422,6 +422,7 @@
 .shiori-food.is-shops a > span { display: grid; gap: 2px; min-width: 0; }
 .shiori-credit { font-size: 12px; }
 .shiori-credit a { color: inherit; }
+.shiori-foot .shiori-credit a { display: inline; min-height: 0; }
 
 .shiori-ideas { border-top: 1px solid var(--rule); margin-top: 20px; padding-top: 14px; }
 .shiori-ideas h3 { align-items: flex-start; display: flex; font: 600 18px/1.4 var(--mincho); gap: 8px; letter-spacing: 0.02em; text-wrap: wrap; }

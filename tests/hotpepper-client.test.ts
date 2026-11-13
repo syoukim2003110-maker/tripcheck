@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { budgetLabel, fetchHotpepperShops, inJapan, lunchPrice, parseHotpepperShops } from "../lib/hotpepper-client.ts";
+import { budgetLabel, fetchHotpepperShops, inJapan, lunchPrice, parseHotpepperShops, shopsForMeal } from "../lib/hotpepper-client.ts";
 
 const NEAR = { latitude: 35.6638, longitude: 139.7812 };
 const shop = (over: Record<string, unknown> = {}) => ({
@@ -79,4 +79,24 @@ test("a lunch price is read out of the free-text average only when it is named a
   assert.equal(lunchPrice("3500円"), null);
   assert.equal(lunchPrice("1500円/5000円"), null);
   assert.equal(lunchPrice(null), null);
+});
+
+test("a lunch list puts places for eating with a lunch price first, izakaya after, and dinner is nearest first", () => {
+  const at = (name: string, metres: number, genre: string, average: string | null) => ({
+    ...parseHotpepperShops({ results: [shop({ id: name, name, genre, budgetAverage: average })] }, NEAR)[0], distanceMeters: metres,
+  });
+  const shops = [
+    at("居酒屋A", 50, "居酒屋", "3000円"),
+    at("居酒屋ランチ", 80, "居酒屋", "ランチ800円"),
+    at("バル", 100, "ダイニングバー・バル", null),
+    at("そば", 300, "和食", "ランチ900円"),
+    at("カレー", 400, "アジア・エスニック料理", null),
+    at("洋食", 600, "洋食", "ランチ1200円"),
+    at("遠い定食", 1500, "和食", "ランチ700円"),
+  ];
+  // The live complaint: a lunch list that was nothing but izakaya.
+  assert.deepEqual(shopsForMeal(shops, "lunch", 6).map((entry) => entry.name), ["そば", "洋食", "カレー", "居酒屋ランチ", "居酒屋A", "バル"]);
+  assert.deepEqual(shopsForMeal(shops, "dinner", 3).map((entry) => entry.name), ["居酒屋A", "居酒屋ランチ", "バル"]);
+  // Too few within a short walk: the far ones are used rather than an empty list.
+  assert.deepEqual(shopsForMeal(shops.slice(5), "lunch", 6).map((entry) => entry.name), ["洋食", "遠い定食"]);
 });

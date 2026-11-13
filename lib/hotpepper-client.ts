@@ -130,3 +130,27 @@ export function lunchPrice(average: string | null) {
   const yen = Number(named[1].replace(/,/g, ""));
   return yen >= 300 && yen <= 30_000 ? `${yen.toLocaleString("ja-JP")}円` : null;
 }
+
+/** Places that are for drinking in the evening; at midday they come after places for eating. */
+const EVENING_GENRE = /居酒屋|バー|バル|カラオケ|パーティ/;
+
+/**
+ * The shops to show for a meal. The guide's own order is by its promotion and
+ * is mostly izakaya, so a lunch list read "izakaya, izakaya, izakaya": for
+ * lunch, places for eating that state a lunch price come first, then other
+ * places for eating, then the evening places; each group nearest first.
+ * Dinner is simply nearest first.
+ */
+export function shopsForMeal(shops: readonly HotpepperShop[], meal: "lunch" | "dinner", limit = 6): HotpepperShop[] {
+  const near = [...shops].sort((left, right) => left.distanceMeters - right.distanceMeters);
+  if (meal === "dinner") return near.slice(0, limit);
+  const tier = (shop: HotpepperShop) => {
+    const evening = EVENING_GENRE.test(shop.genre ?? "");
+    const priced = lunchPrice(shop.budgetAverage) !== null;
+    return evening ? (priced ? 2 : 3) : (priced ? 0 : 1);
+  };
+  // A place for eating further off beats an izakaya next door, but not one a long walk away.
+  const within = near.filter((shop) => shop.distanceMeters <= 800);
+  const pool = within.length >= limit ? within : near;
+  return [...pool].sort((left, right) => tier(left) - tier(right) || left.distanceMeters - right.distanceMeters).slice(0, limit);
+}
