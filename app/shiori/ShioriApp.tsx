@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
 import { fetchAppleFoodCandidates } from "../../lib/apple-food";
 import { appleRelayClient } from "../../lib/apple-relay-client";
@@ -14,7 +14,8 @@ import { loadRailNetwork } from "../../lib/rail-network-client";
 import type { RailNetwork } from "../../lib/rail-router";
 import { fetchStreetRoute } from "../../lib/street-route-client";
 import { findCafes, type CafeBreak, type CafePick } from "../../lib/shiori/cafes";
-import { buildShioriPlan, type ShioriDay, type ShioriLeg, type ShioriMeal, type ShioriNotice, type ShioriPlace, type ShioriPlan, type ShioriRoute } from "../../lib/shiori/plan";
+import { lineColor } from "../../lib/shiori/line-colors";
+import { buildShioriPlan, type ShioriLeg, type ShioriMeal, type ShioriNotice, type ShioriPlace, type ShioriPlan, type ShioriRoute, type ShioriStop } from "../../lib/shiori/plan";
 import {
   MAX_DAYS,
   MAX_PLACES,
@@ -90,7 +91,6 @@ type AddKind = "place" | "lunch" | "dinner" | "hotel";
 
 const text = {
   ja: {
-    tagline: "旅のしおりメーカー",
     heroTitle: "行きたい場所を選ぶだけ。\n旅のしおりが、すぐできる。",
     heroBody: "どの日にどこを、どの順番で、どうやって回るか。行きたい店や泊まりたいホテルも入れて、無理がないかまで地図と一緒に確かめます。無料・登録なし・広告なし・件数の課金なし。",
     where: "どこに行く？",
@@ -151,12 +151,12 @@ const text = {
     print: "印刷",
     dayTab: (index: number) => `${index + 1}日目`,
     freeTab: "空き日",
-    dayMeta: (day: ShioriDay) => `${day.start}〜${day.end} ・ ${day.stops.length}か所${day.travelMinutes > 0 ? ` ・ 移動 計${durationText(day.travelMinutes, "ja")}` : ""}${day.walkMinutes > 0 ? `（うち歩き約${day.walkMinutes}分・約${(Math.round(day.walkMinutes / 10) * 1000).toLocaleString("ja-JP")}歩）` : ""}`,
     loads: { easy: "ゆとりのある日", normal: "ちょうどいい日", tight: "詰まっている日" },
     loadTight: "移動や立ち寄りが多めです。1か所を別の日に移すか、減らすと楽になります。",
     rainTitle: "雨の日なら（屋内の候補）",
     checkHours: "営業日・営業時間・予約を地図で確認 ↗",
     hoursNote: "このしおりは営業時間・定休日・予約の要否を知りません。行く前に各スポットを開いて確認してください。",
+    hoursNotePrint: "このしおりは営業時間・定休日・予約の要否を知りません。行く前に各スポットの公式の案内で確認してください。",
     shareLine: "LINEで送る",
     late: "この日は予定が多めです。日数を増やすか、場所を減らすと楽になります。",
     stay: "滞在",
@@ -188,7 +188,7 @@ const text = {
     foodNone: "近くのお店の情報を取得できませんでした。地図アプリで探せます。",
     foodNote: "近い順です。評価や営業時間は地図アプリで確認してください。",
     walkAbout: (minutes: number) => `徒歩約${minutes}分`,
-    ideasTitle: "時間に余裕があります。近くの人気スポット",
+    ideasTitle: "時間に余裕あり。近くの人気スポット",
     ideasAdd: "追加",
     freeTitle: (count: number) => `あと${count}日、空いています`,
     freeBody: "無理に広げず、必要な日数にまとめました。空いた日に行けそうな場所です。",
@@ -215,9 +215,37 @@ const text = {
     newTrip: "新しいしおり",
     privacy: "プライバシー",
     classic: "以前の画面",
+    brand: "旅のしおりメーカー",
+    brandSub: "TripCheck",
+    otherCities: "ほかの街は\n上の欄に入力",
+    coverMeta: (days: number, places: number) => `${days}日間 ・ ${places}か所`,
+    contents: "もくじ",
+    daysTabs: "日ごとの予定",
+    facts: { time: "時間", places: "行き先", moving: "移動", walking: "うち歩き" },
+    placeUnit: "か所",
+    movingTotal: (span: string) => `約${span}`,
+    walkingAbout: (minutes: number) => `約${minutes}分`,
+    steps: (count: number) => `約${count.toLocaleString("ja-JP")}歩`,
+    nextDayMark: "翌",
+    nextDayLabel: "翌日",
+    skipMap: "地図をとばす",
+    short: { edit: "選び直す", share: "リンク", shared: "コピー済", line: "LINE", print: "印刷" },
+    parts: { morning: "朝", noon: "昼", evening: "夕" },
+    rideStops: (stops: number) => `${stops}駅`,
+    rideLabel: "乗車",
+    changeWalk: (minutes: number) => `乗り換え 約${minutes}分`,
+    mapExpand: "地図を広げる",
+    mapCollapse: "地図をたたむ",
+    mapView: "しおりで見る",
+    close: "閉じる",
+    mapFailed: "地図を読み込めませんでした。しおりはそのまま使えます。",
+    pinLabel: (dayIndex: number, position: number, name: string) => `${dayIndex + 1}日目 ${position + 1}番 ${name}`,
+    hotelMark: "泊",
+    goStamp: "行く",
+    dayNav: "前後の日",
+    staySep: "",
   },
   en: {
-    tagline: "Trip booklet maker",
     heroTitle: "Pick the places.\nGet a day-by-day trip booklet.",
     heroBody: "Which day, what order, how to get between them — with your own restaurants and hotel, checked for whether it all really fits, on a map. Free, no account, no ads, no paid tier.",
     where: "Where to?",
@@ -230,7 +258,7 @@ const text = {
     pickTitle: (city: string) => `Tap the places you want in ${city}`,
     pickHint: "You can add or remove places later.",
     days: "Days",
-    dayUnit: "days",
+    dayUnit: " days",
     addOther: "Add a restaurant, your hotel, or a place that is not listed",
     addKinds: { place: "Place", lunch: "Lunch spot", dinner: "Dinner spot", hotel: "Hotel" } as Record<AddKind, string>,
     addPlaceholders: { place: "Place name", lunch: "Restaurant for lunch", dinner: "Restaurant for dinner", hotel: "Hotel you want to stay at" } as Record<AddKind, string>,
@@ -278,12 +306,12 @@ const text = {
     print: "Print",
     dayTab: (index: number) => `Day ${index + 1}`,
     freeTab: "Free",
-    dayMeta: (day: ShioriDay) => `${day.start}–${day.end} · ${day.stops.length} places${day.travelMinutes > 0 ? ` · ${durationText(day.travelMinutes, "en")} moving` : ""}${day.walkMinutes > 0 ? ` (~${day.walkMinutes} min on foot, ~${(Math.round(day.walkMinutes / 10) * 1000).toLocaleString("en-US")} steps)` : ""}`,
     loads: { easy: "An easy day", normal: "A comfortable day", tight: "A packed day" },
     loadTight: "A lot of moving or many stops. Moving one place to another day, or dropping one, makes it easier.",
     rainTitle: "If it rains (indoor ideas)",
     checkHours: "Check opening days, hours and booking on the map ↗",
     hoursNote: "This booklet does not know opening hours, closed days or whether you need a booking. Open each place and check before you go.",
+    hoursNotePrint: "This booklet does not know opening hours, closed days or whether you need a booking. Check each place's own website before you go.",
     shareLine: "Send on LINE",
     late: "This day is full. Add a day or drop a place to ease it.",
     stay: "Stay",
@@ -342,11 +370,42 @@ const text = {
     newTrip: "New booklet",
     privacy: "Privacy",
     classic: "Previous version",
+    brand: "TripCheck",
+    brandSub: "Trip booklet maker",
+    otherCities: "Type any other\ncity above",
+    coverMeta: (days: number, places: number) => `${days} day${days === 1 ? "" : "s"} · ${places} place${places === 1 ? "" : "s"}`,
+    contents: "Contents",
+    daysTabs: "Days",
+    facts: { time: "Time", places: "Places", moving: "Moving", walking: "On foot" },
+    placeUnit: " places",
+    movingTotal: (span: string) => `~${span}`,
+    walkingAbout: (minutes: number) => `~${minutes} min`,
+    steps: (count: number) => `~${count.toLocaleString("en-US")} steps`,
+    nextDayMark: "+1",
+    nextDayLabel: "next day",
+    skipMap: "Skip the map",
+    short: { edit: "Places", share: "Link", shared: "Copied", line: "LINE", print: "Print" },
+    parts: { morning: "Morning", noon: "Afternoon", evening: "Evening" },
+    rideStops: (stops: number) => `${stops} stop${stops === 1 ? "" : "s"}`,
+    rideLabel: "Ride",
+    changeWalk: (minutes: number) => `Change · ~${minutes} min`,
+    mapExpand: "Expand map",
+    mapCollapse: "Collapse map",
+    mapView: "Show in booklet",
+    close: "Close",
+    mapFailed: "The map could not be loaded. The booklet still works.",
+    pinLabel: (dayIndex: number, position: number, name: string) => `Day ${dayIndex + 1}, stop ${position + 1}: ${name}`,
+    hotelMark: "H",
+    goStamp: "GO",
+    dayNav: "Other days",
+    staySep: " ",
   },
 };
 
-function Icon({ name }: { name: "walk" | "rail" | "bus" | "taxi" | "meal" | "bed" | "check" | "plus" | "pin" }) {
-  const paths: Record<string, string> = {
+type IconName = "walk" | "rail" | "bus" | "taxi" | "meal" | "bed" | "check" | "plus" | "pin" | "back" | "link" | "send" | "printer" | "cup" | "clock" | "info" | "spark" | "umbrella" | "book" | "warn";
+
+function Icon({ name }: { name: IconName }) {
+  const paths: Record<IconName, string> = {
     walk: "M13 4.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0ZM9 9l3-1.5 2.5 2.5 2.5 1M12 7.5 11 13l2.5 3 .5 5M11 13l-2 3-2.5 4",
     rail: "M7 4h10a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2ZM5 11h14M8.5 14.5h.01M15.5 14.5h.01M8 17l-2 3M16 17l2 3",
     bus: "M6 5h12a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1ZM5 12h14M8 15h.01M16 15h.01M7 17v2M17 17v2",
@@ -356,6 +415,17 @@ function Icon({ name }: { name: "walk" | "rail" | "bus" | "taxi" | "meal" | "bed
     check: "M5 12.5 10 17.5 19 7",
     plus: "M12 5v14M5 12h14",
     pin: "M12 21s6.5-5.7 6.5-10.8a6.5 6.5 0 1 0-13 0C5.500 15.3 12 21 12 21ZM12 12.5a2.3 2.3 0 1 0 0-4.6 2.3 2.3 0 0 0 0 4.6Z",
+    back: "M19 12H5M11 6l-6 6 6 6",
+    link: "M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1",
+    send: "M21 3 10 14M21 3l-7 18-4-7-7-4 18-7Z",
+    printer: "M7 9V4h10v5M7 17H5a1 1 0 0 1-1-1v-5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v5a1 1 0 0 1-1 1h-2M7 14h10v6H7z",
+    cup: "M5 9h11v5a4 4 0 0 1-4 4H9a4 4 0 0 1-4-4V9ZM16 10h1.5a2.5 2.5 0 0 1 0 5H16M8 3v2M12 3v2M4 21h13",
+    clock: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM12 7v5l3 2",
+    info: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM12 11v5M12 8h.01",
+    spark: "M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M18 6l-2.5 2.5M8.5 15.5 6 18",
+    umbrella: "M12 3v1M4 12a8 8 0 0 1 16 0H4ZM12 12v7a2 2 0 0 1-4 0",
+    book: "M5 4h11a2 2 0 0 1 2 2v14H7a2 2 0 0 1-2-2V4ZM5 18a2 2 0 0 1 2-2h11M9 8h5",
+    warn: "M12 4 3 20h18L12 4ZM12 10v5M12 17.5h.01",
   };
   return (
     <svg aria-hidden="true" className="shiori-icon" fill="none" height="18" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" viewBox="0 0 24 24" width="18">
@@ -364,12 +434,39 @@ function Icon({ name }: { name: "walk" | "rail" | "bus" | "taxi" | "meal" | "bed
   );
 }
 
-function Photo({ img, alt, width }: { img?: string; alt: string; width: number }) {
+/** Digits stay large; the words around them ("計", "分", " min") are set small. */
+function withUnits(value: string): ReactNode[] {
+  return value.split(/(\d[\d:,.]*)/).map((part, index) => index % 2 === 1 ? part : part ? <small key={index}>{part}</small> : null);
+}
+
+/**
+ * Japanese has no spaces to break at, so a heading made of names is given its
+ * phrases: each stays whole on a line where it fits, with its mark attached.
+ */
+function phrases(value: string, mark = "・"): ReactNode {
+  const parts = value.split(mark);
+  if (parts.length < 2) return value;
+  return parts.map((part, index) => <span className="shiori-nb" key={index}>{part}{index < parts.length - 1 ? mark : ""}</span>);
+}
+
+/** The same sentence, kept whole from the name in it to its end ("…：浅草寺の周辺"). */
+function withName(sentence: string, name: string): ReactNode {
+  const at = name ? sentence.indexOf(name) : -1;
+  if (at < 0) return sentence;
+  return <>{sentence.slice(0, at)}<span className="shiori-nb">{sentence.slice(at)}</span></>;
+}
+
+/** A clock time past midnight belongs to the next day; "01:45" alone cannot say so. */
+function NextDay({ locale }: { locale: Locale }) {
+  return <span aria-label={text[locale].nextDayLabel} className="shiori-next" role="img">{text[locale].nextDayMark}</span>;
+}
+
+function Photo({ img, alt, width, icon = "pin" }: { img?: string; alt: string; width: number; icon?: IconName }) {
   const url = photoUrl(img, width);
   // A photo that will not load is no photo: the card shows its plain tile,
   // never the browser's broken-image mark.
   const [failed, setFailed] = useState(false);
-  if (!url || failed) return <span aria-hidden="true" className="shiori-photo is-empty"><Icon name="pin" /></span>;
+  if (!url || failed) return <span aria-hidden="true" className="shiori-photo is-empty"><Icon name={icon} /></span>;
   // Commons thumbnails are remote and of unknown size; next/image cannot
   // optimise them on a static host.
   // eslint-disable-next-line @next/next/no-img-element
@@ -380,28 +477,49 @@ function LegCard({ leg, locale, heading }: { leg: ShioriLeg; locale: Locale; hea
   const t = text[locale];
   const label = leg.mode === "walk" ? t.walk : leg.mode === "rail" ? t.rail : leg.mode === "taxi" ? t.taxi : t.transit;
   const icon = leg.mode === "walk" ? "walk" : leg.mode === "rail" ? "rail" : leg.mode === "taxi" ? "taxi" : "bus";
+  // One change of train: the minutes on foot belong to it. With several, the
+  // total cannot be split between them, so none is given a number.
+  const change = leg.rail && leg.rail.rides.length === 2 && leg.rail.transferMinutes > 0 ? t.changeWalk(leg.rail.transferMinutes) : t.change;
   return (
     <div className={`shiori-leg is-${leg.mode}`}>
       <div className="shiori-leg-head">
-        <Icon name={icon} />
-        <span>
-          {heading ? <b>{heading} · </b> : null}
-          {label} {t.about}{leg.minutes}{t.minute}
-          {leg.mode === "transit" || leg.mode === "taxi" ? <small>（{t.estimate}）</small> : null}
+        {heading ? <small className="shiori-eyebrow">{heading}</small> : null}
+        <span className="shiori-leg-title">
+          <Icon name={icon} />
+          <b>{label} {t.about}{leg.minutes}{t.minute}</b>
+          {leg.mode === "transit" || leg.mode === "taxi" ? <i className="shiori-est">{t.estimate}</i> : null}
         </span>
       </div>
       {leg.rail ? (
         <ol className="shiori-rail">
-          <li className="is-walk">{t.walkTo(leg.rail.walkToMinutes, leg.rail.walkToStation)}</li>
-          {leg.rail.rides.map((ride, index) => (
-            <li key={`${ride.from}-${ride.to}-${index}`}>
-              {index > 0 ? <em>{t.change}</em> : null}
-              <b>{ride.line ?? t.rail}</b>
-              <span>{ride.from} → {ride.to}</span>
-              <small>{t.ride(ride.stops, ride.minutes)}</small>
-            </li>
-          ))}
-          <li className="is-walk">{t.walkFrom(leg.rail.walkFromMinutes, leg.rail.walkFromStation)}</li>
+          <li className="is-walk"><Icon name="walk" />{t.walkTo(leg.rail.walkToMinutes, leg.rail.walkToStation)}</li>
+          {leg.rail.rides.map((ride, index) => {
+            const color = lineColor(ride.line);
+            return (
+              <li className="is-ride" key={`${ride.from}-${ride.to}-${index}`}>
+                {index > 0 ? <em className="shiori-change">{change}</em> : null}
+                <div className="shiori-ticket" style={color ? { ["--lc" as string]: color } : undefined}>
+                  <i aria-hidden="true" className="shiori-ticket-bar" />
+                  <div className="shiori-ticket-main">
+                    <b className="shiori-ticket-line">{ride.line ?? t.rail}</b>
+                    <span className="shiori-ticket-route">
+                      <span>{ride.from}</span>
+                      <span className="shiori-sr"> → </span>
+                      <span>{ride.to}</span>
+                    </span>
+                    <small>{t.rideStops(ride.stops)}</small>
+                  </div>
+                  <div className="shiori-ticket-stub">
+                    <small>{t.rideLabel}</small>
+                    <b>{t.about}{ride.minutes}<span>{t.minute}</span></b>
+                  </div>
+                  <i aria-hidden="true" className="shiori-ticket-notch is-top" />
+                  <i aria-hidden="true" className="shiori-ticket-notch is-bottom" />
+                </div>
+              </li>
+            );
+          })}
+          <li className="is-walk"><Icon name="walk" />{t.walkFrom(leg.rail.walkFromMinutes, leg.rail.walkFromStation)}</li>
         </ol>
       ) : null}
       {leg.mode !== "walk" || leg.minutes >= 12 ? (
@@ -439,13 +557,13 @@ function MealRow({ meal, locale }: { meal: ShioriMeal; locale: Locale }) {
   const mapsSearch = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${locale === "ja" ? "レストラン" : "restaurants"} ${meal.near.latitude.toFixed(5)},${meal.near.longitude.toFixed(5)}`)}`;
   return (
     <div className="shiori-meal">
+      <span aria-hidden="true" className="shiori-meal-mark"><Icon name="meal" /></span>
       <div className="shiori-meal-head">
-        <Icon name="meal" />
         <span>
-          <b>{meal.kind === "lunch" ? t.lunch : t.dinner}</b> {meal.start}{meal.end ? `–${meal.end}` : locale === "ja" ? "ごろ" : ""}
-          <small> ・ {t.mealNear(meal.nearName)}</small>
+          <b>{meal.kind === "lunch" ? t.lunch : t.dinner}</b> <span className="shiori-meal-time">{meal.start}{meal.end ? `–${meal.end}` : locale === "ja" ? "ごろ" : ""}</span>
+          <small><span className="shiori-sep"> ・ </span>{t.mealNear(meal.nearName)}</small>
         </span>
-        <button onClick={() => void open()} type="button">{state === "closed" ? t.showFood : t.hideFood}</button>
+        <button aria-expanded={state !== "closed"} onClick={() => void open()} type="button">{state === "closed" ? t.showFood : t.hideFood}</button>
       </div>
       {state === "loading" ? <p className="shiori-quiet">{t.foodLoading}</p> : null}
       {state === "failed" ? <p className="shiori-quiet">{t.foodNone} <a href={mapsSearch} rel="noreferrer" target="_blank">Google Maps ↗</a></p> : null}
@@ -456,7 +574,7 @@ function MealRow({ meal, locale }: { meal: ShioriMeal; locale: Locale }) {
               <li key={candidate.id}>
                 <a href={candidate.googleMapsUrl} rel="noreferrer" target="_blank">
                   <b>{candidate.name}</b>
-                  <small>{candidate.type}{typeof candidate.distanceMeters === "number" ? ` ・ ${t.walkAbout(Math.max(1, Math.round(candidate.distanceMeters * 1.3 / 75)))}` : ""}</small>
+                  <small>{candidate.type}{typeof candidate.distanceMeters === "number" ? <>{` ・ ${t.walkAbout(Math.max(1, Math.round(candidate.distanceMeters * 1.3 / 75)))} `}<i className="shiori-est">{t.estimate}</i></> : null}</small>
                 </a>
               </li>
             ))}
@@ -488,13 +606,13 @@ function CafeRow({ cafe, locale, onAdd }: { cafe: CafeBreak; locale: Locale; onA
   const mapsSearch = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${locale === "ja" ? "カフェ" : "cafe"} ${cafe.search.latitude.toFixed(5)},${cafe.search.longitude.toFixed(5)}`)}`;
   return (
     <div className="shiori-meal is-cafe">
+      <span aria-hidden="true" className="shiori-meal-mark"><Icon name="cup" /></span>
       <div className="shiori-meal-head">
-        <Icon name="meal" />
         <span>
-          <b>{t.cafe}</b> {cafe.time}{locale === "ja" ? "ごろ" : ""}
-          <small> ・ {cafe.reason === "on-the-way" && cafe.toName ? t.cafeOnTheWay(cafe.fromName, cafe.toName) : t.cafeAfter(cafe.fromName)}</small>
+          <b>{t.cafe}</b> <span className="shiori-meal-time">{cafe.time}{locale === "ja" ? "ごろ" : ""}</span>
+          <small><span className="shiori-sep"> ・ </span>{cafe.reason === "on-the-way" && cafe.toName ? t.cafeOnTheWay(cafe.fromName, cafe.toName) : t.cafeAfter(cafe.fromName)}</small>
         </span>
-        <button onClick={() => void open()} type="button">{state === "closed" ? t.showCafes : t.hideCafes}</button>
+        <button aria-expanded={state !== "closed"} onClick={() => void open()} type="button">{state === "closed" ? t.showCafes : t.hideCafes}</button>
       </div>
       {state === "loading" ? <p className="shiori-quiet">{t.foodLoading}</p> : null}
       {state === "failed" ? <p className="shiori-quiet">{t.cafeNone} <a href={mapsSearch} rel="noreferrer" target="_blank">Google Maps ↗</a></p> : null}
@@ -505,7 +623,7 @@ function CafeRow({ cafe, locale, onAdd }: { cafe: CafeBreak; locale: Locale; onA
               <li className="has-action" key={pick.id}>
                 <a href={pick.mapsUrl} rel="noreferrer" target="_blank">
                   <b>{pick.name}</b>
-                  <small>{t.cafeKinds[pick.kind]} ・ {cafe.reason === "on-the-way" ? t.cafeDetour(pick.detourMinutes) : t.cafeWalk(pick.detourMinutes)}</small>
+                  <small>{t.cafeKinds[pick.kind]} ・ {cafe.reason === "on-the-way" ? t.cafeDetour(pick.detourMinutes) : t.cafeWalk(pick.detourMinutes)} <i className="shiori-est">{t.estimate}</i></small>
                 </a>
                 <button onClick={() => onAdd(pick)} type="button">{t.cafeAdd}</button>
               </li>
@@ -545,12 +663,13 @@ function StayNear({ plan, trip, locale, onHotel }: { plan: ShioriPlan; trip: Shi
   }, [key, locale]);
   if (!plan.stayNear) return null;
   return (
-    <section className="shiori-section">
-      <h2><Icon name="bed" /> {t.stayTitle}</h2>
-      {plan.stayNear.nearName ? <p><b>{t.stayAround(plan.stayNear.nearName)}</b></p> : null}
+    <section className="shiori-section shiori-stay">
+      <p className="shiori-eyebrow">STAY</p>
+      <h2>{t.stayTitle}</h2>
+      {plan.stayNear.nearName ? <p className="shiori-stay-area"><i aria-hidden="true">{t.hotelMark}</i><b>{withName(t.stayAround(plan.stayNear.nearName), plan.stayNear.nearName)}</b></p> : null}
       <p className="shiori-quiet">{t.stayBody}</p>
-      {state === "loading" ? <p className="shiori-quiet">{t.stayLoading}</p> : null}
-      {state === "failed" ? <p className="shiori-quiet">{t.stayNone}</p> : null}
+      {state === "loading" ? <p className="shiori-quiet shiori-screen-only">{t.stayLoading}</p> : null}
+      {state === "failed" ? <p className="shiori-quiet shiori-screen-only">{t.stayNone}</p> : null}
       {state === "ready" ? (
         <ul className="shiori-hotels">
           {hotels.map((hotel) => {
@@ -560,14 +679,15 @@ function StayNear({ plan, trip, locale, onHotel }: { plan: ShioriPlan; trip: Shi
               <li className={using ? "is-using" : ""} key={hotel.id}>
                 <div>
                   <b>{hotel.name}</b>
+                  {using ? <em className="shiori-seal">{t.usingHotel}</em> : null}
                   <small>{t.hotelDistance(hotel.routeAverageDistanceMeters)}</small>
                 </div>
                 <div className="shiori-hotel-actions">
                   {using
                     ? <button onClick={() => onHotel(null)} type="button">{t.clearHotel}</button>
                     : <button className="is-primary" onClick={() => onHotel({ name: hotel.name, lat: hotel.latitude, lon: hotel.longitude })} type="button">{t.useHotel}</button>}
-                  {locale === "ja" ? <a href={`https://kw.travel.rakuten.co.jp/keyword/Search.do?f_query=${query}`} rel="noreferrer" target="_blank">{t.searchRakuten} ↗</a> : null}
-                  <a href={`https://www.booking.com/searchresults.html?ss=${query}`} rel="noreferrer" target="_blank">{t.searchBooking} ↗</a>
+                  {locale === "ja" ? <a className="shiori-action-link" href={`https://kw.travel.rakuten.co.jp/keyword/Search.do?f_query=${query}`} rel="noreferrer" target="_blank">{t.searchRakuten} ↗</a> : null}
+                  <a className="shiori-action-link" href={`https://www.booking.com/searchresults.html?ss=${query}`} rel="noreferrer" target="_blank">{t.searchBooking} ↗</a>
                 </div>
               </li>
             );
@@ -605,6 +725,10 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
   const askedRoutes = useRef(new Set<string>());
   const routeAttempts = useRef(new Map<string, number>());
   const hydrated = useRef(false);
+  // Which way the page turns when another day is opened.
+  const [dayDir, setDayDir] = useState<"fwd" | "back">("fwd");
+  const tabs = useRef<HTMLDivElement | null>(null);
+  const dayTop = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -744,6 +868,17 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
   // so the day on screen is looked up by number, not by position.
   const activeDay = openDay ?? (plan?.days.some((entry) => entry.index === selectedDay) ? selectedDay : plan?.days[0]?.index ?? 0);
 
+  // The tab of the day being read is kept in view in its own row; the page
+  // itself is not scrolled for it.
+  useEffect(() => {
+    const row = tabs.current;
+    const tab = row?.querySelector<HTMLElement>('[aria-selected="true"]');
+    if (!row || !tab) return;
+    const left = tab.offsetLeft - row.offsetLeft;
+    if (left < row.scrollLeft) row.scrollLeft = Math.max(0, left - 16);
+    else if (left + tab.offsetWidth > row.scrollLeft + row.clientWidth) row.scrollLeft = left + tab.offsetWidth - row.clientWidth + 16;
+  }, [activeDay, plan]);
+
   const update = useCallback((change: (current: ShioriTrip) => ShioriTrip) => setTrip(change), []);
   // Each screen is a history entry, so the phone's back gesture goes to the
   // previous screen instead of leaving the site with the plan.
@@ -840,8 +975,8 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
   const header = (
     <header className="shiori-top">
       <button className="shiori-brand" onClick={() => go("home")} type="button">
-        <b>TripCheck</b>
-        <small>{t.tagline}</small>
+        <i aria-hidden="true">栞</i>
+        <span><b>{t.brand}</b><small>{t.brandSub}</small></span>
       </button>
       <nav className="shiori-lang">
         <Link aria-current={locale === "ja" ? "true" : undefined} href="/ja" onClick={() => { try { window.localStorage.setItem("tripcheck-locale", "ja"); } catch { /* ignore */ } }}>日本語</Link>
@@ -854,8 +989,8 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
   // destination's list does not have.
   const extras = trip.places.filter((place) => place.meal || !city?.sights.some((sight) => `wikidata-${sight.q}` === place.id));
   const addForm = (
-<form className="shiori-other" onSubmit={(event) => { event.preventDefault(); void addOther(); }}>
-      <label htmlFor="shiori-other">{t.addOther}</label>
+    <form className="shiori-other" onSubmit={(event) => { event.preventDefault(); void addOther(); }}>
+      <label htmlFor="shiori-other">{phrases(t.addOther)}</label>
       <div className="shiori-pace" role="group" aria-label={t.addOther}>
         {(["place", "lunch", "dinner", "hotel"] as const).map((kind) => (
           <button aria-pressed={otherKind === kind} key={kind} onClick={() => { setOtherKind(kind); setOtherState("idle"); }} type="button">{t.addKinds[kind]}</button>
@@ -869,11 +1004,11 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
       {otherState === "full" ? <p className="shiori-warn" role="alert">{t.addFull}</p> : null}
       <p className="shiori-quiet">{t.addHint}</p>
       {extras.length > 0 || trip.hotel ? (
-        <ul className="shiori-chips">
+        <ul className="shiori-chips is-own">
           {extras.map((place) => (
-            <li key={place.id}><button onClick={() => update((current) => togglePlace(current, place))} type="button">{place.meal ? `${t.mealShort[place.meal]}: ` : ""}{place.name} ×</button></li>
+            <li key={place.id}><button onClick={() => update((current) => togglePlace(current, place))} type="button">{place.meal ? <small>{`${t.mealShort[place.meal]}: `}</small> : null}{place.name}<i aria-hidden="true"> ×</i></button></li>
           ))}
-          {trip.hotel ? <li><button onClick={() => update((current) => ({ ...current, hotel: null }))} type="button">{t.hotelChip}: {trip.hotel.name} ×</button></li> : null}
+          {trip.hotel ? <li><button onClick={() => update((current) => ({ ...current, hotel: null }))} type="button"><small>{t.hotelChip}: </small>{trip.hotel.name}<i aria-hidden="true"> ×</i></button></li> : null}
         </ul>
       ) : null}
     </form>
@@ -884,6 +1019,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
       <main className="shiori">
         {header}
         <section className="shiori-hero">
+          <p className="shiori-eyebrow">TABI NO SHIORI</p>
           <h1>{t.heroTitle}</h1>
           <p>{t.heroBody}</p>
           <label className="shiori-search">
@@ -892,7 +1028,8 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
           </label>
           {[trip.places.length > 0 ? trip : saved, previous].flatMap((candidate, index) => candidate && candidate.places.length > 0 ? [(
             <button className="shiori-resume" key={index} onClick={() => { setTrip(candidate); setSelectedDay(0); go("plan"); }} type="button">
-              {index === 0 ? t.resume : t.resumePrevious}：{candidate.cityName || candidate.places[0]?.name} ・ {candidate.places.length}
+              <Icon name="book" />
+              <span>{index === 0 ? t.resume : t.resumePrevious}：{candidate.cityName || candidate.places[0]?.name} ・ {candidate.places.length}</span>
             </button>
           )] : [])}
         </section>
@@ -902,9 +1039,13 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
             {matches.map((destination) => (
               <button className="shiori-city" key={destination.id} onClick={() => chooseCity(destination)} type="button">
                 <Photo alt="" img={destination.sights.find((sight) => sight.img)?.img} width={480} />
-                <span>{locale === "ja" ? destination.ja : destination.en}</span>
+                <span className="shiori-city-name">
+                  <b>{locale === "ja" ? destination.ja : destination.en}</b>
+                  {locale === "ja" && /^[\x20-\x7e]+$/.test(destination.en) ? <small aria-hidden="true">{destination.en}</small> : null}
+                </span>
               </button>
             ))}
+            {!query && matches.length > 0 ? <p className="shiori-city-blank">{t.otherCities}</p> : null}
           </div>
           {cities.length > 0 && matches.length === 0 ? <p className="shiori-quiet">{t.noCity}</p> : null}
         </section>
@@ -924,6 +1065,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
         {header}
         <section className="shiori-pick">
           <button className="shiori-back" onClick={() => go("home")} type="button">← {t.back}</button>
+          {city && /^[\x20-\x7e]+$/.test(city.en) ? <p aria-hidden="true" className="shiori-eyebrow">{city.en}</p> : null}
           <h1>{t.pickTitle(trip.cityName)}</h1>
           <p className="shiori-quiet">{t.pickHint}</p>
           <div className="shiori-controls">
@@ -941,7 +1083,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
               return (
                 <button aria-pressed={isChosen} className={`shiori-sight${isChosen ? " is-chosen" : ""}`} key={sight.q} onClick={() => addSight(sight)} type="button">
                   <Photo alt="" img={sight.img} width={360} />
-                  <span className="shiori-sight-check"><Icon name={isChosen ? "check" : "plus"} /></span>
+                  <span aria-hidden="true" className="shiori-sight-check">{isChosen ? <b>{t.goStamp}</b> : <Icon name="plus" />}</span>
                   <span className="shiori-sight-text">
                     <b>{locale === "ja" ? sight.ja : sight.en}</b>
                     <small>{kindLabel(sight.kind, locale)}{locale === "ja" && sight.desc ? ` ・ ${sight.desc}` : ""}</small>
@@ -956,7 +1098,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
           {addForm}
         </section>
         <div className="shiori-bar">
-          <span>{trip.places.length > 0 ? t.selected(trip.places.length) : t.needOne}</span>
+          <span aria-live="polite">{trip.places.length > 0 ? withUnits(t.selected(trip.places.length)).map((part, index) => index === 1 ? <b key="count">{part}</b> : part) : t.needOne}</span>
           <button disabled={trip.places.length === 0} onClick={() => { setSelectedDay(0); go("plan"); }} type="button">{t.make} →</button>
         </div>
       </main>
@@ -994,30 +1136,71 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
     places: current.places.map((entry) => entry.id === place.id ? { ...entry, day: value } : entry),
   }));
 
+  const dayColor = (index: number) => DAY_COLORS[index % DAY_COLORS.length];
+  const cityTitle = trip.cityName || trip.places[0]?.name || "";
+  const planTitle = t.planTitle(cityTitle, trip.days);
+  // The cover sets the city large and the rest of the title under it; the
+  // words of the title itself are unchanged.
+  const titleRest = cityTitle && planTitle.startsWith(cityTitle) ? planTitle.slice(cityTitle.length) : "";
+  const titleJoin = titleRest.match(/^[\s:：]+/)?.[0] ?? "";
+  // The postmark is lettered in Latin capitals; a city with no such name gets the booklet's own.
+  const postmarkCity = city && /^[\x20-\x7e]{2,14}$/.test(city.en) ? city.en.toUpperCase() : "TABI NO SHIORI";
+  const partOf = (clock: string) => {
+    const hour = Number(clock.slice(0, 2));
+    return hour < 12 ? "morning" : hour < 17 ? "noon" : "evening";
+  };
+  const selectDay = (index: number, reveal = false) => {
+    setDayDir(index < activeDay ? "back" : "fwd");
+    setOpenStop(null);
+    setFocus(null);
+    setSelectedDay(index);
+    if (reveal) window.requestAnimationFrame(() => dayTop.current?.scrollIntoView({ block: "start" }));
+  };
+  const onTabKey = (event: KeyboardEvent<HTMLDivElement>) => {
+    const order = plan?.days.map((entry) => entry.index) ?? [];
+    const at = order.indexOf(activeDay);
+    const next = event.key === "ArrowRight" ? order[at + 1] : event.key === "ArrowLeft" ? order[at - 1] : event.key === "Home" ? order[0] : event.key === "End" ? order[order.length - 1] : undefined;
+    if (next === undefined || next === activeDay) return;
+    event.preventDefault();
+    selectDay(next);
+    window.requestAnimationFrame(() => document.getElementById(`shiori-tab-${next}`)?.focus());
+  };
+  const stayText = (minutes: number) => `${t.stay}${t.staySep}${durationText(minutes, locale)}`;
+  const shareLink = typeof window === "undefined" ? "" : `${window.location.origin}${window.location.pathname}#s=${encodeTrip(trip)}`;
+
   return (
     <main className="shiori is-plan">
       {header}
       <div className="shiori-plan">
         <div className="shiori-plan-main">
-          {planning ? <p aria-live="polite" className={`shiori-working${plan ? " is-update" : ""}`}>{plan ? t.updating : t.working}</p> : null}
-          <div className="shiori-plan-head">
-            <h1>{t.planTitle(trip.cityName || trip.places[0]?.name || "", trip.days)}</h1>
-            <div className="shiori-plan-actions">
-              <button onClick={() => go(city ? "pick" : "home")} type="button">{t.editPlaces}</button>
-              <button onClick={() => void share()} type="button">{copied ? t.shared : t.share}</button>
-              <a className="shiori-action-link" href={`https://line.me/R/share?text=${encodeURIComponent(`${t.planTitle(trip.cityName || trip.places[0]?.name || "", trip.days)} ${typeof window === "undefined" ? "" : `${window.location.origin}${window.location.pathname}#s=${encodeTrip(trip)}`}`)}`} rel="noreferrer" target="_blank">{t.shareLine}</a>
-              <button onClick={() => window.print()} type="button">{t.print}</button>
-            </div>
-            <div className="shiori-controls">
-              <label>
-                <span>{t.days}</span>
-                <select onChange={(event) => update((current) => ({ ...current, days: Number(event.target.value) }))} value={trip.days}>
-                  {Array.from({ length: MAX_DAYS }, (_, index) => index + 1).map((days) => <option key={days} value={days}>{days}{t.dayUnit}</option>)}
-                </select>
-              </label>
-            </div>
+          <div className="shiori-plan-head shiori-cover">
+            <p aria-hidden="true" className="shiori-eyebrow shiori-cover-kicker">TABI NO SHIORI</p>
+            <h1>
+              {titleRest ? (
+                <>
+                  <span className="shiori-cover-city">{cityTitle}</span>
+                  <span className="shiori-sr">{titleJoin}</span>
+                  <span className="shiori-cover-sub">{titleRest.slice(titleJoin.length)}</span>
+                </>
+              ) : <span className="shiori-cover-sub">{planTitle}</span>}
+            </h1>
+            <p className="shiori-cover-meta">{t.coverMeta(trip.days, trip.places.length)}</p>
+            <svg aria-hidden="true" className="shiori-postmark" viewBox="0 0 132 92">
+              <defs>
+                <path d="M12 46a34 34 0 0 1 68 0" id="shiori-postmark-top" />
+                <path d="M16 46a30 30 0 0 0 60 0" id="shiori-postmark-bottom" />
+              </defs>
+              <circle cx="46" cy="46" fill="none" r="42" stroke="currentColor" strokeWidth="2" />
+              <circle cx="46" cy="46" fill="none" r="38.5" stroke="currentColor" strokeWidth="0.8" />
+              <circle cx="46" cy="46" fill="none" r="22" stroke="currentColor" strokeWidth="0.8" />
+              <text fill="currentColor" fontSize={postmarkCity.length > 9 ? 6.5 : 8} fontWeight="700" letterSpacing="1.6" textAnchor="middle"><textPath href="#shiori-postmark-top" startOffset="50%">{postmarkCity}</textPath></text>
+              <text fill="currentColor" fontSize="6.5" fontWeight="700" letterSpacing="1.6" textAnchor="middle"><textPath href="#shiori-postmark-bottom" startOffset="50%">{trip.days} {trip.days === 1 ? "DAY" : "DAYS"}</textPath></text>
+              <text className="shiori-postmark-word" fill="currentColor" fontSize="9" textAnchor="middle" x="46" y="49.5">旅のしおり</text>
+              <path d="M90 26q6-5 12 0t12 0 12 0M90 38q6-5 12 0t12 0 12 0M90 50q6-5 12 0t12 0 12 0M90 62q6-5 12 0t12 0 12 0" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.6" />
+            </svg>
           </div>
 
+          {/* What does not work comes first: it is why the booklet was made. */}
           {plan && plan.notices.length > 0 ? (
             <section aria-label={t.noticesTitle} className="shiori-notices">
               <h2>{t.noticesTitle}</h2>
@@ -1027,111 +1210,252 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
             </section>
           ) : null}
 
-          <div className="shiori-tabs" role="tablist">
-            {plan?.days.map((entry) => (
-              <button
-                aria-selected={entry.index === activeDay}
-                key={entry.index}
-                onClick={() => { setOpenStop(null); setSelectedDay(entry.index); }}
-                role="tab"
-                style={{ ["--day" as string]: DAY_COLORS[entry.index % DAY_COLORS.length] }}
-                type="button"
-              >
-                {t.dayTab(entry.index)}
-              </button>
-            ))}
-            {plan && plan.freeDays > 0 ? <span className="shiori-tab-free">{t.freeTab} ×{plan.freeDays}</span> : null}
+          {plan && plan.days.length > 0 ? (
+            <ol aria-label={t.contents} className={`shiori-contents${plan.notices.length > 1 ? " is-folded" : ""}`}>
+              {plan.days.map((entry) => (
+                <li key={entry.index} style={{ ["--day" as string]: dayColor(entry.index) }}>
+                  <button aria-current={entry.index === activeDay ? "true" : undefined} aria-label={`${t.dayTab(entry.index)} ${entry.title}`} onClick={() => selectDay(entry.index, true)} type="button">
+                    <i>{entry.index + 1}</i>
+                    <span className="shiori-contents-line">
+                      {entry.stops.slice(0, 4).map((stop) => <span key={stop.place.id}><em>{stop.place.name}</em></span>)}
+                      {entry.stops.length > 4 ? <small>+{entry.stops.length - 4}</small> : null}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ol>
+          ) : null}
+
+          {/* On a phone each action is its icon over a short word; its full name is always what is read out. */}
+          <div className="shiori-plan-actions">
+            <button onClick={() => go(city ? "pick" : "home")} type="button"><Icon name="back" /><span className="shiori-act-long">{t.editPlaces}</span><span aria-hidden="true" className="shiori-act-short">{t.short.edit}</span></button>
+            <button onClick={() => void share()} type="button"><Icon name="link" /><span aria-live="polite" className="shiori-act-long">{copied ? t.shared : t.share}</span><span aria-hidden="true" className="shiori-act-short">{copied ? t.short.shared : t.short.share}</span></button>
+            <a className="shiori-action-link" href={`https://line.me/R/share?text=${encodeURIComponent(`${planTitle} ${shareLink}`)}`} rel="noreferrer" target="_blank"><Icon name="send" /><span className="shiori-act-long">{t.shareLine}</span><span aria-hidden="true" className="shiori-act-short">{t.short.line}</span></a>
+            <button onClick={() => window.print()} type="button"><Icon name="printer" /><span className="shiori-act-long">{t.print}</span><span aria-hidden="true" className="shiori-act-short">{t.short.print}</span></button>
+            <label className="shiori-plan-days">
+              <span>{t.days}</span>
+              <select onChange={(event) => update((current) => ({ ...current, days: Number(event.target.value) }))} value={trip.days}>
+                {Array.from({ length: MAX_DAYS }, (_, index) => index + 1).map((days) => <option key={days} value={days}>{days}{t.dayUnit}</option>)}
+              </select>
+            </label>
           </div>
 
-          {plan?.days.map((day) => (
-            <section className={`shiori-day${day.index === activeDay ? " is-current" : ""}`} key={day.index} style={{ ["--day" as string]: DAY_COLORS[day.index % DAY_COLORS.length] }}>
-              <header>
-                <h2>{t.dayTab(day.index)} <span>{day.title}</span></h2>
-                <p>{t.dayMeta(day)}</p>
-                <p className={`shiori-load is-${day.load}`}><b>{t.loads[day.load]}</b>{day.load === "tight" && !day.runsLate ? ` ・ ${t.loadTight}` : ""}</p>
-                {day.runsLate ? <p className="shiori-warn">{t.late}</p> : null}
-              </header>
-              <ol className="shiori-timeline">
-                {day.fromHotel ? <li className="is-leg"><LegCard heading={t.fromHotel} leg={day.fromHotel} locale={locale} /></li> : null}
-                {day.stops.map((stop, index) => (
-                  <li key={stop.place.id}>
-                    {stop.waitMinutes > 0 ? <p className="shiori-wait">{t.wait(durationText(stop.waitMinutes, locale))}</p> : null}
-                    <article className={`shiori-stop${openStop === stop.place.id ? " is-open" : ""}`}>
-                      <button
-                        className="shiori-stop-main"
-                        onClick={() => { setOpenStop(openStop === stop.place.id ? null : stop.place.id); setFocus({ placeId: stop.place.id, token: Date.now() }); }}
-                        type="button"
-                      >
-                        <span className="shiori-stop-number">{index + 1}</span>
-                        <span className="shiori-stop-text">
-                          <small>{stop.arrive}–{stop.leave}</small>
-                          <b>{stop.place.name}</b>
-                          <small>{stop.place.meal ? t.mealLabels[stop.place.meal] : kindLabel(stop.place.kind, locale)} ・ {t.stay}{durationText(stop.stayMinutes, locale)}</small>
-                          {stop.mealMissed ? <small className="shiori-warn">{t.mealMissed}</small> : null}
-                        </span>
-                        <Photo alt="" img={stop.place.img} width={160} />
-                      </button>
-                      {openStop === stop.place.id ? (
-                        <div className="shiori-stop-edit">
-                          <div>
-                            <button aria-label={t.shorter} onClick={() => setStay(stop.place, -15)} type="button">−15{t.minute}</button>
-                            <span>{t.stay} {durationText(stop.place.stayMinutes, locale)}</span>
-                            <button aria-label={t.longer} onClick={() => setStay(stop.place, 15)} type="button">+15{t.minute}</button>
-                          </div>
-                          <label>
-                            <span>{t.moveDay}</span>
-                            <select onChange={(event) => setDay(stop.place, event.target.value ? Number(event.target.value) : null)} value={stop.place.day ?? ""}>
-                              <option value="">{t.auto}</option>
-                              {Array.from({ length: trip.days }, (_, dayIndex) => <option key={dayIndex} value={dayIndex + 1}>{t.dayTab(dayIndex)}</option>)}
-                            </select>
-                          </label>
-                          <button className="is-danger" onClick={() => update((current) => togglePlace(current, stop.place))} type="button">{t.remove}</button>
-                          <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${stop.place.name} ${stop.place.lat.toFixed(5)},${stop.place.lon.toFixed(5)}`)}`} rel="noreferrer" target="_blank">{t.checkHours}</a>
-                          {stop.place.img ? <a href={photoCreditUrl(stop.place.img)} rel="noreferrer" target="_blank">{t.photo}: Wikimedia Commons ↗</a> : null}
-                        </div>
-                      ) : null}
-                    </article>
-                    {day.meals.filter((meal) => meal.afterStop === index).map((meal) => <MealRow key={`${meal.kind}-${day.index}-${trip.places.length}`} locale={locale} meal={meal} />)}
-                    {day.cafe && day.cafe.afterStop === index ? (
-                      <CafeRow
-                        cafe={day.cafe}
-                        key={`cafe-${day.index}-${stop.place.id}`}
-                        locale={locale}
-                        onAdd={(pick) => update((current) => current.places.length >= MAX_PLACES || current.places.some((place) => place.id === pick.id) ? current : {
-                          ...current,
-                          // On this day, as a half-hour stop; the order is the planner's.
-                          places: [...current.places, { id: pick.id, name: pick.name, lat: pick.latitude, lon: pick.longitude, stayMinutes: 30, kind: pick.kind === "bakery" ? "bakery cafe" : "cafe", day: day.index + 1 }],
-                        })}
-                      />
-                    ) : null}
-                    {day.legs[index] ? <LegCard leg={day.legs[index]} locale={locale} /> : null}
-                  </li>
+          {planning ? <p aria-live="polite" className={`shiori-working${plan ? " is-update" : ""}`}>{plan ? t.updating : t.working}</p> : null}
+
+          <div className="shiori-day-anchor" ref={dayTop} />
+          {plan && plan.days.length > 0 ? (
+            <div className="shiori-tabs-wrap" style={{ ["--day" as string]: dayColor(activeDay) }}>
+              <div aria-label={t.daysTabs} className="shiori-tabs" onKeyDown={onTabKey} ref={tabs} role="tablist">
+                {plan.days.map((entry) => (
+                  <button
+                    aria-controls={`shiori-day-${entry.index}`}
+                    aria-selected={entry.index === activeDay}
+                    id={`shiori-tab-${entry.index}`}
+                    key={entry.index}
+                    onClick={() => selectDay(entry.index)}
+                    role="tab"
+                    style={{ ["--day" as string]: dayColor(entry.index) }}
+                    tabIndex={entry.index === activeDay ? 0 : -1}
+                    type="button"
+                  >
+                    <b>{t.dayTab(entry.index)}</b>
+                    <small>{entry.title}</small>
+                  </button>
                 ))}
-                {day.toHotel ? <li className="is-leg"><LegCard heading={t.toHotel} leg={day.toHotel} locale={locale} /></li> : null}
-              </ol>
-              {day.ideas.length > 0 ? (
-                <div className="shiori-ideas">
-                  <h3>{t.ideasTitle}</h3>
-                  <ul className="shiori-chips">
-                    {day.ideas.map((sight) => (
-                      <li key={sight.q}><button onClick={() => addSight(sight)} type="button">＋ {locale === "ja" ? sight.ja : sight.en}</button></li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-              {day.rainIdeas.length > 0 ? (
-                <div className="shiori-ideas is-rain">
-                  <h3>{t.rainTitle}</h3>
-                  <ul className="shiori-chips">
-                    {day.rainIdeas.map((sight) => (
-                      <li key={sight.q}><button onClick={() => addSight(sight)} type="button">＋ {locale === "ja" ? sight.ja : sight.en}</button></li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-              <p className="shiori-quiet shiori-hours-note">{t.hoursNote}</p>
-            </section>
-          ))}
+              </div>
+              {plan.freeDays > 0 ? <span className="shiori-tab-free">{t.freeTab} ×{plan.freeDays}</span> : null}
+            </div>
+          ) : null}
+
+          {plan && plan.days.length > 0 ? (
+            <a
+              className="shiori-skip"
+              href={`#shiori-day-${activeDay}`}
+              onClick={(event) => {
+                // Not a navigation: the address bar and the back gesture are left alone.
+                event.preventDefault();
+                const panel = document.getElementById(`shiori-day-${activeDay}`);
+                panel?.focus({ preventScroll: true });
+                panel?.scrollIntoView({ block: "start" });
+              }}
+            >
+              {t.skipMap}
+            </a>
+          ) : null}
+          <aside className="shiori-plan-map">
+            {plan ? (
+              <ShioriMap
+                days={plan.days}
+                focus={focus}
+                hotel={trip.hotel}
+                label={t.mapLabel}
+                legend={{ rail: t.legendRail, street: t.legendWalk, straight: t.legendOther }}
+                onSelectStop={(dayIndex, placeId) => {
+                  setSelectedDay(dayIndex);
+                  setOpenStop(placeId);
+                  setFocus({ placeId, token: Date.now() });
+                  // Two frames: the day and the opened card are on the page before it is scrolled to.
+                  window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+                    document.querySelector(`[data-stop="${CSS.escape(placeId)}"]`)?.scrollIntoView({ block: "center" });
+                  }));
+                }}
+                selectedDay={activeDay}
+                text={{
+                  expand: t.mapExpand,
+                  collapse: t.mapCollapse,
+                  view: t.mapView,
+                  close: t.close,
+                  hotel: t.hotelChip,
+                  hotelMark: t.hotelMark,
+                  failed: t.mapFailed,
+                  pinLabel: t.pinLabel,
+                  peekMeta: (stop: ShioriStop) => `${stop.arriveNextDay ? t.nextDayMark : ""}${stop.arrive}–${stop.leaveNextDay ? t.nextDayMark : ""}${stop.leave} ・ ${stayText(stop.stayMinutes)}`,
+                }}
+              />
+            ) : null}
+          </aside>
+
+          <div className="shiori-days" data-dir={dayDir}>
+            {plan?.days.map((day, dayPosition) => {
+              const previousDay = plan.days[dayPosition - 1];
+              const nextDay = plan.days[dayPosition + 1];
+              // The day's first heading (朝…) stands before the way out of the hotel, not after it.
+              const startPart = day.fromHotel ? partOf(day.start) : null;
+              const steps = Math.round(day.walkMinutes / 10) * 1000;
+              return (
+                <section
+                  aria-labelledby={`shiori-tab-${day.index}`}
+                  className={`shiori-day${day.index === activeDay ? " is-current" : ""}`}
+                  id={`shiori-day-${day.index}`}
+                  key={day.index}
+                  role="tabpanel"
+                  style={{ ["--day" as string]: dayColor(day.index) }}
+                  tabIndex={-1}
+                >
+                  <header className="shiori-day-head">
+                    <span aria-hidden="true" className="shiori-stamp">
+                      <small>DAY</small>
+                      <b>{day.index + 1}</b>
+                      {locale === "ja" ? <span>日目</span> : null}
+                    </span>
+                    <h2><small>{t.dayTab(day.index)}</small> <span>{phrases(day.title)}</span></h2>
+                  </header>
+                  <dl className="shiori-facts">
+                    <div><dt>{t.facts.time}</dt><dd>{day.start}–{day.endsNextDay ? <NextDay locale={locale} /> : null}{day.end}</dd></div>
+                    <div><dt>{t.facts.places}</dt><dd>{day.stops.length}<small>{t.placeUnit}</small></dd></div>
+                    <div><dt>{t.facts.moving}</dt><dd>{day.travelMinutes > 0 ? withUnits(t.movingTotal(durationText(day.travelMinutes, locale))) : "—"}</dd></div>
+                    <div><dt>{t.facts.walking}</dt><dd>{day.walkMinutes > 0 ? <>{withUnits(t.walkingAbout(day.walkMinutes))}{steps > 0 ? <small className="shiori-facts-sub">{t.steps(steps)}</small> : null}</> : "—"}</dd></div>
+                  </dl>
+                  <p className={`shiori-load is-${day.load}`}><b>{t.loads[day.load]}</b>{day.load === "tight" && !day.runsLate ? <span>{t.loadTight}</span> : null}</p>
+                  {day.runsLate ? <p className="shiori-warn"><Icon name="warn" /> {t.late}</p> : null}
+                  <ol className="shiori-timeline">
+                    {day.fromHotel && startPart ? (
+                      <li className="is-leg">
+                        <p className="shiori-part"><span>{t.parts[startPart]}</span></p>
+                        <LegCard heading={t.fromHotel} leg={day.fromHotel} locale={locale} />
+                      </li>
+                    ) : null}
+                    {day.stops.map((stop, index) => {
+                      const part = partOf(stop.arrive);
+                      const isOpen = openStop === stop.place.id;
+                      // A clock that follows a taxi or an unscheduled ride is no firmer than that ride.
+                      const incoming = index === 0 ? day.fromHotel : day.legs[index - 1];
+                      const estimated = incoming?.mode === "taxi" || incoming?.mode === "transit";
+                      return (
+                        <li key={stop.place.id}>
+                          {(index === 0 ? startPart !== part : partOf(day.stops[index - 1].arrive) !== part) ? <p className="shiori-part"><span>{t.parts[part]}</span></p> : null}
+                          {stop.waitMinutes > 0 ? <p className="shiori-wait"><Icon name="clock" />{t.wait(durationText(stop.waitMinutes, locale))}</p> : null}
+                          <article className={`shiori-stop${isOpen ? " is-open" : ""}`} data-stop={stop.place.id}>
+                            <button
+                              aria-expanded={isOpen}
+                              className="shiori-stop-main"
+                              onClick={() => { setOpenStop(isOpen ? null : stop.place.id); setFocus(isOpen ? null : { placeId: stop.place.id, token: Date.now() }); }}
+                              type="button"
+                            >
+                              <span className="shiori-stop-number">{index + 1}</span>
+                              <span className="shiori-stop-text">
+                                <span className="shiori-stop-time">
+                                  {stop.arriveNextDay ? <NextDay locale={locale} /> : null}<b>{stop.arrive}</b>–{stop.leaveNextDay ? <NextDay locale={locale} /> : null}{stop.leave}
+                                  {estimated ? <> <i className="shiori-est">{t.estimate}</i></> : null}
+                                </span>
+                                <b className="shiori-stop-name">{stop.place.name}</b>
+                                <small>{stop.place.meal ? t.mealLabels[stop.place.meal] : kindLabel(stop.place.kind, locale)} ・ <span className="shiori-nb">{stayText(stop.stayMinutes)}</span></small>
+                                {stop.mealMissed ? <small className="shiori-warn">{t.mealMissed}</small> : null}
+                              </span>
+                              <Photo alt="" icon={stop.place.meal ? "meal" : "pin"} img={stop.place.img} width={160} />
+                            </button>
+                            {isOpen ? (
+                              <div className="shiori-stop-edit">
+                                <div>
+                                  <span>{t.stay} {durationText(stop.place.stayMinutes, locale)}</span>
+                                  <button aria-label={t.shorter} onClick={() => setStay(stop.place, -15)} type="button">−15{t.minute}</button>
+                                  <button aria-label={t.longer} onClick={() => setStay(stop.place, 15)} type="button">+15{t.minute}</button>
+                                </div>
+                                <div>
+                                  <label>
+                                    <span>{t.moveDay}</span>
+                                    <select onChange={(event) => setDay(stop.place, event.target.value ? Number(event.target.value) : null)} value={stop.place.day ?? ""}>
+                                      <option value="">{t.auto}</option>
+                                      {Array.from({ length: trip.days }, (_, dayIndex) => <option key={dayIndex} value={dayIndex + 1}>{t.dayTab(dayIndex)}</option>)}
+                                    </select>
+                                  </label>
+                                  <button className="is-danger" onClick={() => update((current) => togglePlace(current, stop.place))} type="button">{t.remove}</button>
+                                </div>
+                                <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${stop.place.name} ${stop.place.lat.toFixed(5)},${stop.place.lon.toFixed(5)}`)}`} rel="noreferrer" target="_blank">{t.checkHours}</a>
+                                {stop.place.img ? <a href={photoCreditUrl(stop.place.img)} rel="noreferrer" target="_blank">{t.photo}: Wikimedia Commons ↗</a> : null}
+                              </div>
+                            ) : null}
+                          </article>
+                          {day.meals.filter((meal) => meal.afterStop === index).map((meal) => <MealRow key={`${meal.kind}-${day.index}-${trip.places.length}`} locale={locale} meal={meal} />)}
+                          {day.cafe && day.cafe.afterStop === index ? (
+                            <CafeRow
+                              cafe={day.cafe}
+                              key={`cafe-${day.index}-${stop.place.id}`}
+                              locale={locale}
+                              onAdd={(pick) => update((current) => current.places.length >= MAX_PLACES || current.places.some((place) => place.id === pick.id) ? current : {
+                                ...current,
+                                // On this day, as a half-hour stop; the order is the planner's.
+                                places: [...current.places, { id: pick.id, name: pick.name, lat: pick.latitude, lon: pick.longitude, stayMinutes: 30, kind: pick.kind === "bakery" ? "bakery cafe" : "cafe", day: day.index + 1 }],
+                              })}
+                            />
+                          ) : null}
+                          {day.legs[index] ? <LegCard leg={day.legs[index]} locale={locale} /> : null}
+                        </li>
+                      );
+                    })}
+                    {day.toHotel ? <li className="is-leg"><LegCard heading={t.toHotel} leg={day.toHotel} locale={locale} /></li> : null}
+                  </ol>
+                  {day.ideas.length > 0 ? (
+                    <div className="shiori-ideas">
+                      <h3><Icon name="spark" /><span>{phrases(t.ideasTitle, "。")}</span></h3>
+                      <ul className="shiori-chips">
+                        {day.ideas.map((sight) => (
+                          <li key={sight.q}><button onClick={() => addSight(sight)} type="button"><i aria-hidden="true">＋</i> {locale === "ja" ? sight.ja : sight.en}</button></li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                  {day.rainIdeas.length > 0 ? (
+                    <div className="shiori-ideas is-rain">
+                      <h3><Icon name="umbrella" />{t.rainTitle}</h3>
+                      <ul className="shiori-chips">
+                        {day.rainIdeas.map((sight) => (
+                          <li key={sight.q}><button onClick={() => addSight(sight)} type="button"><i aria-hidden="true">＋</i> {locale === "ja" ? sight.ja : sight.en}</button></li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                  <p className="shiori-quiet shiori-hours-note"><Icon name="info" /><span className="shiori-screen-only">{t.hoursNote}</span><span className="shiori-print-only">{t.hoursNotePrint}</span></p>
+                  {previousDay || nextDay ? (
+                    <nav aria-label={t.dayNav} className="shiori-daynav">
+                      {previousDay ? <button onClick={() => selectDay(previousDay.index, true)} type="button">← {t.dayTab(previousDay.index)}</button> : <span />}
+                      {nextDay ? <button onClick={() => selectDay(nextDay.index, true)} type="button"><span>{t.dayTab(nextDay.index)} {nextDay.title}</span> →</button> : null}
+                    </nav>
+                  ) : null}
+                </section>
+              );
+            })}
+          </div>
 
           {plan && plan.freeDays > 0 ? (
             <section className="shiori-section">
@@ -1140,7 +1464,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
               {plan.freeDayIdeas.length > 0 ? (
                 <ul className="shiori-chips">
                   {plan.freeDayIdeas.map((sight) => (
-                    <li key={sight.q}><button onClick={() => addSight(sight)} type="button">＋ {locale === "ja" ? sight.ja : sight.en}</button></li>
+                    <li key={sight.q}><button onClick={() => addSight(sight)} type="button"><i aria-hidden="true">＋</i> {locale === "ja" ? sight.ja : sight.en}</button></li>
                   ))}
                 </ul>
               ) : null}
@@ -1154,9 +1478,11 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
             </section>
           ) : null}
 
-          <section className="shiori-section">{addForm}</section>
+          {addForm}
 
           {plan ? <StayNear locale={locale} onHotel={(hotel) => update((current) => ({ ...current, hotel }))} plan={plan} trip={trip} /> : null}
+
+          {usedDays === 0 && plan ? <p className="shiori-quiet">{t.needOne}</p> : null}
 
           <footer className="shiori-foot">
             <p>{t.note}</p>
@@ -1167,21 +1493,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
             </p>
           </footer>
         </div>
-        <aside className="shiori-plan-map">
-          {plan ? (
-            <ShioriMap
-              days={plan.days}
-              focus={focus}
-              hotel={trip.hotel}
-              label={t.mapLabel}
-              legend={{ rail: t.legendRail, street: t.legendWalk, straight: t.legendOther }}
-              onSelectStop={(dayIndex, placeId) => { setSelectedDay(dayIndex); setOpenStop(placeId); }}
-              selectedDay={activeDay}
-            />
-          ) : null}
-        </aside>
       </div>
-      {usedDays === 0 && plan ? <p className="shiori-quiet">{t.needOne}</p> : null}
     </main>
   );
 }

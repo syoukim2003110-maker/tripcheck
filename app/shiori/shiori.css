@@ -1,230 +1,588 @@
 @import "maplibre-gl/dist/maplibre-gl.css";
 
-/* The booklet. Mobile first: one column, the map above the day. From 960px
- * the day reads on the left and the map stays in view on the right. */
+/*
+ * The booklet, set as a paper travel booklet (旅のしおり): a warm page, Mincho
+ * titles, hand-stamp day marks, ticket stubs for train rides and dashed memo
+ * slips for anything that is only a suggestion or an estimate.
+ *
+ * Mobile first: one column, the map folded under the day tabs. From 960px the
+ * booklet reads on the left and the map stays in view on the right.
+ *
+ * Rules that carry meaning, not decoration:
+ *   - solid card  = a stop the plan commits to
+ *   - dashed slip = a suggestion (meals, cafés) or an estimate (目安 chip)
+ *   - rail in the gutter: thick solid = train through known stations,
+ *     dotted = on foot, dashed grey = taxi / transit estimate
+ */
 .shiori {
-  --ink: #1a1d21;
-  --muted: #5d646d;
-  --line: #e4e2dc;
-  --paper: #faf8f3;
-  --card: #ffffff;
-  --accent: #e0603c;
-  --accent-deep: #b9482a;
-  --soft: #f2efe8;
-  --focus: #2563eb;
-  background: var(--paper);
+  --paper: #f3ecdc;
+  --card: #fdf9ef;
+  --ink: #2a2420;
+  --muted: #685d50;
+  --placeholder: #6f6557;
+  --rule: #b9ad97;
+  --edge: #8c8272;
+  --note-bg: #f5e6bd;
+  --note-ink: #5e4100;
+  --est-bg: #f7ecc8;
+  --est-ink: #6b4e00;
+  --danger: #a3341f;
+  --shu: #b3402a;
+  --focus: #1d4ed8;
+  --unknown: #6f6a62;
+  --day: var(--shu);
+  --r-sm: 4px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --sh-card: 0 1px 0 rgb(42 36 32 / 8%), 0 2px 6px rgb(42 36 32 / 6%);
+  --sh-print: 0 1px 2px rgb(42 36 32 / 25%);
+  --mincho: "Hiragino Mincho ProN", "Yu Mincho", "YuMincho", "Noto Serif CJK JP", "Noto Serif JP", "Iowan Old Style", Georgia, serif;
+  --gothic: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic UI", "Noto Sans JP", "Segoe UI", sans-serif;
+  /* Paper grain: one small tile. Nothing depends on it; delete this line if a phone scrolls badly. */
+  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .36 0 0 0 0 .29 0 0 0 0 .2 0 0 0 .05 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background: var(--paper) var(--grain);
   color: var(--ink);
-  font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", "Segoe UI", sans-serif;
+  color-scheme: light;
+  font-family: var(--gothic);
   font-size: 15px;
-  line-height: 1.6;
+  line-break: strict;
+  line-height: 1.7;
   min-height: 100vh;
-  padding: 0 16px 96px;
+  padding: 0 16px 112px;
 }
 .shiori *, .shiori *::before, .shiori *::after { box-sizing: border-box; }
-.shiori button, .shiori input, .shiori select { font: inherit; }
+/* :where() keeps this at one class of weight, so every button's own colour and size below still win. */
+.shiori :where(button, input, select) { color: inherit; font: inherit; }
 .shiori button { cursor: pointer; }
-.shiori a { color: inherit; }
-.shiori :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-.shiori h1, .shiori h2, .shiori h3, .shiori p { margin: 0; }
+.shiori a { color: inherit; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+.shiori :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.shiori :where(h1, h2, h3, p, dl, dd) { margin: 0; }
+.shiori :where(h1, h2, h3) { text-wrap: balance; }
 .shiori-icon { flex: 0 0 auto; vertical-align: -3px; }
-.shiori-quiet { color: var(--muted); font-size: 13px; }
-.shiori-warn { background: #fff4e5; border-radius: 10px; color: #7a4a00; font-size: 13px; padding: 8px 10px; }
+.shiori-quiet { color: var(--muted); font-size: 13px; line-height: 1.6; }
+/* A phrase that stays on one line where it fits: Japanese headings must not break inside a name. */
+.shiori-nb { display: inline-block; max-width: 100%; }
+.shiori-cover h1, .shiori-day-head h2, .shiori-ideas h3, .shiori-stay-area b, .shiori-stop-text small, .shiori-other > label, .shiori-notices li span, .shiori-stop-name, .shiori-hero h1, .shiori-pick h1, .shiori-ticket-route > span, .shiori-meal-head small, .shiori-pace button, .shiori-sight-text b, .shiori-hotels b, .shiori-food b { word-break: auto-phrase; }
+/* 翌 / +1: this clock time is after midnight. */
+.shiori-next { border: 1px solid currentColor; border-radius: 3px; display: inline-block; font: 700 12px/1.25 var(--gothic); margin-right: 3px; padding: 0 3px; vertical-align: 2px; }
+.shiori-print-only { display: none; }
+.shiori-sr { clip-path: inset(50%); height: 1px; overflow: hidden; position: absolute; white-space: pre; width: 1px; }
+.shiori-eyebrow { color: var(--muted); display: block; font: 700 11px/1.3 var(--gothic); letter-spacing: 0.18em; text-transform: uppercase; }
+.shiori-warn { background: #f6e2c4; border-radius: var(--r-sm); color: #7a3d00; font-size: 13px; line-height: 1.6; padding: 8px 10px; }
+/* 目安: an estimate is always marked, and always dashed. */
+.shiori-est { background: var(--est-bg); border: 1px dashed var(--est-ink); border-radius: var(--r-sm); color: var(--est-ink); display: inline-block; font: 700 12px/1.5 var(--gothic); font-style: normal; letter-spacing: 0.06em; padding: 0 6px; vertical-align: 1px; white-space: nowrap; }
 
-.shiori-top { align-items: center; display: flex; justify-content: space-between; margin: 0 auto; max-width: 1180px; padding: 14px 0; }
-.shiori-brand { align-items: baseline; background: none; border: 0; color: var(--ink); display: flex; gap: 8px; padding: 0; }
-.shiori-brand b { font-size: 18px; letter-spacing: -0.01em; }
-.shiori-brand small { color: var(--muted); font-size: 12px; }
-.shiori-lang { display: flex; gap: 2px; }
-.shiori-lang a { border-radius: 999px; color: var(--muted); font-size: 12px; font-weight: 700; padding: 6px 10px; text-decoration: none; }
-.shiori-lang a[aria-current] { background: var(--ink); color: #fff; }
+/* Buttons share one box; the few that differ say so below. */
+.shiori-plan-actions button, .shiori-action-link, .shiori-stop-edit button, .shiori-meal-head button, .shiori-food li.has-action button, .shiori-hotel-actions button, .shiori-daynav button, .shiori-map-toggle, .shiori-peek-view {
+  align-items: center; background: var(--card); border: 1px solid var(--edge); border-radius: var(--r-md); color: var(--ink); display: inline-flex; font-size: 14px; font-weight: 700; gap: 6px; justify-content: center; line-height: 1.2; min-height: 44px; padding: 0 14px; text-decoration: none;
+}
+.shiori select { background: var(--card); border: 1px solid var(--edge); border-radius: var(--r-md); font-size: 14px; font-weight: 700; min-height: 44px; padding: 0 8px; }
+.shiori button:disabled { cursor: default; }
+
+/* Top bar */
+.shiori-top { align-items: center; border-bottom: 3px double var(--ink); display: flex; gap: 12px; justify-content: space-between; margin: 0 auto; max-width: 560px; padding: 12px 0 10px; }
+.shiori-brand { align-items: center; background: none; border: 0; color: var(--ink); display: flex; gap: 8px; min-height: 44px; min-width: 0; padding: 0; }
+.shiori-brand i { align-items: center; background: var(--shu); border-radius: 2px; color: var(--card); display: inline-flex; flex: 0 0 auto; font: 600 12px/1 var(--mincho); font-style: normal; height: 20px; justify-content: center; width: 20px; }
+.shiori-brand > span { display: grid; min-width: 0; text-align: left; }
+.shiori-brand b { font: 600 clamp(15px, 4.7vw, 19px)/1.25 var(--mincho); letter-spacing: 0.06em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shiori-brand small { color: var(--muted); font: 700 11px/1.3 var(--gothic); letter-spacing: 0.14em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shiori-lang { border: 1px solid var(--edge); border-radius: var(--r-md); display: flex; flex: 0 0 auto; overflow: hidden; }
+.shiori-lang a { align-items: center; background: var(--card); color: var(--muted); display: flex; font-size: 12px; font-weight: 700; min-height: 44px; padding: 0 12px; text-decoration: none; }
+.shiori-lang a[aria-current] { background: var(--ink); color: var(--card); }
+.shiori-lang a:focus-visible { outline-offset: -3px; }
+.shiori-lang a[aria-current]:focus-visible { box-shadow: inset 0 0 0 5px #fff; }
 
 /* Home */
-.shiori-hero { margin: 0 auto; max-width: 760px; padding: 20px 0 8px; }
-.shiori-hero h1 { font-size: clamp(26px, 6.4vw, 44px); font-weight: 800; letter-spacing: -0.02em; line-height: 1.25; white-space: pre-line; }
-.shiori-hero > p { color: var(--muted); margin-top: 12px; max-width: 34em; }
-.shiori-search { display: block; margin-top: 22px; }
-.shiori-search span { display: block; font-size: 13px; font-weight: 800; margin-bottom: 6px; }
-.shiori-search input { background: var(--card); border: 2px solid var(--ink); border-radius: 16px; font-size: 17px; min-height: 56px; padding: 0 18px; width: 100%; }
-.shiori-resume { background: var(--soft); border: 1px solid var(--line); border-radius: 12px; color: var(--ink); font-size: 13px; font-weight: 700; margin-top: 12px; min-height: 44px; padding: 0 14px; text-align: left; width: 100%; }
-.shiori-cities { margin: 26px auto 0; max-width: 1180px; }
-.shiori-cities h2 { font-size: 14px; margin-bottom: 10px; }
-.shiori-city-grid { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.shiori-city { background: var(--soft); border: 0; border-radius: 16px; color: #fff; overflow: hidden; padding: 0; position: relative; aspect-ratio: 4 / 3; }
-.shiori-city .shiori-photo { height: 100%; object-fit: cover; width: 100%; }
-.shiori-city::after { background: linear-gradient(to top, rgb(0 0 0 / 62%), rgb(0 0 0 / 0%) 60%); content: ""; inset: 0; position: absolute; }
-.shiori-city span:last-child { bottom: 10px; font-size: 17px; font-weight: 800; left: 12px; position: absolute; text-shadow: 0 1px 2px rgb(0 0 0 / 50%); z-index: 1; }
-.shiori-photo { background: var(--soft); display: block; }
-.shiori-photo.is-empty { align-items: center; color: #b6b0a3; display: flex; justify-content: center; }
-.shiori-city .shiori-photo.is-empty { height: 100%; width: 100%; }
+.shiori-hero, .shiori-cities, .shiori-pick { margin: 0 auto; max-width: 560px; }
+.shiori-hero { padding: 24px 0 4px; }
+.shiori-hero h1 { font: 600 clamp(24px, 6.6vw, 34px)/1.45 var(--mincho); letter-spacing: 0.06em; margin-top: 12px; white-space: pre-line; }
+.shiori-hero > p:not(.shiori-eyebrow) { color: var(--muted); line-height: 1.8; margin-top: 12px; max-width: 34em; }
+.shiori-search { display: block; margin-top: 24px; }
+.shiori-search span { display: block; font-size: 13px; font-weight: 700; margin-bottom: 6px; }
+.shiori-search input { appearance: none; background: var(--card); border: 0; border-bottom: 2px solid var(--ink); border-radius: var(--r-sm) var(--r-sm) 0 0; font-size: 17px; min-height: 52px; padding: 0 14px; width: 100%; }
+.shiori input::placeholder { color: var(--placeholder); opacity: 1; }
+.shiori-resume { align-items: center; background: none; border: 1px dashed var(--edge); border-radius: var(--r-sm); color: var(--ink); display: flex; font-size: 13px; font-weight: 700; gap: 8px; line-height: 1.5; margin-top: 12px; min-height: 48px; padding: 6px 12px; text-align: left; width: 100%; }
+.shiori-cities { margin-top: 32px; }
+.shiori-cities h2, .shiori-section > h2 { font: 600 18px/1.4 var(--mincho); letter-spacing: 0.08em; }
+.shiori-cities h2 { align-items: center; display: flex; gap: 12px; margin-bottom: 12px; }
+.shiori-cities h2::after { border-top: 1px solid var(--rule); content: ""; flex: 1; }
+.shiori-city-grid { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+/* A city and a sight are white-bordered prints laid on the page. */
+.shiori-city, .shiori-sight { background: #fff; border: 0; border-radius: var(--r-sm); box-shadow: var(--sh-print); color: var(--ink); display: block; padding: 5px 5px 0; position: relative; text-align: left; }
+.shiori-city .shiori-photo, .shiori-sight .shiori-photo { aspect-ratio: 4 / 3; height: auto; object-fit: cover; width: 100%; }
+.shiori-city-name { align-items: baseline; display: flex; gap: 8px; justify-content: space-between; min-height: 40px; padding: 8px 4px 6px; }
+.shiori-city-name b { flex: 0 1 auto; font: 600 18px/1.3 var(--mincho); letter-spacing: 0.06em; overflow-wrap: anywhere; }
+.shiori-city-name small { color: var(--muted); flex: 1 1 0; min-width: 0; text-align: right; font: 700 10px/1.2 var(--gothic); letter-spacing: 0.16em; overflow: hidden; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
+.shiori-city-blank { align-items: center; border: 1px dashed var(--edge); border-radius: var(--r-sm); color: var(--muted); display: flex; font-size: 13px; font-weight: 700; justify-content: center; line-height: 1.6; min-height: 96px; padding: 12px; text-align: center; white-space: pre-line; }
+.shiori-photo { background: #e6dcc7; display: block; }
+/* No photo is a designed state, not a broken one: a tinted block with the place mark. */
+.shiori-photo.is-empty { align-items: center; background: color-mix(in srgb, var(--day) 14%, var(--card)); color: var(--day); display: flex; justify-content: center; }
+.shiori-photo.is-empty .shiori-icon { height: 24px; width: 24px; }
 
 /* Pick */
-.shiori-pick { margin: 0 auto; max-width: 1180px; }
-.shiori-back { background: none; border: 0; color: var(--muted); font-size: 13px; font-weight: 700; padding: 6px 0; }
-.shiori-pick h1 { font-size: clamp(22px, 5vw, 30px); font-weight: 800; letter-spacing: -0.01em; line-height: 1.3; }
-.shiori-controls { align-items: center; display: flex; flex-wrap: wrap; gap: 10px 14px; margin: 14px 0; }
-.shiori-controls label { align-items: center; display: flex; font-size: 13px; font-weight: 700; gap: 6px; }
-.shiori-controls select, .shiori-stop-edit select { background: var(--card); border: 1px solid #9aa0a8; border-radius: 10px; min-height: 40px; padding: 0 8px; }
-.shiori-pace { background: var(--soft); border-radius: 12px; display: flex; padding: 3px; }
-.shiori-pace button { background: none; border: 0; border-radius: 9px; color: var(--muted); font-size: 13px; font-weight: 700; min-height: 36px; padding: 0 12px; }
-.shiori-pace button[aria-pressed="true"] { background: var(--card); box-shadow: 0 1px 3px rgb(0 0 0 / 14%); color: var(--ink); }
-.shiori-sights { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.shiori-sight { background: var(--card); border: 2px solid transparent; border-radius: 16px; box-shadow: 0 1px 2px rgb(0 0 0 / 8%); color: var(--ink); overflow: hidden; padding: 0; position: relative; text-align: left; }
-.shiori-sight .shiori-photo { aspect-ratio: 4 / 3; height: auto; object-fit: cover; width: 100%; }
-.shiori-sight.is-chosen { border-color: var(--accent); }
-.shiori-sight-check { align-items: center; background: rgb(255 255 255 / 92%); border-radius: 999px; color: var(--ink); display: flex; height: 32px; justify-content: center; position: absolute; right: 8px; top: 8px; width: 32px; }
-.shiori-sight.is-chosen .shiori-sight-check { background: var(--accent); color: #fff; }
-.shiori-sight-text { display: block; padding: 8px 10px 10px; }
-.shiori-sight-text b { display: block; font-size: 14px; line-height: 1.35; }
-.shiori-sight-text small { color: var(--muted); display: -webkit-box; font-size: 12px; line-height: 1.4; margin-top: 2px; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-.shiori-more { background: none; border: 0; color: var(--ink); display: block; font-weight: 700; margin: 12px auto 0; min-height: 44px; text-decoration: underline; text-underline-offset: 3px; }
-.shiori-other { background: var(--card); border: 1px solid var(--line); border-radius: 16px; margin-top: 18px; padding: 12px; }
-.shiori-other label { display: block; font-size: 13px; font-weight: 800; margin-bottom: 6px; }
-.shiori-other > .shiori-other-row { display: flex; gap: 8px; margin-top: 8px; }
-.shiori-other .shiori-pace { flex-wrap: wrap; }
-.shiori-other .shiori-pace button { flex: 1 1 auto; }
-.shiori-other input { background: var(--soft); border: 1px solid transparent; border-radius: 10px; flex: 1 1 auto; font-size: 16px; min-height: 44px; min-width: 0; padding: 0 12px; }
-.shiori-other button[type="submit"] { background: var(--ink); border: 0; border-radius: 10px; color: #fff; font-weight: 700; min-height: 44px; padding: 0 16px; }
-.shiori-other button:disabled { opacity: 0.45; }
-.shiori-chips { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; margin: 10px 0 0; padding: 0; }
-.shiori-chips button { background: var(--card); border: 1px solid #9aa0a8; border-radius: 999px; color: var(--ink); font-size: 13px; min-height: 36px; padding: 0 12px; }
-.shiori-bar { align-items: center; background: rgb(250 248 243 / 94%); backdrop-filter: blur(8px); border-top: 1px solid var(--line); bottom: 0; display: flex; gap: 12px; justify-content: space-between; left: 0; padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); position: fixed; right: 0; z-index: 20; }
-.shiori-bar span { font-size: 13px; font-weight: 700; }
-.shiori-bar button { background: var(--accent); border: 0; border-radius: 14px; color: #fff; font-size: 16px; font-weight: 800; min-height: 50px; padding: 0 22px; }
-.shiori-bar button:disabled { background: #c9c5bb; }
+.shiori-pick { padding-top: 8px; }
+.shiori-back { background: none; border: 0; color: var(--muted); font-size: 13px; font-weight: 700; min-height: 44px; padding: 0; }
+.shiori-pick > .shiori-eyebrow { margin-top: 4px; }
+.shiori-pick h1 { font: 600 clamp(24px, 6.4vw, 34px)/1.35 var(--mincho); letter-spacing: 0.06em; margin: 6px 0 6px; }
+.shiori-controls { align-items: center; display: flex; flex-wrap: wrap; gap: 8px 16px; margin: 12px 0 16px; }
+.shiori-controls label, .shiori-stop-edit label { align-items: center; display: flex; font-size: 13px; font-weight: 700; gap: 8px; }
+.shiori-pace { border: 1px solid var(--edge); border-radius: var(--r-md); display: grid; grid-auto-columns: minmax(0, 1fr); grid-auto-flow: column; overflow: hidden; }
+.shiori-pace button { background: var(--card); border: 0; border-left: 1px solid var(--rule); color: var(--muted); font-size: 13px; font-weight: 700; line-height: 1.25; min-height: 44px; padding: 4px 6px; }
+.shiori-pace button:first-child { border-left: 0; }
+.shiori-pace button[aria-pressed="true"] { background: var(--ink); color: var(--card); }
+.shiori-pace button:focus-visible { outline-offset: -3px; }
+.shiori-pace button[aria-pressed="true"]:focus-visible { box-shadow: inset 0 0 0 5px #fff; }
+.shiori-sights { display: grid; gap: 14px 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.shiori-sight[aria-pressed="true"] { outline: 2px solid var(--shu); outline-offset: 2px; }
+.shiori-sight[aria-pressed="true"]:focus-visible { outline: 3px solid var(--focus); }
+.shiori-sight-check { align-items: center; background: rgb(253 249 239 / 94%); border: 1px solid var(--edge); border-radius: 50%; color: var(--ink); display: flex; height: 32px; justify-content: center; position: absolute; right: 11px; top: 11px; width: 32px; }
+/* 行く: a round hand stamp on the places that are going into the booklet. */
+.shiori-sight[aria-pressed="true"] .shiori-sight-check { background: rgb(253 249 239 / 92%); border: 2px solid var(--shu); color: var(--shu); height: 40px; outline: 1px solid var(--shu); outline-offset: 2px; right: 12px; rotate: -10deg; top: 12px; width: 40px; }
+.shiori-sight-check b { font: 600 15px/1 var(--mincho); letter-spacing: 0.04em; }
+.shiori-sight-text { display: block; padding: 8px 4px 10px; }
+.shiori-sight-text b { display: block; font: 600 17px/1.35 var(--mincho); letter-spacing: 0.03em; overflow-wrap: anywhere; }
+.shiori-sight-text small { color: var(--muted); display: -webkit-box; font-size: 12px; line-height: 1.5; margin-top: 2px; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.shiori-more { background: none; border: 0; color: var(--ink); display: block; font-weight: 700; margin: 12px auto 0; min-height: 44px; padding: 0 12px; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 4px; }
 
-/* Plan */
-.shiori.is-plan { padding-bottom: 32px; }
-.shiori-plan { display: flex; flex-direction: column-reverse; gap: 14px; margin: 0 auto; max-width: 1180px; }
-.shiori-plan-map { border-radius: 16px; height: 38vh; min-height: 240px; overflow: hidden; position: sticky; top: 0; z-index: 5; }
-.shiori-map, .shiori-map-canvas { height: 100%; width: 100%; }
-.shiori-map { background: #e9e6df; position: relative; }
-/* Top left: the bottom edge belongs to the map's own credit line and zoom buttons. */
-.shiori-map-legend { background: rgb(255 255 255 / 92%); border-radius: 10px; top: 10px; display: flex; flex-wrap: wrap; font-size: 11px; gap: 4px 12px; left: 10px; list-style: none; margin: 0; max-width: calc(100% - 20px); padding: 6px 10px; position: absolute; }
-.shiori-map-legend:empty { display: none; }
-.shiori-map-legend li { align-items: center; color: var(--ink); display: flex; gap: 6px; }
-.shiori-map-legend i { border-top: 3px solid var(--ink); display: inline-block; width: 22px; }
-.shiori-map-legend i.is-rail { border-top-width: 5px; }
-.shiori-map-legend i.is-straight { border-top: 2px dashed #7b8089; }
-.shiori-map-note { background: rgb(255 255 255 / 92%); border-radius: 10px; bottom: 10px; font-size: 12px; left: 10px; padding: 6px 10px; position: absolute; }
-.shiori-pin { background: var(--pin, #2f6fed); border: 2px solid #fff; border-radius: 999px; box-shadow: 0 1px 4px rgb(0 0 0 / 35%); color: #fff; cursor: pointer; font-size: 0; height: 14px; opacity: 0.55; padding: 0; width: 14px; }
-.shiori-pin.is-selected { font-size: 13px; font-weight: 800; height: 30px; line-height: 26px; opacity: 1; text-align: center; width: 30px; }
-.shiori-pin.is-hotel { background: var(--ink); cursor: default; font-size: 12px; font-weight: 800; height: 28px; line-height: 24px; opacity: 1; text-align: center; width: 28px; }
-.shiori-plan-head h1 { font-size: clamp(20px, 4.6vw, 28px); font-weight: 800; letter-spacing: -0.01em; line-height: 1.3; }
-.shiori-plan-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-.shiori-plan-actions button { background: var(--card); border: 1px solid #9aa0a8; border-radius: 10px; color: var(--ink); font-size: 13px; font-weight: 700; min-height: 40px; padding: 0 12px; }
-.shiori-tabs { display: flex; gap: 6px; margin: 4px 0 12px; overflow-x: auto; padding-bottom: 2px; }
-.shiori-tabs button { background: var(--card); border: 2px solid var(--line); border-radius: 12px; color: var(--ink); flex: 0 0 auto; font-weight: 800; min-height: 44px; padding: 0 16px; }
-.shiori-tabs button[aria-selected="true"] { background: var(--day); border-color: var(--day); color: #fff; }
-.shiori-tab-free { align-items: center; border: 2px dashed var(--line); border-radius: 12px; color: var(--muted); display: inline-flex; flex: 0 0 auto; font-size: 13px; font-weight: 700; padding: 0 14px; }
-.shiori-day > header h2 { font-size: 18px; font-weight: 800; }
-.shiori-day > header h2 span { color: var(--muted); font-size: 14px; font-weight: 600; margin-left: 6px; }
-.shiori-day > header p { color: var(--muted); font-size: 13px; margin-top: 2px; }
-.shiori-timeline { list-style: none; margin: 12px 0 0; padding: 0; }
-.shiori-timeline > li { margin: 0; }
-.shiori-stop { background: var(--card); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
-.shiori-stop-main { align-items: center; background: none; border: 0; color: var(--ink); display: flex; gap: 12px; padding: 10px; text-align: left; width: 100%; }
-.shiori-stop-number { align-items: center; background: var(--day); border-radius: 999px; color: #fff; display: flex; flex: 0 0 auto; font-weight: 800; height: 30px; justify-content: center; width: 30px; }
-.shiori-stop-text { flex: 1 1 auto; min-width: 0; }
-.shiori-stop-text b { display: block; font-size: 16px; line-height: 1.35; }
-.shiori-stop-text small { color: var(--muted); display: block; font-size: 12px; }
-.shiori-stop-text small:first-child { color: var(--ink); font-size: 13px; font-variant-numeric: tabular-nums; font-weight: 700; }
-.shiori-stop .shiori-photo { border-radius: 10px; flex: 0 0 auto; height: 64px; object-fit: cover; width: 64px; }
-.shiori-stop-edit { align-items: center; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; font-size: 13px; gap: 10px 14px; padding: 10px; }
-.shiori-stop-edit > div { align-items: center; display: flex; gap: 8px; }
-.shiori-stop-edit label { align-items: center; display: flex; gap: 6px; }
-.shiori-stop-edit button { background: var(--soft); border: 1px solid var(--line); border-radius: 10px; color: var(--ink); min-height: 40px; padding: 0 10px; }
-.shiori-stop-edit button.is-danger { color: #b42318; }
-.shiori-stop-edit a { color: var(--muted); font-size: 12px; }
-.shiori-leg { border-left: 3px dotted #c9c5bb; color: var(--muted); font-size: 13px; margin: 0 0 0 24px; padding: 10px 0 10px 18px; }
-.shiori-leg.is-rail { border-left: 3px solid var(--day); }
-.shiori-leg-head { align-items: center; color: var(--ink); display: flex; font-weight: 700; gap: 8px; }
-.shiori-leg-head small { color: var(--muted); font-weight: 500; }
-.shiori-rail { list-style: none; margin: 8px 0 0; padding: 0; }
-.shiori-rail li { background: var(--card); border: 1px solid var(--line); border-radius: 12px; color: var(--ink); margin-top: 6px; padding: 8px 10px; }
-.shiori-rail li.is-walk { background: none; border: 0; color: var(--muted); padding: 2px 2px; }
-.shiori-rail li b { color: var(--day); display: block; font-size: 13px; }
-.shiori-rail li span { display: block; font-size: 15px; font-weight: 700; }
-.shiori-rail li small { color: var(--muted); display: block; font-size: 12px; }
-.shiori-rail li em { background: var(--soft); border-radius: 6px; color: var(--muted); display: inline-block; font-size: 11px; font-style: normal; font-weight: 700; margin-bottom: 4px; padding: 1px 6px; }
-.shiori-leg-link { color: var(--muted); display: inline-block; font-size: 12px; margin-top: 6px; }
-.shiori-timeline > li.is-leg .shiori-leg { margin-left: 24px; }
-.shiori-meal { background: #fff7ec; border: 1px solid #f1dfc2; border-radius: 14px; margin: 8px 0 0 24px; padding: 8px 10px; }
-.shiori-meal-head { align-items: center; display: flex; gap: 8px; }
-.shiori-meal-head > span { flex: 1 1 auto; font-size: 14px; min-width: 0; }
-.shiori-meal-head small { color: var(--muted); }
-.shiori-meal-head button { background: var(--card); border: 1px solid #d9c9a8; border-radius: 10px; color: var(--ink); flex: 0 0 auto; font-size: 12px; font-weight: 700; min-height: 36px; padding: 0 10px; }
-.shiori-food { list-style: none; margin: 8px 0 4px; padding: 0; }
-.shiori-food li + li { border-top: 1px solid #f1dfc2; }
-.shiori-food a { display: block; padding: 8px 2px; text-decoration: none; }
-.shiori-food b { display: block; font-size: 14px; }
-.shiori-food small { color: var(--muted); font-size: 12px; }
-.shiori-ideas { background: var(--soft); border-radius: 14px; margin-top: 14px; padding: 12px; }
-.shiori-ideas h3 { font-size: 13px; font-weight: 800; }
-.shiori-section { background: var(--card); border: 1px solid var(--line); border-radius: 16px; margin-top: 16px; padding: 14px; }
-.shiori-section h2 { align-items: center; display: flex; font-size: 16px; font-weight: 800; gap: 8px; }
-.shiori-hotels { list-style: none; margin: 10px 0 0; padding: 0; }
-.shiori-hotels li { border-top: 1px solid var(--line); padding: 10px 0; }
-.shiori-hotels li.is-using b::after { color: var(--accent-deep); content: " ✓"; }
-.shiori-hotels b { display: block; font-size: 15px; }
-.shiori-hotels small { color: var(--muted); font-size: 12px; }
-.shiori-hotel-actions { align-items: center; display: flex; flex-wrap: wrap; gap: 6px 12px; margin-top: 6px; }
-.shiori-hotel-actions button { background: var(--card); border: 1px solid #9aa0a8; border-radius: 10px; color: var(--ink); font-size: 13px; font-weight: 700; min-height: 40px; padding: 0 12px; }
-.shiori-hotel-actions button.is-primary { background: var(--ink); border-color: var(--ink); color: #fff; }
-.shiori-hotel-actions a { color: var(--muted); font-size: 12px; }
-.shiori-foot { color: var(--muted); font-size: 12px; margin: 22px auto 0; max-width: 1180px; }
-.shiori-foot p + p { margin-top: 6px; }
-.shiori-link { background: none; border: 0; color: inherit; padding: 0; text-decoration: underline; }
+/* Add your own place, restaurant or hotel */
+.shiori-other { background: var(--card); border: 1px solid var(--rule); border-radius: var(--r-md); box-shadow: var(--sh-card); margin-top: 24px; padding: 16px; }
+.shiori-other > label { display: block; font: 600 18px/1.4 var(--mincho); letter-spacing: 0.04em; margin-bottom: 12px; }
+.shiori-other-row { display: flex; gap: 8px; margin: 12px 0 8px; }
+.shiori-other input { background: var(--paper); border: 0; border-bottom: 2px solid var(--ink); border-radius: var(--r-sm) var(--r-sm) 0 0; flex: 1 1 auto; font-size: 16px; min-height: 44px; min-width: 0; padding: 0 12px; }
+.shiori-other button[type="submit"] { background: var(--ink); border: 0; border-radius: var(--r-md); color: var(--card); flex: 0 0 auto; font-size: 14px; font-weight: 700; min-height: 44px; padding: 0 16px; }
+.shiori-other button[type="submit"]:disabled { background: var(--edge); }
+.shiori-other .shiori-warn { margin-bottom: 8px; }
+.shiori-chips { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; margin: 10px 0 0; padding: 0; }
+.shiori-chips button { align-items: center; background: var(--card); border: 1px solid var(--edge); border-radius: 999px; color: var(--ink); display: inline-flex; font-size: 13px; gap: 4px; line-height: 1.3; min-height: 40px; padding: 4px 14px; text-align: left; }
+.shiori-chips button i { color: var(--day); font-style: normal; font-weight: 800; }
+/* The traveller's own additions: dashed, because nothing about them was checked. */
+.shiori-chips.is-own button { border-style: dashed; min-height: 44px; }
+.shiori-chips.is-own button small { color: var(--muted); font-size: 12px; }
+.shiori-chips.is-own button i { color: var(--ink); font-size: 16px; font-weight: 400; }
 
-@media (min-width: 720px) {
-  .shiori-city-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-  .shiori-sights { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-  .shiori-bar { justify-content: center; }
-}
-@media (min-width: 960px) {
-  .shiori { padding: 0 28px 96px; }
-  .shiori-plan { align-items: flex-start; flex-direction: row; gap: 24px; }
-  .shiori-plan-main { flex: 0 0 480px; min-width: 0; }
-  .shiori-plan-map { flex: 1 1 auto; height: calc(100vh - 32px); top: 16px; }
-}
-@media print {
-  .shiori { background: #fff; padding: 0; }
-  .shiori-top, .shiori-plan-actions, .shiori-controls, .shiori-plan-map, .shiori-meal-head button, .shiori-stop-edit, .shiori-leg-link, .shiori-ideas, .shiori-hotel-actions, .shiori-tabs { display: none !important; }
-  .shiori-plan { display: block; }
-}
+/* The bar that makes the booklet */
+.shiori-bar { align-items: center; background: var(--paper); border-top: 1px solid var(--ink); bottom: 0; display: flex; gap: 12px; justify-content: space-between; left: 0; padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); position: fixed; right: 0; z-index: 20; }
+.shiori-bar span { font-size: 13px; font-weight: 700; line-height: 1.4; }
+.shiori-bar span small { font-size: 12px; }
+.shiori-bar span b { font: 700 22px/1 var(--gothic); font-variant-numeric: tabular-nums lining-nums; margin-right: 2px; }
+.shiori-bar button { background: var(--shu); border: 0; border-radius: var(--r-md); color: #fff; flex: 0 0 auto; font: 600 18px/1.2 var(--mincho); letter-spacing: 0.12em; min-height: 48px; min-width: 160px; padding: 0 20px; }
+.shiori-bar button:disabled { background: var(--edge); color: var(--card); }
 
-/* Where the traveller's wishes collide, and the way out. */
-.shiori-notices { background: #fff4e5; border: 1px solid #f0c98a; border-radius: 16px; margin: 14px 0; padding: 12px 14px; }
-.shiori-notices h2 { color: #7a4a00; font-size: 15px; margin: 0 0 6px; }
+/* ---------- The booklet ---------- */
+.shiori.is-plan { padding-bottom: 40px; }
+.shiori-plan { margin: 0 auto; max-width: 560px; }
+
+/* Cover */
+.shiori-cover { padding: 14px 0 0; position: relative; }
+.shiori-cover-kicker { align-items: center; display: flex; gap: 10px; }
+.shiori-cover-kicker::after { border-top: 1px solid var(--rule); content: ""; flex: 1; margin-right: 108px; }
+.shiori-cover h1 { font-family: var(--mincho); font-weight: 600; margin-top: 8px; padding-right: 0; }
+.shiori-cover-city { display: block; font-size: clamp(40px, 13vw, 64px); letter-spacing: 0.08em; line-height: 1.05; overflow-wrap: anywhere; padding-right: 96px; }
+.shiori-cover-sub { display: block; font-size: 24px; letter-spacing: 0.06em; line-height: 1.3; margin-top: 6px; }
+.shiori-cover-meta { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums lining-nums; margin-top: 6px; }
+.shiori-postmark { color: var(--shu); height: 92px; mix-blend-mode: multiply; opacity: 0.85; pointer-events: none; position: absolute; right: -6px; rotate: -8deg; top: 12px; width: 132px; }
+.shiori-postmark text { font-family: var(--gothic); }
+.shiori-postmark .shiori-postmark-word { font-family: var(--mincho); font-weight: 600; letter-spacing: 0.5px; }
+/* Contents: one line per day in its colour, its stops as stations. On a phone the rows are kept short so the day tabs stay on the first screen. */
+.shiori-contents { border-bottom: 1px solid var(--ink); display: grid; list-style: none; margin: 10px 0 0; padding: 0 0 8px; }
+/* On a phone a long list of notices already fills the first screen; the tabs below say the same as this diagram. */
+.shiori-contents.is-folded { display: none; }
+@media (min-width: 960px) { .shiori-contents.is-folded { display: grid; } }
+.shiori-contents button { align-items: start; background: none; border: 0; border-radius: var(--r-sm); display: grid; gap: 10px; grid-template-columns: 22px minmax(0, 1fr); min-height: 36px; padding: 4px; text-align: left; width: 100%; }
+.shiori-contents button[aria-current] { background: color-mix(in srgb, var(--day) 9%, transparent); }
+.shiori-contents i { align-items: center; align-self: center; border: 1.5px solid var(--day); border-radius: 50%; color: var(--day); display: flex; font: 700 12px/1 var(--gothic); font-style: normal; height: 20px; justify-content: center; width: 20px; }
+.shiori-contents button[aria-current] i { background: var(--day); color: #fff; }
+.shiori-contents-line { display: grid; gap: 0 6px; grid-auto-columns: minmax(0, 1fr); grid-auto-flow: column; padding-top: 1px; position: relative; }
+.shiori-contents-line::before { background: var(--day); border-radius: 2px; content: ""; height: 3px; left: 0; position: absolute; right: 0; top: 4px; }
+.shiori-contents-line > span { min-width: 0; padding-top: 11px; position: relative; }
+.shiori-contents-line > span::before { background: var(--card); border: 2px solid var(--day); border-radius: 50%; content: ""; height: 9px; left: 0; position: absolute; top: 0; width: 9px; }
+.shiori-contents-line em { color: var(--muted); display: block; font-size: 12px; font-style: normal; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shiori-contents-line > small { align-self: end; color: var(--ink); font: 700 12px/1.35 var(--gothic); justify-self: end; width: max-content; }
+
+/* Actions: on a phone one row, each an icon over a short word, with the days beside them. */
+.shiori-plan-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.shiori-plan-actions > button, .shiori-plan-actions > a { flex: 1 1 52px; flex-direction: column; font-size: 12px; gap: 2px; min-height: 48px; min-width: 0; padding: 4px 2px; }
+.shiori-plan-actions .shiori-icon { height: 17px; width: 17px; }
+.shiori-act-long { clip-path: inset(50%); height: 1px; overflow: hidden; position: absolute; white-space: nowrap; width: 1px; }
+.shiori-act-short { white-space: nowrap; }
+.shiori-plan-days { align-items: center; display: flex; flex: 0 0 auto; font-size: 13px; font-weight: 700; gap: 8px; }
+.shiori-plan-days > span { clip-path: inset(50%); height: 1px; overflow: hidden; position: absolute; white-space: nowrap; width: 1px; }
+.shiori-plan-days select { min-height: 48px; }
+
+.shiori-working { background: var(--ink); border-radius: var(--r-md); color: var(--card); font-size: 14px; font-weight: 700; margin: 16px 0 0; padding: 12px 14px; }
+.shiori-working.is-update { background: none; color: var(--muted); font-size: 12px; padding: 0; }
+
+/* Where the traveller's wishes collide, and the way out: a slip of note paper taped to the page. */
+.shiori-notices { background: var(--note-bg); border: 1px solid #e2cf9a; border-radius: var(--r-sm); box-shadow: var(--sh-card); color: var(--note-ink); margin: 22px 0 6px; padding: 16px 16px 6px; position: relative; }
+.shiori-notices::before { background: rgb(179 64 42 / 28%); content: ""; height: 18px; left: 50%; position: absolute; rotate: -2deg; top: -9px; translate: -50% 0; width: 84px; }
+.shiori-notices h2 { font: 600 18px/1.4 var(--mincho); letter-spacing: 0.06em; margin: 0 0 4px; }
 .shiori-notices ul { list-style: none; margin: 0; padding: 0; }
-.shiori-notices li { align-items: center; border-top: 1px solid #f0c98a; color: #4d3000; display: flex; flex-wrap: wrap; font-size: 14px; gap: 8px 12px; justify-content: space-between; line-height: 1.6; padding: 8px 0; }
+.shiori-notices li { align-items: center; border-top: 1px dashed #d9c488; display: flex; flex-wrap: wrap; font-size: 14px; gap: 8px 12px; justify-content: space-between; line-height: 1.7; padding: 10px 0; }
 .shiori-notices li:first-child { border-top: 0; }
-.shiori-notices li span { flex: 1 1 240px; }
-.shiori-notices button { background: #7a4a00; border: 0; border-radius: 10px; color: #fff; font-size: 13px; font-weight: 700; min-height: 40px; padding: 0 14px; }
-.shiori-wait { color: var(--muted); font-size: 12px; margin: 0 0 6px; padding-left: 4px; }
-.shiori-stop-text small.shiori-warn { display: inline-block; margin-top: 4px; }
+.shiori-notices li span { flex: 1 1 220px; }
+.shiori-notices button { background: var(--note-ink); border: 0; border-radius: var(--r-md); color: #fff; font-size: 14px; font-weight: 700; min-height: 44px; padding: 0 16px; }
 
-/* Every day is in the page; the screen shows the one being read, paper shows all. */
+/* Day tabs: index tabs on the edge of the page */
+.shiori-day-anchor { height: 0; margin-top: 16px; }
+.shiori-tabs-wrap { align-items: center; background: var(--paper) var(--grain); border-bottom: 2px solid var(--day); display: flex; margin: 0 -16px; position: sticky; top: 0; z-index: 5; }
+.shiori-tabs { display: flex; flex: 1 1 auto; gap: 4px; min-width: 0; overflow-x: auto; padding: 6px 16px 0; scroll-snap-type: x proximity; scrollbar-width: none; }
+.shiori-tabs::-webkit-scrollbar { display: none; }
+.shiori-tabs button { background: var(--card); border: 1px solid var(--edge); border-bottom: 0; border-radius: var(--r-md) var(--r-md) 0 0; border-top: 3px solid var(--day); color: var(--ink); flex: 1 0 104px; max-width: 180px; min-height: 48px; min-width: 0; padding: 5px 8px 6px; scroll-snap-align: start; text-align: center; }
+.shiori-tabs button b { display: block; font: 600 18px/1.2 var(--mincho); letter-spacing: 0.06em; }
+.shiori-tabs button small { color: var(--muted); display: block; font: 600 12px/1.3 var(--gothic); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shiori-tabs button:not([aria-selected="true"]):hover { background: color-mix(in srgb, var(--day) 8%, var(--card)); }
+.shiori-tabs button[aria-selected="true"] { background: var(--day); border-color: var(--day); color: #fff; }
+.shiori-tabs button[aria-selected="true"] small { color: #fff; }
+/* The row scrolls, so the ring is drawn inside the tab, with a white liner that shows on every day colour. */
+.shiori-tabs button:focus-visible { box-shadow: inset 0 0 0 5px #fff; outline-offset: -3px; }
+/* Days the plan did not need: a note beside the tabs, not one of them. */
+.shiori-tab-free { align-items: center; border: 1px dashed var(--edge); border-radius: 999px; color: var(--muted); display: inline-flex; flex: 0 0 auto; font-size: 12px; font-weight: 700; margin: 4px 16px 0 0; min-height: 32px; padding: 0 12px; white-space: nowrap; }
+
+/* Map */
+/* Shown only when it has the keyboard's focus: one step past the map to the day's first stop. */
+.shiori-skip { background: var(--card); border: 1px solid var(--edge); border-radius: var(--r-md); color: var(--ink); display: block; font-size: 14px; font-weight: 700; margin-top: 12px; padding: 10px 14px; width: max-content; }
+.shiori-skip:not(:focus):not(:active) { clip-path: inset(50%); height: 1px; margin: 0; overflow: hidden; padding: 0; position: absolute; white-space: nowrap; width: 1px; }
+.shiori-plan-map { margin-top: 12px; }
+.shiori-map { display: flex; flex-direction: column; }
+.shiori-map-frame { background: #e9e1cd; border: 1px solid var(--rule); border-radius: var(--r-lg); height: 180px; overflow: hidden; position: relative; }
+.shiori-map.is-expanded .shiori-map-frame { height: 56vh; height: 56dvh; }
+.shiori .shiori-map-canvas { inset: 0; position: absolute; }
+.shiori .maplibregl-ctrl-group button { height: 36px; width: 36px; }
+/* A folded paper map: two creases, on the small map only. They take no tap. */
+.shiori-map-creases { background:
+    linear-gradient(90deg, transparent calc(33.3% - 6px), rgb(42 36 32 / 6%) 33.3%, rgb(255 255 255 / 22%) calc(33.3% + 1px), transparent calc(33.3% + 7px)),
+    linear-gradient(90deg, transparent calc(66.6% - 6px), rgb(42 36 32 / 6%) 66.6%, rgb(255 255 255 / 22%) calc(66.6% + 1px), transparent calc(66.6% + 7px));
+  inset: 0; pointer-events: none; position: absolute; }
+.shiori-map-note { background: var(--card); border: 1px solid var(--rule); border-radius: var(--r-sm); font-size: 12px; left: 10px; margin: 0; padding: 6px 10px; position: absolute; right: 56px; top: 10px; z-index: 2; }
+.shiori-map-foot { align-items: flex-start; display: flex; gap: 8px 12px; justify-content: space-between; margin-top: 8px; }
+.shiori-map-legend { color: var(--muted); display: flex; flex: 1 1 auto; flex-wrap: wrap; font-size: 12px; gap: 2px 14px; line-height: 1.5; list-style: none; margin: 0; padding: 2px 0 0; }
+.shiori-map-legend li { align-items: center; display: flex; gap: 6px; }
+.shiori-map-legend i { border-top: 2px solid var(--ink); display: inline-block; flex: 0 0 auto; width: 18px; }
+.shiori-map-legend i.is-rail { border-top-width: 4px; }
+.shiori-map-legend i.is-straight { border-top: 2px dashed var(--unknown); }
+.shiori-map-legend i.is-hotel { align-items: center; background: var(--ink); border: 0; border-radius: 3px; color: var(--card); display: inline-flex; font: 600 10px/1 var(--mincho); font-style: normal; height: 16px; justify-content: center; width: 16px; }
+.shiori-map-toggle { flex: 0 0 auto; font-size: 13px; }
+.shiori-pin { align-items: center; background: var(--pin, var(--shu)); border: 2px solid #fdf9ef; border-radius: 50%; box-shadow: var(--sh-print); color: #fff; cursor: pointer; display: flex; font: 700 14px/1 var(--gothic); font-size: 0; height: 24px; justify-content: center; opacity: 0.55; padding: 0; width: 24px; }
+/* The day being read sits above the other days' dots. */
+.shiori-pin.is-selected { z-index: 1; font-size: 14px; font-variant-numeric: tabular-nums lining-nums; height: 30px; opacity: 1; width: 30px; }
+.shiori-pin.is-focus { box-shadow: 0 0 0 3px var(--ink), var(--sh-print); height: 36px; opacity: 1; width: 36px; z-index: 2; }
+.shiori-pin.is-hotel { background: var(--ink); border-radius: var(--r-sm); cursor: default; font: 600 14px/1 var(--mincho); height: 26px; opacity: 1; width: 26px; }
+/* The card for the pin that was tapped: on a phone one row under the map, so the map and the pin stay in view. */
+.shiori-peek { align-items: center; background: var(--card); border: 1px solid var(--rule); border-left: 4px solid var(--day); border-radius: var(--r-md); box-shadow: var(--sh-card); display: grid; gap: 0 8px; grid-template-columns: minmax(0, 1fr) auto auto; margin-top: 8px; padding: 5px 0 5px 10px; }
+.shiori-peek-photo { border: 2px solid #fff; border-radius: 2px; box-shadow: var(--sh-print); display: none; height: 40px; object-fit: cover; width: 40px; }
+.shiori-peek-text { min-width: 0; }
+.shiori-peek-text b { display: block; font-size: 14px; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shiori-peek-text b i { align-items: center; background: var(--day); border-radius: 50%; color: #fff; display: inline-flex; font: 700 11px/1 var(--gothic); font-style: normal; height: 18px; justify-content: center; margin-right: 5px; vertical-align: 1px; width: 18px; }
+.shiori-peek-text small { color: var(--muted); display: block; font-size: 12px; font-variant-numeric: tabular-nums lining-nums; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shiori-peek-close { background: none; border: 0; color: var(--ink); font-size: 22px; height: 44px; line-height: 1; padding: 0; width: 40px; }
+.shiori-peek-view { font-size: 13px; padding: 0 10px; white-space: nowrap; }
+
+/* Day */
+/* The page-turn slides sideways; it must never give the page a sideways scroll. The gutter is kept inside so nothing in it is cut. */
+.shiori-days { margin: 0 -16px; overflow-x: clip; padding: 0 16px; }
+.shiori-day { container-type: inline-size; }
+.shiori-day:focus { outline: 0; }
 .shiori-day:not(.is-current) { display: none; }
-@media print {
-  .shiori-day { display: block !important; }
-  .shiori-day + .shiori-day { break-before: page; }
-  .shiori-notices button, .shiori-other { display: none !important; }
-}
+.shiori-day-head { align-items: center; display: grid; gap: 14px; grid-template-columns: auto minmax(0, 1fr); padding: 20px 0 0; }
+/* The day's hand stamp. The heading beside it carries the same words for a screen reader. */
+.shiori-stamp { align-content: center; border: 2px solid var(--day); border-radius: 50%; color: var(--day); display: grid; height: 64px; justify-items: center; margin: 4px; mix-blend-mode: multiply; outline: 1px solid var(--day); outline-offset: 3px; rotate: -6deg; width: 64px; }
+.shiori-stamp small { font: 700 8px/1 var(--gothic); letter-spacing: 0.2em; margin-right: -0.2em; }
+.shiori-stamp b { font: 600 30px/1 var(--mincho); margin: 1px 0; }
+.shiori-stamp span { font: 600 10px/1 var(--gothic); letter-spacing: 0.1em; }
+.shiori-day-head h2 { font: 600 20px/1.35 var(--mincho); letter-spacing: 0.05em; overflow-wrap: anywhere; }
+.shiori-day-head h2 small { color: var(--muted); display: block; font: 700 12px/1.3 var(--gothic); letter-spacing: 0.18em; margin-bottom: 4px; }
+/* What the plan knows about the day, and nothing it does not. */
+.shiori-facts { border-bottom: 1px solid var(--rule); border-top: 3px double var(--ink); display: grid; grid-template-columns: 1.2fr 1fr; margin-top: 14px; }
+.shiori-facts > div { min-width: 0; padding: 8px 8px 7px 0; }
+.shiori-facts > div:nth-child(even) { border-left: 1px solid var(--rule); padding-left: 12px; }
+.shiori-facts > div:nth-child(n+3) { border-top: 1px solid var(--rule); }
+.shiori-facts dt { color: var(--muted); font: 700 12px/1.3 var(--gothic); letter-spacing: 0.1em; }
+.shiori-facts dd { font: 700 20px/1.3 var(--gothic); font-variant-numeric: tabular-nums lining-nums; margin-top: 2px; white-space: nowrap; }
+.shiori-facts dd small { font-size: 12px; font-weight: 600; margin: 0 1px; }
+.shiori-facts dd .shiori-facts-sub { color: var(--muted); display: block; font-weight: 600; line-height: 1.3; margin: 0; }
+.shiori-facts dd .shiori-next { vertical-align: 3px; }
+.shiori-load { align-items: center; color: var(--muted); display: flex; flex-wrap: wrap; font-size: 13px; gap: 6px 10px; line-height: 1.6; margin: 12px 0 0; }
+.shiori-load b { border: 1.5px solid var(--ink); border-radius: var(--r-sm); color: var(--ink); flex: 0 0 auto; font: 600 14px/1.2 var(--mincho); letter-spacing: 0.1em; padding: 5px 9px; }
+.shiori-load.is-easy b { background: #e3eddc; border-color: #1f5a34; color: #1f5a34; }
+.shiori-load.is-tight b { background: #f6e2c4; border-color: #7a3d00; color: #7a3d00; }
+.shiori-load span { flex: 1 1 200px; }
+.shiori-day > .shiori-warn { margin-top: 10px; }
 
-.shiori-meal.is-cafe { background: #f1f6f1; border-color: #cfe0cf; }
+/* Timeline: a rail in the gutter, the entries to its right. */
+.shiori-timeline { list-style: none; margin: 14px 0 0; padding: 0; }
+.shiori-timeline > li { margin: 0; padding-left: 40px; position: relative; }
+.shiori-timeline > li::before { background: color-mix(in srgb, var(--day) 32%, var(--paper)); bottom: 0; content: ""; left: 19px; position: absolute; top: 0; width: 2px; }
+.shiori-timeline > li:first-child::before { top: 52px; }
+.shiori-timeline > li:last-child::before, .shiori-timeline > li.is-leg::before { display: none; }
+.shiori-part { align-items: center; background: var(--paper); color: var(--muted); display: flex; gap: 10px; height: 36px; margin-left: -40px; padding-left: 12px; position: relative; }
+.shiori-part span { font: 600 13px/1 var(--mincho); letter-spacing: 0.3em; }
+.shiori-part::after { border-top: 1px solid var(--rule); content: ""; flex: 1; }
+.shiori-wait { align-items: flex-start; color: var(--muted); display: flex; font-size: 12px; gap: 6px; line-height: 1.5; margin: 0 0 8px; }
+.shiori-wait .shiori-icon { height: 15px; margin-top: 1px; width: 15px; }
+.shiori-stop { background: var(--card); border: 1px solid var(--rule); border-radius: var(--r-md); box-shadow: var(--sh-card); position: relative; }
+.shiori-stop.is-open { border-color: var(--ink); box-shadow: 0 0 0 0.5px var(--ink), var(--sh-card); }
+/* The last stretch of rail into a stop, for the stop that ends the day. */
+.shiori-timeline > li:last-child:not(:first-child) .shiori-stop::before { background: color-mix(in srgb, var(--day) 32%, var(--paper)); content: ""; height: 20px; left: -22px; position: absolute; top: -4px; width: 2px; }
+.shiori-stop-main { align-items: center; background: none; border: 0; border-radius: inherit; color: var(--ink); display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr) auto; padding: 13px 13px 13px 14px; text-align: left; width: 100%; }
+.shiori-stop-number { align-items: center; background: var(--day); border-radius: 50%; box-shadow: 0 0 0 2px var(--paper); color: #fff; display: flex; font: 700 14px/1 var(--gothic); font-variant-numeric: tabular-nums lining-nums; height: 28px; justify-content: center; left: -35px; position: absolute; top: 14px; width: 28px; }
+.shiori-stop-text { display: block; min-width: 0; }
+/* The clock is the strongest thing in a stop. */
+.shiori-stop-time { color: var(--muted); display: block; font: 600 13px/1.2 var(--gothic); font-variant-numeric: tabular-nums lining-nums; }
+.shiori-stop-time b { color: var(--ink); font-size: 17px; font-weight: 700; }
+.shiori-stop-name { display: block; font: 600 19px/1.35 var(--mincho); letter-spacing: 0.03em; margin-top: 4px; overflow-wrap: anywhere; }
+.shiori-stop-text small { color: var(--muted); display: block; font-size: 13px; line-height: 1.5; margin-top: 2px; }
+.shiori-stop-text small.shiori-warn { color: #7a3d00; display: inline-block; margin-top: 6px; }
+/* A print pasted on the page: white border, a slight tilt. */
+.shiori-stop .shiori-photo { border: 4px solid #fff; border-radius: 2px; box-shadow: var(--sh-print); height: 76px; object-fit: cover; rotate: 1.5deg; width: 76px; }
+.shiori-timeline > li:nth-child(even) .shiori-stop .shiori-photo { rotate: -1.5deg; }
+.shiori-stop-edit { align-items: center; border-top: 1px dashed var(--rule); display: flex; flex-wrap: wrap; font-size: 13px; gap: 8px; margin: 0 14px; padding: 12px 0 14px; }
+.shiori-stop-edit > div { align-items: center; display: flex; flex: 1 1 100%; flex-wrap: wrap; gap: 8px; }
+.shiori-stop-edit > div > span { color: var(--muted); font-variant-numeric: tabular-nums lining-nums; margin-right: auto; }
+.shiori-stop-edit button { font-size: 13px; padding: 0 12px; }
+.shiori-stop-edit button.is-danger { border-color: var(--danger); color: var(--danger); margin-left: auto; }
+.shiori-stop-edit a { align-items: center; display: flex; flex: 1 1 100%; font-size: 13px; line-height: 1.5; min-height: 44px; }
+.shiori-stop-edit a + a { margin-top: -8px; }
+
+/* Getting from one stop to the next */
+.shiori-leg { color: var(--muted); font-size: 13px; padding: 14px 0 16px; position: relative; }
+.shiori-leg::before { background: var(--paper); bottom: 0; content: ""; left: -25px; position: absolute; top: 0; width: 10px; }
+.shiori-leg::after { border-left: 2px dotted var(--muted); bottom: 2px; content: ""; left: -21px; position: absolute; top: 2px; }
+.shiori-leg.is-rail::after { border-left: 4px solid var(--day); bottom: 0; left: -22px; top: 0; }
+.shiori-leg.is-taxi::after, .shiori-leg.is-transit::after { border-left: 2px dashed var(--unknown); }
+.shiori-leg-head { color: var(--ink); }
+.shiori-leg-head .shiori-eyebrow { font-size: 12px; letter-spacing: 0.12em; margin-bottom: 4px; }
+.shiori-leg-title { align-items: center; display: flex; flex-wrap: wrap; gap: 4px 8px; }
+.shiori-leg-title b { font: 700 15px/1.4 var(--gothic); font-variant-numeric: tabular-nums lining-nums; }
+.shiori-rail { list-style: none; margin: 8px 0 0; padding: 0; }
+.shiori-rail li.is-walk { align-items: flex-start; color: var(--muted); display: flex; font-size: 13px; gap: 6px; line-height: 1.5; padding: 6px 0; }
+.shiori-rail li.is-walk .shiori-icon { height: 16px; margin-top: 1px; width: 16px; }
+/* A change of train sits between two tickets, on a short dashed connector. */
+.shiori-change { align-items: center; color: var(--ink); display: flex; font-style: normal; gap: 8px; padding: 6px 0 6px 3px; }
+.shiori-change::before { border-left: 1px dashed var(--edge); content: ""; height: 22px; }
+.shiori-change { font: 700 12px/1 var(--gothic); letter-spacing: 0.08em; }
+/* A ride is a ticket stub: line, where on, where off, how many stations, about how long. */
+.shiori-ticket { background: var(--card); border: 1px solid var(--rule); border-radius: var(--r-sm); box-shadow: var(--sh-card); color: var(--ink); display: grid; grid-template-columns: 8px minmax(0, 1fr) 76px; position: relative; }
+/* The line's own colour where it is known, a neutral bar where it is not. Its name is always written. */
+.shiori-ticket-bar { background: var(--lc, var(--edge)); border-radius: 3px 0 0 3px; box-shadow: inset 0 0 0 1px rgb(42 36 32 / 35%); display: block; }
+.shiori-ticket-main { min-width: 0; padding: 10px 10px 10px 12px; }
+.shiori-ticket-line { display: block; font: 700 12px/1.4 var(--gothic); overflow-wrap: anywhere; }
+.shiori-ticket-route { display: grid; gap: 4px; margin-top: 6px; padding-left: 20px; position: relative; }
+.shiori-ticket-route::before { background: var(--lc, var(--edge)); bottom: 12px; box-shadow: inset 0 0 0 0.5px rgb(42 36 32 / 35%); content: ""; left: 3px; position: absolute; top: 12px; width: 3px; }
+.shiori-ticket-route > span:not(.shiori-sr) { font: 600 18px/1.3 var(--mincho); letter-spacing: 0.04em; overflow-wrap: anywhere; position: relative; }
+.shiori-ticket-route > span:not(.shiori-sr)::before { background: var(--card); border: 2px solid var(--ink); border-radius: 50%; content: ""; height: 9px; left: -20px; position: absolute; top: 7px; width: 9px; }
+.shiori-ticket-main > small { color: var(--muted); display: block; font-size: 12px; font-variant-numeric: tabular-nums lining-nums; line-height: 1.4; margin-top: 4px; padding-left: 20px; }
+.shiori-ticket-stub { align-content: center; border-left: 1px dashed var(--edge); display: grid; justify-items: center; padding: 10px 4px; text-align: center; }
+.shiori-ticket-stub small { color: var(--muted); font: 700 12px/1 var(--gothic); letter-spacing: 0.18em; margin-right: -0.18em; }
+.shiori-ticket-stub b { font: 700 20px/1 var(--gothic); font-variant-numeric: tabular-nums lining-nums; margin-top: 6px; white-space: nowrap; }
+.shiori-ticket-stub b span { font-size: 12px; font-weight: 600; }
+/* The punched notches at the perforation: two paper-coloured discs, so focus rings and shadows are never clipped. */
+.shiori-ticket-notch { background: var(--paper); border: 1px solid var(--rule); border-radius: 50%; height: 12px; position: absolute; right: 70px; width: 12px; }
+.shiori-ticket-notch.is-top { border-left-color: transparent; border-top-color: transparent; rotate: 45deg; top: -7px; }
+.shiori-ticket-notch.is-bottom { border-bottom-color: transparent; border-right-color: transparent; bottom: -7px; rotate: 45deg; }
+.shiori-leg-link { align-items: center; color: var(--ink); display: inline-flex; font-size: 13px; margin-top: 2px; min-height: 44px; }
+
+/* A meal or a café is a suggestion, so it is a dashed memo slip and its mark is hollow, never a numbered stop. */
+.shiori-meal { background: rgb(253 249 239 / 55%); border: 1px dashed var(--edge); border-radius: var(--r-sm); margin: 10px 0 0; padding: 10px 12px; position: relative; }
+.shiori-meal.is-cafe { background: #f1f3e4; }
+.shiori-meal-mark { align-items: center; background: var(--card); border: 1px solid var(--edge); border-radius: 50%; color: var(--muted); display: flex; height: 24px; justify-content: center; left: -34px; position: absolute; top: 12px; width: 24px; }
+.shiori-meal-mark .shiori-icon { height: 14px; width: 14px; }
+.shiori-meal-head { align-items: center; display: flex; gap: 10px; }
+.shiori-meal-head > span { flex: 1 1 auto; font-size: 14px; line-height: 1.5; min-width: 0; }
+.shiori-meal-head b { font: 600 18px/1.35 var(--mincho); letter-spacing: 0.04em; margin-right: 4px; }
+.shiori-meal-time { font: 700 14px/1.4 var(--gothic); font-variant-numeric: tabular-nums lining-nums; white-space: nowrap; }
+.shiori-meal-head small { color: var(--muted); display: block; font-size: 13px; }
+.shiori-sep { display: none; }
+.shiori-meal-head button { flex: 0 0 auto; font-size: 13px; padding: 0 10px; white-space: nowrap; }
+.shiori-meal > .shiori-quiet { margin-top: 8px; }
+.shiori-food { border-top: 1px dashed var(--rule); list-style: none; margin: 10px 0 4px; padding: 0; }
+.shiori-food li + li { border-top: 1px dashed var(--rule); }
+.shiori-food a { display: block; padding: 10px 0; text-decoration: none; }
+.shiori-food b { display: block; font: 700 15px/1.4 var(--gothic); overflow-wrap: anywhere; }
+.shiori-food small { color: var(--muted); font-size: 13px; }
 .shiori-food li.has-action { align-items: center; display: flex; gap: 10px; justify-content: space-between; }
 .shiori-food li.has-action a { flex: 1 1 auto; min-width: 0; }
-.shiori-food li.has-action button { background: var(--card); border: 1px solid #9aa0a8; border-radius: 10px; color: var(--ink); flex: 0 0 auto; font-size: 12px; font-weight: 700; min-height: 40px; padding: 0 10px; }
+.shiori-food li.has-action button { flex: 0 0 auto; font-size: 13px; padding: 0 10px; }
 
-.shiori-load { font-size: 13px; margin: 4px 0 0; }
-.shiori-load b { border-radius: 999px; display: inline-block; font-size: 12px; padding: 2px 10px; }
-.shiori-load.is-easy b { background: #e6f4ea; color: #1d5c33; }
-.shiori-load.is-normal b { background: var(--soft); color: var(--ink); }
-.shiori-load.is-tight b { background: #fff4e5; color: #7a4a00; }
-.shiori-hours-note { margin-top: 14px; }
-.shiori-action-link { align-items: center; background: var(--card); border: 1px solid #9aa0a8; border-radius: 10px; color: var(--ink); display: inline-flex; font-size: 13px; font-weight: 700; min-height: 40px; padding: 0 12px; text-decoration: none; }
-@media print { .shiori-action-link, .shiori-ideas, .shiori-meal.is-cafe button { display: none !important; } }
+.shiori-ideas { border-top: 1px solid var(--rule); margin-top: 20px; padding-top: 14px; }
+.shiori-ideas h3 { align-items: flex-start; display: flex; font: 600 18px/1.4 var(--mincho); gap: 8px; letter-spacing: 0.02em; text-wrap: wrap; }
+.shiori-ideas h3 .shiori-icon { margin-top: 4px; }
+.shiori-hours-note { align-items: flex-start; border-top: 1px solid var(--rule); display: flex; gap: 8px; margin-top: 20px; padding-top: 12px; }
+.shiori-hours-note .shiori-icon { height: 16px; margin-top: 2px; width: 16px; }
+.shiori-daynav { display: flex; gap: 8px; justify-content: space-between; margin-top: 16px; }
+.shiori-daynav button { max-width: 68%; min-width: 0; }
+.shiori-daynav button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.shiori-working { background: var(--ink); border-radius: 12px; color: #fff; font-size: 14px; font-weight: 700; margin: 0 0 12px; padding: 12px 14px; }
-.shiori-working.is-update { background: var(--soft); color: var(--muted); font-size: 12px; padding: 6px 10px; }
-@media print { .shiori-working { display: none !important; } }
+.shiori-section { border-top: 3px double var(--ink); margin-top: 32px; padding-top: 16px; }
+.shiori-section > h2 { margin-bottom: 6px; }
+.shiori-section > .shiori-warn { margin-top: 8px; }
+.shiori-stay > .shiori-eyebrow { margin-bottom: 4px; }
+.shiori-stay-area { align-items: center; background: var(--ink); border-radius: var(--r-md); color: var(--card); display: flex; gap: 12px; margin: 8px 0 10px; padding: 12px 14px; }
+.shiori-stay-area i { align-items: center; background: var(--card); border-radius: var(--r-sm); color: var(--ink); display: flex; flex: 0 0 auto; font: 600 15px/1 var(--mincho); font-style: normal; height: 28px; justify-content: center; width: 28px; }
+.shiori-stay-area b { font: 600 18px/1.4 var(--mincho); letter-spacing: 0.04em; }
+.shiori-hotels { list-style: none; margin: 12px 0 0; padding: 0; }
+.shiori-hotels li { border-top: 1px solid var(--rule); padding: 12px 0; }
+.shiori-hotels b { font: 700 15px/1.45 var(--gothic); overflow-wrap: anywhere; }
+.shiori-hotels small { color: var(--muted); display: block; font-size: 13px; }
+.shiori-seal { border: 1.5px solid var(--shu); border-radius: var(--r-sm); color: var(--shu); display: inline-block; font: 700 12px/1 var(--gothic); font-style: normal; letter-spacing: 0.06em; margin: 3px 0 5px 8px; padding: 4px 6px; rotate: -3deg; vertical-align: middle; }
+.shiori-hotel-actions { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.shiori-hotel-actions button.is-primary { background: var(--ink); border-color: var(--ink); color: var(--card); }
+/* The choice on its own row; the two booking searches share the next. */
+.shiori-hotel-actions button { flex: 1 1 100%; }
+.shiori-hotel-actions .shiori-action-link { flex: 1 1 0; font-size: 13px; padding: 0 8px; white-space: nowrap; }
+.shiori-foot { border-top: 3px double var(--ink); color: var(--muted); font-size: 12px; line-height: 1.7; margin: 32px auto 0; max-width: 560px; padding-top: 12px; }
+.shiori-foot p + p { margin-top: 6px; }
+.shiori-foot a, .shiori-link { align-items: center; display: inline-flex; min-height: 44px; }
+.shiori-link { background: none; border: 0; color: inherit; padding: 0; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+
+/* ---------- Wider ---------- */
+@container (min-width: 480px) {
+  .shiori-facts { grid-template-columns: 1.5fr 0.8fr 1.1fr 1fr; }
+  .shiori-facts > div:nth-child(n) { border-top: 0; }
+  .shiori-facts > div + div { border-left: 1px solid var(--rule); padding-left: 12px; }
+  .shiori-stop .shiori-photo { height: 92px; width: 92px; }
+}
+@container (max-width: 300px) {
+  .shiori-ticket { grid-template-columns: 8px minmax(0, 1fr); }
+  .shiori-ticket-stub { align-items: baseline; border-left: 0; border-top: 1px dashed var(--edge); display: flex; gap: 8px; grid-column: 2; justify-content: flex-start; padding: 8px 12px; }
+  .shiori-ticket-stub b { margin-top: 0; }
+  .shiori-ticket-notch { display: none; }
+}
+@media (max-width: 339px) {
+  .shiori-postmark { display: none; }
+  .shiori-cover-city { padding-right: 0; }
+  .shiori-cover-kicker::after { margin-right: 0; }
+}
+@media (max-width: 359px) {
+  .shiori-other .shiori-pace { grid-auto-flow: row; grid-template-columns: 1fr 1fr; }
+  .shiori-other .shiori-pace button:nth-child(3) { border-left: 0; }
+  .shiori-other .shiori-pace button:nth-child(n+3) { border-top: 1px solid var(--rule); }
+}
+@media (min-width: 720px) {
+  .shiori { padding-left: 24px; padding-right: 24px; }
+  .shiori-top, .shiori-plan, .shiori-foot { max-width: 640px; }
+  .shiori-hero, .shiori-cities, .shiori-pick { max-width: 1080px; }
+  .shiori:not(.is-plan) .shiori-top, .shiori:not(.is-plan) .shiori-foot { max-width: 1080px; }
+  .shiori-hero h1 { font-size: 34px; }
+  .shiori-search, .shiori-resume { max-width: 640px; }
+  .shiori-city-grid, .shiori-sights { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  /* Room for the words: each action is spelled out, and the days get their label. */
+  .shiori-plan-actions { gap: 8px; }
+  .shiori-plan-actions > button, .shiori-plan-actions > a { flex: 0 1 auto; flex-direction: row; font-size: 14px; gap: 6px; min-height: 44px; padding: 0 14px; }
+  .shiori-act-long { clip-path: none; height: auto; overflow: visible; position: static; width: auto; }
+  .shiori-act-short { display: none; }
+  .shiori-plan-days > span { clip-path: none; height: auto; overflow: visible; position: static; width: auto; }
+  .shiori-plan-days select { min-height: 44px; }
+  .shiori-contents button { min-height: 44px; padding: 6px 4px; }
+  .shiori-map-frame { height: 280px; }
+  .shiori-tabs-wrap { margin: 0 -24px; }
+  .shiori-tabs { padding: 6px 24px 0; }
+  .shiori-tab-free { margin-right: 24px; }
+  .shiori-days { margin: 0 -24px; padding: 0 24px; }
+  .shiori-other { max-width: 640px; }
+  .shiori-bar { gap: 28px; justify-content: center; }
+}
+@media (min-width: 960px) {
+  .shiori-city-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  /* The booklet is a 500px column; the map fills the rest of the window and stays put. */
+  .shiori.is-plan .shiori-top, .shiori.is-plan .shiori-foot { margin-left: max(0px, calc(50% - 620px)); max-width: 500px; }
+  .shiori-plan { margin-left: max(0px, calc(50% - 620px)); max-width: 500px; }
+  .shiori-plan-actions > button, .shiori-plan-actions > a { flex: 1 1 40%; }
+  .shiori-plan-days { flex: 1 1 100%; }
+  .shiori-tabs-wrap { margin: 0; }
+  .shiori-tabs { padding: 6px 0 0; }
+  .shiori-tab-free { margin-right: 0; }
+  .shiori-plan-map { bottom: 16px; left: max(556px, calc(50% - 620px + 532px)); margin: 0; position: fixed; right: max(24px, calc(50% - 620px)); top: 16px; }
+  .shiori-map { height: 100%; }
+  .shiori-map-stage { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; position: relative; }
+  .shiori-map-frame, .shiori-map.is-expanded .shiori-map-frame { flex: 1 1 auto; height: auto; min-height: 0; }
+  .shiori-map-creases { display: none; }
+  .shiori-map-toggle { display: none; }
+  .shiori-map-legend { min-height: 22px; }
+  /* There is room here: the card lies on the map's upper left corner, clear of the zoom buttons and the credit, with its photo. */
+  .shiori-peek-slot { left: 16px; max-width: min(440px, calc(100% - 84px)); position: absolute; top: 16px; z-index: 3; }
+  .shiori-peek { grid-template-columns: auto minmax(0, 1fr) auto auto; margin-top: 0; padding-left: 8px; }
+  .shiori-peek-photo { display: block; }
+}
+@media (min-width: 1100px) {
+  .shiori-sights { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+/* ---------- Motion: transform and opacity only, and only when it is welcome ---------- */
+@media (prefers-reduced-motion: no-preference) {
+  .shiori button, .shiori-action-link { transition: translate 80ms; }
+  .shiori button:not(:disabled):active, .shiori-action-link:active { translate: 0 1px; }
+  .shiori-pin:active { translate: none; }
+  /* Turning to another day: the new page slides in from the side it lies on. */
+  .shiori-day.is-current { animation: shiori-page-in 280ms cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+  .shiori-days[data-dir="back"] .shiori-day.is-current { animation-name: shiori-page-in-back; }
+  .shiori-sight[aria-pressed="true"] .shiori-sight-check b { animation: shiori-thump 240ms cubic-bezier(0.2, 0.9, 0.3, 1.2) both; }
+  .shiori-pin.is-focus { animation: shiori-pin-pulse 240ms ease-out 1; }
+}
+@keyframes shiori-page-in { from { opacity: 0; transform: translateX(24px); } }
+@keyframes shiori-page-in-back { from { opacity: 0; transform: translateX(-24px); } }
+@keyframes shiori-thump { from { opacity: 0; scale: 1.35; } }
+@keyframes shiori-pin-pulse { 50% { scale: 1.12; } }
+
+@media (forced-colors: active) {
+  .shiori-postmark, .shiori-stamp { mix-blend-mode: normal; }
+  .shiori-ticket, .shiori-stop, .shiori-pin, .shiori-meal, .shiori-city, .shiori-sight, .shiori-other, .shiori-notices { border: 1px solid CanvasText; }
+  .shiori-ticket-notch, .shiori-notices::before, .shiori-map-creases { display: none; }
+}
+
+/* ---------- Paper: every day, one after another, in ink-friendly black on white ---------- */
+@media print {
+  @page { margin: 14mm; size: A4; }
+  .shiori { background: #fff; font-size: 11pt; min-height: 0; padding: 0; }
+  .shiori-top, .shiori-skip, .shiori-screen-only, .shiori-plan-actions, .shiori-controls, .shiori-working, .shiori-tabs-wrap, .shiori-plan-map, .shiori-contents, .shiori-stop-edit, .shiori-notices button, .shiori-leg-link, .shiori-ideas, .shiori-daynav, .shiori-other, .shiori-hotel-actions, .shiori-meal-head button, .shiori-food li.has-action button, .shiori-bar, .shiori-link, .shiori-day-anchor { display: none !important; }
+  html:has(.shiori), body:has(.shiori) { background: #fff; }
+  .shiori-plan { margin: 0; max-width: none; }
+  .shiori-foot { margin: 18pt 0 0; max-width: none; }
+  .shiori-foot p:last-child { display: none; }
+  .shiori-print-only { display: inline; }
+  .shiori-cover { border-bottom: 0.5pt solid #000; padding-bottom: 10pt; }
+  .shiori-days { margin: 0; overflow: visible; padding: 0; }
+  .shiori-day { animation: none !important; display: block !important; }
+  /* Days follow one another down the page; a day starts a new sheet only when its heading would be left alone at the foot. */
+  .shiori-day + .shiori-day { break-before: auto; margin-top: 18pt; }
+  .shiori-day-head, .shiori-facts, .shiori-load { break-after: avoid; }
+  .shiori-stop, .shiori-ticket, .shiori-meal, .shiori-day-head, .shiori-facts, .shiori-rail li, .shiori-notices li, .shiori-hotels li { break-inside: avoid; }
+  .shiori-leg-head, .shiori-rail li.is-walk:first-child, .shiori-part { break-after: avoid; break-inside: avoid; }
+  /* Said once, at the end: on paper there is nothing to open. */
+  .shiori-day:not(:last-child) .shiori-hours-note { display: none; }
+  /* A ride on one line, and less air around it: a day fits a page. */
+  .shiori-ticket-main { padding: 4pt 8pt; }
+  .shiori-ticket-route { align-items: baseline; display: flex; flex-wrap: wrap; gap: 0 8px; margin-top: 2pt; padding-left: 0; }
+  .shiori-ticket-route::before, .shiori-ticket-route > span:not(.shiori-sr)::before { display: none; }
+  .shiori-ticket-route > .shiori-sr { clip-path: none; height: auto; overflow: visible; position: static; white-space: normal; width: auto; }
+  .shiori-ticket-route > span:not(.shiori-sr) { font-size: 13pt; }
+  .shiori-ticket-main > small { margin-top: 0; padding-left: 0; }
+  .shiori-ticket-stub { padding: 4pt; }
+  .shiori-leg { padding: 6pt 0; }
+  .shiori-rail li.is-walk { padding: 2pt 0; }
+  .shiori-change { padding: 2pt 0 2pt 3px; }
+  .shiori-change::before { height: 10pt; }
+  .shiori-stop-main { padding: 6pt 8pt; }
+  .shiori-part { height: 22pt; }
+  .shiori-timeline { margin-top: 8pt; }
+  .shiori-stop, .shiori-ticket, .shiori-notices, .shiori-stay-area { box-shadow: none; }
+  /* A ride is never cut in two by the edge of the paper. */
+  .shiori-ticket { break-inside: avoid; }
+  .shiori-leg-head, .shiori-change { break-after: avoid; }
+  .shiori-stop, .shiori-ticket { background: #fff; border: 0.5pt solid #999; }
+  .shiori-notices { background: #fff; border: 0.5pt solid #999; color: #000; }
+  .shiori-notices::before, .shiori-ticket-notch { display: none; }
+  .shiori-meal, .shiori-meal.is-cafe { background: #fff; }
+  .shiori-part, .shiori-leg::before { background: #fff; }
+  /* The rail and the no-photo tile are fills; they are asked to print even with "background graphics" off. */
+  .shiori-timeline > li::before, .shiori-stop::before, .shiori-photo.is-empty { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .shiori-stay-area { background: #fff; border: 0.5pt solid #000; color: #000; }
+  .shiori-stay-area i { border: 0.5pt solid #000; }
+  .shiori-postmark, .shiori-stamp { mix-blend-mode: normal; }
+  .shiori-stop .shiori-photo, .shiori-timeline > li:nth-child(even) .shiori-stop .shiori-photo { border: 0.5pt solid #999; box-shadow: none; height: 18mm; rotate: none; width: 18mm; }
+  /* Colour is kept only where it is the day's own mark; each still reads if the printer drops it. */
+  .shiori-stop-number { border: 1pt solid var(--ink); box-shadow: none; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .shiori-stamp, .shiori-ticket-bar, .shiori-load b { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .shiori-ticket-bar { border-right: 0.5pt solid #000; }
+  .shiori a { text-decoration: none; }
+  .shiori-section { margin-top: 18pt; }
+}
