@@ -121,8 +121,11 @@ test("too much for the days asked is planned anyway and says the days run late",
 test("a pinned place stays on its day, and a hotel adds the way out and back", () => {
   const pinned = kyotoFive.map((entry) => entry.name === "銀閣寺" ? { ...entry, day: 2 } : entry);
   const plan = buildShioriPlan({ places: pinned, days: 3, pace: "standard", hotel: { name: "駅前ホテル", lat: 34.9858, lon: 135.7588 }, locale: "ja" });
-  assert.equal(plan.days.length, 2);
-  assert.ok(plan.days[1].stops.some((stop) => stop.place.name === "銀閣寺"));
+  // The pin says which day, not how many: five short sights are one day, and it is day 2.
+  assert.equal(plan.days.length, 1);
+  assert.equal(plan.days[0].index, 1);
+  assert.equal(plan.freeDays, 2);
+  assert.ok(plan.days[0].stops.some((stop) => stop.place.name === "銀閣寺"));
   assert.ok(plan.days[0].fromHotel && plan.days[0].toHotel);
   assert.equal(plan.days[0].fromHotel!.fromName, "駅前ホテル");
 });
@@ -446,33 +449,52 @@ test("the order of a day is the cheapest of all orders, whatever is fixed in it"
     };
     const search = daySearch(problem);
     const found = search.solveDay(stops.map((_, index) => index));
-    // What an order costs, written out again: the rides, half the wait at a
-    // lunch restaurant's door, and far more for a day that cannot be kept.
+    // What an order costs, written out again: the rides, half the real wait
+    // at a lunch restaurant's door (the ten minutes of slack after a ride
+    // are not waiting; the morning lost when the day opens with it is), and
+    // far more for a day that cannot be kept.
     const costOf = (day: ReturnType<typeof search.describe>) => {
       let waiting = 0;
       day.order.forEach((stop, position) => {
-        if (position > 0 && stops[stop].meal === "lunch") waiting += Math.max(0, day.arrive[position] - day.leave[position - 1] - minutes[day.order[position - 1]][stop]);
+        if (stops[stop].meal !== "lunch") return;
+        const reached = position > 0
+          ? day.leave[position - 1] + minutes[day.order[position - 1]][stop] + 10
+          : problem.hotel ? 8 * 60 + 30 + problem.hotel.out[stop] + 10 : 9 * 60;
+        waiting += Math.max(0, day.arrive[position] - reached);
       });
       return day.travel + waiting / 2 + (day.overrun > 0 ? 500 + day.overrun * 10 + (day.overrun * day.overrun) / 6 : 0) + day.missed * 1000;
     };
-    // A dinner is last and a day-filling stay first; every other order is a candidate.
-    const rank = (stop: number) => (stops[stop].meal === "dinner" ? 2 : !stops[stop].meal && stops[stop].stay >= 300 ? 0 : 1);
-    let least = Infinity;
-    const order: number[] = [];
-    const visit = () => {
-      if (order.length === count) {
-        least = Math.min(least, costOf(search.describe([...order])));
-        return;
-      }
-      for (let stop = 0; stop < count; stop += 1) {
-        if (order.includes(stop) || (order.length > 0 && rank(stop) < rank(order.at(-1)!))) continue;
-        order.push(stop);
-        visit();
-        order.pop();
-      }
+    // A dinner is last. A day-filling stay is first when the day can be kept
+    // that way; when it cannot, every other order is a candidate too.
+    const rank = (stop: number, opens: boolean) => (stops[stop].meal === "dinner" ? 2 : opens && !stops[stop].meal && stops[stop].stay >= 300 ? 0 : 1);
+    const leastOf = (opens: boolean) => {
+      let least = Infinity;
+      let kept = false;
+      const order: number[] = [];
+      const visit = () => {
+        if (order.length === count) {
+          const day = search.describe([...order]);
+          if (costOf(day) < least) {
+            least = costOf(day);
+            kept = day.overrun === 0 && day.missed === 0;
+          }
+          return;
+        }
+        for (let stop = 0; stop < count; stop += 1) {
+          if (order.includes(stop) || (order.length > 0 && rank(stop, opens) < rank(order.at(-1)!, opens))) continue;
+          order.push(stop);
+          visit();
+          order.pop();
+        }
+      };
+      visit();
+      return { least, kept };
     };
-    visit();
-    assert.ok(Math.abs(costOf(found) - least) < 1e-6, `round ${round}: found ${costOf(found)}, best ${least}, order ${found.order.join(">")}`);
+    const opened = leastOf(true);
+    const least = opened.kept ? opened.least : leastOf(false).least;
+    // (Costed on the usual clock: the printed day may start later, so as not to wait at a door.)
+    const cost = costOf(search.describe(found.order));
+    assert.ok(Math.abs(cost - least) < 1e-6, `round ${round}: found ${cost}, best ${least}, order ${found.order.join(">")}`);
     assert.deepEqual([...found.order].sort(), stops.map((_, index) => index));
   }
 });
@@ -564,4 +586,37 @@ test("a list too long to try every split is still split as well as one short eno
     assert.equal(searched.days.length, exact.days.length, `round ${round}`);
     assert.ok(cost(searched) <= cost(exact) + 5, `round ${round}: ${cost(searched)} against ${cost(exact)}`);
   }
+});
+
+test("a taxi counts a quarter of an hour dearer in the search, and its printed minutes stay what they are", () => {
+  // A — B ten minutes on foot, B — C thirty by train; A — C only by taxi.
+  const stops: SearchProblem["stops"] = [0, 1, 2].map(() => ({ stay: 60, meal: null, day: null }));
+  const day = (taxiMinutes: number) => {
+    const minutes = [[0, 10, taxiMinutes], [10, 0, 30], [taxiMinutes, 30, 0]];
+    const taxi = [[false, false, true], [false, false, false], [true, false, false]];
+    return daySearch({ stops, minutes, km: table(3, () => 1), taxi, hotel: null }).solveDay([0, 1, 2]);
+  };
+  // The taxi would save eight minutes (B, A, taxi to C: 32 against 40): not worth a taxi.
+  const train = day(22);
+  assert.equal(train.order[1], 1, train.order.join(">"));
+  assert.equal(train.travel, 40);
+  // Where it saves twenty, it is taken — and the day's travel is the 20 minutes ridden, not 35.
+  const cab = day(10);
+  assert.equal(cab.order[1], 0, cab.order.join(">"));
+  assert.equal(cab.travel, 20);
+});
+
+test("a day that opens with a restaurant starts when its door opens, and the wait before a second one is said", () => {
+  // Lunch restaurant, then a five-hour visit that cannot come first (the kitchen would be closed), then dinner.
+  const stops: SearchProblem["stops"] = [{ stay: 300, meal: null, day: null }, { stay: 60, meal: "lunch", day: null }, { stay: 90, meal: "dinner", day: null }];
+  const search = daySearch({ stops, minutes: table(3, () => 10), km: table(3, () => 1), hotel: { out: [20, 20, 20], back: [20, 20, 20], km: [2, 2, 2] } });
+  const day = search.solveDay([0, 1, 2]);
+  assert.deepEqual(day.order, [1, 0, 2]);
+  assert.equal(day.missed, 0);
+  assert.equal(day.overrun, 0);
+  // Leave the hotel at 11:00 for a 20-minute ride and the ten minutes of slack: seated at 11:30.
+  assert.equal(day.start, 11 * 60);
+  assert.equal(day.arrive[0], 11 * 60 + 30);
+  // The long visit ends 17:50; dinner is ten minutes away and already serving: no wait anywhere.
+  assert.equal(day.arrive[2], day.leave[1] + 10 + 10);
 });

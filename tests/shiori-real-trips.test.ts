@@ -4,7 +4,7 @@ import test from "node:test";
 
 import { curateSights, type PopularDestination } from "../lib/popular-sights.ts";
 import { RailNetwork } from "../lib/rail-router.ts";
-import { buildShioriPlan, shioriPricing, type ShioriInput, type ShioriPlace, type ShioriPlan } from "../lib/shiori/plan.ts";
+import { buildShioriPlan, shioriPricing, type ShioriInput, type ShioriPlace, type ShioriPlan, type ShioriRoute } from "../lib/shiori/plan.ts";
 import { placeFromSight } from "../lib/shiori/state.ts";
 
 /*
@@ -86,13 +86,15 @@ test("a chosen dinner does not turn two easy days into one eleven-hour day", () 
   assert.ok(asakusa.stops.some((stop) => stop.place.name === "東京スカイツリー"));
 });
 
-test("a place pinned to day 3 is printed as day 3, with the free day before it", () => {
+test("a place pinned to day 3 is printed as day 3, with the free days before it", () => {
   const city = cities.find((entry) => entry.id === "kyoto")!;
   const pick = (name: string) => placeFromSight(city.sights.find((sight) => sight.ja === name)!, "ja");
   const plan = buildShioriPlan({ places: [pick("清水寺"), { ...pick("金閣寺"), day: 3 }], days: 3, hotel: null, locale: "ja" }, { cities });
   const pinned = plan.days.find((day) => day.stops.some((stop) => stop.place.name === "金閣寺"))!;
   assert.equal(pinned.index, 2);
-  assert.equal(plan.freeDays, 1);
+  // The pin fixes the day, not how many are used: two temples are one day, and both days before it are free.
+  assert.equal(plan.days.length, 1);
+  assert.equal(plan.freeDays, 2);
 });
 
 test("an overfull day keeps honest stays and says it is late, even past midnight", () => {
@@ -299,13 +301,29 @@ test("Kyoto from a hotel: Yasaka Shrine goes with Kiyomizu-dera next door, and n
 
 test("Fukuoka: the tower stays in the city, Dazaifu is a day of its own, and no split travels less", () => {
   // Was: Fukuoka Tower on the Dazaifu day, 22 minutes more travel than the best two days.
-  const trip = planned("fukuoka", topOf("fukuoka", 8), 3);
-  const dazaifu = dayWith(trip.plan, "太宰府天満宮");
+  const two = planned("fukuoka", topOf("fukuoka", 8), 2);
+  const dazaifu = dayWith(two.plan, "太宰府天満宮");
   assert.deepEqual([...namesOn(dazaifu)].sort(), ["九州国立博物館", "太宰府天満宮", "水城"].sort());
-  assert.ok(namesOn(dayWith(trip.plan, "福岡タワー")).includes("福岡城"));
-  assert.equal(trip.plan.days.length, 2);
+  assert.ok(namesOn(dayWith(two.plan, "福岡タワー")).includes("福岡城"));
+  assert.equal(two.plan.days.length, 2);
+  // No split travels less — but for a taxi: the plan goes by train where the
+  // taxi would save seven minutes (a taxi counts a quarter of an hour dearer).
+  const taxis = (plan: ShioriPlan) => plan.days.flatMap((day) => day.legs).filter((leg) => leg.mode === "taxi").length;
+  assert.equal(taxis(two.plan), 0);
+  assert.ok(totalTravel(two.plan) <= leastTravelOverSplits(two, 2) + 15, `${totalTravel(two.plan)} against ${leastTravelOverSplits(two, 2)}`);
+  // Those two days have five stops on one of them, still sightseeing after
+  // 17:00. Asked for three days, the city is two half days: nobody is packed,
+  // and the trip travels less.
+  const trip = planned("fukuoka", topOf("fukuoka", 8), 3);
+  assert.equal(two.plan.days.some((day) => day.load === "tight"), true);
+  assert.equal(trip.plan.days.length, 3);
+  assert.equal(trip.plan.freeDays, 0);
   assert.equal(trip.plan.days.some((day) => day.load === "tight"), false);
-  assert.equal(totalTravel(trip.plan), leastTravelOverSplits(trip, 2));
+  assert.deepEqual([...namesOn(dayWith(trip.plan, "太宰府天満宮"))].sort(), ["九州国立博物館", "太宰府天満宮", "水城"].sort());
+  assert.ok(namesOn(dayWith(trip.plan, "福岡タワー")).includes("福岡城"));
+  assert.ok(totalTravel(trip.plan) < totalTravel(two.plan));
+  // (A split with a lone short visit on a day would save a quarter of an hour more; that is not a day.)
+  assert.equal(trip.plan.days.every((day) => day.stops.length >= 2), true);
   // From a hotel at Hakata the third day would cost travel, not save it — so it stays free.
   const hakata = planned("fukuoka", topOf("fukuoka", 8), 3, { name: "博多駅", lat: 33.5897, lon: 130.4207 });
   assert.equal(hakata.plan.days.length, 2);
@@ -352,4 +370,306 @@ test("only a list that cannot fit its days runs past midnight, and then every cl
     assert.equal(stop.arriveNextDay, index > firstAfterMidnight || (index === firstAfterMidnight && minutes(stop.arrive) < 9 * 60), `${stop.place.name} arrives ${stop.arrive}`);
   });
   assert.ok(overfull.notices.some((notice) => notice.kind === "needs-days" || notice.kind === "drop" || notice.kind === "too-much"));
+});
+
+/*
+ * The audit of the day search (commit 4b8543d). Each test is the trip an
+ * auditor broke the planner with, and asserts what the traveller should
+ * have seen.
+ */
+
+const railOf = (cityId: string) => new RailNetwork(JSON.parse(readFileSync(new URL(`../public/rail/${cityId}.json`, import.meta.url), "utf8")));
+/** A plan on a station map nothing has been looked up on yet. */
+const cold = (cityId: string, input: ShioriInput) => buildShioriPlan(input, { rail: railOf(cityId), cities });
+const sightsEn = (cityId: string, names: string[]) => {
+  const city = cities.find((entry) => entry.id === cityId)!;
+  return names.map((name) => placeFromSight(city.sights.find((sight) => sight.en === name)!, "en"));
+};
+const rawOf = (cityId: string, count: number) => cities.find((entry) => entry.id === cityId)!.sights.slice(0, count).map((sight) => placeFromSight(sight, "ja"));
+const restaurant = (id: string, meal: "lunch" | "dinner", lat: number, lon: number): ShioriPlace => ({ id, name: id, lat, lon, stayMinutes: meal === "lunch" ? 60 : 90, kind: "restaurant", meal });
+/** The restaurants the regression auditor placed around a city's sights. */
+const auditRestaurants = (cityId: string, count: number, kinds: Array<"lunch" | "dinner">) => {
+  const sights = cities.find((entry) => entry.id === cityId)!.sights;
+  return Array.from({ length: count }, (_, index) => {
+    const near = sights[(index * 7 + 20) % sights.length];
+    return restaurant(`rest-${cityId}-${index}`, kinds[index % kinds.length], near.lat + 0.004 * ((index % 3) - 1), near.lon + 0.005 * (((index + 1) % 3) - 1));
+  });
+};
+const taxiLegs = (plan: ShioriPlan) => plan.days.flatMap((day) => [day.fromHotel, ...day.legs, day.toHotel]).filter((leg) => leg?.mode === "taxi").length;
+const lastSightLeaves = (day: ShioriPlan["days"][number]) => minutes(day.stops.findLast((stop) => stop.place.meal !== "dinner")!.leave);
+const loneShortDays = (plan: ShioriPlan) => plan.days.filter((day) => day.stops.length === 1 && !day.stops[0].place.meal && day.stops[0].place.stayMinutes < 240).length;
+
+/** Every minute of a printed day is on the page: start, ride, ten minutes of slack, wait, stay, lunch. */
+function assertHonestClock(plan: ShioriPlan) {
+  for (const day of plan.days) {
+    day.stops.forEach((stop, index) => {
+      const label = `day ${day.index + 1}, ${stop.place.name}: starts ${day.start}, arrives ${stop.arrive}, waits ${stop.waitMinutes}`;
+      const lunchBefore = day.meals.some((meal) => meal.kind === "lunch" && meal.afterStop === index - 1);
+      const reached = index === 0
+        ? minutes(day.start) + (day.fromHotel ? day.fromHotel.minutes + 10 : 0)
+        : minutes(day.stops[index - 1].leave) + (lunchBefore ? 60 : 0) + day.legs[index - 1].minutes + 10;
+      assert.equal(minutes(stop.arrive), reached + stop.waitMinutes, label);
+      // Only a restaurant is waited for, and never at the start of the day: the day starts later instead.
+      if (!stop.place.meal || index === 0) assert.equal(stop.waitMinutes, 0, label);
+    });
+  }
+}
+
+const tokyoNamed = (names: string[]) => sightsOf("tokyo", names);
+const asakusaLunch = restaurant("浅草のランチ", "lunch", 35.7128, 139.795);
+
+test("a day with a lunch restaurant sees a sight first when that costs no more travel", () => {
+  // Was: the day opened at the restaurant at 11:30 — an empty morning — because ten minutes of slack counted as waiting.
+  const places = [...tokyoNamed(["浅草寺", "東京スカイツリー"]), asakusaLunch];
+  const plan = cold("tokyo", { places, days: 1, hotel: null, locale: "ja" });
+  const day = plan.days[0];
+  assert.equal(day.start, "09:00");
+  assert.equal(day.stops[0].place.meal, undefined, namesOn(day).join(" > "));
+  assert.equal(day.stops.at(-1)!.place.id, asakusaLunch.id);
+  assert.ok(minutes(day.stops.at(-1)!.arrive) >= 11 * 60 + 30 && minutes(day.end) <= 13 * 60, `${day.stops.at(-1)!.arrive}–${day.end}`);
+  assert.equal(totalTravel(plan), 29);
+  assertHonestClock(plan);
+  // From a hotel in Ueno the same: was 08:30 at the door, a 25-minute ride, and 11:30 at the first stop.
+  const fromHotel = cold("tokyo", { places, days: 1, hotel: { name: "上野のホテル", lat: 35.7126, lon: 139.78 }, locale: "ja" });
+  assert.equal(fromHotel.days[0].stops[0].place.meal, undefined);
+  assertHonestClock(fromHotel);
+  // Paris, four sights and a lunch restaurant on two days: was one five-stop day, the other day free.
+  const paris = cold("paris", { places: [...topOf("paris", 4), ...auditRestaurants("paris", 1, ["lunch"])], days: 2, hotel: null, locale: "ja" });
+  assert.equal(paris.days.length, 2);
+  assert.equal(totalTravel(paris), 48);
+  assert.equal(paris.days.some((entry) => entry.stops.length > 1 && entry.stops[0].place.meal), false);
+  assertHonestClock(paris);
+});
+
+test("a day that must open with a restaurant starts when the traveller has to leave, with no wait hidden in it", () => {
+  // Was: start 08:30, a 48-minute train, first stop 17:30, no wait shown.
+  const asakusa = { name: "浅草のホテル", lat: 35.7118, lon: 139.7966 };
+  const dinner = restaurant("渋谷の焼肉", "dinner", 35.6595, 139.7005);
+  const evening = cold("tokyo", { places: [dinner], days: 1, hotel: asakusa, locale: "ja" });
+  assert.equal(evening.days[0].stops[0].arrive, "17:30");
+  assert.equal(minutes(evening.days[0].start), 17 * 60 + 30 - evening.days[0].fromHotel!.minutes - 10);
+  assertHonestClock(evening);
+  const lunch = cold("tokyo", { places: [restaurant("築地の寿司屋", "lunch", 35.6655, 139.7707), ...tokyoNamed(["東京タワー"])], days: 1, hotel: asakusa, locale: "ja" });
+  assertHonestClock(lunch);
+  assert.equal(lunch.days[0].stops.some((stop) => stop.mealMissed), false);
+  // A museum that takes five hours and a lunch next door: the day does open with the restaurant, at 11:30.
+  const museum = { ...tokyoNamed(["東京国立博物館"])[0], stayMinutes: 300 };
+  const ueno = restaurant("上野のランチ", "lunch", 35.7107, 139.7745);
+  for (const days of [1, 2]) {
+    // Was: the museum 09:00–14:00, the restaurant reached at 14:26 and missed, with a notice that no day can reach it.
+    const plan = cold("tokyo", { places: [museum, ueno], days, hotel: null, locale: "ja" });
+    assert.equal(plan.days.some((day) => day.stops.some((stop) => stop.mealMissed)), false, `${days} day(s)`);
+    assert.equal(plan.notices.some((notice) => notice.kind === "meal-time"), false);
+    assert.equal(plan.days.some((day) => day.runsLate), false);
+    assertHonestClock(plan);
+  }
+  const withPark = cold("tokyo", { places: [museum, ...tokyoNamed(["上野公園"]), ueno], days: 1, hotel: null, locale: "ja" });
+  assert.equal(withPark.days[0].stops.some((stop) => stop.mealMissed) || withPark.days[0].runsLate, false);
+  assert.equal(withPark.days[0].stops[0].place.name, "上野公園");
+});
+
+test("restaurants on the list keep planning inside its time budget", () => {
+  const timed = (cityId: string, input: ShioriInput) => {
+    const rail = railOf(cityId);
+    const started = performance.now();
+    const plan = buildShioriPlan(input, { rail, cities });
+    return { plan, ms: performance.now() - started };
+  };
+  // Was 2.5 s: ten sights, a lunch and a dinner, from a hotel.
+  const tokyo = rawOf("tokyo", 13);
+  const lunch = restaurant("L", "lunch", tokyo[2].lat + 0.003, tokyo[2].lon + 0.002);
+  const dinner = restaurant("D", "dinner", tokyo[5].lat - 0.002, tokyo[5].lon + 0.003);
+  const hotel = { name: "H", lat: cities.find((entry) => entry.id === "tokyo")!.lat + 0.01, lon: cities.find((entry) => entry.id === "tokyo")!.lon - 0.01 };
+  const ten = timed("tokyo", { places: [...tokyo.slice(0, 8), lunch, dinner], days: 2, hotel, locale: "ja" });
+  assert.ok(ten.ms <= 700, `10 places: ${Math.round(ten.ms)} ms`);
+  // Was 15–25 s: thirteen sights, a lunch and a dinner on three days, from a hotel.
+  const fifteen = timed("tokyo", { places: [...tokyo, lunch, dinner], days: 3, hotel, locale: "ja" });
+  assert.ok(fifteen.ms <= 3500, `15 places: ${Math.round(fifteen.ms)} ms`);
+  // Was 13 s: thirteen London sights and a lunch restaurant 200 m from the first, five days, King's Cross.
+  const london = sightsEn("london", ["London Museum", "London Eye", "British Museum", "Tate Britain", "National Portrait Gallery", "Big Ben", "Hyde Park", "St James's Palace", "Imperial War Museum London", "Petrie Museum of Egyptian Archaeology", "St Paul's Cathedral", "Sherlock Holmes Museum", "Queen's House"]);
+  const fourteen = timed("london", { places: [...london, restaurant("Lunch", "lunch", london[0].lat + 0.0018, london[0].lon)], days: 5, hotel: { name: "King's Cross", lat: 51.5308, lon: -0.1238 }, locale: "en" });
+  assert.ok(fourteen.ms <= 3500, `14 places: ${Math.round(fourteen.ms)} ms`);
+  assert.equal(fourteen.plan.days.some((day) => day.runsLate), false);
+  // Was 25–35 s: ten Kyoto sights, three lunches and three dinners on three days.
+  const kyoto = timed("kyoto", { places: [...rawOf("kyoto", 10), ...auditRestaurants("kyoto", 6, ["lunch", "dinner"])], days: 3, hotel: kyotoStation, locale: "ja" });
+  assert.ok(kyoto.ms <= 3500, `16 places, 6 restaurants: ${Math.round(kyoto.ms)} ms`);
+  // And each day has one lunch and one dinner of them.
+  for (const day of kyoto.plan.days) {
+    assert.equal(day.stops.filter((stop) => stop.place.meal === "lunch").length, 1, namesOn(day).join(" > "));
+    assert.equal(day.stops.filter((stop) => stop.place.meal === "dinner").length, 1, namesOn(day).join(" > "));
+  }
+  assertHonestClock(kyoto.plan);
+  // Eight restaurants among twenty-four places.
+  const many = timed("paris", { places: [...rawOf("paris", 16), ...auditRestaurants("paris", 8, ["dinner", "lunch", "dinner"])], days: 4, hotel: null, locale: "ja" });
+  assert.ok(many.ms <= 3500, `24 places, 8 restaurants: ${Math.round(many.ms)} ms`);
+});
+
+test("two restaurants for the same meal are on different days while a requested day can take one", () => {
+  // Was: two lunches back to back on one day (11:30 and 13:33), two requested days free.
+  const lunches = cold("tokyo", { places: [...tokyoNamed(["浅草寺", "明治神宮"]), asakusaLunch, restaurant("原宿のランチ", "lunch", 35.6702, 139.7027)], days: 3, hotel: null, locale: "ja" });
+  for (const day of lunches.days) assert.ok(day.stops.filter((stop) => stop.place.meal === "lunch").length <= 1, namesOn(day).join(" > "));
+  assert.equal(lunches.days.length, 2);
+  // Was: dinner at 17:30 and a second dinner at 19:30 the same evening.
+  const dinners = cold("tokyo", { places: [...tokyoNamed(["浅草寺", "東京タワー"]), restaurant("銀座のディナー", "dinner", 35.6717, 139.765), restaurant("新橋のディナー", "dinner", 35.6664, 139.7583)], days: 3, hotel: null, locale: "ja" });
+  for (const day of dinners.days) assert.ok(day.stops.filter((stop) => stop.place.meal === "dinner").length <= 1, namesOn(day).join(" > "));
+  // With one day asked for there is nowhere else to put it.
+  const oneDay = cold("tokyo", { places: [...tokyoNamed(["浅草寺", "明治神宮"]), asakusaLunch, restaurant("原宿のランチ", "lunch", 35.6702, 139.7027)], days: 1, hotel: null, locale: "ja" });
+  assert.equal(oneDay.days.length, 1);
+  assert.equal(oneDay.leftOut.length, 0);
+});
+
+test("a pin says which day a place is on, never how many days are used", () => {
+  // Was: four short sights, one pinned to day 3, became three days — two of them a single 50-minute visit.
+  const four = tokyoNamed(["浅草寺", "東京スカイツリー", "上野公園", "東京国立博物館"]);
+  const free = cold("tokyo", { places: four, days: 3, hotel: null, locale: "ja" });
+  assert.equal(free.days.length, 1);
+  for (const [days, pinnedTo] of [[3, 3], [5, 5], [3, 2]]) {
+    const plan = cold("tokyo", { places: four.map((place) => (place.name === "東京国立博物館" ? { ...place, day: pinnedTo } : place)), days, hotel: null, locale: "ja" });
+    assert.equal(plan.days.length, 1, `pinned to day ${pinnedTo} of ${days}`);
+    assert.equal(plan.days[0].index, pinnedTo - 1);
+    assert.equal(plan.days[0].stops.length, 4);
+    assert.equal(plan.freeDays, days - 1);
+    assert.equal(totalTravel(plan), totalTravel(free));
+  }
+  // Was: Arashiyama pinned to day 5 forced all five days, two of them a single short sight, 33 minutes more travel.
+  const kyoto = sightsEn("kyoto", ["Kyoto Tower", "Daitoku-ji Temple", "Tenryū-ji Temple", "Nijō Castle", "Saihō-ji Temple", "Enryaku-ji Temple", "Kyoto Imperial Palace", "Arashiyama", "Sanjūsangen-dō Temple", "Kōzan-ji Temple"]);
+  const station = { name: "Kyoto Station", lat: 34.9858, lon: 135.7588 };
+  const unpinned = cold("kyoto", { places: kyoto, days: 5, hotel: station, locale: "en" });
+  const pinned = cold("kyoto", { places: kyoto.map((place) => (place.name === "Arashiyama" ? { ...place, day: 5 } : place)), days: 5, hotel: station, locale: "en" });
+  assert.equal(dayWith(pinned, "Arashiyama").index, 4);
+  assert.equal(pinned.days.length, unpinned.days.length);
+  assert.equal(totalTravel(pinned), totalTravel(unpinned));
+  assert.equal(loneShortDays(pinned), 0);
+  assert.equal(loneShortDays(unpinned), 0);
+});
+
+test("a far hotel does not spread the list one short sight a day", () => {
+  // Was: five Tokyo sights from Yokohama on five days, one sight each, 610 minutes of travel, every day labelled packed.
+  const five = tokyoNamed(["浅草寺", "東京スカイツリー", "明治神宮", "東京タワー", "東京国立博物館"]);
+  const yokohama = { name: "横浜駅", lat: 35.4658, lon: 139.6223 };
+  const two = cold("tokyo", { places: five, days: 2, hotel: yokohama, locale: "ja" });
+  for (const days of [3, 5]) {
+    const plan = cold("tokyo", { places: five, days, hotel: yokohama, locale: "ja" });
+    assert.equal(plan.days.length, 2, `${days} days asked`);
+    assert.equal(plan.freeDays, days - 2);
+    assert.equal(totalTravel(plan), totalTravel(two));
+    assert.equal(loneShortDays(plan), 0);
+    // The rides to and from the hotel do not make a day packed.
+    assert.equal(plan.days.some((day) => day.load === "tight"), false);
+  }
+  // A single visit is never a packed day, however far the hotel.
+  const one = cold("tokyo", { places: five.slice(0, 1), days: 1, hotel: yokohama, locale: "ja" });
+  assert.notEqual(one.days[0].load, "tight");
+  // Was: eleven Hiroshima sights and a lunch from Saijo on four days, two of them a single museum with two hours of taxi.
+  const hiroshima = sightsEn("hiroshima", ["Hiroshima Museum of Art", "JMSDF Kure Museum", "Hijiyama Shrine", "Assumption of Mary Cathedral, Hiroshima", "Aioi Bridge", "Kokuzen-ji Temple", "Hiroshima Botanical Garden", "Hiroshima City Museum of Contemporary Art", "Daigan-ji Temple", "Hiroshima Peace Memorial Museum", "Hiroshima Peace Memorial"]);
+  const saijo = cold("hiroshima", { places: [...hiroshima, restaurant("Lunch near Hiroshima City Museum of Contemporary Art", "lunch", 34.38655102213577, 132.4711518541997)], days: 4, hotel: { name: "Saijo", lat: 34.431, lon: 132.743 }, locale: "en" });
+  assert.equal(saijo.days.length, 3);
+  assert.equal(saijo.freeDays, 1);
+  assert.equal(loneShortDays(saijo), 0);
+  assert.equal(saijo.days.some((day) => day.runsLate), false);
+});
+
+test("a requested day is used when the days in use are packed and it relieves them cheaply", () => {
+  // Was: five Nara sights and a lunch on ONE day of six stops until 17:39, the second requested day free.
+  const nara = sightsEn("nara", ["Tōshōdai-ji Temple", "Futai-ji Temple", "Zutō", "Jōruri-ji Temple", "Shōsōin"]);
+  const plan = cold("nara", { places: [...nara, restaurant("Lunch near Tōshōdai-ji Temple", "lunch", 34.67538071975103, 135.78584107949158)], days: 2, hotel: { name: "Kintetsu Nara", lat: 34.6841, lon: 135.8278 }, locale: "en" });
+  assert.equal(plan.days.length, 2);
+  assert.equal(plan.days.some((day) => day.load === "tight"), false);
+  for (const day of plan.days) assert.ok(day.stops.length <= 4 && lastSightLeaves(day) <= 17 * 60, `${day.stops.length} stops until ${day.end}`);
+  // Was (lists of 17 and more stopped at the first count that was not late): twenty London sights on five of seven days.
+  const london = cold("london", { places: rawOf("london", 20), days: 7, hotel: null, locale: "ja" });
+  assert.equal(london.days.length, 6);
+  for (const day of london.days) assert.ok(lastSightLeaves(day) <= 17 * 60, `day ${day.index + 1} until ${day.end}`);
+  assert.ok(totalTravel(london) <= 200, `${totalTravel(london)}`);
+  // Eighteen Paris sights from a hotel at Opéra, six days asked: was four days sightseeing until 18:00, two free.
+  const paris = cold("paris", { places: [...cities.find((entry) => entry.id === "paris")!.sights].reverse().slice(0, 18).map((sight) => placeFromSight(sight, "ja")), days: 6, hotel: { name: "Opéra", lat: 48.8706, lon: 2.3319 }, locale: "ja" });
+  assert.equal(paris.days.length, 5);
+  for (const day of paris.days) assert.ok(lastSightLeaves(day) <= 17 * 60, `day ${day.index + 1} until ${day.end}`);
+});
+
+test("a theme-park day is charged for its length on the real clock, lunch included", () => {
+  // Was: Olympic Park taken off the Lotte World day next door, 15 minutes more travel and a second taxi.
+  const plan = cold("seoul", { places: rawOf("seoul", 10), days: 3, hotel: null, locale: "ja" });
+  assert.ok(namesOn(dayWith(plan, "ロッテワールド")).includes("オリンピック公園"), namesOn(dayWith(plan, "ロッテワールド")).join(" > "));
+  assert.equal(totalTravel(plan), 126);
+  assert.ok(taxiLegs(plan) <= 1);
+  assert.equal(plan.days.some((day) => day.runsLate), false);
+});
+
+test("a list a few minutes over says which one place to leave out", () => {
+  // Was: over by minutes on two days, any single removal fits, and no such advice.
+  const input: ShioriInput = { places: rawOf("tokyo", 16), days: 4, hotel: { name: "新宿", lat: 35.6909, lon: 139.7003 }, locale: "ja" };
+  const rail = railOf("tokyo");
+  const started = performance.now();
+  const plan = buildShioriPlan(input, { rail, cities });
+  assert.ok(performance.now() - started <= 3500);
+  assert.equal(plan.days.some((day) => day.runsLate), true);
+  const drop = plan.notices.find((notice) => notice.kind === "drop");
+  assert.ok(drop && drop.kind === "drop", JSON.stringify(plan.notices.map((notice) => notice.kind)));
+  const without = buildShioriPlan({ ...input, places: input.places.filter((place) => place.id !== drop.placeId) }, { rail, cities });
+  assert.equal(without.days.some((day) => day.runsLate), false);
+  assert.equal(without.leftOut.length, 0);
+});
+
+test("a taxi pairing is chosen when it really saves time, not for a few minutes", () => {
+  // Was: seventeen Kyoto sights from the station on seven taxi rides (three before the rewrite) to save 37 minutes.
+  const plan = cold("kyoto", { places: rawOf("kyoto", 17), days: 5, hotel: kyotoStation, locale: "ja" });
+  assert.ok(taxiLegs(plan) <= 3, `${taxiLegs(plan)} taxi rides`);
+  assert.equal(plan.days.some((day) => day.runsLate), false);
+  // The printed minutes are the priced ones: the surcharge is in the search only.
+  const prices = shioriPricing({ places: rawOf("kyoto", 17), days: 5, hotel: kyotoStation, locale: "ja" }, { rail: railOf("kyoto") });
+  for (const day of plan.days) {
+    const order = day.stops.map((stop) => rawOf("kyoto", 17).findIndex((place) => place.id === stop.place.id));
+    day.legs.forEach((leg, position) => assert.equal(leg.minutes, prices.minutes[order[position]][order[position + 1]]));
+  }
+});
+
+test("the lunch row is at lunchtime, also after the streets have been measured", () => {
+  const input: ShioriInput = { places: topOf("tokyo", 10), days: 3, hotel: null, locale: "ja" };
+  const rail = railOf("tokyo");
+  const before = buildShioriPlan(input, { rail, cities });
+  const lunchRows = (plan: ShioriPlan) => plan.days.flatMap((day) => day.meals.filter((meal) => meal.kind === "lunch").map((meal) => minutes(meal.start)));
+  for (const start of lunchRows(before)) assert.ok(start >= 11 * 60 + 30 && start <= 14 * 60, `lunch at ${start}`);
+  // Was: every walk and drive measured 2.5 times longer left lunch rows at 14:04–15:31, placed on the estimated clock.
+  const routes = new Map<string, ShioriRoute>(before.days.flatMap((day) => day.legs.filter((leg) => leg.mode !== "rail").map((leg): [string, ShioriRoute] => [`${leg.mode === "walk" ? "walk" : "drive"}|${leg.key}`, { minutes: Math.round(leg.minutes * 2.5), path: [leg.from, leg.to] }])));
+  const after = buildShioriPlan(input, { rail, cities, routes });
+  assert.deepEqual(after.days.map((day) => namesOn(day)), before.days.map((day) => namesOn(day)));
+  assert.ok(after.days.some((day, index) => day.end !== before.days[index].end), "the measured minutes moved the clock");
+  for (const start of lunchRows(after)) assert.ok(start >= 11 * 60 + 30 && start <= 14 * 60, `lunch at ${Math.floor(start / 60)}:${start % 60} after measuring`);
+  assertHonestClock(after);
+});
+
+test("a renamed hotel or place is printed under its new name, and a slot after midnight says so", () => {
+  // Was: the plan remembered for the same coordinates came back with the old names on its legs.
+  const rail = railOf("kyoto");
+  const places = sightsOf("kyoto", KYOTO_EIGHT);
+  const first = buildShioriPlan({ places, days: 2, hotel: kyotoStation, locale: "ja" }, { rail, cities });
+  assert.equal(first.days[0].fromHotel!.fromName, "京都駅");
+  const renamed = buildShioriPlan({ places: places.map((place, index) => (index === 0 ? { ...place, name: "清水寺（改名）" } : place)), days: 2, hotel: { ...kyotoStation, name: "改名したホテル" }, locale: "ja" }, { rail, cities });
+  assert.equal(renamed.days[0].fromHotel!.fromName, "改名したホテル");
+  const legs = renamed.days.flatMap((day) => [day.fromHotel, ...day.legs, day.toHotel]).filter((leg) => leg !== null);
+  assert.equal(legs.some((leg) => leg.fromName === "清水寺" || leg.toName === "清水寺" || leg.fromName === "京都駅" || leg.toName === "京都駅"), false);
+  assert.ok(legs.some((leg) => leg.fromName === "清水寺（改名）" || leg.toName === "清水寺（改名）"));
+  // Six sights with Disneyland on one day run past midnight: the dinner slot after the last stop is on the next calendar day, and says so.
+  const overfull = trip("tokyo", 6, 1, { raw: true });
+  const dinnerSlot = overfull.days[0].meals.find((meal) => meal.kind === "dinner")!;
+  assert.equal(overfull.days[0].stops.at(-1)!.leaveNextDay, true);
+  assert.equal(dinnerSlot.nextDay, true);
+  for (const plan of [first, renamed]) assert.equal(plan.days.some((day) => day.meals.some((meal) => meal.nextDay)), false);
+});
+
+test("the suggested area is the listed place with the least door-to-door travel", () => {
+  // Was: on lists up to twelve places only the six best by a quick measure were planned, and 12–16 minutes were lost.
+  const city = cities.find((entry) => entry.id === "nagoya")!;
+  const places = curateSights(city.sights).slice(0, 9).map((sight) => placeFromSight(sight, "ja"));
+  const rail = railOf("nagoya");
+  const free = buildShioriPlan({ places, days: 2, hotel: null, locale: "ja" }, { rail, cities });
+  assert.ok(free.stayNear?.nearName);
+  const at = (place: { lat: number; lon: number }) => buildShioriPlan({ places, days: 2, hotel: { name: "h", lat: place.lat, lon: place.lon }, locale: "ja" }, { rail, cities });
+  const measure = (plan: ShioriPlan) => [plan.days.filter((day) => day.runsLate).length, totalTravel(plan)] as const;
+  const suggested = measure(at({ lat: free.stayNear.latitude, lon: free.stayNear.longitude }));
+  for (const place of places) {
+    const here = measure(at(place));
+    assert.ok(suggested[0] < here[0] || (suggested[0] === here[0] && suggested[1] <= here[1]), `${place.name}: ${here[1]} against ${suggested[1]} at ${free.stayNear.nearName}`);
+  }
 });
