@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
 import { fetchAppleFoodCandidates } from "../../lib/apple-food";
-import { appleRelayClient } from "../../lib/apple-relay-client";
+import { appleRelayClient, appleRelaySearch } from "../../lib/apple-relay-client";
 import { defaultFoodDiscoveryQuery, type FoodCandidate } from "../../lib/google-food";
 import type { HotelCandidate } from "../../lib/google-hotels";
 import { requestHotelRecommendations } from "../../lib/hotel-recommendations-client";
@@ -13,6 +13,7 @@ import { curateSights, filterDestinations, type PopularDestination, type Popular
 import { loadRailNetwork } from "../../lib/rail-network-client";
 import type { RailNetwork } from "../../lib/rail-router";
 import { fetchStreetRoute } from "../../lib/street-route-client";
+import { addAnchor, addCandidates, kindOfCategory, type AddCandidate } from "../../lib/shiori/add-search";
 import { findCafes, type CafeBreak, type CafePick } from "../../lib/shiori/cafes";
 import { lineColor } from "../../lib/shiori/line-colors";
 import { buildShioriPlan, type ShioriLeg, type ShioriMeal, type ShioriNotice, type ShioriPlace, type ShioriPlan, type ShioriRoute, type ShioriStop } from "../../lib/shiori/plan";
@@ -139,6 +140,14 @@ const text = {
     add: "追加",
     adding: "探しています…",
     addFailed: "見つかりませんでした。正式な名前や地名を付けて試してください。",
+    addSearch: "探す",
+    addChoose: "どれを追加しますか？",
+    addChooseHint: "地図の検索結果です。近い順ではなく、名前の合う順に出ます。違う場合は地名を足して探し直してください。",
+    addKm: (km: number) => km < 1 ? "中心から1km以内" : `中心から約${Math.round(km)}km`,
+    addCancel: "やめる",
+    addedAs: (name: string, kind: AddKind) => kind === "hotel" ? `「${name}」を泊まるホテルにしました。` : kind === "place" ? `「${name}」を追加しました。` : `「${name}」を${kind === "lunch" ? "昼" : "夜"}ごはんの店として追加しました。`,
+    addedWhere: (day: number) => `${day}日目に入りました。`,
+    addedSee: "しおりで見る",
     addFull: `一度に組めるのは${MAX_PLACES}か所までです。`,
     selected: (count: number) => `${count}か所を選択中`,
     make: "しおりを作る",
@@ -294,6 +303,14 @@ const text = {
     add: "Add",
     adding: "Searching…",
     addFailed: "Not found. Try the full name or add the area.",
+    addSearch: "Search",
+    addChoose: "Which one?",
+    addChooseHint: "Results from the map search, best name match first. If none is right, add the area and search again.",
+    addKm: (km: number) => km < 1 ? "within 1 km of the centre" : `about ${Math.round(km)} km from the centre`,
+    addCancel: "Cancel",
+    addedAs: (name: string, kind: AddKind) => kind === "hotel" ? `${name} is now your hotel.` : kind === "place" ? `Added ${name}.` : `Added ${name} for ${kind}.`,
+    addedWhere: (day: number) => `It is on day ${day}.`,
+    addedSee: "Show in the plan",
     addFull: `One trip holds up to ${MAX_PLACES} places.`,
     selected: (count: number) => `${count} selected`,
     make: "Make my booklet",
@@ -718,6 +735,10 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
   const [other, setOther] = useState("");
   const [otherKind, setOtherKind] = useState<AddKind>("place");
   const [otherState, setOtherState] = useState<"idle" | "busy" | "failed" | "full">("idle");
+  // What the search found, waiting for the traveller to say which one is meant.
+  const [otherHits, setOtherHits] = useState<{ kind: AddKind; candidates: AddCandidate[] } | null>(null);
+  // The last thing added, said out loud: the plan it changed is far up the page.
+  const [added, setAdded] = useState<{ id: string | null; name: string; kind: AddKind } | null>(null);
   const [copied, setCopied] = useState(false);
   // Street paths looked up so far, keyed "walk|<leg>" / "drive|<leg>". Null
   // means the map service had no answer; it is not asked twice.
@@ -910,51 +931,74 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
   };
   const addSight = (sight: PopularSight) => update((current) => togglePlace(current, placeFromSight(sight, locale)));
 
+  const putCandidate = (candidate: AddCandidate, kind: AddKind) => {
+    if (kind === "hotel") {
+      update((current) => ({ ...current, hotel: { name: candidate.name, lat: candidate.lat, lon: candidate.lon } }));
+    } else {
+      update((current) => {
+        const label = kindOfCategory(candidate.category);
+        const place: ShioriPlace = {
+          id: candidate.id,
+          name: candidate.name,
+          lat: candidate.lat,
+          lon: candidate.lon,
+          ...(kind === "place"
+            ? { stayMinutes: candidate.stayMinutes ?? 60, ...(candidate.kind ?? label ? { kind: candidate.kind ?? label ?? undefined } : {}) }
+            : { stayMinutes: kind === "lunch" ? 60 : 90, kind: "restaurant", meal: kind }),
+        };
+        // Adding a place that is already listed updates it (a sight that is
+        // really tonight's dinner) instead of removing it.
+        return current.places.some((entry) => entry.id === place.id)
+          ? { ...current, places: current.places.map((entry) => entry.id === place.id ? { ...entry, ...place } : entry) }
+          : togglePlace(current, place);
+      });
+    }
+    setAdded({ id: kind === "hotel" ? null : candidate.id, name: candidate.name, kind });
+    setOtherHits(null);
+    setOther("");
+    setOtherState("idle");
+  };
+
   const addOther = async () => {
     const name = other.trim();
     if (!name || otherState === "busy") return;
     const kind = otherKind;
     if (kind !== "hotel" && trip.places.length >= MAX_PLACES) { setOtherState("full"); return; }
     setOtherState("busy");
+    setOtherHits(null);
+    setAdded(null);
+    const anchor = addAnchor(city, trip.places);
+    const reach = (city?.radiusKm ?? 60) + 80;
     try {
-      // The places already chosen go along so the lookup knows which city
-      // this is; only the new line is read back.
-      // With nothing chosen yet, the city's own best-known sights stand in
-      // as that context (they resolve from the bundled list, not the network).
-      const context = trip.places.length >= 2 || !city
-        ? trip.places.map((place) => place.name)
-        : [...trip.places.map((place) => place.name), ...city.sights.slice(0, 3).map((sight) => locale === "ja" ? sight.ja : sight.en)];
-      const raw = [...context, name].join("\n");
-      const result = await requestPlaceResolution(raw, "", locale);
-      const hit = result.places.find((place) => place.input === name)
-        ?? result.ambiguous.find((entry) => entry.input === name)?.candidates[0];
-      if (!hit) { setOtherState("failed"); return; }
-      // A same-named place on another continent is not what was meant.
-      if (city) {
-        const km = Math.hypot(hit.latitude - city.lat, (hit.longitude - city.lon) * Math.cos((city.lat * Math.PI) / 180)) * 111;
-        if (km > city.radiusKm + 80) { setOtherState("failed"); return; }
+      let candidates: AddCandidate[] = [];
+      if (appleRelayClient()) {
+        // Asked near the trip: a same-named shop in another city is not what was meant.
+        const ask = (poiOnly: boolean) => appleRelaySearch({ query: name, language: locale === "ja" ? "ja-JP" : "en-US", near: anchor, poiOnly });
+        candidates = addCandidates(await ask(kind !== "place"), anchor, reach, 6, city?.radiusKm ?? reach);
+        if (candidates.length === 0 && kind !== "place") candidates = addCandidates(await ask(false), anchor, reach, 6, city?.radiusKm ?? reach);
       }
-      if (kind === "hotel") {
-        update((current) => ({ ...current, hotel: { name: hit.name, lat: hit.latitude, lon: hit.longitude } }));
-      } else {
-        update((current) => {
-          const place: ShioriPlace = {
-            id: hit.id,
-            name: hit.name,
-            lat: hit.latitude,
-            lon: hit.longitude,
-            ...(kind === "place"
-              ? { stayMinutes: Math.min(240, Math.max(30, hit.planningDurationMinutes)), ...(hit.placeTypes?.[0] ? { kind: hit.placeTypes[0].replace(/_/g, " ") } : {}) }
-              : { stayMinutes: kind === "lunch" ? 60 : 90, kind: "restaurant", meal: kind }),
-          };
-          // Adding a place that is already listed updates it (a sight that is
-          // really tonight's dinner) instead of removing it.
-          return current.places.some((entry) => entry.id === place.id)
-            ? { ...current, places: current.places.map((entry) => entry.id === place.id ? { ...entry, ...place } : entry) }
-            : togglePlace(current, place);
-        });
+      if (candidates.length === 0) {
+        // No map search in this build, or it knew nothing: the open lookup,
+        // with the places already chosen as its hint of which city this is.
+        const context = trip.places.length >= 2 || !city
+          ? trip.places.map((place) => place.name)
+          : [...trip.places.map((place) => place.name), ...city.sights.slice(0, 3).map((sight) => locale === "ja" ? sight.ja : sight.en)];
+        const result = await requestPlaceResolution([...context, name].join("\n"), "", locale);
+        const hit = result.places.find((place) => place.input === name)
+          ?? result.ambiguous.find((entry) => entry.input === name)?.candidates[0];
+        if (hit) {
+          const km = anchor ? Math.hypot(hit.latitude - anchor.latitude, (hit.longitude - anchor.longitude) * Math.cos((anchor.latitude * Math.PI) / 180)) * 111 : 0;
+          if (km <= reach) {
+            candidates = [{
+              id: hit.id, name: hit.name, lat: hit.latitude, lon: hit.longitude, address: "", category: null, km,
+              stayMinutes: Math.min(240, Math.max(30, hit.planningDurationMinutes)),
+              ...(hit.placeTypes?.[0] ? { kind: hit.placeTypes[0].replace(/_/g, " ") } : {}),
+            }];
+          }
+        }
       }
-      setOther("");
+      if (candidates.length === 0) { setOtherState("failed"); return; }
+      setOtherHits({ kind, candidates });
       setOtherState("idle");
     } catch {
       setOtherState("failed");
@@ -985,6 +1029,18 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
     </header>
   );
 
+  // Which day the place just added landed on, once the plan has caught up.
+  const addedDay = added?.id && plan ? plan.days.find((day) => day.stops.some((stop) => stop.place.id === added.id))?.index ?? null : null;
+  const showStop = (dayIndex: number, placeId: string) => {
+    setSelectedDay(dayIndex);
+    setOpenStop(placeId);
+    setFocus({ placeId, token: Date.now() });
+    // Two frames: the day and the opened card are on the page before it is scrolled to.
+    window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+      document.querySelector(`[data-stop="${CSS.escape(placeId)}"]`)?.scrollIntoView({ block: "center" });
+    }));
+  };
+
   // Places the traveller typed in themselves: restaurants, and anything the
   // destination's list does not have.
   const extras = trip.places.filter((place) => place.meal || !city?.sights.some((sight) => `wikidata-${sight.q}` === place.id));
@@ -997,10 +1053,32 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
         ))}
       </div>
       <div className="shiori-other-row">
-        <input id="shiori-other" onChange={(event) => { setOther(event.target.value); setOtherState("idle"); }} placeholder={t.addPlaceholders[otherKind]} value={other} />
-        <button disabled={otherState === "busy" || !other.trim()} type="submit">{otherState === "busy" ? t.adding : t.add}</button>
+        <input id="shiori-other" onChange={(event) => { setOther(event.target.value); setOtherState("idle"); setOtherHits(null); }} placeholder={t.addPlaceholders[otherKind]} value={other} />
+        <button disabled={otherState === "busy" || !other.trim()} type="submit">{otherState === "busy" ? t.adding : t.addSearch}</button>
       </div>
       {otherState === "failed" ? <p className="shiori-warn" role="alert">{t.addFailed}</p> : null}
+      {otherHits ? (
+        <div className="shiori-hits" role="group" aria-label={t.addChoose}>
+          <p className="shiori-hits-head"><b>{t.addChoose}</b><button onClick={() => setOtherHits(null)} type="button">{t.addCancel}</button></p>
+          <ul>
+            {otherHits.candidates.map((candidate) => (
+              <li key={candidate.id}>
+                <button onClick={() => putCandidate(candidate, otherHits.kind)} type="button">
+                  <b>{candidate.name}</b>
+                  <small>{[candidate.address, city ? t.addKm(candidate.km) : null].filter(Boolean).join(" ・ ")}</small>
+                </button>
+              </li>
+            ))}
+          </ul>
+          <p className="shiori-quiet">{t.addChooseHint}</p>
+        </div>
+      ) : null}
+      {added ? (
+        <p className="shiori-added" role="status">
+          <span>{t.addedAs(added.name, added.kind)}{addedDay !== null ? ` ${t.addedWhere(addedDay + 1)}` : ""}</span>
+          {addedDay !== null && screen === "plan" && added.id ? <button onClick={() => showStop(addedDay, added.id!)} type="button">{t.addedSee}</button> : null}
+        </p>
+      ) : null}
       {otherState === "full" ? <p className="shiori-warn" role="alert">{t.addFull}</p> : null}
       <p className="shiori-quiet">{t.addHint}</p>
       {extras.length > 0 || trip.hotel ? (
@@ -1290,15 +1368,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
                 hotel={trip.hotel}
                 label={t.mapLabel}
                 legend={{ rail: t.legendRail, street: t.legendWalk, straight: t.legendOther }}
-                onSelectStop={(dayIndex, placeId) => {
-                  setSelectedDay(dayIndex);
-                  setOpenStop(placeId);
-                  setFocus({ placeId, token: Date.now() });
-                  // Two frames: the day and the opened card are on the page before it is scrolled to.
-                  window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
-                    document.querySelector(`[data-stop="${CSS.escape(placeId)}"]`)?.scrollIntoView({ block: "center" });
-                  }));
-                }}
+                onSelectStop={showStop}
                 selectedDay={activeDay}
                 text={{
                   expand: t.mapExpand,
