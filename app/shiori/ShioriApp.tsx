@@ -560,7 +560,7 @@ function MealRow({ meal, locale }: { meal: ShioriMeal; locale: Locale }) {
       <span aria-hidden="true" className="shiori-meal-mark"><Icon name="meal" /></span>
       <div className="shiori-meal-head">
         <span>
-          <b>{meal.kind === "lunch" ? t.lunch : t.dinner}</b> <span className="shiori-meal-time">{meal.start}{meal.end ? `–${meal.end}` : locale === "ja" ? "ごろ" : ""}</span>
+          <b>{meal.kind === "lunch" ? t.lunch : t.dinner}</b> <span className="shiori-meal-time">{meal.nextDay ? <NextDay locale={locale} /> : null}{meal.start}{meal.end ? `–${meal.end}` : locale === "ja" ? "ごろ" : ""}</span>
           <small><span className="shiori-sep"> ・ </span>{t.mealNear(meal.nearName)}</small>
         </span>
         <button aria-expanded={state !== "closed"} onClick={() => void open()} type="button">{state === "closed" ? t.showFood : t.hideFood}</button>
