@@ -187,7 +187,10 @@ export default function ShioriMap({ days, selectedDay, hotel, focus, onSelectSto
       instance.touchZoomRotate.disableRotation();
       instance.keyboard.disableRotation();
       instance.addControl(new maplibre.NavigationControl({ showCompass: false }), "top-right");
-      instance.on("load", () => {
+      // Pins and route lines go on as soon as the style is known, not after
+      // every background tile of a large map has arrived: on a wide screen or
+      // a slow line that wait left an empty frame for ten seconds.
+      instance.once("style.load", () => {
         if (cancelled) return;
         // On a phone the opened credit line covers a third of the map and the
         // last pin with it. It starts folded behind its (i) button there, as
