@@ -18,8 +18,19 @@ export type RailNetworkData = {
   stations: ReadonlyArray<readonly [string, string, number, number]>;
   /** [nameJa, nameEn] */
   lines: ReadonlyArray<readonly [string, string]>;
-  /** [stationIndex, stationIndex, lineIndex or -1 when the line is unknown] */
-  edges: ReadonlyArray<readonly [number, number, number]>;
+  /**
+   * [stationIndex, stationIndex, lineIndex or -1 when the line is unknown],
+   * and a fourth 1 where the line is a guest on another line's track
+   * (武蔵野線 trains on the 京葉線 into 東京): a ride that either could name
+   * is named after the line whose track it is.
+   */
+  edges: ReadonlyArray<readonly [number, number, number] | readonly [number, number, number, number]>;
+  /**
+   * Groups of line indexes whose trains run on into each other end to end
+   * (京浜東北線 into 根岸線 at 横浜). Riding from one onto the next is one
+   * ride; no change of train is charged or printed.
+   */
+  through?: ReadonlyArray<ReadonlyArray<number>>;
 };
 
 export type GeoPoint = { latitude: number; longitude: number };
@@ -61,6 +72,11 @@ const INTERCHANGE_METERS = 320;
 /** ~32 km/h between stations, plus a dwell at each stop. */
 const RIDE_MINUTES_PER_KM = 1.85;
 const DWELL_MINUTES = 0.6;
+/**
+ * A train state for "still aboard, on a stretch whose line the data does not
+ * name": the train's number plus this. Far above any line count.
+ */
+const UNNAMED_STRETCH = 2_048;
 
 /*
  * Wikidata keeps one item per operator — sometimes per line — at a shared
@@ -99,7 +115,7 @@ const englishCompanyNames = [
 ];
 const englishBrandNames = [
   "JR", "Toei", "Tokyu", "Keio", "Keiō", "Odakyu", "Seibu", "Tobu", "Keisei", "Keikyu", "Keikyū", "Hankyu", "Hanshin",
-  "Kintetsu", "Nankai", "Keihan", "Meitetsu", "Shinkansen",
+  "Kintetsu", "Nankai", "Keihan", "Meitetsu", "Shinkansen", "Hiroden",
 ];
 /*
  * Wikidata's own disambiguated labels where the name on the platform sign is
@@ -111,6 +127,15 @@ const officialStationNames: Record<string, string> = {
   "西武練馬駅": "練馬駅",
   // The Keiō New Line platforms: the station is Shinjuku in either language.
   "Shinsen-Shinjuku Station": "Shinjuku Station",
+  // JR Kyūshū's item for 博多. "JR" is no general prefix (JR難波 is a real
+  // name), so it is named here; the subway's item 18 m away is plain 博多駅.
+  "JR博多駅": "博多駅",
+  "JR Hakata Station": "Hakata Station",
+  // A line name without 線 on the end, which the prefix rule does not catch.
+  "つくばエクスプレス秋葉原駅": "秋葉原駅",
+  "Tsukuba Express Akihabara Station": "Akihabara Station",
+  "ゆりかもめ新橋駅": "新橋駅",
+  "Yurikamome Shimbashi Station": "Shimbashi Station",
 };
 
 const longestFirst = (names: readonly string[]) => [...new Set(names.filter((name) => name.length >= 2))].sort((left, right) => right.length - left.length);
@@ -127,7 +152,10 @@ function tidy(name: string) {
   // "ソウル駅駅" is the metro's item for Seoul Station: the word once is the name.
   // "Tram stop Rijksmuseum" is a description of the stop; the sign says "Rijksmuseum".
   return name.replace(/\u2010/g, "-").replace(/[\s\u3000]+/g, " ").replace(/駅駅$/, "駅").replace(/\b(station) station$/i, "$1")
-    .replace(/^(?:Tram stop|Tramhalte|Metrostation)\s+(?=\S)/i, "").trim();
+    .replace(/^(?:Tram stop|Tramhalte|Metrostation)\s+(?=\S)/i, "")
+    // 「原爆ドーム前停留場」 is the legal word for a tram stop; the stop's sign
+    // and the tram's display say 「原爆ドーム前」.
+    .replace(/^(.{2,})停留場$/, "$1").trim();
 }
 
 function withoutPrefixes(name: string, prefixes: readonly string[], ending: RegExp) {
@@ -189,7 +217,8 @@ export function walkMinutes(from: GeoPoint, to: GeoPoint) {
   return Math.max(1, Math.round(meters(from, to) * WALK_DETOUR / WALK_METERS_PER_MINUTE));
 }
 
-type Link = { to: number; line: number; minutes: number };
+/** `train` is the line, or the lowest line of its through-running group; -1 when unknown. */
+type Link = { to: number; line: number; train: number; minutes: number };
 
 export type RailAdvice =
   | { kind: "rail"; journey: RailJourney }
@@ -204,21 +233,47 @@ export class RailNetwork {
   private readonly links: Link[][];
   /** Stations close enough to change between on foot. */
   private readonly interchanges: Array<Array<{ to: number; minutes: number }>>;
+  /** For each line, the train it is part of (itself, or its through-running group). */
+  private readonly trainOf: number[];
+  /** How many links each line has, and each train (a line and the lines it runs through to). */
+  private readonly linkCount: number[];
+  private readonly trainLinkCount: Map<number, number>;
+  /** The named lines between two neighbouring stations. */
+  private readonly linesBetween = new Map<number, number[]>();
+  /** "pair:line" where the line runs as a guest on another line's track. */
+  private readonly guestOn = new Set<string>();
 
   constructor(data: RailNetworkData) {
     this.id = data.id;
     this.data = data;
     this.points = data.stations.map(([, , latitude, longitude]) => ({ latitude, longitude }));
     this.links = data.stations.map(() => []);
-    for (const [from, to, line] of data.edges) {
+    this.trainOf = data.lines.map((_, index) => index);
+    for (const group of data.through ?? []) {
+      const members = group.filter((line) => Number.isInteger(line) && line >= 0 && line < data.lines.length);
+      for (const line of members) this.trainOf[line] = Math.min(...members);
+    }
+    this.linkCount = data.lines.map(() => 0);
+    this.trainLinkCount = new Map();
+    for (const [from, to, line, guest] of data.edges) {
       if (!this.points[from] || !this.points[to]) continue;
       const distance = meters(this.points[from], this.points[to]);
       // Neighbouring stations are never 40 km apart; such a link is an
       // intercity "next station" that would teleport a city journey.
       if (distance > 25_000) continue;
       const minutes = distance / 1_000 * RIDE_MINUTES_PER_KM + DWELL_MINUTES;
-      this.links[from].push({ to, line, minutes });
-      this.links[to].push({ to: from, line, minutes });
+      const named = line >= 0 && line < data.lines.length;
+      const train = named ? this.trainOf[line] : -1;
+      this.links[from].push({ to, line: named ? line : -1, train, minutes });
+      this.links[to].push({ to: from, line: named ? line : -1, train, minutes });
+      if (!named) continue;
+      this.linkCount[line] += 1;
+      this.trainLinkCount.set(train, (this.trainLinkCount.get(train) ?? 0) + 1);
+      const pair = this.pairKey(from, to);
+      const known = this.linesBetween.get(pair) ?? [];
+      if (!known.includes(line)) known.push(line);
+      this.linesBetween.set(pair, known);
+      if (guest === 1) this.guestOn.add(`${pair}:${line}`);
     }
     this.interchanges = this.points.map(() => []);
     // A coarse grid keeps this from being quadratic on an 800-station city.
@@ -275,6 +330,64 @@ export class RailNetwork {
     return language === "ja" ? plainStationName(ja || en) : plainStationName(en || ja);
   }
 
+  private pairKey(from: number, to: number) {
+    return from < to ? from * 65_536 + to : to * 65_536 + from;
+  }
+
+  /**
+   * Of several lines that could name a ride, the one a traveller is most
+   * likely to see on the platform: the line whose own track it is rather
+   * than a guest on it, then the busiest train (its links, with the lines
+   * it runs through to), then the longer line, then the name. Never the
+   * order the lines happen to have in the file.
+   */
+  private preferred(lines: readonly number[], pairs: readonly number[]) {
+    const name = (line: number) => this.data.lines[line]?.[0] ?? "";
+    const asGuest = (line: number) => pairs.filter((pair) => this.guestOn.has(`${pair}:${line}`)).length;
+    return [...lines].sort((left, right) =>
+      asGuest(left) - asGuest(right)
+      || (this.trainLinkCount.get(this.trainOf[right]) ?? 0) - (this.trainLinkCount.get(this.trainOf[left]) ?? 0)
+      || this.linkCount[right] - this.linkCount[left]
+      || (name(left) < name(right) ? -1 : name(left) > name(right) ? 1 : 0)
+      || left - right)[0];
+  }
+
+  /**
+   * What to call a ride along these stations aboard this train. One line
+   * that covers every link, if there is one — the same answer whichever of
+   * several parallel services the search happened to take. Otherwise the
+   * ride runs through from one line onto the next (琵琶湖線・JR京都線), and the
+   * names are given in the order travelled. Links with no line of their own
+   * are part of whatever the train is.
+   */
+  private rideName(stations: readonly number[], train: number, language: "ja" | "en") {
+    const hops: Array<{ pair: number; lines: number[] }> = [];
+    for (let index = 1; index < stations.length; index += 1) {
+      const pair = this.pairKey(stations[index - 1], stations[index]);
+      const lines = this.linesBetween.get(pair) ?? [];
+      if (lines.length > 0) hops.push({ pair, lines });
+    }
+    if (hops.length === 0) return null;
+    const whole = hops[0].lines.filter((line) => hops.every((hop) => hop.lines.includes(line)));
+    if (whole.length > 0) return this.lineName(this.preferred(whole, hops.map((hop) => hop.pair)), language);
+    const names: string[] = [];
+    for (let index = 0; index < hops.length;) {
+      const aboard = hops[index].lines.filter((line) => this.trainOf[line] === train);
+      const candidates = aboard.length > 0 ? aboard : hops[index].lines;
+      const reach = (line: number) => {
+        let end = index;
+        while (end < hops.length && hops[end].lines.includes(line)) end += 1;
+        return end;
+      };
+      const farthest = Math.max(...candidates.map(reach));
+      const line = this.preferred(candidates.filter((candidate) => reach(candidate) === farthest), hops.slice(index, farthest).map((hop) => hop.pair));
+      const name = this.lineName(line, language);
+      if (name && names.at(-1) !== name) names.push(name);
+      index = farthest;
+    }
+    return names.length > 0 ? names.join(language === "ja" ? "・" : " / ") : null;
+  }
+
   private lineName(index: number, language: "ja" | "en") {
     if (index < 0) return null;
     const line = this.data.lines[index];
@@ -294,12 +407,17 @@ export class RailNetwork {
     // offers a line none of the kept ones has. Beside the Hong Kong botanical
     // gardens the four nearest are all Peak Tram stops; the MTR that crosses
     // the harbour is the fifth.
+    // A link is new only if no line that runs on it can already be boarded
+    // at a kept station. In Hiroshima each tram stop along the main street
+    // carried one more name for the same track, and the eight places were
+    // full before the JR station was reached.
     const kept = reachable.slice(0, ACCESS_CANDIDATES);
     const lines = new Set(kept.flatMap((entry) => this.links[entry.index].map((link) => link.line)));
     for (const entry of reachable.slice(ACCESS_CANDIDATES)) {
       if (kept.length >= ACCESS_CANDIDATES * 2) break;
-      const fresh = this.links[entry.index].filter((link) => link.line < 0 || !lines.has(link.line));
-      if (fresh.length === 0) continue;
+      const fresh = this.links[entry.index].some((link) => link.line < 0
+        || !(this.linesBetween.get(this.pairKey(entry.index, link.to)) ?? [link.line]).some((line) => lines.has(line)));
+      if (!fresh) continue;
       kept.push(entry);
       for (const link of this.links[entry.index]) lines.add(link.line);
     }
@@ -317,10 +435,17 @@ export class RailNetwork {
     if (origins.length === 0 || destinations.length === 0) return null;
     const exitWalk = new Map(destinations.map((entry) => [entry.index, entry.distance * WALK_DETOUR / WALK_METERS_PER_MINUTE]));
 
-    // State: (station, line being ridden). Line -2 means "on foot, not yet
-    // aboard" — boarding from it costs the first wait, not a transfer.
-    // Line -3 means "walked over from a neighbouring station": boarding from
-    // it is a change of train. Line -1 is a real train whose line is unknown.
+    // State: (station, train being ridden). A train is a line, or the lines
+    // that run through into each other. -2 means "on foot, not yet aboard" —
+    // boarding from it costs the first wait, not a transfer. -3 means "walked
+    // over from a neighbouring station": boarding from it is a change of
+    // train. -1 is a real train whose line is unknown.
+    //
+    // A link with no line in the data is not a change of train by itself: a
+    // traveller aboard train T who rides one stays aboard (state T +
+    // UNNAMED_STRETCH), and one who boards on such a link is aboard whatever
+    // named train the track leads into. Changing to a different named train
+    // after it is still a change.
     const ON_FOOT = -2;
     const WALKED_OVER = -3;
     const key = (station: number, line: number) => station * 4_096 + (line + 3);
@@ -351,10 +476,14 @@ export class RailNetwork {
         if (!goal || total < goal.cost) goal = { cost: total, station: current.station, line: current.line };
       }
       if (goal && current.cost >= goal.cost) break;
+      const aboard = current.line >= UNNAMED_STRETCH ? current.line - UNNAMED_STRETCH : current.line;
       for (const link of this.links[current.station]) {
-        const sameTrain = current.line === link.line && link.line >= -1;
+        const riding = current.line >= -1;
+        // The same train, a nameless stretch of it, or the named train a nameless start leads into.
+        const sameTrain = riding && (link.train === aboard || link.train === -1 || current.line === -1);
         const boarding = current.line === ON_FOOT ? FIRST_WAIT_MINUTES : sameTrain ? 0 : TRANSFER_MINUTES;
-        push(current.cost + boarding + link.minutes, link.to, link.line, current);
+        const state = link.train === -1 && riding && aboard >= 0 ? aboard + UNNAMED_STRETCH : link.train;
+        push(current.cost + boarding + link.minutes, link.to, state, current);
       }
       // Walk to a neighbouring station to change there. Arriving on foot.
       for (const interchange of this.interchanges[current.station]) {
@@ -375,6 +504,7 @@ export class RailNetwork {
       guard += 1;
     }
     const ridesRaw: Array<{ line: number; stations: number[] }> = [];
+    const trainOfState = (line: number) => (line >= UNNAMED_STRETCH ? line - UNNAMED_STRETCH : line);
     let transferMinutes = 0;
     for (let index = 1; index < hops.length; index += 1) {
       const from = hops[index - 1];
@@ -386,8 +516,12 @@ export class RailNetwork {
       }
       if (hop.line === ON_FOOT) continue;
       const last = ridesRaw.at(-1);
-      if (last && last.line === hop.line && last.stations.at(-1) === from.station) last.stations.push(hop.station);
-      else ridesRaw.push({ line: hop.line, stations: [from.station, hop.station] });
+      const train = trainOfState(hop.line);
+      // A ride that began on a nameless stretch takes the name of the train it turns out to be.
+      if (last && last.stations.at(-1) === from.station && (last.line === train || last.line === -1)) {
+        last.stations.push(hop.station);
+        last.line = train;
+      } else ridesRaw.push({ line: train, stations: [from.station, hop.station] });
     }
     if (ridesRaw.length === 0) return null;
 
@@ -397,7 +531,7 @@ export class RailNetwork {
         minutes += meters(this.points[ride.stations[index - 1]], this.points[ride.stations[index]]) / 1_000 * RIDE_MINUTES_PER_KM + DWELL_MINUTES;
       }
       return {
-        line: this.lineName(ride.line, language),
+        line: this.rideName(ride.stations, ride.line, language),
         from: this.stationName(ride.stations[0], language),
         to: this.stationName(ride.stations.at(-1)!, language),
         stops: ride.stations.length - 1,

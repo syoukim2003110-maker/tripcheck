@@ -27,37 +27,26 @@ const network = (id: string) => {
  * regenerated network may have fewer, never more without someone looking.
  */
 const linksWithoutLine: Record<string, { atMost: number; why: string }> = {
-  prague: { atMost: 216, why: "the tram stops carry no line or service at all in Wikidata; the metro is named" },
-  london: { atMost: 31, why: "National Rail links around Blackfriars, Lewisham and Kensal Green have no line recorded" },
+  london: { atMost: 16, why: "National Rail links around Blackfriars, Lewisham and Kensal Green have no line recorded" },
   berlin: { atMost: 13, why: "mostly the Wuhlheide park railway, which has no line item" },
-  bangkok: { atMost: 11, why: "State Railway halts with no line recorded" },
-  sanfrancisco: { atMost: 10, why: "ferry terminals and Market Street stops with no service recorded" },
-  beijing: { atMost: 8, why: "the line is recorded as 'unknown value'" },
-  barcelona: { atMost: 7, why: "FGC and funicular links with no line recorded" },
-  budapest: { atMost: 7, why: "tram links with no line recorded" },
+  bangkok: { atMost: 7, why: "State Railway halts with no line recorded" },
+  beijing: { atMost: 6, why: "the line is recorded as 'unknown value'" },
   losangeles: { atMost: 6, why: "links with no line recorded" },
-  shanghai: { atMost: 5, why: "the line is recorded as 'unknown value'" },
-  hanoi: { atMost: 4, why: "Vietnam Railways links with no line recorded" },
-  nagoya: { atMost: 4, why: "guided-bus stops with no line recorded" },
-  florence: { atMost: 3, why: "links with no line recorded" },
-  hakodate: { atMost: 3, why: "three tram links whose stops share no route in Wikidata" },
-  hongkong: { atMost: 3, why: "links with no line recorded" },
-  kualalumpur: { atMost: 3, why: "links with no line recorded" },
-  seoul: { atMost: 3, why: "links with no line recorded" },
-  vienna: { atMost: 3, why: "links with no line recorded" },
-  amsterdam: { atMost: 2, why: "links with no line recorded" },
+  sanfrancisco: { atMost: 4, why: "Market Street stops with no service recorded" },
+  barcelona: { atMost: 3, why: "FGC and funicular links with no line recorded" },
+  budapest: { atMost: 3, why: "railway links with no line recorded" },
+  prague: { atMost: 3, why: "railway links with no line recorded; the tram links are named after the tramway" },
+  shanghai: { atMost: 3, why: "the line is recorded as 'unknown value'" },
   lisbon: { atMost: 2, why: "the 25 de Abril bridge railway has no line recorded" },
   manila: { atMost: 2, why: "links with no line recorded" },
-  yokohama: { atMost: 2, why: "freight-line links (鶴見–新川崎, 桜木町–東高島) with no passenger line" },
-  milan: { atMost: 1, why: "one link with no line recorded" },
-  osaka: { atMost: 1, why: "one link with no line recorded" },
-  paris: { atMost: 1, why: "one link with no line recorded" },
+  seoul: { atMost: 2, why: "links with no line recorded" },
+  hanoi: { atMost: 1, why: "one Vietnam Railways link with no line recorded" },
+  hongkong: { atMost: 1, why: "one link with no line recorded" },
+  kualalumpur: { atMost: 1, why: "one link with no line recorded" },
+  macau: { atMost: 1, why: "one link with no line recorded" },
   rome: { atMost: 1, why: "one link with no line recorded" },
-  singapore: { atMost: 1, why: "one link with no line recorded" },
-  sydney: { atMost: 1, why: "one link with no line recorded" },
-  taipei: { atMost: 1, why: "one link with no line recorded" },
-  tokyo: { atMost: 1, why: "the freight-line link 鶴見–新川崎 has no passenger line" },
   venice: { atMost: 1, why: "one link with no line recorded" },
+  vienna: { atMost: 1, why: "one link with no line recorded" },
 };
 
 /*
@@ -150,7 +139,8 @@ test("Osaka, Seoul and Paris: the name on the sign, in the language asked for", 
   // "JR難波" is the real name of that station and must survive.
   assert.ok(named(osaka, /^JR難波駅$/).includes("JR難波駅 / JR Namba Station"));
   // A station with no Japanese label borrows it from its twin next door (was "Nakamozu").
-  assert.ok(!osaka.stations.some(([ja]) => ja === "Nakamozu") && osaka.stations.some(([ja, en]) => ja === "中百舌鳥駅" && en === "Nakamozu"));
+  // …and in Japan every 駅 is "… Station" in English (was plain "Nakamozu").
+  assert.ok(!osaka.stations.some(([ja]) => ja === "Nakamozu") && osaka.stations.some(([ja, en]) => ja === "中百舌鳥駅" && en === "Nakamozu Station"));
 
   const seoul = network("seoul");
   // Was: ソウル駅駅 (the metro's item) and 龍山駅（首都圏電鉄）.
@@ -216,16 +206,17 @@ test("well-known journeys read the way the signs do", () => {
   assert.equal(journey("osaka", umeda, namba), "梅田駅 | 梅田駅 →(御堂筋線, 4)→ 難波駅 | 17");
   assert.equal(journey("osaka", umeda, namba, "en"), "Umeda Station | Umeda Station →(Midōsuji Line, 4)→ Namba Station | 17");
 
-  // Before: 新宿駅 →(中央本線, 4)→ 東京駅 — the track's name; the platform says 中央線快速.
+  // Before: 新宿駅 →(中央本線, 4)→ 東京駅 — the track's name; the platform says 中央線（快速）.
   // Before (en): "JR East Shinjuku Station →(Chūō Main Line, 4)→ JR East Tokyo Station".
-  assert.equal(journey("tokyo", [35.6905, 139.7005], [35.6812, 139.7671]), "新宿駅 | 新宿駅 →(中央線快速, 4)→ 東京駅 | 23");
+  assert.equal(journey("tokyo", [35.6905, 139.7005], [35.6812, 139.7671]), "新宿駅 | 新宿駅 →(中央線（快速）, 4)→ 東京駅 | 23");
   assert.equal(journey("tokyo", [35.6905, 139.7005], [35.6812, 139.7671], "en"), "Shinjuku Station | Shinjuku Station →(Chūō Line (Rapid), 4)→ Tokyo Station | 23");
 
   // Before: 南北線市ケ谷駅 →(東京メトロ南北線, 5)→ 麻布十番駅 ⇄ … — a line name glued to the station.
   assert.equal(journey("tokyo", [35.6919, 139.7357], [35.6628, 139.7314]), "市ケ谷駅 | 市ケ谷駅 →(東京メトロ南北線, 5)→ 麻布十番駅 ⇄ 麻布十番駅 →(都営地下鉄大江戸線, 1)→ 六本木駅 | 27");
 
-  // Before: identical. The hiragana name is the official one.
-  assert.equal(journey("tokyo", [35.7101, 139.8107], [35.7138, 139.7773]), "とうきょうスカイツリー駅 | とうきょうスカイツリー駅 →(東武伊勢崎線, 1)→ 浅草駅 ⇄ 浅草駅 →(東京メトロ銀座線, 3)→ 上野駅 | 26");
+  // Before: …→(東武伊勢崎線, 1)→… — the track's name for this one stop, while the
+  // same train was 東武スカイツリーライン from 北千住. The hiragana name is the official one.
+  assert.equal(journey("tokyo", [35.7101, 139.8107], [35.7138, 139.7773]), "とうきょうスカイツリー駅 | とうきょうスカイツリー駅 →(東武スカイツリーライン, 1)→ 浅草駅 ⇄ 浅草駅 →(東京メトロ銀座線, 3)→ 上野駅 | 26");
 
   // Before (en): "Osaka Metro Shin-Osaka Station →(Midōsuji Line, 10)→ Tennōji Station".
   assert.equal(journey("osaka", [34.7335, 135.5003], [34.6466, 135.5136], "en"), "Shin-Osaka Station | Shin-Osaka Station →(Midōsuji Line, 10)→ Tennōji Station | 36");
@@ -234,7 +225,9 @@ test("well-known journeys read the way the signs do", () => {
   assert.equal(journey("kyoto", [34.9858, 135.7588], [35.0036, 135.7595], "en"), "Kyōto Station | Kyōto Station →(Karasuma Line, 2)→ Shijō Station | 13");
 
   // Before: ソウル駅 →(京釜線, 1)→ 龍山駅 ⇄ 龍山駅 →(?, 2)→ 銅雀駅 ⇄ … (46 min): a ride with no line to board.
-  assert.equal(journey("seoul", [37.5547, 126.9707], [37.4979, 127.0276]), "ソウル駅 | ソウル駅 →(首都圏電鉄4号線, 5)→ 銅雀駅 ⇄ 銅雀駅 →(ソウル市メトロ9号線急行, 2)→ 新論峴駅 ⇄ 新論峴駅 →(新盆唐線, 1)→ 江南駅 | 44");
+  // Then: →(首都圏電鉄4号線, 5)→ 銅雀駅 ⇄ →(ソウル市メトロ9号線急行, 2)→ 新論峴駅 ⇄ →(新盆唐線, 1)→ — the operators' names.
+  // The signs say 4号線 and 2号線, and changing at 舎堂 is how the trip is made.
+  assert.equal(journey("seoul", [37.5547, 126.9707], [37.4979, 127.0276]), "ソウル駅 | ソウル駅 →(4号線, 7)→ 舎堂駅 ⇄ 舎堂駅 →(2号線, 4)→ 江南駅 | 46");
 
   // Before: identical.
   assert.equal(journey("paris", [48.8606, 2.3376], [48.8738, 2.2950]), "パレ・ロワイヤル＝ミュゼ・デュ・ルーヴル駅 | パレ・ロワイヤル＝ミュゼ・デュ・ルーヴル駅 →(パリメトロ1号線, 5)→ ジョルジュ・サンク駅 | 25");
