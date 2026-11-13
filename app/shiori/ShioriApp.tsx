@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
 import { fetchAppleFoodCandidates } from "../../lib/apple-food";
+import { budgetLabel, fetchHotpepperShops, inJapan, lunchPrice, type HotpepperShop } from "../../lib/hotpepper-client";
 import { appleRelayClient, appleRelaySearch } from "../../lib/apple-relay-client";
 import { defaultFoodDiscoveryQuery, type FoodCandidate } from "../../lib/google-food";
 import type { HotelCandidate } from "../../lib/google-hotels";
@@ -196,6 +197,11 @@ const text = {
     foodLoading: "近くのお店を探しています…",
     foodNone: "近くのお店の情報を取得できませんでした。地図アプリで探せます。",
     foodNote: "近い順です。評価や営業時間は地図アプリで確認してください。",
+    shopNote: "ホットペッパーグルメに載っている店を近い順に出しています（載っていない店は出ません）。予算は店が載せている目安で、評判や空席は店のページで確認してください。",
+    shopBudget: (band: string) => `夜の予算 ${band}`,
+    shopLunch: (price: string) => `ランチ ${price}〜`,
+    shopAdd: "この店にする",
+    shopPhotoCredit: "【画像提供：ホットペッパー グルメ】",
     walkAbout: (minutes: number) => `徒歩約${minutes}分`,
     ideasTitle: "時間に余裕あり。近くの人気スポット",
     ideasAdd: "追加",
@@ -359,6 +365,11 @@ const text = {
     foodLoading: "Looking nearby…",
     foodNone: "Could not load places nearby. A maps app can.",
     foodNote: "Nearest first. Check ratings and hours in a maps app.",
+    shopNote: "Restaurants listed on HotPepper Gourmet, nearest first (unlisted places are not shown). Budgets are the restaurant's own guide; check reviews and seats on its page.",
+    shopBudget: (band: string) => `dinner budget ${band}`,
+    shopLunch: (price: string) => `lunch from ${price}`,
+    shopAdd: "Choose this one",
+    shopPhotoCredit: "Photos: HotPepper Gourmet",
     walkAbout: (minutes: number) => `~${minutes} min walk`,
     ideasTitle: "There is time left. Well-known places nearby",
     ideasAdd: "Add",
@@ -546,16 +557,28 @@ function LegCard({ leg, locale, heading }: { leg: ShioriLeg; locale: Locale; hea
   );
 }
 
-function MealRow({ meal, locale }: { meal: ShioriMeal; locale: Locale }) {
+function MealRow({ meal, locale, onAdd }: { meal: ShioriMeal; locale: Locale; onAdd: (shop: HotpepperShop, kind: "lunch" | "dinner") => void }) {
   const t = text[locale];
   const [state, setState] = useState<"closed" | "loading" | "ready" | "failed">("closed");
   const [candidates, setCandidates] = useState<FoodCandidate[]>([]);
+  // In Japan the list comes with a photo and a budget when the shop guide has the area.
+  const [shops, setShops] = useState<HotpepperShop[]>([]);
   const relay = useMemo(() => appleRelayClient(), []);
   const open = async () => {
     if (state !== "closed") { setState("closed"); return; }
     if (!relay) { setState("failed"); return; }
     setState("loading");
     try {
+      if (inJapan(meal.near)) {
+        const listed = await fetchHotpepperShops({ near: meal.near, withinMeters: 1000, meal: meal.kind });
+        if (listed.length >= 3) {
+          setShops(listed.slice(0, 6));
+          setCandidates([]);
+          setState("ready");
+          return;
+        }
+      }
+      setShops([]);
       const found = await fetchAppleFoodCandidates({
         latitude: meal.near.latitude,
         longitude: meal.near.longitude,
@@ -584,7 +607,29 @@ function MealRow({ meal, locale }: { meal: ShioriMeal; locale: Locale }) {
       </div>
       {state === "loading" ? <p className="shiori-quiet">{t.foodLoading}</p> : null}
       {state === "failed" ? <p className="shiori-quiet">{t.foodNone} <a href={mapsSearch} rel="noreferrer" target="_blank">Google Maps ↗</a></p> : null}
-      {state === "ready" ? (
+      {state === "ready" && shops.length > 0 ? (
+        <>
+          <ul className="shiori-food is-shops">
+            {shops.map((shop) => (
+              <li className="has-action" key={shop.id}>
+                <a href={shop.url ?? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${shop.name} ${shop.address ?? ""}`)}`} rel="noreferrer" target="_blank">
+                  {/* eslint-disable-next-line @next/next/no-img-element -- a static export has no image optimiser */}
+                  {shop.photo ? <img alt="" decoding="async" height={72} loading="lazy" src={shop.photo} width={72} /> : null}
+                  <span>
+                    <b>{shop.name}</b>
+                    <small>{[shop.genre, meal.kind === "lunch" && lunchPrice(shop.budgetAverage) ? t.shopLunch(lunchPrice(shop.budgetAverage)!) : budgetLabel(shop.budget) ? t.shopBudget(budgetLabel(shop.budget)!) : null].filter(Boolean).join(" ・ ")}</small>
+                    <small>{t.walkAbout(Math.max(1, Math.round(shop.distanceMeters * 1.3 / 75)))} <i className="shiori-est">{t.estimate}</i></small>
+                  </span>
+                </a>
+                <button onClick={() => onAdd(shop, meal.kind)} type="button">{t.shopAdd}</button>
+              </li>
+            ))}
+          </ul>
+          <p className="shiori-quiet">{t.shopNote}</p>
+          <p className="shiori-quiet shiori-credit">{t.shopPhotoCredit} Powered by <a href="http://webservice.recruit.co.jp/" rel="noreferrer" target="_blank">ホットペッパーグルメ Webサービス</a></p>
+        </>
+      ) : null}
+      {state === "ready" && shops.length === 0 ? (
         <>
           <ul className="shiori-food">
             {candidates.map((candidate) => (
@@ -1476,7 +1521,20 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
                               </div>
                             ) : null}
                           </article>
-                          {day.meals.filter((meal) => meal.afterStop === index).map((meal) => <MealRow key={`${meal.kind}-${day.index}-${trip.places.length}`} locale={locale} meal={meal} />)}
+                          {day.meals.filter((meal) => meal.afterStop === index).map((meal) => <MealRow
+                            key={`${meal.kind}-${day.index}-${trip.places.length}`}
+                            locale={locale}
+                            meal={meal}
+                            onAdd={(shop, kind) => {
+                              if (trip.places.length >= MAX_PLACES) return;
+                              const id = `hotpepper-${shop.id}`;
+                              update((current) => current.places.some((place) => place.id === id) ? current : {
+                                ...current,
+                                places: [...current.places, { id, name: shop.name, lat: shop.latitude, lon: shop.longitude, stayMinutes: kind === "lunch" ? 60 : 90, kind: "restaurant", meal: kind, day: day.index + 1 }],
+                              });
+                              setAdded({ id, name: shop.name, kind });
+                            }}
+                          />)}
                           {day.cafe && day.cafe.afterStop === index ? (
                             <CafeRow
                               cafe={day.cafe}

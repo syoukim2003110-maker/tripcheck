@@ -19,6 +19,8 @@ const BROWSER_TRANSPORT = [
   // Static hosting: the page itself performs the keyless place lookup
   // (Wikipedia, Wikidata, OpenStreetMap) and reaches Apple through the relay.
   "lib/apple-relay-client.ts",
+  // Restaurant photos and budgets, through the same relay (the key stays on the server).
+  "lib/hotpepper-client.ts",
   "lib/nominatim-place-resolver.ts",
   "lib/open-place-resolver.ts",
   "lib/food-recommendations-client.ts",

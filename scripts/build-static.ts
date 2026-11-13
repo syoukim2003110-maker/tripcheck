@@ -132,16 +132,18 @@ writeFileSync(join(output, "_next", "static", ".htaccess"), `<IfModule mod_heade
 </IfModule>
 `);
 
-const credentials = appleMapsCredentialsFromEnvironment(localEnvironment());
+const environment = localEnvironment();
+const credentials = appleMapsCredentialsFromEnvironment(environment);
+// Restaurant photos and budgets (HotPepper Gourmet); optional, and server-side only like the Apple key.
+const hotpepperKey = /^[0-9A-Za-z]{8,64}$/.test(environment.HOTPEPPER_API_KEY ?? "") ? environment.HOTPEPPER_API_KEY! : null;
 const configPath = join(output, "api", "apple-config.php");
 if (credentials) {
   const quote = (value: string) => `'${value.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
-  writeFileSync(configPath, `<?php\n// Generated from .env.local. Keep private; blocked from the web by .htaccess.\nreturn [\n  'team_id' => ${quote(credentials.teamId)},\n  'key_id' => ${quote(credentials.keyId)},\n  'private_key' => ${quote(credentials.privateKey)},\n];\n`);
+  writeFileSync(configPath, `<?php\n// Generated from .env.local. Keep private; blocked from the web by .htaccess.\nreturn [\n  'team_id' => ${quote(credentials.teamId)},\n  'key_id' => ${quote(credentials.keyId)},\n  'private_key' => ${quote(credentials.privateKey)},\n${hotpepperKey ? `  'hotpepper_key' => ${quote(hotpepperKey)},\n` : ""}];\n`);
   chmodSync(configPath, 0o600);
 }
 // The deploy token lets api/deploy.php unpack an uploaded build. It is made
 // once, kept in .env.local, and written next to the script on the server.
-const environment = localEnvironment();
 let deployToken = environment.TRIPCHECK_DEPLOY_TOKEN ?? "";
 if (!/^[0-9a-f]{48}$/.test(deployToken)) {
   deployToken = randomBytes(24).toString("hex");

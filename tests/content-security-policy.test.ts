@@ -48,7 +48,8 @@ test("only named map providers are allowed, on the directives they need", () => 
   // to img-src without a reason written here.
   // One wildcard on Wikimedia's own domain: the thumbnail host has moved
   // (upload → thumb) and a host-by-host list broke every photo when it did.
-  const photoHosts = ["https://*.wikimedia.org"];
+  // HotPepper Gourmet serves the restaurant photos shown (with its credit) in the meal list.
+  const photoHosts = ["https://*.wikimedia.org", "https://imgfp.hotp.jp"];
   assert.deepEqual(remote("img-src").filter((value) => !/google|gstatic|ggpht/.test(value)), photoHosts);
   for (const name of ["script-src", "img-src", "frame-src"]) {
     for (const value of remote(name).filter((entry) => !photoHosts.includes(entry))) {

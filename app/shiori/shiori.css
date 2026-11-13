@@ -414,6 +414,14 @@
 .shiori-food li.has-action { align-items: center; display: flex; gap: 10px; justify-content: space-between; }
 .shiori-food li.has-action a { flex: 1 1 auto; min-width: 0; }
 .shiori-food li.has-action button { flex: 0 0 auto; font-size: 13px; padding: 0 10px; }
+/* Listed restaurants: a small photo, what kind of place, what it costs. */
+.shiori-food.is-shops li.has-action { align-items: stretch; flex-direction: column; gap: 0; padding-bottom: 10px; }
+.shiori-food.is-shops li.has-action button { align-self: flex-end; min-height: 40px; }
+.shiori-food.is-shops a { align-items: center; display: flex; gap: 10px; }
+.shiori-food.is-shops img { background: var(--tile, #e5ddc8); border-radius: var(--r-sm); flex: 0 0 auto; height: 72px; object-fit: cover; width: 72px; }
+.shiori-food.is-shops a > span { display: grid; gap: 2px; min-width: 0; }
+.shiori-credit { font-size: 12px; }
+.shiori-credit a { color: inherit; }
 
 .shiori-ideas { border-top: 1px solid var(--rule); margin-top: 20px; padding-top: 14px; }
 .shiori-ideas h3 { align-items: flex-start; display: flex; font: 600 18px/1.4 var(--mincho); gap: 8px; letter-spacing: 0.02em; text-wrap: wrap; }

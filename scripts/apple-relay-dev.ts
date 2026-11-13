@@ -50,6 +50,43 @@ createServer(async (request, response) => {
   if (!client) return send(503, { code: "not_configured" });
 
   const coordinate = /^(-?\d{1,2}(?:\.\d{1,6})?),(-?\d{1,3}(?:\.\d{1,6})?)$/;
+  if (url.searchParams.get("op") === "food") {
+    // The same contract as apple.php's op=food (HotPepper Gourmet; nothing is stored).
+    const key = localEnvironment().HOTPEPPER_API_KEY ?? "";
+    if (!/^[0-9A-Za-z]{8,64}$/.test(key)) return send(503, { code: "not_configured" });
+    const at = (url.searchParams.get("near") ?? "").match(coordinate);
+    const name = (url.searchParams.get("name") ?? "").trim();
+    const within = Number(url.searchParams.get("within") ?? "1000");
+    if (!at || name.length > 60 || !Number.isInteger(within) || within < 1 || within > 3000) return send(400, { code: "invalid_request" });
+    const range = within <= 300 ? 1 : within <= 500 ? 2 : within <= 1000 ? 3 : within <= 2000 ? 4 : 5;
+    const query = new URLSearchParams({ key, lat: at[1], lng: at[2], range: String(range), order: "4", count: "30", format: "json" });
+    if (name) query.set("keyword", name);
+    if (url.searchParams.get("meal") === "lunch") query.set("lunch", "1");
+    try {
+      const answer = await fetch(`https://webservice.recruit.co.jp/hotpepper/gourmet/v1/?${query}`, { signal: AbortSignal.timeout(8000) });
+      const body = await answer.json() as { results?: { shop?: Record<string, unknown>[] } };
+      const shops = body.results?.shop;
+      if (!answer.ok || !Array.isArray(shops)) return send(502, { code: "unavailable" });
+      const line = (value: unknown) => typeof value === "string" && value.trim() ? value.trim().slice(0, 200) : null;
+      const https = (value: unknown) => typeof value === "string" && /^https:\/\/[a-z0-9.-]+\.(hotp\.jp|hotpepper\.jp)\//.test(value) ? value : null;
+      const field = (value: unknown, ...path: string[]) => path.reduce<unknown>((at, step) => at && typeof at === "object" ? (at as Record<string, unknown>)[step] : undefined, value);
+      return send(200, {
+        results: shops.slice(0, 30).flatMap((shop) => {
+          const shopName = line(shop.name);
+          const latitude = Number(shop.lat);
+          const longitude = Number(shop.lng);
+          if (!shopName || !Number.isFinite(latitude) || !Number.isFinite(longitude)) return [];
+          return [{
+            id: line(shop.id), name: shopName, latitude, longitude, address: line(shop.address),
+            genre: line(field(shop, "genre", "name")), budget: line(field(shop, "budget", "name")), budgetAverage: line(field(shop, "budget", "average")),
+            catch: line(shop.catch), open: line(shop.open), photo: https(field(shop, "photo", "pc", "l")), url: https(field(shop, "urls", "pc")),
+          }];
+        }),
+      });
+    } catch {
+      return send(502, { code: "unavailable" });
+    }
+  }
   if (url.searchParams.get("op") === "eta") {
     const from = (url.searchParams.get("from") ?? "").match(coordinate);
     const to = (url.searchParams.get("to") ?? "").match(coordinate);

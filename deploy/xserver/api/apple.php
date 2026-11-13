@@ -21,6 +21,13 @@
  *   GET apple.php?op=route&from=<lat>,<lon>&to=<lat>,<lon>&mode=walk|drive
  *   200 {"minutes":<int>|null,"distanceMeters":<int>|null,"path":[[lat,lon],…]}
  *       (the way along the streets; at most 160 points)
+ *
+ *   GET apple.php?op=food&near=<lat>,<lon>[&within=<metres>][&name=<words>][&meal=lunch]
+ *   200 {"results":[{id,name,latitude,longitude,address,genre,budget,
+ *                    budgetAverage,catch,open,photo,url}]}
+ *       (restaurants listed on HotPepper Gourmet, Japan only; needs
+ *        'hotpepper_key' in apple-config.php, else 503 not_configured.
+ *        Nothing is stored: the terms forbid keeping a copy.)
  *   4xx/5xx {"code": "..."}
  *
  * Keys live in apple-config.php next to this file (blocked from the web by
@@ -129,7 +136,7 @@ function apple_get(string $url, string $bearer): array
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_TIMEOUT => 8,
         CURLOPT_CONNECTTIMEOUT => 4,
-        CURLOPT_HTTPHEADER => ['Accept: application/json', 'Authorization: Bearer ' . $bearer],
+        CURLOPT_HTTPHEADER => $bearer === '' ? ['Accept: application/json'] : ['Accept: application/json', 'Authorization: Bearer ' . $bearer],
         CURLOPT_USERAGENT => 'TripCheck/0.1',
     ]);
     $body = curl_exec($curl);
@@ -306,6 +313,55 @@ if (($_GET['op'] ?? '') === 'route') {
     }
     $meters = is_numeric($route['distanceMeters'] ?? null) ? (int) round((float) $route['distanceMeters']) : null;
     respond(200, ['minutes' => max(1, (int) round($seconds / 60)), 'distanceMeters' => $meters && $meters > 0 ? $meters : null, 'path' => $path]);
+}
+
+if (($_GET['op'] ?? '') === 'food') {
+    $key = (string) ($config['hotpepper_key'] ?? '');
+    if (!preg_match('/^[0-9A-Za-z]{8,64}$/', $key)) respond(503, ['code' => 'not_configured']);
+    $name = trim((string) ($_GET['name'] ?? ''));
+    $within = isset($_GET['within']) ? (int) $_GET['within'] : 1000;
+    if (
+        !preg_match($coordinatePattern, (string) ($_GET['near'] ?? ''), $at)
+        || abs((float) $at[1]) > 90 || abs((float) $at[2]) > 180
+        || mb_strlen($name) > 60 || $within < 1 || $within > 3000
+    ) {
+        respond(400, ['code' => 'invalid_request']);
+    }
+    admit();
+    // HotPepper takes one of five radii; the smallest that covers the ask.
+    $range = $within <= 300 ? 1 : ($within <= 500 ? 2 : ($within <= 1000 ? 3 : ($within <= 2000 ? 4 : 5)));
+    $params = ['key' => $key, 'lat' => $at[1], 'lng' => $at[2], 'range' => $range, 'order' => 4, 'count' => 30, 'format' => 'json'];
+    if ($name !== '') $params['keyword'] = $name;
+    if (($_GET['meal'] ?? '') === 'lunch') $params['lunch'] = 1;
+    try {
+        [$status, $body] = apple_get('https://webservice.recruit.co.jp/hotpepper/gourmet/v1/?' . http_build_query($params, '', '&', PHP_QUERY_RFC3986), '');
+    } catch (Throwable $error) {
+        respond(502, ['code' => 'unavailable']);
+    }
+    $shops = $body['results']['shop'] ?? null;
+    if ($status !== 200 || !is_array($shops)) respond(502, ['code' => 'unavailable']);
+    $line = fn ($value): ?string => is_string($value) && trim($value) !== '' ? mb_substr(trim($value), 0, 200) : null;
+    $https = fn ($value): ?string => is_string($value) && preg_match('#^https://[a-z0-9.-]+\.(hotp\.jp|hotpepper\.jp)/#', $value) === 1 ? $value : null;
+    $results = [];
+    foreach (array_slice($shops, 0, 30) as $shop) {
+        $name = $line($shop['name'] ?? null);
+        if ($name === null || !is_numeric($shop['lat'] ?? null) || !is_numeric($shop['lng'] ?? null)) continue;
+        $results[] = [
+            'id' => $line($shop['id'] ?? null),
+            'name' => $name,
+            'latitude' => (float) $shop['lat'],
+            'longitude' => (float) $shop['lng'],
+            'address' => $line($shop['address'] ?? null),
+            'genre' => $line($shop['genre']['name'] ?? null),
+            'budget' => $line($shop['budget']['name'] ?? null),
+            'budgetAverage' => $line($shop['budget']['average'] ?? null),
+            'catch' => $line($shop['catch'] ?? null),
+            'open' => $line($shop['open'] ?? null),
+            'photo' => $https($shop['photo']['pc']['l'] ?? null),
+            'url' => $https($shop['urls']['pc'] ?? null),
+        ];
+    }
+    respond(200, ['results' => $results]);
 }
 
 $query = trim((string) ($_GET['q'] ?? ''));

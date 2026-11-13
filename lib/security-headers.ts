@@ -42,6 +42,8 @@ export const OPEN_PLACE_DATA_HOSTS = [
  */
 const SIGHT_PHOTO_HOSTS = [
   "https://*.wikimedia.org",
+  // Restaurant photos, shown with the provider's credit (HotPepper Gourmet).
+  "https://imgfp.hotp.jp",
 ] as const;
 
 /** Tiles, markers, Street View and the photo redirect's destination. */
