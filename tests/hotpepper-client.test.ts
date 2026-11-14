@@ -123,3 +123,37 @@ test("a break's cafés gain the guide's photos without changing who comes first"
   // A different café next door is not mistaken for the same one.
   assert.equal(withListedCafes([pick("喫茶 みどり", 35.0030, 6)], brk, [listed("d", "ドトール", 35.00301, "https://imgfp.hotp.jp/d.jpg")]).length, 2);
 });
+
+test("two cafés in one block are not one café because their names begin alike", async () => {
+  const { withListedCafes } = await import("../lib/shiori/cafes.ts");
+  const from = { latitude: 35.0000, longitude: 135.0000 };
+  const brk = { afterStop: 0, time: "15:00", reason: "after" as const, from, fromName: "寺", to: null, toName: null, search: from };
+  const pick = (name: string) => ({ id: `apple-${name}`, name, address: "", latitude: 35.001, longitude: 135, kind: "cafe" as const, detourMinutes: 2, mapsUrl: "https://example.test" });
+  // 0.00045° of latitude is 50 m: inside the distance at which names are compared.
+  const listed = (name: string) => ({ id: "x", name, latitude: 35.00145, longitude: 135, address: null, budget: "1001～1500円", photo: "https://imgfp.hotp.jp/x.jpg", url: null });
+  const apart: Array<[string, string]> = [
+    ["Cafe Aoi", "Cafe Midori"],
+    ["カフェ・ド・クリエ 寺前店", "カフェ ド 巴里"],
+    ["Coffee House Ren", "Coffee Stand Kai"],
+    ["Cafe", "Cafe Midori"],
+    // Two branches of one chain, fifty metres apart.
+    ["タリーズコーヒー 寺前北口店", "タリーズコーヒー 寺前南口店"],
+  ];
+  for (const [onMap, inGuide] of apart) {
+    const merged = withListedCafes([pick(onMap)], brk, [listed(inGuide)]);
+    assert.deepEqual(merged.map((entry) => entry.name), [onMap, inGuide], `${onMap} / ${inGuide}`);
+    // The other shop's photo and budget stay with the other shop.
+    assert.equal(merged[0].photo, undefined, onMap);
+    assert.equal(merged[0].budget, undefined, onMap);
+  }
+  const same: Array<[string, string]> = [
+    ["スターバックス コーヒー 寺前店", "スターバックスコーヒー 寺前店"],
+    ["スターバックス", "スターバックス コーヒー 寺前店"],
+    ["コメダ珈琲店 寺前店", "コメダ珈琲 寺前"],
+  ];
+  for (const [onMap, inGuide] of same) {
+    const merged = withListedCafes([pick(onMap)], brk, [listed(inGuide)]);
+    assert.equal(merged.length, 1, `${onMap} / ${inGuide}`);
+    assert.equal(merged[0].photo, "https://imgfp.hotp.jp/x.jpg");
+  }
+});

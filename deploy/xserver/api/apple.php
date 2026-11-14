@@ -38,6 +38,13 @@
  *
  * Keys live in apple-config.php next to this file (blocked from the web by
  * .htaccess). Requires PHP 7.4+ with the openssl, curl and mbstring extensions.
+ *
+ * The daily ceiling and the per-client limit are counted in .state/ next to
+ * this file. If that folder cannot be created or written the relay answers
+ * 503 to everything rather than run without limits. After each upload, open
+ * apple.php?op=route&from=35.6812,139.7671&to=35.6586,139.7454&mode=walk
+ * once and check that it answers 200, that .state/quota.json now exists,
+ * and that opening .state/quota.json in a browser is refused.
  */
 
 declare(strict_types=1);
@@ -74,15 +81,25 @@ function state_dir(): string
 function with_state(string $name, callable $work)
 {
     $handle = @fopen(state_dir() . '/' . $name . '.json', 'c+');
-    if ($handle === false) return $work([], function (array $next): void {});
-    flock($handle, LOCK_EX);
+    // Without the state file there is no daily ceiling and no per-client
+    // limit, so the relay refuses rather than run unlimited on the keys.
+    if ($handle === false) respond(503, ['code' => 'unavailable']);
+    if (!flock($handle, LOCK_EX)) {
+        fclose($handle);
+        respond(503, ['code' => 'unavailable']);
+    }
     $raw = stream_get_contents($handle);
     $state = is_string($raw) && $raw !== '' ? (json_decode($raw, true) ?: []) : [];
     $save = function (array $next) use ($handle): void {
         ftruncate($handle, 0);
         rewind($handle);
-        fwrite($handle, json_encode($next));
-        fflush($handle);
+        // A write that fails (disk full) leaves an empty file, which would
+        // read back as a fresh day with no calls counted: refuse instead.
+        if (fwrite($handle, (string) json_encode($next)) === false || !fflush($handle)) {
+            flock($handle, LOCK_UN);
+            fclose($handle);
+            respond(503, ['code' => 'unavailable']);
+        }
     };
     try {
         return $work($state, $save);
@@ -284,8 +301,11 @@ if (($_GET['op'] ?? '') === 'eta') {
         respond(502, ['code' => 'unavailable']);
     }
     if ($status === 429) respond(429, ['code' => 'budget_exhausted']);
-    // Apple answers an error for a pair it cannot route in this mode; that is
-    // "no answer", not an outage.
+    // No reply at all (status 0: timeout, no connection) or Apple refusing
+    // the relay itself is an outage: the page must be free to ask again.
+    if ($status === 0 || $status === 401 || $status === 403) respond(502, ['code' => 'unavailable']);
+    // Any other error is what Apple answers for a pair it cannot route in
+    // this mode (transit where it has no timetable); that is "no answer".
     $eta = is_array($body) && is_array($body['etas'] ?? null) ? ($body['etas'][0] ?? null) : null;
     $seconds = is_array($eta) && is_numeric($eta['expectedTravelTimeSeconds'] ?? null) ? (float) $eta['expectedTravelTimeSeconds'] : 0;
     if ($status !== 200 || $seconds <= 0) respond(200, ['minutes' => null, 'distanceMeters' => null]);
@@ -318,8 +338,10 @@ if (($_GET['op'] ?? '') === 'route') {
         respond(502, ['code' => 'unavailable']);
     }
     if ($status === 429) respond(429, ['code' => 'budget_exhausted']);
-    // Apple being down is not "no route": the page must be free to ask again.
-    if ($status >= 500) respond(502, ['code' => 'unavailable']);
+    // Apple being down, not replying at all (status 0: timeout, no
+    // connection) or refusing the relay itself is not "no route": the page
+    // must be free to ask again.
+    if ($status === 0 || $status === 401 || $status === 403 || $status >= 500) respond(502, ['code' => 'unavailable']);
     $empty = ['minutes' => null, 'distanceMeters' => null, 'path' => []];
     $route = is_array($body) && is_array($body['routes'] ?? null) ? ($body['routes'][0] ?? null) : null;
     $seconds = is_array($route) && is_numeric($route['durationSeconds'] ?? null) ? (float) $route['durationSeconds'] : 0;
