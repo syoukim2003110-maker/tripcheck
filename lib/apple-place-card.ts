@@ -33,10 +33,13 @@ export function createMapTokenSource(fetchToken: () => Promise<MapToken>, nowSec
 }
 
 /** What the relay's `op=maptoken` answered, or null when it is not a usable token. */
-export function readMapToken(payload: unknown): MapToken | null {
+export function readMapToken(payload: unknown, nowSeconds: () => number = () => Date.now() / 1000): MapToken | null {
   if (!payload || typeof payload !== "object") return null;
-  const { token, expiresAt } = payload as Record<string, unknown>;
+  const { token, expiresAt, expiresIn } = payload as Record<string, unknown>;
   if (typeof token !== "string" || !/^[\w-]+\.[\w-]+\.[\w-]+$/.test(token)) return null;
+  // The lifetime is counted on this device's own clock: a phone twenty minutes
+  // slow would otherwise keep handing Apple a token that has already run out.
+  if (typeof expiresIn === "number" && Number.isFinite(expiresIn) && expiresIn > 0) return { token, expiresAt: nowSeconds() + expiresIn };
   if (typeof expiresAt !== "number" || !Number.isFinite(expiresAt)) return null;
   return { token, expiresAt };
 }
@@ -51,19 +54,37 @@ export function applePlaceIdOfStop(stopId: string): string | null {
   return /^[A-Za-z0-9]{8,}$/.test(id) ? id : null;
 }
 
+/** Old-form characters a sign may use where the booklet has the everyday one (靖國神社 / 靖国神社). */
+const OLD_FORMS: Record<string, string> = { "國": "国", "澤": "沢", "濱": "浜", "邊": "辺", "邉": "辺", "齋": "斎", "齊": "斉", "髙": "高", "﨑": "崎", "藝": "芸", "壽": "寿", "應": "応", "櫻": "桜", "龍": "竜", "寶": "宝", "廣": "広", "萬": "万", "會": "会", "學": "学", "驛": "駅", "圓": "円", "德": "徳", "禪": "禅", "眞": "真", "惠": "恵", "榮": "栄", "條": "条", "嶋": "島", "嶌": "島", "ヶ": "ケ", "ヵ": "カ" };
+
 function normalisedName(name: string) {
-  return name.normalize("NFKC").toLowerCase().replace(/[\s\p{P}\p{S}]+/gu, "");
+  return [...name.normalize("NFKC").toLowerCase().replace(/[\s\p{P}\p{S}]+/gu, "")].map((letter) => OLD_FORMS[letter] ?? letter).join("");
 }
 
-/** Two names for the same place: one contains the other, or they start with the same four characters. */
-export function placeNamesMatch(left: string, right: string) {
+/** What may be left over when one name contains the other and they are still the same place. */
+const HARMLESS_REST = /^(本店|本館|本堂|本殿|本宮|総本店|総本山|town|タウン)$/;
+
+/**
+ * How surely two names are one place: 2 when they are the same name, 1 when
+ * one is the other plus a word that does not make it another place (本店,
+ * 本堂…), 0 otherwise. "東京タワー水族館" contains "東京タワー" and is not the
+ * tower; "清水寺前" is a bus stop: containing a name proves nothing.
+ */
+export function placeNameCertainty(left: string, right: string): 0 | 1 | 2 {
   const a = normalisedName(left);
   const b = normalisedName(right);
   // One character ("the", "寺") is contained in almost anything.
-  if (a.length < 2 || b.length < 2) return false;
-  if (a.includes(b) || b.includes(a)) return true;
-  const head = (value: string) => [...value].slice(0, 4).join("");
-  return [...a].length >= 4 && [...b].length >= 4 && head(a) === head(b);
+  if (a.length < 2 || b.length < 2) return 0;
+  if (a === b) return 2;
+  const [long, short] = a.length >= b.length ? [a, b] : [b, a];
+  if (long.startsWith(short) && HARMLESS_REST.test(long.slice(short.length))) return 1;
+  if (long.endsWith(short) && HARMLESS_REST.test(long.slice(0, long.length - short.length))) return 1;
+  return 0;
+}
+
+/** Two names for the same place. */
+export function placeNamesMatch(left: string, right: string) {
+  return placeNameCertainty(left, right) > 0;
 }
 
 export function metersBetween(a: { lat: number; lon: number }, b: { latitude: number; longitude: number }) {
@@ -72,22 +93,33 @@ export function metersBetween(a: { lat: number; lon: number }, b: { latitude: nu
   return Math.hypot(lat, lon);
 }
 
+/** Map categories that are a way to reach a place, never the place a traveller put on the list. */
+const NOT_THE_SIGHT = new Set(["PublicTransport", "Parking", "EVCharger", "GasStation", "ATM", "CarRental", "Restroom", "Airport", "AirportGate", "AirportTerminal"]);
+
+/** How far the map's pin may sit from the booklet's: further for the very same name (a shrine's grounds are large). */
 export const PLACE_MATCH_METERS = 150;
+export const EXACT_NAME_MATCH_METERS = 400;
 
 /**
- * The search result that is this stop, or null. It must carry an Apple id,
- * lie within 150 m of the stop and share its name; the nearest such result
- * wins. A card for the wrong place is worse than no card, so anything less
- * certain is refused.
+ * The search result that is this stop, or null. It must carry an Apple id
+ * and bear the stop's name; the same name beats a longer one, and only then
+ * does the nearer one win. A card for the wrong place is worse than no card,
+ * so anything less certain is refused.
  */
 export function matchApplePlace(stop: { name: string; lat: number; lon: number }, results: readonly AppleRelayPlace[]): AppleRelayPlace | null {
   let best: AppleRelayPlace | null = null;
+  let bestCertainty = 0;
   let bestMeters = Infinity;
   for (const place of results) {
     if (!place.id || !applePlaceIdOfStop(`apple-${place.id}`)) continue;
+    // A bus stop or car park is named after the sight it serves, letter for letter.
+    if (place.poiCategory && NOT_THE_SIGHT.has(place.poiCategory)) continue;
+    const certainty = placeNameCertainty(stop.name, place.name);
     const meters = metersBetween(stop, place);
-    if (meters > PLACE_MATCH_METERS || meters >= bestMeters || !placeNamesMatch(stop.name, place.name)) continue;
+    if (certainty === 0 || meters > (certainty === 2 ? EXACT_NAME_MATCH_METERS : PLACE_MATCH_METERS)) continue;
+    if (certainty < bestCertainty || (certainty === bestCertainty && meters >= bestMeters)) continue;
     best = place;
+    bestCertainty = certainty;
     bestMeters = meters;
   }
   return best;
@@ -116,9 +148,8 @@ export async function applePlaceIdFor(
     query: stop.name.slice(0, 120),
     language: language === "ja" ? "ja-JP" : "en-US",
     near: { latitude: stop.lat, longitude: stop.lon },
-    // Wider than the 150 m rule: a large site's pin and Apple's can sit apart,
-    // and the rule itself, not the search box, decides what is close enough.
-    withinMeters: 400,
+    // As wide as the rule's widest case; the rule itself, not the search box, decides what is close enough.
+    withinMeters: 450,
     poiOnly: true,
   });
   const id = matchApplePlace(stop, results)?.id ?? null;
@@ -161,7 +192,7 @@ function loadMapKit(language: "ja" | "en"): Promise<MapKit> {
     script.async = true;
     script.onload = () => {
       const mapkit = (window as unknown as { mapkit?: MapKit }).mapkit;
-      if (!mapkit?.PlaceDetail || !mapkit.PlaceLookup) { reject(new Error("mapkit_without_place_detail")); return; }
+      if (!mapkit?.PlaceDetail || !mapkit.PlaceLookup) { script.remove(); reject(new Error("mapkit_without_place_detail")); return; }
       mapkit.init({
         // Apple calls this again whenever it wants a fresh token.
         authorizationCallback: (done) => { mapToken().then(done, () => done("")); },

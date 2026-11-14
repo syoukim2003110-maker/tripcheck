@@ -26,7 +26,7 @@
  *   200 {"results":[{id,name,latitude,longitude,address,genre,budget,
  *                    budgetAverage,catch,open,photo,url}]}
  *   GET apple.php?op=maptoken
- *   200 {"token":"<jwt>","expiresAt":<unix seconds>}
+ *   200 {"token":"<jwt>","expiresAt":<unix seconds>,"expiresIn":<seconds>}
  *       (a 20-minute MapKit JS token for the place card showing opening
  *        hours; it names this site's own origin, so a copy is useless on
  *        any other site. The private key itself never leaves this file.)
@@ -227,11 +227,16 @@ if (($_GET['op'] ?? '') === 'maptoken') {
     // The token is tied to the site that asked for it (Apple compares the
     // claim with the browser's Origin header), so one copied out of a page
     // opens no place card anywhere else.
-    $host = strtolower((string) ($_SERVER['HTTP_HOST'] ?? ''));
-    if (!preg_match('/^[a-z0-9.-]{1,253}(:\d{1,5})?$/', $host)) respond(400, ['code' => 'invalid_request']);
-    $secure = (($_SERVER['HTTPS'] ?? '') !== '' && $_SERVER['HTTPS'] !== 'off')
-        || ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https'
-        || (string) ($_SERVER['SERVER_PORT'] ?? '') === '443';
+    // The origin written into the token is the site's own, fixed at build
+    // time in apple-config.php — never the Host header, which the caller
+    // chooses: a server that also answers to another name must not sign
+    // tokens for that name. A request for any other host is refused, and so
+    // is one that does not come from this site's own page.
+    $siteOrigin = (string) ($config['site_origin'] ?? '');
+    if (!preg_match('#^https://[a-z0-9.-]{1,253}$#', $siteOrigin)) respond(503, ['code' => 'not_configured']);
+    $host = strtolower(explode(':', (string) ($_SERVER['HTTP_HOST'] ?? ''))[0]);
+    if (!hash_equals(substr($siteOrigin, 8), $host)) respond(403, ['code' => 'forbidden']);
+    if (($_SERVER['HTTP_SEC_FETCH_SITE'] ?? '') !== 'same-origin') respond(403, ['code' => 'forbidden']);
     admit();
     $now = time();
     $expires = $now + 1200;
@@ -240,12 +245,12 @@ if (($_GET['op'] ?? '') === 'maptoken') {
             'iss' => $config['team_id'],
             'iat' => $now,
             'exp' => $expires,
-            'origin' => ($secure ? 'https://' : 'http://') . $host,
+            'origin' => $siteOrigin,
         ]);
     } catch (Throwable $error) {
         respond(502, ['code' => 'unavailable']);
     }
-    respond(200, ['token' => $token, 'expiresAt' => $expires]);
+    respond(200, ['token' => $token, 'expiresAt' => $expires, 'expiresIn' => 1200]);
 }
 
 if (($_GET['op'] ?? '') === 'eta') {

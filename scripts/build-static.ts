@@ -139,7 +139,7 @@ const hotpepperKey = /^[0-9A-Za-z]{8,64}$/.test(environment.HOTPEPPER_API_KEY ??
 const configPath = join(output, "api", "apple-config.php");
 if (credentials) {
   const quote = (value: string) => `'${value.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
-  writeFileSync(configPath, `<?php\n// Generated from .env.local. Keep private; blocked from the web by .htaccess.\nreturn [\n  'team_id' => ${quote(credentials.teamId)},\n  'key_id' => ${quote(credentials.keyId)},\n  'private_key' => ${quote(credentials.privateKey)},\n${hotpepperKey ? `  'hotpepper_key' => ${quote(hotpepperKey)},\n` : ""}];\n`);
+  writeFileSync(configPath, `<?php\n// Generated from .env.local. Keep private; blocked from the web by .htaccess.\nreturn [\n  'team_id' => ${quote(credentials.teamId)},\n  'key_id' => ${quote(credentials.keyId)},\n  'private_key' => ${quote(credentials.privateKey)},\n  'site_origin' => ${quote(origin)},\n${hotpepperKey ? `  'hotpepper_key' => ${quote(hotpepperKey)},\n` : ""}];\n`);
   chmodSync(configPath, 0o600);
 }
 // The deploy token lets api/deploy.php unpack an uploaded build. It is made
