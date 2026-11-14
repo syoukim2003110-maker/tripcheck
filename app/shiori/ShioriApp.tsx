@@ -95,23 +95,31 @@ type AddKind = "place" | "lunch" | "dinner" | "hotel";
 
 const text = {
   ja: {
-    heroTitle: "行きたい場所を選ぶだけ。\n旅のしおりが、すぐできる。",
-    heroBody: "どの日にどこを、どの順番で、どうやって回るか。行きたい店や泊まりたいホテルも入れて、無理がないかまで地図と一緒に確かめます。無料・登録なし・広告なし・件数の課金なし。",
-    where: "どこに行く？",
-    wherePlaceholder: "行き先を入力（例：香港、京都、パリ）",
-    popular: "人気の行き先",
+    heroTitle: "どこに行く？",
+    navLabel: "旅行の計画",
+    language: "言語",
+    nav: { home: "行き先", pick: "場所", plan: "予定" },
+    daySummary: "1日の概要",
+    legDetails: "乗り換え・移動の詳細",
+    addPanel: "場所・お店・ホテルを追加",
+    addShortcut: "場所を追加",
+    stayShortcut: "ホテル",
+    mapShortcut: "地図",
+    where: "行き先",
+    wherePlaceholder: "都市を検索（例：東京、パリ）",
+    popular: "行き先を探す",
     noCity: "この行き先はまだ準備中です。近い都市を選ぶか、別の名前で試してください。",
-    resume: "前回のしおりを開く",
-    resumePrevious: "その前のしおりを開く",
+    resume: "前回の予定を開く",
+    resumePrevious: "その前の予定を開く",
     back: "もどる",
-    pickTitle: (city: string) => `${city}で行きたい場所をタップ`,
-    pickHint: "あとから追加・削除できます。まずは気になるところを選んでください。",
+    pickTitle: (city: string) => `${city}で行きたい場所`,
+    pickHint: "気になる場所を選んでください。あとから変更できます。",
     days: "日数",
     dayUnit: "日間",
-    addOther: "行きたい店・泊まりたいホテル・一覧にない場所を追加",
+    addOther: "名前で探す",
     addKinds: { place: "場所", lunch: "昼ごはんの店", dinner: "夜ごはんの店", hotel: "泊まるホテル" } as Record<AddKind, string>,
     addPlaceholders: { place: "場所の名前", lunch: "昼に行きたい店の名前", dinner: "夜に行きたい店の名前", hotel: "泊まりたいホテルの名前" } as Record<AddKind, string>,
-    addHint: "店とホテルも予定に組み込み、離れすぎていないかを確かめます。",
+    addHint: "選んだ店やホテルも移動時間に含めます。",
     mealLabels: { lunch: "昼ごはん（行きたい店）", dinner: "夜ごはん（行きたい店）" },
     hotelChip: "ホテル",
     wait: (minutes: string) => `ここで約${minutes}の空き時間（店の時間に合わせています）`,
@@ -127,8 +135,8 @@ const text = {
     noticeMealTime: (name: string, meal: string) => `「${name}」に${meal}の時間帯に着ける日がありません。日数を増やすか、近くの場所と同じ日にしてください。`,
     noticeMealHotel: (name: string, minutes: string) => `夜ごはんの「${name}」からホテルまで約${minutes}かかります。`,
     mealShort: { lunch: "昼ごはん", dinner: "夜ごはん" },
-    working: "しおりを作っています…",
-    updating: "組み直しています…",
+    working: "予定を作成中…",
+    updating: "予定を更新中…",
     cafe: "ひと休み",
     cafeOnTheWay: (from: string, to: string) => `${from}から${to}へ歩く途中`,
     cafeAfter: (from: string) => `${from}を出たあたり`,
@@ -150,13 +158,13 @@ const text = {
     addCancel: "やめる",
     addedAs: (name: string, kind: AddKind) => kind === "hotel" ? `「${name}」を泊まるホテルにしました。` : kind === "place" ? `「${name}」を追加しました。` : `「${name}」を${kind === "lunch" ? "昼" : "夜"}ごはんの店として追加しました。`,
     addedWhere: (day: number) => `${day}日目に入りました。`,
-    addedSee: "しおりで見る",
+    addedSee: "予定で見る",
     addFull: `一度に組めるのは${MAX_PLACES}か所までです。`,
     selected: (count: number) => `${count}か所を選択中`,
-    make: "しおりを作る",
+    make: "予定を作る",
     needOne: "場所を1つ以上選んでください",
     showMore: "もっと見る",
-    planTitle: (city: string, days: number) => `${city} ${days}日間のしおり`,
+    planTitle: (city: string, days: number) => `${city} ${days}日間`,
     editPlaces: "場所を選び直す",
     share: "リンクをコピー",
     shared: "コピーしました",
@@ -167,14 +175,14 @@ const text = {
     loadTight: "移動や立ち寄りが多めです。1か所を別の日に移すか、減らすと楽になります。",
     rainTitle: "雨の日なら（屋内の候補）",
     checkHours: "営業日・営業時間・予約を地図で確認 ↗",
-    hoursNote: "このしおりは営業時間・定休日・予約の要否を知りません。行く前に各スポットを開いて確認してください。",
-    hoursNotePrint: "このしおりは営業時間・定休日・予約の要否を知りません。行く前に各スポットの公式の案内で確認してください。",
+    hoursNote: "営業時間・定休日・予約の要否は未確認です。各スポットを開いて確認してください。",
+    hoursNotePrint: "営業時間・定休日・予約の要否は未確認です。出発前に各スポットの公式案内で確認してください。",
     shareLine: "LINEで送る",
     late: "この日は予定が多めです。日数を増やすか、場所を減らすと楽になります。",
     stay: "滞在",
     shorter: "滞在を15分短く",
     longer: "滞在を15分長く",
-    remove: "しおりから外す",
+    remove: "予定から外す",
     moveDay: "日を変える",
     auto: "おまかせ",
     walk: "徒歩",
@@ -207,14 +215,14 @@ const text = {
     shopPrice: (band: string) => `予算 ${band}`,
     shopAdd: "この店にする",
     walkAbout: (minutes: number) => `徒歩約${minutes}分`,
-    ideasTitle: "時間に余裕あり。近くの人気スポット",
+    ideasTitle: "近くのスポットを追加",
     ideasAdd: "追加",
     freeTitle: (count: number) => `あと${count}日、空いています`,
-    freeBody: "無理に広げず、必要な日数にまとめました。空いた日に行けそうな場所です。",
+    freeBody: "空いた日に追加できる場所です。",
     freeNone: "空いた日は自由行動にできます。",
     leftOut: "入りきらなかった場所",
     stayTitle: "泊まる場所",
-    stayBody: "この旅程の移動がいちばん少なくなるエリアのホテルです。候補の場所ごとに全日程を組み直して比べています。料金と空室は予約サイトで確認してください。",
+    stayBody: "移動の少ないエリアから探しています。料金・空室は予約サイトで確認してください。",
     stayAround: (name: string) => `おすすめのエリア：${name}の周辺`,
     stayLoading: "ホテルを探しています…",
     stayNone: "ホテル候補を取得できませんでした。",
@@ -231,14 +239,12 @@ const text = {
     legendRail: "電車（駅をつないだ線）",
     legendWalk: "徒歩・車（実際の道）",
     legendOther: "道順を取得できなかった区間（直線）",
-    newTrip: "新しいしおり",
+    newTrip: "新しい旅行",
     privacy: "プライバシー",
     classic: "以前の画面",
-    brand: "旅のしおりメーカー",
-    brandSub: "TripCheck",
+    brand: "TripCheck",
     otherCities: "ほかの街は\n上の欄に入力",
     coverMeta: (days: number, places: number) => `${days}日間 ・ ${places}か所`,
-    contents: "もくじ",
     daysTabs: "日ごとの予定",
     facts: { time: "時間", places: "行き先", moving: "移動", walking: "うち歩き" },
     placeUnit: "か所",
@@ -247,7 +253,6 @@ const text = {
     steps: (count: number) => `約${count.toLocaleString("ja-JP")}歩`,
     nextDayMark: "翌",
     nextDayLabel: "翌日",
-    skipMap: "地図をとばす",
     short: { edit: "選び直す", share: "リンク", shared: "コピー済", line: "LINE", print: "印刷" },
     parts: { morning: "朝", noon: "昼", evening: "夕" },
     rideStops: (stops: number) => `${stops}駅`,
@@ -260,33 +265,40 @@ const text = {
     legDirect: "乗り換えなし",
     mapExpand: "地図を広げる",
     mapCollapse: "地図をたたむ",
-    mapView: "しおりで見る",
+    mapView: "予定で見る",
     close: "閉じる",
-    mapFailed: "地図を読み込めませんでした。しおりはそのまま使えます。",
+    mapFailed: "地図を読み込めませんでした。予定は引き続き確認できます。",
     pinLabel: (dayIndex: number, position: number, name: string) => `${dayIndex + 1}日目 ${position + 1}番 ${name}`,
     hotelMark: "泊",
-    goStamp: "行く",
     dayNav: "前後の日",
     staySep: "",
   },
   en: {
-    heroTitle: "Pick the places.\nGet a day-by-day trip booklet.",
-    heroBody: "Which day, what order, how to get between them — with your own restaurants and hotel, checked for whether it all really fits, on a map. Free, no account, no ads, no paid tier.",
-    where: "Where to?",
+    heroTitle: "Where to?",
+    navLabel: "Trip planning",
+    language: "Language",
+    nav: { home: "Destinations", pick: "Places", plan: "Itinerary" },
+    daySummary: "Day overview",
+    legDetails: "Journey details",
+    addPanel: "Add a place, restaurant or hotel",
+    addShortcut: "Add a place",
+    stayShortcut: "Hotels",
+    mapShortcut: "Map",
+    where: "Destination",
     wherePlaceholder: "Type a destination (e.g. Kyoto, Paris)",
-    popular: "Popular destinations",
+    popular: "Explore destinations",
     noCity: "This destination is not ready yet. Try a nearby city or another spelling.",
-    resume: "Open your last booklet",
-    resumePrevious: "Open the booklet before that",
+    resume: "Open your last trip",
+    resumePrevious: "Open your previous trip",
     back: "Back",
-    pickTitle: (city: string) => `Tap the places you want in ${city}`,
+    pickTitle: (city: string) => `Places to visit in ${city}`,
     pickHint: "You can add or remove places later.",
     days: "Days",
     dayUnit: " days",
-    addOther: "Add a restaurant, your hotel, or a place that is not listed",
+    addOther: "Search by name",
     addKinds: { place: "Place", lunch: "Lunch spot", dinner: "Dinner spot", hotel: "Hotel" } as Record<AddKind, string>,
     addPlaceholders: { place: "Place name", lunch: "Restaurant for lunch", dinner: "Restaurant for dinner", hotel: "Hotel you want to stay at" } as Record<AddKind, string>,
-    addHint: "Restaurants and the hotel are planned in, and checked for being too far apart.",
+    addHint: "Your restaurants and hotel are included in travel times.",
     mealLabels: { lunch: "Lunch (your pick)", dinner: "Dinner (your pick)" },
     hotelChip: "Hotel",
     wait: (minutes: string) => `About ${minutes} free here (timed for the restaurant)`,
@@ -302,7 +314,7 @@ const text = {
     noticeMealTime: (name: string, meal: string) => `No day reaches “${name}” at ${meal} time. Add a day, or plan places near it on the same day.`,
     noticeMealHotel: (name: string, minutes: string) => `From dinner at “${name}” it is about ${minutes} back to the hotel.`,
     mealShort: { lunch: "lunch", dinner: "dinner" },
-    working: "Building your booklet…",
+    working: "Planning your trip…",
     updating: "Re-planning…",
     cafe: "Take a break",
     cafeOnTheWay: (from: string, to: string) => `on the walk from ${from} to ${to}`,
@@ -328,10 +340,10 @@ const text = {
     addedSee: "Show in the plan",
     addFull: `One trip holds up to ${MAX_PLACES} places.`,
     selected: (count: number) => `${count} selected`,
-    make: "Make my booklet",
+    make: "Plan my trip",
     needOne: "Pick at least one place",
     showMore: "Show more",
-    planTitle: (city: string, days: number) => `${city}: ${days}-day booklet`,
+    planTitle: (city: string, days: number) => `${city}: ${days}-day trip`,
     editPlaces: "Change places",
     share: "Copy link",
     shared: "Copied",
@@ -342,8 +354,8 @@ const text = {
     loadTight: "A lot of moving or many stops. Moving one place to another day, or dropping one, makes it easier.",
     rainTitle: "If it rains (indoor ideas)",
     checkHours: "Check opening days, hours and booking on the map ↗",
-    hoursNote: "This booklet does not know opening hours, closed days or whether you need a booking. Open each place and check before you go.",
-    hoursNotePrint: "This booklet does not know opening hours, closed days or whether you need a booking. Check each place's own website before you go.",
+    hoursNote: "Opening hours, closed days and booking requirements are not checked. Open each place to confirm before you go.",
+    hoursNotePrint: "Opening hours, closed days and booking requirements are not checked. Confirm on each place's website before you go.",
     shareLine: "Send on LINE",
     late: "This day is full. Add a day or drop a place to ease it.",
     stay: "Stay",
@@ -382,14 +394,14 @@ const text = {
     shopPrice: (band: string) => `budget ${band}`,
     shopAdd: "Choose this one",
     walkAbout: (minutes: number) => `~${minutes} min walk`,
-    ideasTitle: "There is time left. Well-known places nearby",
+    ideasTitle: "Add a nearby place",
     ideasAdd: "Add",
     freeTitle: (count: number) => `${count} more day${count === 1 ? "" : "s"} free`,
-    freeBody: "The list fits in fewer days, so it was not stretched. Ideas for the free time:",
+    freeBody: "Places to add on your free days:",
     freeNone: "Keep the spare days open.",
     leftOut: "Did not fit",
     stayTitle: "Where to stay",
-    stayBody: "Hotels in the area where this plan travels least — each candidate area was planned in full and compared. Check price and availability on a booking site.",
+    stayBody: "Hotels in areas with less travel. Check prices and availability on a booking site.",
     stayAround: (name: string) => `Suggested area: around ${name}`,
     stayLoading: "Looking for hotels…",
     stayNone: "Could not load hotels.",
@@ -406,14 +418,12 @@ const text = {
     legendRail: "Train (through its stations)",
     legendWalk: "On foot or by road (the actual streets)",
     legendOther: "No route found (straight line)",
-    newTrip: "New booklet",
+    newTrip: "New trip",
     privacy: "Privacy",
     classic: "Previous version",
     brand: "TripCheck",
-    brandSub: "Trip booklet maker",
     otherCities: "Type any other\ncity above",
     coverMeta: (days: number, places: number) => `${days} day${days === 1 ? "" : "s"} · ${places} place${places === 1 ? "" : "s"}`,
-    contents: "Contents",
     daysTabs: "Days",
     facts: { time: "Time", places: "Places", moving: "Moving", walking: "On foot" },
     placeUnit: " places",
@@ -422,7 +432,6 @@ const text = {
     steps: (count: number) => `~${count.toLocaleString("en-US")} steps`,
     nextDayMark: "+1",
     nextDayLabel: "next day",
-    skipMap: "Skip the map",
     short: { edit: "Places", share: "Link", shared: "Copied", line: "LINE", print: "Print" },
     parts: { morning: "Morning", noon: "Afternoon", evening: "Evening" },
     rideStops: (stops: number) => `${stops} stop${stops === 1 ? "" : "s"}`,
@@ -435,12 +444,11 @@ const text = {
     legDirect: "no change",
     mapExpand: "Expand map",
     mapCollapse: "Collapse map",
-    mapView: "Show in booklet",
+    mapView: "Show in itinerary",
     close: "Close",
-    mapFailed: "The map could not be loaded. The booklet still works.",
+    mapFailed: "The map could not be loaded. Your itinerary is still available.",
     pinLabel: (dayIndex: number, position: number, name: string) => `Day ${dayIndex + 1}, stop ${position + 1}: ${name}`,
     hotelMark: "H",
-    goStamp: "GO",
     dayNav: "Other days",
     staySep: " ",
   },
@@ -551,6 +559,14 @@ function LegCard({ leg, locale, heading, depart }: { leg: ShioriLeg; locale: Loc
   // One change of train: the minutes on foot belong to it. With several, the
   // total cannot be split between them, so none is given a number.
   const change = leg.rail && leg.rail.rides.length === 2 && leg.rail.transferMinutes > 0 ? t.changeWalk(leg.rail.transferMinutes) : t.change;
+  const links = (
+    <div className="shiori-leg-links">
+      {leg.mode !== "walk" || leg.minutes >= 12 ? (
+        <a className="shiori-leg-link" href={leg.mapsUrl} rel="noreferrer" target="_blank">{t.openMaps} ↗</a>
+      ) : null}
+      {timetable ? <a className="shiori-leg-link" href={timetable} rel="noreferrer" target="_blank">{t.openTimetable} ↗</a> : null}
+    </div>
+  );
   return (
     <div className={`shiori-leg is-${leg.mode}`}>
       <div className="shiori-leg-head">
@@ -579,6 +595,8 @@ function LegCard({ leg, locale, heading, depart }: { leg: ShioriLeg; locale: Loc
         ) : null}
       </div>
       {leg.rail ? (
+        <details className="shiori-leg-details">
+          <summary>{t.legDetails}</summary>
         <ol className="shiori-rail">
           <li className="is-walk"><Icon name="walk" />{t.walkTo(leg.rail.walkToMinutes, leg.rail.walkToStation)}</li>
           {leg.rail.rides.map((ride, index) => {
@@ -609,11 +627,9 @@ function LegCard({ leg, locale, heading, depart }: { leg: ShioriLeg; locale: Loc
           })}
           <li className="is-walk"><Icon name="walk" />{t.walkFrom(leg.rail.walkFromMinutes, leg.rail.walkFromStation)}</li>
         </ol>
-      ) : null}
-      {leg.mode !== "walk" || leg.minutes >= 12 ? (
-        <a className="shiori-leg-link" href={leg.mapsUrl} rel="noreferrer" target="_blank">{t.openMaps} ↗</a>
-      ) : null}
-      {timetable ? <a className="shiori-leg-link" href={timetable} rel="noreferrer" target="_blank">{t.openTimetable} ↗</a> : null}
+          {links}
+        </details>
+      ) : links}
     </div>
   );
 }
@@ -798,8 +814,7 @@ function StayNear({ plan, trip, locale, onHotel }: { plan: ShioriPlan; trip: Shi
   }, [key, locale]);
   if (!plan.stayNear) return null;
   return (
-    <section className="shiori-section shiori-stay">
-      <p className="shiori-eyebrow">STAY</p>
+    <section className="shiori-section shiori-stay" id="shiori-stay" tabIndex={-1}>
       <h2>{t.stayTitle}</h2>
       {plan.stayNear.nearName ? <p className="shiori-stay-area"><i aria-hidden="true">{t.hotelMark}</i><b>{withName(t.stayAround(plan.stayNear.nearName), plan.stayNear.nearName)}</b></p> : null}
       <p className="shiori-quiet">{t.stayBody}</p>
@@ -1137,10 +1152,18 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
   const header = (
     <header className="shiori-top">
       <button className="shiori-brand" onClick={() => go("home")} type="button">
-        <i aria-hidden="true">栞</i>
-        <span><b>{t.brand}</b><small>{t.brandSub}</small></span>
+        <i aria-hidden="true"><Icon name="pin" /></i>
+        <span><b>{t.brand}</b></span>
       </button>
-      <nav className="shiori-lang">
+      <nav aria-label={t.navLabel} className="shiori-nav">
+        {(["home", "pick", "plan"] as const).map((step) => (
+          <button aria-current={screen === step ? "page" : undefined} disabled={step === "pick" ? !city : step === "plan" ? trip.places.length === 0 : false} key={step} onClick={() => { if (step !== screen) go(step); }} type="button">
+            <span aria-hidden="true" className="shiori-nav-icon">{step === "home" ? "🌏" : step === "pick" ? "📍" : "🧳"}</span>
+            <span>{t.nav[step]}</span>
+          </button>
+        ))}
+      </nav>
+      <nav aria-label={t.language} className="shiori-lang">
         <Link aria-current={locale === "ja" ? "true" : undefined} href="/ja" onClick={() => { try { window.localStorage.setItem("tripcheck-locale", "ja"); } catch { /* ignore */ } }}>日本語</Link>
         <Link aria-current={locale === "en" ? "true" : undefined} href="/" onClick={() => { try { window.localStorage.setItem("tripcheck-locale", "en"); } catch { /* ignore */ } }}>EN</Link>
       </nav>
@@ -1163,7 +1186,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
   // destination's list does not have.
   const extras = trip.places.filter((place) => place.meal || !city?.sights.some((sight) => `wikidata-${sight.q}` === place.id));
   const addForm = (
-    <form className="shiori-other" onSubmit={(event) => { event.preventDefault(); void addOther(); }}>
+    <form className="shiori-other" id="shiori-add" onSubmit={(event) => { event.preventDefault(); void addOther(); }}>
       <label htmlFor="shiori-other">{phrases(t.addOther)}</label>
       <div className="shiori-pace" role="group" aria-label={t.addOther}>
         {(["place", "lunch", "dinner", "hotel"] as const).map((kind) => (
@@ -1215,16 +1238,15 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
       <main className="shiori">
         {header}
         <section className="shiori-hero">
-          <p className="shiori-eyebrow">TABI NO SHIORI</p>
           <h1>{t.heroTitle}</h1>
-          <p>{t.heroBody}</p>
           <label className="shiori-search">
             <span>{t.where}</span>
+            <span aria-hidden="true" className="shiori-search-icon"><Icon name="pin" /></span>
             <input autoComplete="off" onChange={(event) => setQuery(event.target.value)} placeholder={t.wherePlaceholder} type="search" value={query} />
           </label>
           {[trip.places.length > 0 ? trip : saved, previous].flatMap((candidate, index) => candidate && candidate.places.length > 0 ? [(
             <button className="shiori-resume" key={index} onClick={() => { setTrip(candidate); setSelectedDay(0); go("plan"); }} type="button">
-              <Icon name="book" />
+              <Icon name="clock" />
               <span>{index === 0 ? t.resume : t.resumePrevious}：{candidate.cityName || candidate.places[0]?.name} ・ {candidate.places.length}</span>
             </button>
           )] : [])}
@@ -1262,17 +1284,14 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
         {header}
         <section className="shiori-pick">
           <button className="shiori-back" onClick={() => go("home")} type="button">← {t.back}</button>
-          {city && /^[\x20-\x7e]+$/.test(city.en) ? <p aria-hidden="true" className="shiori-eyebrow">{city.en}</p> : null}
-          <h1>{t.pickTitle(trip.cityName)}</h1>
-          <p className="shiori-quiet">{t.pickHint}</p>
-          <div className="shiori-controls">
-            <label>
-              <span>{t.days}</span>
-              <select onChange={(event) => update((current) => ({ ...current, days: Number(event.target.value) }))} value={trip.days}>
-                {Array.from({ length: MAX_DAYS }, (_, index) => index + 1).map((days) => <option key={days} value={days}>{days}{t.dayUnit}</option>)}
-              </select>
-            </label>
+          <div className="shiori-pick-head">
+            <h1>{t.pickTitle(trip.cityName)}</h1>
+            <p className="shiori-quiet">{t.pickHint}</p>
           </div>
+          <details className="shiori-add-panel">
+            <summary><Icon name="plus" />{t.addPanel}</summary>
+            {addForm}
+          </details>
           <div className="shiori-sights">
             {sights.map((sight) => {
               const id = `wikidata-${sight.q}`;
@@ -1280,7 +1299,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
               return (
                 <button aria-pressed={isChosen} className={`shiori-sight${isChosen ? " is-chosen" : ""}`} key={sight.q} onClick={() => addSight(sight)} type="button">
                   <Photo alt="" img={sight.img} width={360} />
-                  <span aria-hidden="true" className="shiori-sight-check">{isChosen ? <b>{t.goStamp}</b> : <Icon name="plus" />}</span>
+                  <span aria-hidden="true" className="shiori-sight-check">{isChosen ? <Icon name="check" /> : <Icon name="plus" />}</span>
                   <span className="shiori-sight-text">
                     <b>{locale === "ja" ? sight.ja : sight.en}</b>
                     <small>{kindLabel(sight.kind, locale)}{locale === "ja" && sight.desc ? ` ・ ${sight.desc}` : ""}</small>
@@ -1292,9 +1311,15 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
           {city && !showAll && city.sights.length > 16 ? (
             <button className="shiori-more" onClick={() => setShowAll(true)} type="button">{t.showMore}（{city.sights.length - 16}）</button>
           ) : null}
-          {addForm}
         </section>
         <div className="shiori-bar">
+            <label className="shiori-bar-days">
+              <span>{t.days}</span>
+              <select onChange={(event) => update((current) => ({ ...current, days: Number(event.target.value) }))} value={trip.days}>
+                {Array.from({ length: MAX_DAYS }, (_, index) => index + 1).map((days) => <option key={days} value={days}>{days}{t.dayUnit}</option>)}
+              </select>
+            </label>
+
           <span aria-live="polite">{trip.places.length > 0 ? withUnits(t.selected(trip.places.length)).map((part, index) => index === 1 ? <b key="count">{part}</b> : part) : t.needOne}</span>
           <button disabled={trip.places.length === 0} onClick={() => { setSelectedDay(0); go("plan"); }} type="button">{t.make} →</button>
         </div>
@@ -1336,12 +1361,6 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
   const dayColor = (index: number) => DAY_COLORS[index % DAY_COLORS.length];
   const cityTitle = trip.cityName || trip.places[0]?.name || "";
   const planTitle = t.planTitle(cityTitle, trip.days);
-  // The cover sets the city large and the rest of the title under it; the
-  // words of the title itself are unchanged.
-  const titleRest = cityTitle && planTitle.startsWith(cityTitle) ? planTitle.slice(cityTitle.length) : "";
-  const titleJoin = titleRest.match(/^[\s:：]+/)?.[0] ?? "";
-  // The postmark is lettered in Latin capitals; a city with no such name gets the booklet's own.
-  const postmarkCity = city && /^[\x20-\x7e]{2,14}$/.test(city.en) ? city.en.toUpperCase() : "TABI NO SHIORI";
   const partOf = (clock: string) => {
     const hour = Number(clock.slice(0, 2));
     return hour < 12 ? "morning" : hour < 17 ? "noon" : "evening";
@@ -1370,34 +1389,11 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
       {header}
       <div className="shiori-plan">
         <div className="shiori-plan-main">
-          <div className="shiori-plan-head shiori-cover">
-            <p aria-hidden="true" className="shiori-eyebrow shiori-cover-kicker">TABI NO SHIORI</p>
-            <h1>
-              {titleRest ? (
-                <>
-                  <span className="shiori-cover-city">{cityTitle}</span>
-                  <span className="shiori-sr">{titleJoin}</span>
-                  <span className="shiori-cover-sub">{titleRest.slice(titleJoin.length)}</span>
-                </>
-              ) : <span className="shiori-cover-sub">{planTitle}</span>}
-            </h1>
+          <div className="shiori-plan-head">
+            <h1>{planTitle}</h1>
             <p className="shiori-cover-meta">{t.coverMeta(trip.days, trip.places.length)}</p>
-            <svg aria-hidden="true" className="shiori-postmark" viewBox="0 0 132 92">
-              <defs>
-                <path d="M12 46a34 34 0 0 1 68 0" id="shiori-postmark-top" />
-                <path d="M16 46a30 30 0 0 0 60 0" id="shiori-postmark-bottom" />
-              </defs>
-              <circle cx="46" cy="46" fill="none" r="42" stroke="currentColor" strokeWidth="2" />
-              <circle cx="46" cy="46" fill="none" r="38.5" stroke="currentColor" strokeWidth="0.8" />
-              <circle cx="46" cy="46" fill="none" r="22" stroke="currentColor" strokeWidth="0.8" />
-              <text fill="currentColor" fontSize={postmarkCity.length > 9 ? 6.5 : 8} fontWeight="700" letterSpacing="1.6" textAnchor="middle"><textPath href="#shiori-postmark-top" startOffset="50%">{postmarkCity}</textPath></text>
-              <text fill="currentColor" fontSize="6.5" fontWeight="700" letterSpacing="1.6" textAnchor="middle"><textPath href="#shiori-postmark-bottom" startOffset="50%">{trip.days} {trip.days === 1 ? "DAY" : "DAYS"}</textPath></text>
-              <text className="shiori-postmark-word" fill="currentColor" fontSize="9" textAnchor="middle" x="46" y="49.5">旅のしおり</text>
-              <path d="M90 26q6-5 12 0t12 0 12 0M90 38q6-5 12 0t12 0 12 0M90 50q6-5 12 0t12 0 12 0M90 62q6-5 12 0t12 0 12 0" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.6" />
-            </svg>
           </div>
 
-          {/* What does not work comes first: it is why the booklet was made. */}
           {plan && plan.notices.length > 0 ? (
             <section aria-label={t.noticesTitle} className="shiori-notices">
               <h2>{t.noticesTitle}</h2>
@@ -1405,22 +1401,6 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
                 {plan.notices.map((notice) => <li key={noticeKey(notice)}>{noticeView(notice)}</li>)}
               </ul>
             </section>
-          ) : null}
-
-          {plan && plan.days.length > 0 ? (
-            <ol aria-label={t.contents} className={`shiori-contents${plan.notices.length > 1 ? " is-folded" : ""}`}>
-              {plan.days.map((entry) => (
-                <li key={entry.index} style={{ ["--day" as string]: dayColor(entry.index) }}>
-                  <button aria-current={entry.index === activeDay ? "true" : undefined} aria-label={`${t.dayTab(entry.index)} ${entry.title}`} onClick={() => selectDay(entry.index, true)} type="button">
-                    <i>{entry.index + 1}</i>
-                    <span className="shiori-contents-line">
-                      {entry.stops.slice(0, 4).map((stop) => <span key={stop.place.id}><em>{stop.place.name}</em></span>)}
-                      {entry.stops.length > 4 ? <small>+{entry.stops.length - 4}</small> : null}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ol>
           ) : null}
 
           {/* On a phone each action is its icon over a short word; its full name is always what is read out. */}
@@ -1435,6 +1415,12 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
                 {Array.from({ length: MAX_DAYS }, (_, index) => index + 1).map((days) => <option key={days} value={days}>{days}{t.dayUnit}</option>)}
               </select>
             </label>
+          </div>
+
+          <div className="shiori-plan-tools">
+            <button onClick={() => { document.getElementById("shiori-other")?.focus({ preventScroll: true }); document.getElementById("shiori-add")?.scrollIntoView({ block: "start", behavior: "instant" }); }} type="button"><Icon name="plus" />{t.addShortcut}</button>
+            {plan ? <button className="shiori-map-jump" onClick={() => { const map = document.getElementById("shiori-map-panel"); map?.focus({ preventScroll: true }); map?.scrollIntoView({ block: "start", behavior: "instant" }); }} type="button"><Icon name="pin" />{t.mapShortcut}</button> : null}
+            {plan?.stayNear ? <button onClick={() => { const section = document.getElementById("shiori-stay"); section?.focus({ preventScroll: true }); section?.scrollIntoView({ block: "start", behavior: "instant" }); }} type="button"><Icon name="bed" />{t.stayShortcut}</button> : null}
           </div>
 
           {planning ? <p aria-live="polite" className={`shiori-working${plan ? " is-update" : ""}`}>{plan ? t.updating : t.working}</p> : null}
@@ -1464,47 +1450,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
             </div>
           ) : null}
 
-          {plan && plan.days.length > 0 ? (
-            <a
-              className="shiori-skip"
-              href={`#shiori-day-${activeDay}`}
-              onClick={(event) => {
-                // Not a navigation: the address bar and the back gesture are left alone.
-                event.preventDefault();
-                const panel = document.getElementById(`shiori-day-${activeDay}`);
-                panel?.focus({ preventScroll: true });
-                panel?.scrollIntoView({ block: "start" });
-              }}
-            >
-              {t.skipMap}
-            </a>
-          ) : null}
-          <aside className="shiori-plan-map">
-            {plan ? (
-              <ShioriMap
-                days={plan.days}
-                focus={focus}
-                hotel={trip.hotel}
-                label={t.mapLabel}
-                legend={{ rail: t.legendRail, street: t.legendWalk, straight: t.legendOther }}
-                onSelectStop={showStop}
-                selectedDay={activeDay}
-                text={{
-                  expand: t.mapExpand,
-                  collapse: t.mapCollapse,
-                  view: t.mapView,
-                  close: t.close,
-                  hotel: t.hotelChip,
-                  hotelMark: t.hotelMark,
-                  failed: t.mapFailed,
-                  pinLabel: t.pinLabel,
-                  legTag: (minutes: number) => `${t.about}${minutes}${t.minute}`,
-                  modes: { walk: t.walk, rail: t.rail, transit: t.transit, taxi: t.taxi },
-                  peekMeta: (stop: ShioriStop) => `${stop.arriveNextDay ? t.nextDayMark : ""}${stop.arrive}–${stop.leaveNextDay ? t.nextDayMark : ""}${stop.leave} ・ ${stayText(stop.stayMinutes)}`,
-                }}
-              />
-            ) : null}
-          </aside>
+
 
           <div className="shiori-days" data-dir={dayDir}>
             {plan?.days.map((day, dayPosition) => {
@@ -1524,19 +1470,17 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
                   tabIndex={-1}
                 >
                   <header className="shiori-day-head">
-                    <span aria-hidden="true" className="shiori-stamp">
-                      <small>DAY</small>
-                      <b>{day.index + 1}</b>
-                      {locale === "ja" ? <span>日目</span> : null}
-                    </span>
                     <h2><small>{t.dayTab(day.index)}</small> <span>{phrases(day.title)}</span></h2>
                   </header>
+                  <details className="shiori-day-summary">
+                    <summary>{t.daySummary}</summary>
                   <dl className="shiori-facts">
                     <div><dt>{t.facts.time}</dt><dd>{day.start}–{day.endsNextDay ? <NextDay locale={locale} /> : null}{day.end}</dd></div>
                     <div><dt>{t.facts.places}</dt><dd>{day.stops.length}<small>{t.placeUnit}</small></dd></div>
                     <div><dt>{t.facts.moving}</dt><dd>{day.travelMinutes > 0 ? withUnits(t.movingTotal(durationText(day.travelMinutes, locale))) : "—"}</dd></div>
                     <div><dt>{t.facts.walking}</dt><dd>{day.walkMinutes > 0 ? <>{withUnits(t.walkingAbout(day.walkMinutes))}{steps > 0 ? <small className="shiori-facts-sub">{t.steps(steps)}</small> : null}</> : "—"}</dd></div>
                   </dl>
+                  </details>
                   <p className={`shiori-load is-${day.load}`}><b>{t.loads[day.load]}</b>{day.load === "tight" && !day.runsLate ? <span>{t.loadTight}</span> : null}</p>
                   {day.runsLate ? <p className="shiori-warn"><Icon name="warn" /> {t.late}</p> : null}
                   <ol className="shiori-timeline">
@@ -1662,6 +1606,33 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
             })}
           </div>
 
+          <aside aria-label={t.mapLabel} className="shiori-plan-map" id="shiori-map-panel" tabIndex={-1}>
+            {plan ? (
+              <ShioriMap
+                days={plan.days}
+                focus={focus}
+                hotel={trip.hotel}
+                label={t.mapLabel}
+                legend={{ rail: t.legendRail, street: t.legendWalk, straight: t.legendOther }}
+                onSelectStop={showStop}
+                selectedDay={activeDay}
+                text={{
+                  expand: t.mapExpand,
+                  collapse: t.mapCollapse,
+                  view: t.mapView,
+                  close: t.close,
+                  hotel: t.hotelChip,
+                  hotelMark: t.hotelMark,
+                  failed: t.mapFailed,
+                  pinLabel: t.pinLabel,
+                  legTag: (minutes: number) => `${t.about}${minutes}${t.minute}`,
+                  modes: { walk: t.walk, rail: t.rail, transit: t.transit, taxi: t.taxi },
+                  peekMeta: (stop: ShioriStop) => `${stop.arriveNextDay ? t.nextDayMark : ""}${stop.arrive}–${stop.leaveNextDay ? t.nextDayMark : ""}${stop.leave} ・ ${stayText(stop.stayMinutes)}`,
+                }}
+              />
+            ) : null}
+          </aside>
+
           {plan && plan.freeDays > 0 ? (
             <section className="shiori-section">
               <h2>{t.freeTitle(plan.freeDays)}</h2>
@@ -1683,7 +1654,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
             </section>
           ) : null}
 
-          {addForm}
+          <section className="shiori-plan-add">{addForm}</section>
 
           {plan ? <StayNear locale={locale} onHotel={(hotel) => update((current) => ({ ...current, hotel }))} plan={plan} trip={trip} /> : null}
 

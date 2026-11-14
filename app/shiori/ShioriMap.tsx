@@ -7,7 +7,7 @@ import type { ShioriDay, ShioriHotel, ShioriLeg, ShioriStop } from "../../lib/sh
 import { photoUrl } from "../../lib/shiori/state";
 
 /*
- * The booklet's map: numbered pins for the day being read, small dots for the
+ * The itinerary's map: numbered pins for the day being read, small dots for the
  * other days, and one solid line per leg drawn the way it is travelled — a
  * train leg follows its stations, a walk or a drive follows its streets. Only
  * a leg whose way could not be looked up is a straight line, and that one is
@@ -15,15 +15,15 @@ import { photoUrl } from "../../lib/shiori/state";
  */
 
 const STYLE = "https://tiles.openfreemap.org/styles/positron";
-/** 朱・藍・松葉・江戸紫・芥子・臙脂・鉄: each carries white text at AA and reads on the paper card. */
-export const DAY_COLORS = ["#b3402a", "#2b4a7a", "#3d6b47", "#6b4a8c", "#8a5f00", "#9b2c52", "#2a6c78"];
-const UNKNOWN_WAY = "#6f6a62";
-const CARD = "#fdf9ef";
+/** One theme blue; size, numbering and opacity distinguish the active day. */
+export const DAY_COLORS = ["#1967D2"];
+const UNKNOWN_WAY = "#6b7280";
+const CARD = "#ffffff";
 
 export type ShioriMapText = {
   expand: string;
   collapse: string;
-  /** Opens the stop in the booklet. */
+  /** Opens the stop in the itinerary. */
   view: string;
   close: string;
   hotel: string;
@@ -88,7 +88,7 @@ type Props = {
   days: ShioriDay[];
   selectedDay: number;
   hotel: ShioriHotel | null;
-  /** The stop that is open in the booklet; a new token re-centres the map on it. */
+  /** The stop that is open in the itinerary; a new token re-centres the map on it. */
   focus: { placeId: string; token: number } | null;
   onSelectStop?: (dayIndex: number, placeId: string) => void;
   label: string;
@@ -99,24 +99,24 @@ type Props = {
 
 /**
  * The basemap is OpenFreeMap's quiet grey style, so the day's line and pins
- * are the loudest things on it; its flat areas are tinted toward the
- * booklet's paper. A layer that is missing or shaped differently is left
+ * are the loudest things on it; its flat areas use neutral surfaces with
+ * quiet water and park colours. A layer that is missing or shaped differently is left
  * exactly as it came.
  */
 function tintBasemap(instance: MapLibreMap) {
   const tints: Array<[RegExp, "background-color" | "fill-color", string]> = [
-    [/^background$/, "background-color", "#efe6d2"],
-    [/^water$/, "fill-color", "#b8cfd6"],
-    [/^(park|landcover_wood|landcover_grass|landuse_cemetery|landuse_pitch)$/, "fill-color", "#d2dab6"],
-    [/^landuse_residential$/, "fill-color", "#ebe1cb"],
-    [/^building$/, "fill-color", "#e4d9c1"],
+    [/^background$/, "background-color", "#f5f7f9"],
+    [/^water$/, "fill-color", "#dfeaf3"],
+    [/^(park|landcover_wood|landcover_grass|landuse_cemetery|landuse_pitch)$/, "fill-color", "#e7eee8"],
+    [/^landuse_residential$/, "fill-color", "#f0f3f5"],
+    [/^building$/, "fill-color", "#e3e8ed"],
   ];
   try {
     for (const layer of instance.getStyle().layers ?? []) {
       // Place names are for finding one's bearings; they stay quieter than the pins.
       if (layer.type === "symbol" && /^label_/.test(layer.id)) {
-        instance.setPaintProperty(layer.id, "text-color", "#5c5346");
-        instance.setPaintProperty(layer.id, "text-halo-color", "#f3ecdc");
+        instance.setPaintProperty(layer.id, "text-color", "#59636e");
+        instance.setPaintProperty(layer.id, "text-halo-color", "#ffffff");
         continue;
       }
       // Road numbers in boxes read like pin numbers; the map is not for driving.
@@ -175,7 +175,7 @@ export default function ShioriMap({ days, selectedDay, hotel, focus, onSelectSto
   const [expanded, setExpanded] = useState(false);
   // The pin that was tapped. Its card is shown until it is closed or another
   // day is opened. A stop opened
-  // in the booklet is only ringed on the map: its card would say what the
+  // in the itinerary is only ringed on the map: its card would say what the
   // reader is already looking at.
   const [picked, setPicked] = useState<string | null>(null);
   const [shownDay, setShownDay] = useState(selectedDay);
@@ -271,7 +271,7 @@ export default function ShioriMap({ days, selectedDay, hotel, focus, onSelectSto
           filter: ["==", ["get", "kind"], "straight"],
           paint: { "line-color": UNKNOWN_WAY, "line-width": ["case", selected, 2.5, 1.5] as unknown as number, "line-opacity": opacity, "line-dasharray": [2, 2] },
         });
-        // A paper-coloured edge keeps the day's line readable over roads and parks.
+        // A white edge keeps the day's line readable over roads and parks.
         instance.addLayer({
           id: "legs-casing",
           type: "line",
@@ -404,7 +404,7 @@ export default function ShioriMap({ days, selectedDay, hotel, focus, onSelectSto
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [days, selectedDay, hotel, ready]);
 
-  // The stop whose card is open, or that is open in the booklet, is the larger, ringed pin.
+  // The stop whose card is open, or that is open in the itinerary, is the larger, ringed pin.
   useEffect(() => {
     for (const marker of markers.current) {
       const element = marker.getElement();
