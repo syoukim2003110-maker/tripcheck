@@ -1,9 +1,15 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import test from "node:test";
 
 async function render(path = "/") {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
+  // A build older than the pages it was made from renders yesterday's
+  // wording, and would pass or fail for the wrong reason.
+  const built = (await stat(workerUrl)).mtimeMs;
+  for (const page of ["../app/page.tsx", "../app/ja/page.tsx", "../app/shiori/ShioriApp.tsx"]) {
+    assert.ok((await stat(new URL(page, import.meta.url))).mtimeMs <= built, `dist/ is older than ${page.slice(3)}: run pnpm build first`);
+  }
   workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
   const { default: worker } = await import(workerUrl.href);
 
@@ -27,10 +33,11 @@ test("the home page is the trip booklet: pick a destination, in the visitor's la
   const response = await render("/");
   assert.equal(response.status, 200);
   const html = await response.text();
-  assert.match(html, /<title>TripCheck — pick places, get a day-by-day trip booklet<\/title>/i);
+  assert.match(html, /<title>TripCheck — plan your trip<\/title>/i);
   assert.match(html, /class="shiori"/);
   assert.match(html, /Where to\?/);
-  assert.match(html, /Get a day-by-day trip booklet\./);
+  // The retired wording stays retired.
+  assert.doesNotMatch(html, /trip booklet/i);
   // The bare "/" honors a stored language, and a Japanese browser's first
   // visit, before paint — ahead of hydration.
   assert.match(html, /var l=localStorage\.getItem\("tripcheck-locale"\);if\(l==="ja"\|\|\(!l&&\/\^ja\\b\/i\.test\(navigator\.language/);
@@ -40,7 +47,8 @@ test("the home page is the trip booklet: pick a destination, in the visitor's la
   assert.doesNotMatch(html, /maps\.googleapis\.com\/maps\/api\/js/);
 
   const japanese = await (await render("/ja")).text();
-  assert.match(japanese, /行きたい場所を選ぶだけ。/);
+  assert.match(japanese, /<title>TripCheck — 旅行の予定をつくる<\/title>/);
+  assert.doesNotMatch(japanese, /しおり/);
   assert.match(japanese, /どこに行く？/);
 });
 

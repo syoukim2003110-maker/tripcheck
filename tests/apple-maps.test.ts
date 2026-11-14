@@ -305,3 +305,29 @@ test("hotel candidates are ordered by how little the whole trip has to travel", 
   // Nothing Apple did not supply is claimed.
   assert.ok(candidates.every((candidate) => candidate.rating === null && candidate.priceLevel === null && candidate.styles.length === 0));
 });
+
+test("Apple being down or unreachable is an error; only Apple saying no to the pair is 'no answer'", async () => {
+  const { credentials } = await testCredentials();
+  const pair = { origin: { latitude: 35.69, longitude: 139.74 }, destination: { latitude: 35.68, longitude: 139.75 } };
+  const answering = (status: number) => fakeApple((url) => url.pathname === "/v1/token" ? tokenResponse() : new Response("{}", { status }));
+  const unavailable = (error: unknown) => error instanceof AppleMapsError && error.code === "unavailable";
+  const offline = fakeApple((url) => {
+    if (url.pathname === "/v1/token") return tokenResponse();
+    throw new TypeError("offline");
+  });
+
+  // A line on the map: a timeout or a 503 must not be taken for "no route",
+  // which the page would keep for the rest of the visit.
+  await assert.rejects(() => new AppleMapsClient(credentials, { fetcher: answering(503).fetcher }).route({ ...pair, mode: "walk" }), unavailable);
+  await assert.rejects(() => new AppleMapsClient(credentials, { fetcher: offline.fetcher }).route({ ...pair, mode: "walk" }), unavailable);
+  await assert.rejects(() => new AppleMapsClient(credentials, { fetcher: answering(403).fetcher }).route({ ...pair, mode: "walk" }), unavailable);
+  assert.equal(await new AppleMapsClient(credentials, { fetcher: answering(400).fetcher }).route({ ...pair, mode: "walk" }), null);
+
+  // A travel time: the same for no reply and for a refused client. An error
+  // status stays "no answer", as it is how Apple answers transit it has no
+  // timetable for.
+  await assert.rejects(() => new AppleMapsClient(credentials, { fetcher: offline.fetcher }).eta({ ...pair, mode: "transit" }), unavailable);
+  await assert.rejects(() => new AppleMapsClient(credentials, { fetcher: answering(403).fetcher }).eta({ ...pair, mode: "transit" }), unavailable);
+  assert.equal(await new AppleMapsClient(credentials, { fetcher: answering(400).fetcher }).eta({ ...pair, mode: "transit" }), null);
+  assert.equal(await new AppleMapsClient(credentials, { fetcher: answering(503).fetcher }).eta({ ...pair, mode: "transit" }), null);
+});

@@ -85,11 +85,19 @@ export function thinPath<T>(path: T[], limit: number): T[] {
 }
 
 export class AppleMapsError extends Error {
-  code: "not_configured" | "unauthorized" | "quota_exhausted" | "unavailable";
+  /**
+   * "rejected": Apple read the request and said no to it (a 4xx), which is
+   * how it answers a pair it cannot route. "unavailable": no usable reply
+   * (network, 5xx, unreadable body) — nothing was learned about the request.
+   */
+  code: "not_configured" | "unauthorized" | "quota_exhausted" | "rejected" | "unavailable";
+  /** The HTTP status behind an "unavailable", when Apple did reply. */
+  status: number | null;
 
-  constructor(code: AppleMapsError["code"]) {
+  constructor(code: AppleMapsError["code"], status: number | null = null) {
     super(`apple_maps_${code}`);
     this.code = code;
+    this.status = status;
   }
 }
 
@@ -203,7 +211,9 @@ export class AppleMapsClient {
     }
     if (response.status === 401) throw new AppleMapsError("unauthorized");
     if (response.status === 429) throw new AppleMapsError("quota_exhausted");
-    if (!response.ok) throw new AppleMapsError("unavailable");
+    // 403 is Apple's edge refusing this client, not an answer about the request.
+    if (response.status >= 400 && response.status < 500 && response.status !== 403) throw new AppleMapsError("rejected");
+    if (!response.ok) throw new AppleMapsError("unavailable", response.status);
     try {
       return await response.json() as unknown;
     } catch {
@@ -265,9 +275,12 @@ export class AppleMapsClient {
     try {
       payload = await this.authorized(url, options.signal) as { etas?: unknown };
     } catch (error) {
-      // Apple answers 4xx/5xx for a pair it cannot route; quota and auth
-      // failures are still real failures.
-      if (error instanceof AppleMapsError && error.code === "unavailable") return null;
+      // Apple answers an error for a pair it cannot route in this mode
+      // (transit where it has no timetable), and which status it uses there
+      // is not documented: 4xx and 5xx both stay "no answer". No reply at
+      // all, a refused client, quota and auth are real failures — a timeout
+      // must not be remembered as "no travel time".
+      if (error instanceof AppleMapsError && (error.code === "rejected" || (error.code === "unavailable" && (error.status ?? 0) >= 500))) return null;
       throw error;
     }
     const first = Array.isArray(payload.etas) ? payload.etas[0] as {
@@ -298,7 +311,9 @@ export class AppleMapsClient {
     try {
       payload = await this.authorized(url, options.signal) as typeof payload;
     } catch (error) {
-      if (error instanceof AppleMapsError && error.code === "unavailable") return null;
+      // Only Apple saying no to this pair is "no route". Apple being down
+      // or unreachable is not: the caller must be free to ask again.
+      if (error instanceof AppleMapsError && error.code === "rejected") return null;
       throw error;
     }
     const route = Array.isArray(payload.routes) ? payload.routes[0] as { durationSeconds?: unknown; distanceMeters?: unknown; stepIndexes?: unknown } | undefined : undefined;

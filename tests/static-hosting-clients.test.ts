@@ -270,3 +270,38 @@ test("a relay that fails is left alone for a while, and the open router answers 
   // One wait on the broken relay, not one per leg.
   assert.deepEqual(seen, ["relay", "osm", "osm"]);
 });
+
+// Last in this file: it moves the clock, and the relay's rest is kept per process.
+test("a leg asked about during an outage is asked of Apple again once the relay is back", async (t) => {
+  const { fetchStreetRoute, OPEN_ROUTER_ORIGIN } = await import("../lib/street-route-client.ts");
+  // Past any rest an earlier test in this file started.
+  t.mock.timers.enable({ apis: ["Date"], now: Date.now() + 10 * 60_000 });
+  let healthy = false;
+  const seen: string[] = [];
+  const fetcher = (async (input: RequestInfo | URL) => {
+    const url = new URL(String(input));
+    if (url.origin === OPEN_ROUTER_ORIGIN) {
+      seen.push("osm");
+      throw new TypeError("offline");
+    }
+    seen.push("relay");
+    // What the relay answers when Apple does not reply: an error, not a 200 with no route in it.
+    if (!healthy) return Response.json({ code: "unavailable" }, { status: 502 });
+    return Response.json({ minutes: 9, distanceMeters: 700, path: [[9, 10], [9.005, 10.005], [9.01, 10.01]] });
+  }) as typeof fetch;
+  const leg = { origin: { latitude: 9, longitude: 10 }, destination: { latitude: 9.01, longitude: 10.01 }, mode: "drive" as const };
+  const dependencies = { relayUrl: "https://example.test/street-recover.php", fetcher };
+  assert.deepEqual(await fetchStreetRoute(leg, dependencies), { status: "failed" });
+
+  healthy = true;
+  // Within the minute the relay is left alone…
+  assert.deepEqual(await fetchStreetRoute(leg, dependencies), { status: "failed" });
+  assert.deepEqual(seen, ["relay", "osm", "osm"]);
+  // …and after it the same leg gets Apple's measured answer: nothing kept "no route" for it.
+  t.mock.timers.tick(61_000);
+  const answer = await fetchStreetRoute(leg, dependencies);
+  assert.ok(answer.status === "found");
+  assert.equal(answer.route.source, "apple");
+  assert.equal(answer.route.minutes, 9);
+  assert.deepEqual(seen, ["relay", "osm", "osm", "relay"]);
+});

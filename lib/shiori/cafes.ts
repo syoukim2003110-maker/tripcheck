@@ -165,12 +165,26 @@ type ListedCafe = { id: string; name: string; latitude: number; longitude: numbe
 
 const plainName = (name: string) => name.normalize("NFKC").toLocaleLowerCase().replace(/[\s・･\-‐－―()（）]/g, "");
 
-/** Two names for one café: one begins the other, or they share their first four letters. */
+// Words any café may carry. They say nothing about which café it is, so two
+// names are compared on what is left once these are gone.
+const GENERIC_CAFE_WORDS = /cafe|café|coffee|カフェ|コーヒー|珈琲|喫茶|店|shop|house|stand|the|and|&/g;
+
+/**
+ * Two names for one café: what is distinctive in them is equal, or one is
+ * the start of the other ("スターバックス" and "スターバックス コーヒー 寺前店").
+ * A shared opening is not enough: "Cafe Aoi" and "Cafe Midori" next door
+ * are two shops, and so are two branches of one chain. Taking two shops
+ * for one puts the wrong photo on a card and hides the other shop; taking
+ * one shop for two only lists it twice, so doubt goes that way.
+ */
 function sameCafe(left: string, right: string) {
   const a = plainName(left);
   const b = plainName(right);
   if (!a || !b) return false;
-  return a.startsWith(b) || b.startsWith(a) || (a.length >= 4 && b.length >= 4 && a.slice(0, 4) === b.slice(0, 4));
+  const [short, long] = [a.replace(GENERIC_CAFE_WORDS, ""), b.replace(GENERIC_CAFE_WORDS, "")].sort((x, y) => x.length - y.length);
+  // A name made only of such words ("Cafe") has nothing distinctive to compare.
+  if (!short) return a === b;
+  return short === long || (short.length >= 2 && long.startsWith(short));
 }
 
 /**

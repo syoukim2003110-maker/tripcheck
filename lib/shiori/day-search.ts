@@ -1261,14 +1261,20 @@ export function daySearch(problem: SearchProblem, limits: { /** For tests: how m
         const known = tried.get(parts);
         if (known) return known;
         const found = split(parts, pin, Boolean(options.quick));
+        // The count of days is judged on the days as they will be printed.
+        // A day that runs late in the order the split left it in may fit in
+        // another order (a four-hour stay put first by habit), and that
+        // other order is the one printed: judging the first would spread a
+        // list that fits one day over two.
+        const days = options.quick ? found.days : found.days.map((day) => (day.keepable ? day : everyOrder(day)));
         const result = {
           parts,
           found,
           // A day that runs over, or a chosen meal that cannot be eaten.
-          late: found.days.some((day) => !day.keepable),
-          penalty: found.days.reduce((sum, day) => sum + day.orderCost - day.base, 0),
-          worst: Math.max(...found.days.map((day) => day.strain)),
-          door: doorToDoor(found.days),
+          late: days.some((day) => !day.keepable),
+          penalty: days.reduce((sum, day) => sum + day.orderCost - day.base, 0),
+          worst: Math.max(...days.map((day) => day.strain)),
+          door: doorToDoor(days),
           // A day with one short visit on it is not a day gained.
           lone: found.days.some((day) => day.order.length === 1 && !stops[day.order[0]].meal && stops[day.order[0]].stay < 240),
         };
