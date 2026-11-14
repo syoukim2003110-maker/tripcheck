@@ -85,7 +85,7 @@ export type PlannedDay = {
   cost: number;
   /** Booked times this day reaches too late. Never printed: the caller sets a place aside instead. */
   late: number;
-  /** Minutes the day runs past the finish the traveller entered for it. */
+  /** Minutes the day runs past the finish the traveller entered for it — or, on a trip with entered times, past its own midnight. */
   hardOver: number;
   /** A lunch hour had a place on this day but would have broken an entered time. */
   noLunchRoom: boolean;
@@ -107,6 +107,15 @@ export const DAY_CLOCK = {
   sightsEnd: 18 * 60,
   /** A chosen dinner may run to 21:30. */
   dinnerEnd: 21 * 60 + 30,
+  /**
+   * Where a day ends on a trip with entered times. Such a trip is laid on
+   * the calendar — day 1 is the day of the start, a booking's day is its
+   * date — so a day that ran past midnight would be standing in the next
+   * day's morning: nothing nobody booked ends after it. (A booked late show
+   * may: its hour is the traveller's own.) The last minute of the day: a
+   * visit that ends at 24:00 is printed as 00:00 of the next.
+   */
+  lastMinute: 24 * 60 - 1,
   lunchMinutes: 60,
   /** The engine allows ten minutes of slack after every ride. */
   legBuffer: 10,
@@ -223,6 +232,8 @@ export type ClockFrame = {
   close?: number | null;
   /** Minutes of the ride home after the last stop; 0 without a hotel. */
   homeward?: number;
+  /** No stop nobody booked ends after this minute (see DAY_CLOCK.lastMinute). */
+  night?: number | null;
 };
 
 /*
@@ -244,6 +255,8 @@ function clockPass(stays: readonly number[], meals: readonly Meal[], rides: read
   let late = 0;
   let cursor = first;
   let opened = first;
+  const night = frame?.night ?? null;
+  let nightOver = 0;
   for (let position = 0; position < stays.length; position += 1) {
     const meal = meals[position];
     const fixed = frame?.fixed?.[position] ?? null;
@@ -284,11 +297,13 @@ function clockPass(stays: readonly number[], meals: readonly Meal[], rides: read
     arrive.push(arrival);
     leave.push(departure);
     wait.push(held);
+    if (night !== null && fixed === null && departure - night > nightOver) nightOver = departure - night;
     cursor = departure;
     if (position < stays.length - 1) cursor += rides[position] + DAY_CLOCK.legBuffer;
   }
   const close = frame?.close ?? null;
-  const hardOver = close === null || leave.length === 0 ? 0 : Math.max(0, leave[leave.length - 1] + (frame!.homeward ?? 0) - close);
+  // Past the finish the traveller entered (the ride home included), or past the day's own midnight.
+  const hardOver = Math.max(nightOver, close === null || leave.length === 0 ? 0 : leave[leave.length - 1] + (frame!.homeward ?? 0) - close);
   return { arrive, leave, wait, missed, late, hardOver, opened };
 }
 
@@ -384,7 +399,7 @@ export function scheduleDay(
   }
   const open = frame.open ?? 0;
   const usual = Math.max(hotelOut === null ? DAY_CLOCK.start : DAY_CLOCK.hotelStart, open) + door;
-  const full: ClockFrame = { fixed: frame.fixed, close: frame.close, homeward: frame.homeward, earliest: open + door, tightest: open + (hotelOut ?? 0) };
+  const full: ClockFrame = { fixed: frame.fixed, close: frame.close, homeward: frame.homeward, night: frame.night, earliest: open + door, tightest: open + (hotelOut ?? 0) };
   const reserved = (position: number) => (frame.fixed?.[position] ?? null) !== null;
   /** Minutes past what the planner's own habits allow: sights by 18:00, a dinner by 21:30. A booked stop is not held to them. */
   const softOver = (clock: { leave: number[] }) => {
@@ -439,6 +454,12 @@ export function packedDay(day: { stops: number; sights: number; span: number; ri
     || day.rides.reduce((sum, minutes) => sum + minutes, 0) >= 150
     || day.rides.filter((minutes) => minutes >= 45).length >= 2
   );
+}
+
+function popcount(value: number) {
+  let bits = 0;
+  for (let rest = value; rest !== 0; rest &= rest - 1) bits += 1;
+  return bits;
 }
 
 function permutations(list: readonly number[]): number[][] {
@@ -502,8 +523,12 @@ export function daySearch(
       rides.push(problem.minutes[order[position]][order[position + 1]]);
       total += weight[order[position]][order[position + 1]];
     }
-    // A day the traveller said something about: its start, its finish, a booked time on it.
-    const framed = cls !== 0 || (anyFixed && order.some((stop) => fixedOf[stop] !== null));
+    // On a trip the traveller entered a time for, every day is run on the
+    // clock that keeps entered times: its own start and finish, the booked
+    // times on it — and, for all of them, the day's own midnight and a lunch
+    // hour that is only taken where it breaks none of these. (A day nothing
+    // was said about differs from an ordinary one in exactly that.)
+    const framed = framesOn;
     const frame: ClockFrame | undefined = framed
       ? {
         fixed: order.map((stop) => fixedOf[stop]),
@@ -511,9 +536,11 @@ export function daySearch(
         tightest: (cls & 1 ? firstStart! : 0) + (hotel ? hotel.out[order[0]] : 0),
         close: cls & 2 ? lastFinish : null,
         homeward: hotel ? hotel.back[order.at(-1)!] : 0,
+        night: DAY_CLOCK.lastMinute,
       }
       : undefined;
     const clock = dayClock(stays, meals, rides, firstArrival(order[0], cls), frame);
+    const hardOver = clock.hardOver;
     const travel = rides.reduce((sum, minutes) => sum + minutes, 0) + (hotel ? hotel.out[order[0]] + hotel.back[order.at(-1)!] : 0);
     // A booked stop is not held to the planner's own 18:00 and 21:30: the
     // traveller chose its hour. (With nothing booked this is the rule as it
@@ -563,10 +590,11 @@ export function daySearch(
     const tight = packedDay({ stops: order.length, sights, span, rides });
     const ride = rideOf(total);
     // What the traveller entered and this order breaks: a booked time reached
-    // late, the day's finish passed. Such an order is only ever compared with
-    // other broken ones — any order that breaks less is better whatever it costs.
-    const broken = clock.late + (clock.hardOver > 0 ? 1 : 0);
-    const orderCost = ride + waiting / 2 + penalty(overrun, clock.missed) + (broken > 0 ? 1000 * clock.late + penalty(clock.hardOver, 0) : 0);
+    // late, the day's finish passed — or, on a trip with entered times, the
+    // day's own midnight. Such an order is only ever compared with other
+    // broken ones — any order that breaks less is better whatever it costs.
+    const broken = clock.late + (hardOver > 0 ? 1 : 0);
+    const orderCost = ride + waiting / 2 + penalty(overrun, clock.missed) + (broken > 0 ? 1000 * clock.late + penalty(hardOver, 0) : 0);
     return {
       order,
       travel,
@@ -597,7 +625,7 @@ export function daySearch(
       cls,
       framed,
       late: clock.late,
-      hardOver: clock.hardOver,
+      hardOver,
       broken,
       noLunchRoom: clock.noLunchRoom,
     };
@@ -884,7 +912,7 @@ export function daySearch(
     const known = solved.get(key);
     if (known) return known;
     if (cls !== 0 || (anyFixed && ids.some((stop) => fixedOf[stop] !== null))) {
-      const framed = solveFramed(ids, cls);
+      const framed = kept(ids, cls, solveFramed(ids, cls));
       solved.set(key, framed);
       return framed;
     }
@@ -997,7 +1025,7 @@ export function daySearch(
       if (strict && !best.day?.keepable) roughly();
     } else roughly();
     const day = best.day!;
-    const result = { ...day, doubt: !day.keepable || best.unkept < day.orderCost - EPSILON };
+    const result = kept(ids, cls, { ...day, doubt: !day.keepable || best.unkept < day.orderCost - EPSILON });
     solved.set(key, result);
     return result;
   }
@@ -1111,6 +1139,7 @@ export function daySearch(
       const pass = (lunchAt: number) => {
         missed = 0;
         late = 0;
+        let nightOver = 0;
         let cursor = firstArrival(order[0], cls);
         for (let position = 0; position < total; position += 1) {
           const stop = order[position];
@@ -1137,10 +1166,11 @@ export function daySearch(
           arrive[position] = arrival;
           ends[position] = departure;
           held[position] = wait;
+          if (fixed === null && departure - DAY_CLOCK.lastMinute > nightOver) nightOver = departure - DAY_CLOCK.lastMinute;
           cursor = departure;
           if (position < total - 1) cursor += problem.minutes[stop][order[position + 1]] + buffer;
         }
-        hardOver = close === null ? 0 : Math.max(0, ends[total - 1] + (hotel ? hotel.back[order[total - 1]] : 0) - close);
+        hardOver = Math.max(nightOver, close === null ? 0 : ends[total - 1] + (hotel ? hotel.back[order[total - 1]] : 0) - close);
       };
       /** dayClock() and describe()'s cost for the order in hand. */
       const weigh = (soFar: number) => {
@@ -1973,6 +2003,7 @@ export function daySearch(
           open: final.cls & 1 ? firstStart : null,
           close: final.cls & 2 ? lastFinish : null,
           homeward: hotel ? hotel.back[order.at(-1)!] : 0,
+          night: DAY_CLOCK.lastMinute,
         }
         : undefined,
     );
@@ -2041,6 +2072,133 @@ export function daySearch(
     }
     return days.reduce((sum, day) => sum + day.travel + problem.minutes[centre][day.order[0]] + problem.minutes[day.order.at(-1)!][centre], 0);
   }
+
+  /*
+   * What can be kept at all.
+   *
+   * Whether a set of places can share a day without breaking an entered time
+   * — a booking reached late, the finish passed, the day's own midnight — is
+   * a question about clocks only, and it has an exact answer that needs no
+   * search over orders: arriving earlier never makes a traveller leave later
+   * (early at a booking or a restaurant is a wait), so the earliest moment a
+   * set can be finished at each possible last stop is found by dynamic
+   * programming over the set, and the set can be kept if one of those ends
+   * is in time. The lunch hour is not counted: on a day with an entered time
+   * it is only taken where it breaks nothing. The one rule about order the
+   * search itself keeps is kept here too: among the stops nobody booked, a
+   * dinner comes after the sights.
+   */
+  const leaveTables = new Map<number, Float64Array>();
+  const freeDinners = stops.reduce((mask, stop, index) => (fixedOf[index] === null && stop.meal === "dinner" ? mask | (1 << index) : mask), 0);
+  /** When a stop nobody booked is left, reached at `cursor`; Infinity when that is after the day's last minute. */
+  function leaveFree(stop: number, cursor: number) {
+    let arrival = cursor;
+    const meal = stops[stop].meal;
+    if (meal) {
+      const seated = Math.max(cursor, DAY_CLOCK.meals[meal].open);
+      if (seated <= DAY_CLOCK.meals[meal].lastSeat) arrival = seated;
+    }
+    const leave = arrival + stops[stop].stay;
+    return leave > DAY_CLOCK.lastMinute ? Infinity : leave;
+  }
+  /** When `stop` is left as the first of a day of this class; Infinity when an entered time is broken. */
+  function leaveFirst(cls: number, stop: number) {
+    const fixed = fixedOf[stop];
+    const cursor = firstArrival(stop, cls);
+    if (fixed === null) return leaveFree(stop, cursor);
+    // A booking opens the day early, or is reached by the ride alone from the hour the traveller can start.
+    return cursor <= fixed || (cls & 1 ? firstStart! : 0) + (hotel ? hotel.out[stop] : 0) <= fixed ? fixed + stops[stop].stay : Infinity;
+  }
+  /** When `next` is left, coming from `last` (left at `left`) after the stops in `mask`; Infinity when an entered time is broken. */
+  function leaveNext(mask: number, last: number, left: number, next: number) {
+    const fixed = fixedOf[next];
+    const cursor = left + problem.minutes[last][next] + DAY_CLOCK.legBuffer;
+    if (fixed !== null) {
+      // Straight from one booking to the next the slack is given up (see clockPass).
+      return cursor <= fixed || (fixedOf[last] !== null && cursor - DAY_CLOCK.legBuffer <= fixed) ? fixed + stops[next].stay : Infinity;
+    }
+    if (mask & freeDinners && stops[next].meal !== "dinner") return Infinity;
+    return leaveFree(next, cursor);
+  }
+  function earliestLeaves(cls: number) {
+    const known = leaveTables.get(cls);
+    if (known) return known;
+    const size = 1 << count;
+    const table = new Float64Array(size * count).fill(Infinity);
+    for (let stop = 0; stop < count; stop += 1) table[(1 << stop) * count + stop] = leaveFirst(cls, stop);
+    for (let mask = 1; mask < size; mask += 1) {
+      for (let last = 0; last < count; last += 1) {
+        const left = table[mask * count + last];
+        if (left === Infinity) continue;
+        for (let next = 0; next < count; next += 1) {
+          if (mask & (1 << next)) continue;
+          const leave = leaveNext(mask, last, left, next);
+          const slot = (mask | (1 << next)) * count + next;
+          if (leave < table[slot]) table[slot] = leave;
+        }
+      }
+    }
+    leaveTables.set(cls, table);
+    return table;
+  }
+  /** The stop a day of these places can end on with every entered time kept — the one that is over soonest — or -1. */
+  function lastHeld(cls: number, mask: number, ignoreFinish: boolean) {
+    const table = earliestLeaves(cls);
+    let found = -1;
+    for (let last = 0; last < count; last += 1) {
+      if (!(mask & (1 << last))) continue;
+      const left = table[mask * count + last];
+      if (left === Infinity || (cls & 2 && !ignoreFinish && left + (hotel ? hotel.back[last] : 0) > lastFinish!)) continue;
+      if (found < 0 || left < table[mask * count + found]) found = last;
+    }
+    return found;
+  }
+  /** Whether the places in `mask` can share a day of this class with every entered time kept. */
+  const holds = (cls: number, mask: number, ignoreFinish: boolean) => lastHeld(cls, mask, ignoreFinish) >= 0;
+  /** An order of the places in `mask` that keeps every entered time on a day of this class, or null when there is none. */
+  function heldOrder(cls: number, mask: number) {
+    const table = earliestLeaves(cls);
+    let last = lastHeld(cls, mask, false);
+    if (last < 0) return null;
+    const order: number[] = [];
+    for (let rest = mask; ;) {
+      order.push(last);
+      const before = rest ^ (1 << last);
+      if (before === 0) break;
+      const target = table[rest * count + last];
+      let previous = -1;
+      for (let index = 0; index < count && previous < 0; index += 1) {
+        if (!(before & (1 << index))) continue;
+        const left = table[before * count + index];
+        if (left !== Infinity && leaveNext(before, index, left, last) === target) previous = index;
+      }
+      if (previous < 0) return null;
+      rest = before;
+      last = previous;
+    }
+    return order.reverse();
+  }
+  /** The oracle's tables are two to the power of the list: only for lists up to this long. */
+  const HELD_STOPS = 16;
+  /**
+   * A day the solver left breaking an entered time although the clock shows
+   * it can be kept (the tables above are exact; the solver's shortcuts — the
+   * shortest route to each last stop, a long stay put first, a booked stop
+   * slotted into the others' order — are not). The order that keeps every
+   * time replaces it, and on a short day starts the search over every order,
+   * which then cuts off whatever breaks one: so a day is called broken only
+   * when no order of it can be kept.
+   */
+  function kept(ids: readonly number[], cls: number, day: Solved): Solved {
+    if (!framesOn || day.broken === 0 || count > HELD_STOPS) return day;
+    const order = heldOrder(cls, ids.reduce((mask, stop) => mask | (1 << stop), 0));
+    if (!order) return day;
+    const held = describe(order, cls);
+    if (held.broken > 0) return day;
+    return { ...(ids.length <= BOOKED_DAY_STOPS ? framedOrders(ids, cls, held) : held), doubt: true };
+  }
+  /** Lists this long are looked at set by set: three to the power of the places, per day. */
+  const KEEP_MOST_WORK = 30_000_000;
 
   /** What was asked before is not worked out again. */
   const answers = new Map<string, PlannedTrip>();
@@ -2137,6 +2295,13 @@ export function daySearch(
           const next = candidate(parts);
           if (worse(chosen, next)) chosen = next;
         }
+        // An entered time that still cannot be kept may be one that fewer days
+        // keep: the last day has a finish, and a trip that ends a day earlier
+        // does not reach it.
+        for (let parts = first - 1; parts >= fewest && chosen.broken > 0; parts -= 1) {
+          const next = candidate(parts);
+          if (worse(chosen, next)) chosen = next;
+        }
         for (let settled = chosen.late; !settled;) {
           settled = true;
           // The day after next is looked at too: three neighbourhoods on two days want a third, not a second and a half.
@@ -2190,6 +2355,142 @@ export function daySearch(
       skippedKey = "";
       answers.set(asked, answer);
       return answer;
+    },
+    /**
+     * When the trip cannot be planned without breaking an entered time: the
+     * most places that can be kept, bookings always among them, and which
+     * places would then be left out. Every way of leaving places out and
+     * sharing the rest among the days is looked at, on the clock alone (see
+     * earliestLeaves), so the number kept is the largest there is. Several
+     * sets of that size may do; they are returned with the one that keeps
+     * the places highest in the traveller's list first, for the caller to
+     * plan and choose among. Null when the list is too long to look at set
+     * by set, or when not even the bookings can be kept together.
+     *
+     * `ignoreFinish`: the same question without the last day's finish — to
+     * tell whether the finish is what leaves no room.
+     */
+    keepMost(requestedDays: number, options: { without?: readonly number[]; ignoreFinish?: boolean; atMost?: number } = {}): { kept: number; of: number; leaveOut: number[][] } | null {
+      if (!framesOn || count > HELD_STOPS) return null;
+      const requested = Math.max(1, Math.min(14, Math.round(requestedDays)));
+      const out = new Set(options.without ?? []);
+      let all = 0;
+      let mustKeep = 0;
+      const pinned: Array<number | null> = stops.map(() => null);
+      stops.forEach((stop, index) => {
+        const day = typeof stop.day === "number" && stop.day >= 1 && Math.round(stop.day) <= requested ? Math.round(stop.day) : null;
+        // (A booking on a day the trip does not have is never planned: see choose.)
+        if (out.has(index) || (fixedOf[index] !== null && day === null)) return;
+        all |= 1 << index;
+        pinned[index] = day;
+        if (fixedOf[index] !== null) mustKeep |= 1 << index;
+      });
+      const total = popcount(all);
+      if (total === 0 || 3 ** total * requested > KEEP_MOST_WORK) return null;
+      // reach[set]: the days so far can hold exactly this set, each day keeping every entered time.
+      let reach = new Uint8Array(1 << count);
+      reach[0] = 1;
+      for (let day = 1; day <= requested; day += 1) {
+        const cls = classOf(day, requested);
+        let allowed = 0;
+        for (let index = 0; index < count; index += 1) if (all & (1 << index) && (pinned[index] === null || pinned[index] === day)) allowed |= 1 << index;
+        const next = new Uint8Array(1 << count);
+        for (let set = all; ; set = (set - 1) & all) {
+          const share = set & allowed;
+          for (let today = share; ; today = (today - 1) & share) {
+            if (reach[set ^ today] && (today === 0 || holds(cls, today, Boolean(options.ignoreFinish)))) {
+              next[set] = 1;
+              break;
+            }
+            if (today === 0) break;
+          }
+          if (set === 0) break;
+        }
+        reach = next;
+      }
+      let most = -1;
+      const sets: number[] = [];
+      for (let set = all; ; set = (set - 1) & all) {
+        if (reach[set] && (set & mustKeep) === mustKeep) {
+          const size = popcount(set);
+          if (size > most) {
+            most = size;
+            sets.length = 0;
+          }
+          if (size === most) sets.push(set);
+        }
+        if (set === 0) break;
+      }
+      if (most < 0) return null;
+      // The places listed first are kept first: of two sets, the one that keeps the earlier place the other leaves out.
+      const rank = (set: number) => {
+        let value = 0;
+        for (let index = 0; index < count; index += 1) value = value * 2 + (set & (1 << index) ? 1 : 0);
+        return value;
+      };
+      sets.sort((left, right) => rank(right) - rank(left));
+      return {
+        kept: most,
+        of: total,
+        leaveOut: sets.slice(0, options.atMost ?? 16).map((set) => stops.flatMap((_, index) => (all & (1 << index) && !(set & (1 << index)) ? [index] : []))),
+      };
+    },
+    /**
+     * For a list too long for keepMost: the most of ONE day's places that
+     * day can hold with every entered time kept (its bookings always among
+     * them), found the same exact way on that day's places alone. Returns the
+     * places to take off the day — those lowest in the traveller's list
+     * where several sets do — or null when the day cannot even keep its
+     * bookings. (A day of more than sixteen places is far beyond what any
+     * day holds: its bookings and the places highest in the list, sixteen
+     * in all, are looked at and the rest go with what does not fit.)
+     */
+    thinDay(order: readonly number[], day: number, requestedDays: number): number[] | null {
+      if (!framesOn) return null;
+      const requested = Math.max(1, Math.min(14, Math.round(requestedDays)));
+      const listed = [...order].sort((left, right) => left - right);
+      const bookedHere = listed.filter((stop) => fixedOf[stop] !== null);
+      if (bookedHere.length > HELD_STOPS) return null;
+      const looked = new Set([...bookedHere, ...listed.filter((stop) => fixedOf[stop] === null).slice(0, HELD_STOPS - bookedHere.length)]);
+      const nodes = listed.filter((stop) => looked.has(stop));
+      const beyond = listed.filter((stop) => !looked.has(stop));
+      const size = nodes.length;
+      const cls = classOf(day, requested);
+      // The same table as earliestLeaves, over this day's places only.
+      const table = new Float64Array((1 << size) * size).fill(Infinity);
+      const dinners = nodes.reduce((bits, stop, index) => (fixedOf[stop] === null && stops[stop].meal === "dinner" ? bits | (1 << index) : bits), 0);
+      for (let index = 0; index < size; index += 1) table[(1 << index) * size + index] = leaveFirst(cls, nodes[index]);
+      let best = -1;
+      let bestSize = -1;
+      let bestRank = -1;
+      const must = nodes.reduce((bits, stop, index) => (fixedOf[stop] !== null ? bits | (1 << index) : bits), 0);
+      for (let mask = 1; mask < 1 << size; mask += 1) {
+        let held = false;
+        for (let last = 0; last < size; last += 1) {
+          const left = table[mask * size + last];
+          if (left === Infinity) continue;
+          if (!(cls & 2) || left + (hotel ? hotel.back[nodes[last]] : 0) <= lastFinish!) held = true;
+          for (let next = 0; next < size; next += 1) {
+            if (mask & (1 << next)) continue;
+            // (leaveNext asks only whether a dinner nobody booked is already on the day.)
+            const leave = leaveNext(mask & dinners ? freeDinners : 0, nodes[last], left, nodes[next]);
+            const slot = (mask | (1 << next)) * size + next;
+            if (leave < table[slot]) table[slot] = leave;
+          }
+        }
+        if (!held || (mask & must) !== must) continue;
+        const kept = popcount(mask);
+        // The places listed first are kept first.
+        let rank = 0;
+        for (let index = 0; index < size; index += 1) rank = rank * 2 + (mask & (1 << index) ? 1 : 0);
+        if (kept > bestSize || (kept === bestSize && rank > bestRank)) {
+          best = mask;
+          bestSize = kept;
+          bestRank = rank;
+        }
+      }
+      if (best < 0) return must === 0 ? [...listed] : null;
+      return [...nodes.filter((_, index) => !(best & (1 << index))), ...beyond].sort((left, right) => left - right);
     },
     /** Another plan's grouping (`dayOf[stop]` is its 1-based day; 0 or less: not in the plan), each day in its best order. */
     keep(dayOf: readonly number[], slots: number, options: { quick?: boolean; /** The days asked for, when the last of them has a finish. */ requested?: number } = {}): PlannedTrip {

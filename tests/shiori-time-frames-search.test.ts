@@ -214,6 +214,7 @@ type Stop = SearchProblem["stops"][number];
  */
 function reference(problem: SearchProblem, order: readonly number[], first: boolean, last: boolean) {
   const { stops, minutes, hotel } = problem;
+  const entered = stops.some((stop) => typeof stop.fixed === "number") || (problem.frames?.firstStart ?? null) !== null || (problem.frames?.lastFinish ?? null) !== null;
   const start = first ? problem.frames!.firstStart! : 0;
   const door = hotel ? hotel.out[order[0]] + 10 : 0;
   const run = (lunchAfter: number) => {
@@ -221,6 +222,7 @@ function reference(problem: SearchProblem, order: readonly number[], first: bool
     let late = 0;
     let missed = 0;
     let lunchWait = 0;
+    let night = 0;
     const leave: number[] = [];
     const arrive: number[] = [];
     order.forEach((stop, position) => {
@@ -247,8 +249,10 @@ function reference(problem: SearchProblem, order: readonly number[], first: bool
       arrive.push(now);
       now += entry.stay + (position === lunchAfter ? 60 : 0);
       leave.push(now);
+      // On a trip with entered times a day ends on its own date: nothing nobody booked ends after 23:59.
+      if (entered && typeof entry.fixed !== "number") night = Math.max(night, now - 1439);
     });
-    const over = last ? Math.max(0, now + (hotel ? hotel.back[order.at(-1)!] : 0) - problem.frames!.lastFinish!) : 0;
+    const over = Math.max(night, last ? now + (hotel ? hotel.back[order.at(-1)!] : 0) - problem.frames!.lastFinish! : 0);
     return { arrive, leave, late, missed, lunchWait, over };
   };
   const plain = run(-1);
@@ -592,4 +596,174 @@ test("a list too long to cost every split keeps its bookings as well as the exac
     const searched = broken(daySearch(problem, { exactSplits: 0 }).choose(days));
     assert.ok(searched <= exact, `round ${round}: ${searched} broken by the neighbourhood search, ${exact} by the exact one`);
   }
+});
+
+/* ------------------------------------------------- what can be kept at all */
+
+/** A generator that does not lose its low bits (the one above multiplies past what a double holds). */
+function mulberry(seed: number) {
+  let state = Math.imul(seed, 2654435761) | 0;
+  return (below: number) => {
+    state = (state + 0x6D2B79F5) | 0;
+    let mixed = Math.imul(state ^ (state >>> 15), 1 | state);
+    mixed = (mixed + Math.imul(mixed ^ (mixed >>> 7), 61 | mixed)) ^ mixed;
+    return Math.floor((((mixed ^ (mixed >>> 14)) >>> 0) / 4294967296) * below);
+  };
+}
+
+/**
+ * By brute force, on the clock written out in this file: can these places be
+ * shared among days 1..days — every pinned or booked one on its day — so
+ * that some order of every day breaks no entered time? `keep` is the set of
+ * places as bits.
+ */
+function holdable(problem: SearchProblem, days: number, keep: number, known: Map<string, boolean>) {
+  const { stops } = problem;
+  const dayHolds = (mask: number, day: number) => {
+    const key = `${day}|${mask}`;
+    const before = known.get(key);
+    if (before !== undefined) return before;
+    const ids = stops.flatMap((_, index) => (mask & (1 << index) ? [index] : []));
+    const first = day === 1 && problem.frames!.firstStart !== null;
+    const last = day === days && problem.frames!.lastFinish !== null;
+    const held = ids.every((stop) => stops[stop].day === null || stops[stop].day === day)
+      && permutations(ids).some((order) => allowed(stops, order, false) && reference(problem, order, first, last).broken === 0);
+    known.set(key, held);
+    return held;
+  };
+  const share = (rest: number, day: number): boolean => {
+    if (rest === 0) return true;
+    if (day > days) return false;
+    for (let today = rest; ; today = (today - 1) & rest) {
+      if ((today === 0 || dayHolds(today, day)) && share(rest ^ today, day + 1)) return true;
+      if (today === 0) return false;
+    }
+  };
+  return share(keep, 1);
+}
+
+test("a trip is called impossible to keep only when it is, and the most places that can be kept is found exactly", () => {
+  // 320 random trips of two to six places on one to three days, made to be
+  // tight: a late start, an early finish, bookings, pins, long stays. Every
+  // way of leaving places out, sharing the rest among the days and ordering
+  // each day is tried on the clock written out above.
+  const random = mulberry(Number(process.env.SHIORI_FRAME_SEED ?? 5));
+  let impossible = 0;
+  let thinned = 0;
+  for (let round = 0; round < 320; round += 1) {
+    const days = 1 + random(3);
+    const count = 2 + random(days === 1 ? 5 : 4);
+    const stops: Stop[] = Array.from({ length: count }, () => ({ stay: [30, 45, 60, 90, 120, 180, 240, 480][random(8)], meal: null, day: null }));
+    if (random(5) === 0) stops[random(count)] = { stay: 60, meal: "lunch", day: null };
+    if (random(5) === 0) stops[count - 1] = { stay: 90, meal: "dinner", day: null };
+    const bookedDays = new Set<number>();
+    for (let booking = random(3); booking > 0; booking -= 1) {
+      const stop = random(count);
+      const day = 1 + random(days);
+      // (Two bookings on one day that cannot stand together are the caller's to set aside: one a day here.)
+      if (typeof stops[stop].fixed === "number" || bookedDays.has(day)) continue;
+      bookedDays.add(day);
+      stops[stop] = { ...stops[stop], day, fixed: 540 + 30 * random(26) };
+    }
+    stops.forEach((stop, index) => {
+      if (stop.day === null && random(7) === 0) stops[index] = { ...stop, day: 1 + random(days) };
+    });
+    const problem: SearchProblem = {
+      stops,
+      minutes: table(count, () => 5 + random(50)),
+      km: table(count, () => 1 + random(9)),
+      hotel: random(3) === 0 ? { out: stops.map(() => 5 + random(40)), back: stops.map(() => 5 + random(40)), km: stops.map(() => 3) } : null,
+      frames: { firstStart: random(3) === 0 ? null : 600 + 60 * random(11), lastFinish: random(3) === 0 ? null : 600 + 60 * random(9) },
+    };
+    if (!stops.some((stop) => typeof stop.fixed === "number") && problem.frames!.firstStart === null && problem.frames!.lastFinish === null) continue;
+    const search = daySearch(problem);
+    const known = new Map<string, boolean>();
+    const all = (1 << count) - 1;
+    const where = `round ${round}: ${JSON.stringify({ days, stops, frames: problem.frames, hotel: Boolean(problem.hotel) })}`;
+    // The plan breaks an entered time only when every way of making it does.
+    const trip = search.choose(days);
+    const broken = trip.days.some((day) => day.late > 0 || day.hardOver > 0);
+    assert.equal(broken, !holdable(problem, days, all, known), where);
+    if (!broken) continue;
+    impossible += 1;
+    // The most that can be kept, the bookings always among it.
+    const must = stops.reduce((mask, stop, index) => (typeof stop.fixed === "number" ? mask | (1 << index) : mask), 0);
+    let most = -1;
+    for (let keep = all; ; keep = (keep - 1) & all) {
+      if ((keep & must) === must) {
+        const size = stops.filter((_, index) => keep & (1 << index)).length;
+        if (size > most && holdable(problem, days, keep, known)) most = size;
+      }
+      if (keep === 0) break;
+    }
+    const told = search.keepMost(days);
+    if (most < 0) {
+      assert.equal(told, null, `${where}: not even the bookings can be kept`);
+      continue;
+    }
+    assert.ok(told, where);
+    assert.deepEqual([told.kept, told.of], [most, count], where);
+    thinned += 1;
+    // Every set it offers has that size, and the trip without it is planned with nothing broken.
+    assert.ok(told.leaveOut.length >= 1, where);
+    for (const leaveOut of told.leaveOut) {
+      assert.equal(leaveOut.length, count - most, where);
+      assert.equal(leaveOut.some((stop) => typeof stops[stop].fixed === "number"), false, `${where}: a booked place is offered for leaving out`);
+      const without = search.choose(days, { without: leaveOut });
+      assert.equal(without.days.some((day) => day.late > 0 || day.hardOver > 0), false, `${where}: without ${leaveOut.join(",")} the plan still breaks a time`);
+      assert.deepEqual(without.days.flatMap((day) => day.order).sort((left, right) => left - right), stops.flatMap((_, index) => (leaveOut.includes(index) ? [] : [index])), where);
+    }
+    // The first of them keeps the places highest in the list.
+    const rank = (leaveOut: readonly number[]) => stops.reduce((value, _, index) => value * 2 + (leaveOut.includes(index) ? 0 : 1), 0);
+    for (const other of told.leaveOut.slice(1)) assert.ok(rank(told.leaveOut[0]) > rank(other), where);
+  }
+  assert.ok(impossible >= 80 && thinned >= 30, `${impossible} trips that cannot keep every time, ${thinned} thinned`);
+});
+
+test("a day of a trip with entered times ends on its own date; a booked late show may run past it", () => {
+  // Six two-hour sights and a start at 16:00 on a one-day trip: from 16:00
+  // only three end by 23:59 (16:00-18:00, 18:15-20:15, 20:30-22:30).
+  const stops: Stop[] = Array.from({ length: 6 }, () => ({ stay: 120, meal: null, day: null }));
+  const problem = (extra: Stop[] = []): SearchProblem => ({ stops: [...stops, ...extra], minutes: table(6 + extra.length, () => 5), km: table(6 + extra.length, () => 1), hotel: null, frames: { firstStart: 960, lastFinish: null } });
+  const search = daySearch(problem());
+  const full = search.choose(1).days[0];
+  assert.ok(full.hardOver > 0, "six of them run past midnight: that is broken, not just late");
+  const most = search.keepMost(1)!;
+  assert.deepEqual([most.kept, most.of, most.leaveOut[0]], [3, 6, [3, 4, 5]]);
+  const kept = search.choose(1, { without: most.leaveOut[0] }).days[0];
+  assert.deepEqual([kept.hardOver, kept.leave.at(-1)], [0, 1350]);
+  // A longer list with nothing entered is planned as it always was: one day that runs through the night,
+  // said to run late, nothing "broken" — and with a start entered, the same list ends on its own date.
+  const eleven: Stop[] = Array.from({ length: 11 }, () => ({ stay: 120, meal: null, day: null }));
+  const long = (frames?: SearchProblem["frames"]): SearchProblem => ({ stops: eleven, minutes: table(11, () => 5), km: table(11, () => 1), hotel: null, ...(frames ? { frames } : {}) });
+  const plain = daySearch(long()).choose(1).days[0];
+  assert.deepEqual([plain.order.length, plain.hardOver, plain.late], [11, 0, 0]);
+  assert.ok(plain.overrun > 0 && plain.leave.at(-1)! > 1440, `${plain.leave.at(-1)}`);
+  const started = daySearch(long({ firstStart: 540, lastFinish: null }));
+  assert.ok(started.choose(1).days[0].hardOver > 0);
+  const fits = started.keepMost(1)!;
+  const dated = started.choose(1, { without: fits.leaveOut[0] }).days[0];
+  assert.ok(dated.hardOver === 0 && dated.leave.at(-1)! <= 1439 && dated.order.length === fits.kept && fits.kept >= 5, `${fits.kept} kept, to ${dated.leave.at(-1)}`);
+  // A show booked for 23:00 that ends at 00:30 is the traveller's own hour: it is kept, and is not "past midnight".
+  const show = daySearch(problem([{ stay: 90, meal: null, day: 1, fixed: 1380 }]));
+  const night = show.keepMost(1)!;
+  assert.equal(night.leaveOut.every((leaveOut) => !leaveOut.includes(6)), true);
+  const withShow = show.choose(1, { without: night.leaveOut[0] }).days[0];
+  assert.deepEqual([withShow.hardOver, withShow.late, withShow.order.at(-1), withShow.arrive.at(-1), withShow.leave.at(-1)], [0, 0, 6, 1380, 1470]);
+});
+
+test("on a list too long to weigh every set, an over-full day is thinned to the most it can hold", () => {
+  // Eighteen one-hour sights, one day, over by 13:00: from 09:00 with ten
+  // minutes of slack and five of ride between them, three fit (to 12:30).
+  const stops: Stop[] = Array.from({ length: 18 }, () => ({ stay: 60, meal: null, day: null }));
+  const problem: SearchProblem = { stops, minutes: table(18, () => 5), km: table(18, () => 1), hotel: null, frames: { firstStart: null, lastFinish: 780 } };
+  const search = daySearch(problem);
+  assert.equal(search.keepMost(1), null, "eighteen places are too many to look at set by set");
+  const day = search.choose(1).days[0];
+  assert.ok(day.hardOver > 0);
+  const off = search.thinDay(day.order, 1, 1)!;
+  // The three kept are the first three of the traveller's list.
+  assert.deepEqual(off, stops.map((_, index) => index).slice(3));
+  const after = search.choose(1, { without: off }).days[0];
+  assert.deepEqual([[...after.order].sort((left, right) => left - right), after.hardOver, after.leave.at(-1)], [[0, 1, 2], 0, 750]);
 });

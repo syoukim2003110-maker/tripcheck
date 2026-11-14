@@ -963,14 +963,14 @@ function planCore(input: ShioriInput, options: PlanOptions, frames: Frames | nul
       // The day's entered times, exactly as the search knows them (see day-search.ts).
       const open = frames && index === 0 ? frames.start : null;
       const close = frames && index === requested - 1 ? frames.finish : null;
-      const framed = frames !== null && (open !== null || close !== null || places.some((place) => frames.booked.has(place.id)));
+      // (On a trip with an entered time every day keeps that clock: see describe() in day-search.ts.)
       const schedule = scheduleDay(
         places.map(stayOf),
         places.map((place) => place.meal ?? null),
         day.legs.map((leg) => leg.comparison.recommended.minutes),
         day.startBase && day.hotelOutboundMinutes !== null ? day.hotelOutboundMinutes : null,
-        framed
-          ? { fixed: places.map((place) => frames.booked.get(place.id)?.at ?? null), open, close, homeward: day.endBase && day.hotelInboundMinutes !== null ? day.hotelInboundMinutes : 0 }
+        frames !== null
+          ? { fixed: places.map((place) => frames.booked.get(place.id)?.at ?? null), open, close, homeward: day.endBase && day.hotelInboundMinutes !== null ? day.hotelInboundMinutes : 0, night: DAY_CLOCK.lastMinute }
           : undefined,
       );
       if (schedule.noLunchRoom) timing.noLunchRoom.add(index);
@@ -1294,8 +1294,11 @@ function planCore(input: ShioriInput, options: PlanOptions, frames: Frames | nul
  *      past its finish, or clashing with another booking) is set aside
  *      before anything is planned. Only these are called "cannot".
  *   2. The search breaks an entered time only when it found no way not to;
- *      if it still does, a place nobody booked is set aside from that day
- *      and the trip searched again.
+ *      if it still does, places nobody booked are set aside — as few as
+ *      can be: for a list short enough, every way of leaving places out is
+ *      weighed (day-search.ts, keepMost). A trip with entered times lies on
+ *      the calendar, so this covers its own midnight too: what would run
+ *      into the next day is set aside, not printed at two in the morning.
  *   3. The booklet as built — after measured street paths have corrected
  *      its clocks — is read back against every entered time; a place is set
  *      aside and the booklet built again for as long as one is broken.
@@ -1368,20 +1371,64 @@ function planFramed(input: ShioriInput, options: PlanOptions, frames: Frames): S
     const search = searchFor(input, pricing, frames);
     const without = () => input.places.flatMap((place, index) => (excluded.has(place.id) ? [index] : []));
     const broken = (days: ReadonlyArray<{ late: number; hardOver: number }>) => days.some((day) => day.late > 0 || day.hardOver > 0);
+    const lastHasFinish = (day: number) => day === requested && frames.finish !== null;
+    if (excluded.size < input.places.length && broken(search.choose(input.days, { without: without() }).days)) {
+      // Something has to give. First the exact answer, for a list short
+      // enough to look at set by set: the fewest places set aside — every
+      // way of leaving places out is weighed — and, among the sets of that
+      // size, the one whose plan costs least. (When several hundred sets tie,
+      // the sixteen that keep the places highest in the list are planned.)
+      const most = search.keepMost(input.days, { without: without() });
+      if (most && most.kept < most.of) {
+        let best: { leaveOut: number[]; cost: number } | null = null;
+        for (const leaveOut of most.leaveOut) {
+          const days = search.choose(input.days, { without: [...without(), ...leaveOut] }).days;
+          if (broken(days)) continue;
+          const cost = days.reduce((sum, day) => sum + day.cost, 0);
+          if (best === null || cost < best.cost - 1e-6) best = { leaveOut, cost };
+        }
+        if (best) {
+          // Why: the finish, when everything would fit without it; else a
+          // booking on the day the place is pinned to; else the days themselves.
+          const finishOnly = frames.finish !== null && search.keepMost(input.days, { without: without(), ignoreFinish: true, atMost: 1 })?.kept === most.of;
+          const bookedDays = new Set([...frames.booked.entries()].flatMap(([id, booked]) => (excluded.has(id) ? [] : [booked.day])));
+          for (const index of best.leaveOut) {
+            const place = input.places[index];
+            const pin = typeof place.day === "number" && place.day >= 1 && place.day <= requested ? place.day : null;
+            setAside(finishOnly
+              ? { placeId: place.id, name: place.name, reason: "no-room", day: requested, edge: "finish", proven: false }
+              : pin !== null && bookedDays.has(pin)
+                ? { placeId: place.id, name: place.name, reason: "no-room", day: pin, edge: "reserve", proven: false }
+                : { placeId: place.id, name: place.name, reason: "no-room", day: pin ?? (frames.finish !== null && frames.start === null ? requested : 1), edge: lastHasFinish(pin ?? 0) ? "finish" : "day", proven: false });
+          }
+        }
+      }
+    }
+    // A list too long for that — or a plan the search still cannot keep —
+    // is thinned one place at a time. Good, not proven fewest.
+    const mark = unplaced.length;
     while (excluded.size < input.places.length) {
       const day = search.choose(input.days, { without: without() }).days.find((entry) => entry.late > 0 || entry.hardOver > 0);
       if (!day) break;
       const places = day.order.map((stop) => input.places[stop]);
       const bookedAt = places.map((place) => frames.booked.get(place.id)?.at ?? null);
-      // The first booking reached late — or, when only the finish is passed, the end of the day.
+      // The first booking reached late — or, when only the day's end is passed, the end of the day.
       const latePosition = day.late > 0 ? places.findIndex((_, position) => bookedAt[position] !== null && day.arrive[position] > bookedAt[position]!) : -1;
-      const edge = latePosition >= 0 ? "reserve" as const : "finish" as const;
+      const edge = latePosition >= 0 ? "reserve" as const : lastHasFinish(day.day) ? "finish" as const : "day" as const;
+      // All that the day cannot hold goes at once, where the day is short
+      // enough to know exactly what it can hold (see thinDay).
+      const tooMany = search.thinDay(day.order, day.day, input.days);
+      if (tooMany && tooMany.length > 0 && tooMany.every((stop) => !frames.booked.has(input.places[stop].id))) {
+        for (const stop of tooMany) setAside({ placeId: input.places[stop].id, name: input.places[stop].name, reason: "no-room", day: day.day, edge, proven: false });
+        continue;
+      }
       // Places nobody booked go first: in front of the late booking the
       // nearest first, else from the end of the day backwards.
       const candidates = places.flatMap((_, position) => (bookedAt[position] === null && (latePosition < 0 || position < latePosition) ? [position] : [])).reverse();
       // The one whose absence lets every entered time be kept is the one set
-      // aside; when no single place does that, the first, and the search goes on.
-      const cure = candidates.find((position) => !broken(search.choose(input.days, { without: [...without(), day.order[position]] }).days));
+      // aside; when no single place does that, the first, and the search goes
+      // on. (On a long list each such question is a search of its own: the first goes.)
+      const cure = input.places.length > 12 ? undefined : candidates.find((position) => !broken(search.choose(input.days, { without: [...without(), day.order[position]] }).days));
       const position = cure ?? candidates[0];
       if (position !== undefined) {
         setAside({ placeId: places[position].id, name: places[position].name, reason: "no-room", day: day.day, edge, proven: false });
@@ -1392,14 +1439,16 @@ function planFramed(input: ShioriInput, options: PlanOptions, frames: Frames): S
       const booked = frames.booked.get(places[last].id);
       setAside(latePosition >= 0 && booked
         ? { placeId: places[last].id, name: places[last].name, reason: "reserve-late", day: day.day, time: booked.time, proven: false }
-        : { placeId: places[last].id, name: places[last].name, reason: "no-room", day: day.day, edge: "finish", proven: false });
+        : { placeId: places[last].id, name: places[last].name, reason: "no-room", day: day.day, edge, proven: false });
     }
-    // Places were set aside one at a time, the first of them while the day
-    // was still far too full: one of those may fit again now that others are
+    // Places thinned out one at a time, the first of them while the day was
+    // still far too full: one of those may fit again now that others are
     // gone. Each is tried, in the traveller's own order, and kept out only if
     // the trip cannot hold it.
+    // (Up to sixteen places. Beyond that each try is a search of the whole
+    // list, and what was taken off a day was all that day could not hold.)
     const listed = new Map(input.places.map((place, index) => [place.id, index]));
-    for (const entry of unplaced.filter((candidate) => candidate.reason === "no-room").sort((left, right) => listed.get(left.placeId)! - listed.get(right.placeId)!)) {
+    for (const entry of input.places.length > 16 ? [] : unplaced.slice(mark).filter((candidate) => candidate.reason === "no-room").sort((left, right) => listed.get(left.placeId)! - listed.get(right.placeId)!)) {
       const others = without().filter((index) => input.places[index].id !== entry.placeId);
       if (broken(search.choose(input.days, { without: others }).days)) continue;
       excluded.delete(entry.placeId);
@@ -1440,7 +1489,7 @@ function brokenInPrint(plan: ShioriPlan, input: ShioriInput, frames: Frames, exc
     }
     return late;
   }
-  const aside = (day: ShioriDay, stop: ShioriStop, edge: "finish" | "reserve"): ShioriUnplaced => ({ placeId: stop.place.id, name: stop.place.name, reason: "no-room", day: day.index + 1, edge, proven: false });
+  const aside = (day: ShioriDay, stop: ShioriStop, edge: "finish" | "reserve" | "day"): ShioriUnplaced => ({ placeId: stop.place.id, name: stop.place.name, reason: "no-room", day: day.index + 1, edge, proven: false });
   if (frames.start !== null) {
     const first = plan.days.find((day) => day.index === 0);
     if (first && (clockMinutes(first.start) < frames.start || clockMinutes(first.stops[0].arrive) < frames.start)) {
@@ -1452,6 +1501,11 @@ function brokenInPrint(plan: ShioriPlan, input: ShioriInput, frames: Frames, exc
     if (last && (last.endsNextDay || clockMinutes(last.end) > frames.finish)) {
       return aside(last, last.stops.findLast((stop) => !stop.reserved) ?? last.stops.at(-1)!, "finish");
     }
+  }
+  // A day ends on its own date: nothing nobody booked runs past midnight.
+  for (const day of plan.days) {
+    const over = day.stops.findLast((stop) => !stop.reserved && stop.leaveNextDay);
+    if (over) return aside(day, over, "day");
   }
   return null;
 }

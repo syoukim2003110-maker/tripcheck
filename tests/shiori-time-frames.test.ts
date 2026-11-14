@@ -4,6 +4,7 @@ import test from "node:test";
 
 import { curateSights, type PopularDestination } from "../lib/popular-sights.ts";
 import { RailNetwork } from "../lib/rail-router.ts";
+import { dayClock } from "../lib/shiori/day-search.ts";
 import { buildShioriPlan, clockOfDay, departureAfterStop, shioriPricing, type ShioriInput, type ShioriPlace, type ShioriPlan, type ShioriRoute } from "../lib/shiori/plan.ts";
 import { placeFromSight } from "../lib/shiori/state.ts";
 
@@ -113,6 +114,14 @@ function assertKeepsEveryEnteredTime(trip: ShioriPlan, input: Omit<ShioriInput, 
   for (const place of input.places) {
     const stop = stopOf(trip, place.id);
     if (stop && typeof place.day === "number" && place.day <= days && !place.reserve) assert.equal(stop.day.index, place.day - 1, `${where}: ${place.name} pinned to day ${place.day}`);
+  }
+  // A trip with an entered time lies on the calendar: every day ends on its own date. Nothing nobody
+  // booked is shown after midnight — what would run into the next day is named as not fitting instead.
+  const entered = start !== null || finish !== null || input.places.some((place) => clockOfDay(place.reserve?.time) !== null && typeof place.reserve?.day === "number" && Number.isInteger(place.reserve.day) && place.reserve.day >= 1);
+  if (entered) {
+    for (const day of trip.days) {
+      for (const stop of day.stops) assert.equal(!stop.reserved && (stop.arriveNextDay || stop.leaveNextDay), false, `${where}: day ${day.index + 1} ${stop.place.name} ${stop.arrive}-${stop.leave} runs into the next day`);
+    }
   }
   for (const day of trip.days) {
     // Day 1 has nothing before the time the traveller can start.
@@ -242,6 +251,225 @@ test("no plan that is shown breaks a time the traveller entered: 260 trips on re
   assert.ok(tally.kept > rounds / 2, summary);
   for (const reason of ["reserve-day", "reserve-clash", "reserve-before-start", "reserve-after-finish", "no-room/finish"]) assert.ok((tally.aside.get(reason) ?? 0) > 0, `${reason}: ${summary}`);
   assert.ok(tally.started > rounds / 5 && tally.finished > rounds / 8 && tally.measured > rounds / 8, summary);
+});
+
+/* ------------------------------------------------ as few set aside as can be */
+
+/** A generator that keeps its low bits (the one above multiplies past what a double holds). */
+function mulberry(seed: number) {
+  let state = Math.imul(seed, 2654435761) | 0;
+  return (below: number) => {
+    state = (state + 0x6D2B79F5) | 0;
+    let mixed = Math.imul(state ^ (state >>> 15), 1 | state);
+    mixed = (mixed + Math.imul(mixed ^ (mixed >>> 7), 61 | mixed)) ^ mixed;
+    return Math.floor((((mixed ^ (mixed >>> 14)) >>> 0) / 4294967296) * below);
+  };
+}
+function permutations(list: readonly number[]): number[][] {
+  if (list.length <= 1) return [[...list]];
+  return list.flatMap((head, index) => permutations([...list.slice(0, index), ...list.slice(index + 1)]).map((rest) => [head, ...rest]));
+}
+
+/**
+ * The most places a trip can keep, by brute force: every way of leaving
+ * places out, of sharing the rest among the days and of ordering each day,
+ * run on the day clock with the priced minutes the booklet prints. `out` are
+ * places already set aside for a reason of their own (a booking that cannot
+ * be kept); every other booking stays.
+ */
+function mostThatFits(cityId: string, input: Omit<ShioriInput, "locale">, out: ReadonlySet<string>) {
+  const pricing = shioriPricing({ ...input, locale: "ja" }, { rail: railOf(cityId) });
+  const { places, days } = input;
+  const start = clockOfDay(input.firstDayStart);
+  const finish = clockOfDay(input.lastDayFinish);
+  const stay = places.map((place) => Math.max(15, Math.round(place.stayMinutes)));
+  const meal = places.map((place) => place.meal ?? null);
+  const fixed = places.map((place) => (place.reserve ? at(place.reserve.time) : null));
+  const pin = places.map((place) => (place.reserve ? place.reserve.day : typeof place.day === "number" && place.day <= days ? place.day : null));
+  const rideOut = pricing.fromHotel;
+  const rideBack = pricing.toHotel;
+  const keepsEveryTime = (order: number[], day: number) => {
+    const from = day === 1 && start !== null ? start : 0;
+    const door = rideOut ? rideOut[order[0]] + 10 : 0;
+    const clock = dayClock(
+      order.map((stop) => stay[stop]),
+      order.map((stop) => meal[stop]),
+      order.slice(0, -1).map((stop, position) => pricing.minutes[stop][order[position + 1]]),
+      Math.max(rideOut ? 510 : 540, from) + door,
+      {
+        fixed: order.map((stop) => fixed[stop]),
+        earliest: from + door,
+        tightest: from + (rideOut ? rideOut[order[0]] : 0),
+        close: day === days ? finish : null,
+        homeward: rideBack ? rideBack[order.at(-1)!] : 0,
+        night: 1_439,
+      },
+    );
+    return clock.late === 0 && clock.hardOver <= 0;
+  };
+  // Among the stops nobody booked, a dinner closes the day.
+  const dinnersLast = (order: number[]) => {
+    let dinner = false;
+    for (const stop of order) {
+      if (fixed[stop] !== null) continue;
+      if (meal[stop] === "dinner") dinner = true;
+      else if (dinner) return false;
+    }
+    return true;
+  };
+  const known = new Map<string, boolean>();
+  const dayHolds = (mask: number, day: number) => {
+    const key = `${day}|${mask}`;
+    const before = known.get(key);
+    if (before !== undefined) return before;
+    const ids = places.flatMap((_, index) => (mask & (1 << index) ? [index] : []));
+    const held = ids.every((stop) => pin[stop] === null || pin[stop] === day) && permutations(ids).some((order) => dinnersLast(order) && keepsEveryTime(order, day));
+    known.set(key, held);
+    return held;
+  };
+  const shares = (rest: number, day: number): boolean => {
+    if (rest === 0) return true;
+    if (day > days) return false;
+    for (let today = rest; ; today = (today - 1) & rest) {
+      if ((today === 0 || dayHolds(today, day)) && shares(rest ^ today, day + 1)) return true;
+      if (today === 0) return false;
+    }
+  };
+  const all = places.reduce((mask, place, index) => (out.has(place.id) ? mask : mask | (1 << index)), 0);
+  const must = places.reduce((mask, place, index) => (!out.has(place.id) && fixed[index] !== null ? mask | (1 << index) : mask), 0);
+  let most = -1;
+  for (let keep = all; ; keep = (keep - 1) & all) {
+    if ((keep & must) === must) {
+      const size = places.filter((_, index) => keep & (1 << index)).length;
+      if (size > most && shares(keep, 1)) most = size;
+    }
+    if (keep === 0) break;
+  }
+  return most;
+}
+
+test("no more places are set aside than have to be: 220 tight trips against every way of leaving places out", () => {
+  // Tokyo, Kyoto and Paris; two to six places on one to three days; a late
+  // start, an early finish, bookings, pins, restaurants, long stays; with
+  // and without a hotel. Whatever the booklet sets aside for want of room,
+  // no way of planning the trip keeps one place more.
+  const random = mulberry(Number(process.env.SHIORI_FRAME_SEED ?? 3));
+  const pick = <T,>(list: readonly T[]) => list[random(list.length)];
+  const hotels: Record<string, ShioriInput["hotel"][]> = {
+    tokyo: [SHINJUKU, { name: "浅草のホテル", lat: 35.7118, lon: 139.7966 }],
+    kyoto: [{ name: "京都駅のホテル", lat: 34.9858, lon: 135.7588 }],
+    paris: [{ name: "Hotel Opera", lat: 48.8708, lon: 2.3318 }],
+  };
+  let thinned = 0;
+  let checked = 0;
+  for (let round = 0; round < 220; round += 1) {
+    const cityId = pick(["tokyo", "kyoto", "paris"]);
+    const days = 1 + random(3);
+    const pool = [...curateSights(cities.find((entry) => entry.id === cityId)!.sights)];
+    for (let index = pool.length - 1; index > 0; index -= 1) {
+      const other = random(index + 1);
+      [pool[index], pool[other]] = [pool[other], pool[index]];
+    }
+    const places: ShioriPlace[] = pool.slice(0, 2 + random(5)).map((sight) => placeFromSight(sight, "ja"));
+    let lunch = false;
+    let dinner = false;
+    places.forEach((place, index) => {
+      const kind = random(12);
+      if (kind === 0 && !lunch) {
+        lunch = true;
+        places[index] = { ...place, meal: "lunch", stayMinutes: 60, kind: "restaurant" };
+      } else if (kind === 1 && !dinner) {
+        dinner = true;
+        places[index] = { ...place, meal: "dinner", stayMinutes: 90, kind: "restaurant" };
+      } else if (random(8) === 0) places[index] = { ...place, stayMinutes: pick([30, 45, 120, 180, 240, 480]) };
+      if (random(9) === 0) places[index] = { ...places[index], day: 1 + random(days) };
+    });
+    const bookings = random(3) === 0 ? 1 + random(2) : 0;
+    for (let booking = 0; booking < bookings; booking += 1) {
+      const index = random(places.length);
+      places[index] = booked(places[index], 1 + random(days), clockText(540 + 60 * random(12)));
+    }
+    const input: Omit<ShioriInput, "locale"> = {
+      places,
+      days,
+      hotel: random(3) === 0 ? pick(hotels[cityId]) : null,
+      ...(random(2) === 0 ? { firstDayStart: clockText(pick([600, 660, 720, 780, 840, 900, 960, 1_020, 1_200])) } : {}),
+      ...(random(5) < 3 ? { lastDayFinish: clockText(pick([600, 660, 720, 780, 840, 900, 960, 1_020])) } : {}),
+    };
+    if (!input.firstDayStart && !input.lastDayFinish && bookings === 0) continue;
+    if (days === 1 && input.firstDayStart && input.lastDayFinish && at(input.firstDayStart) >= at(input.lastDayFinish)) continue;
+    const where = `round ${round}: ${JSON.stringify({ cityId, days, hotel: input.hotel?.name ?? null, from: input.firstDayStart, until: input.lastDayFinish, places: places.map((place) => `${place.name}|${place.stayMinutes}${place.meal ? `|${place.meal}` : ""}${place.reserve ? `|booked ${place.reserve.day} ${place.reserve.time}` : place.day ? `|day ${place.day}` : ""}`) })}`;
+    const trip = plan(cityId, input);
+    assertKeepsEveryEnteredTime(trip, input, where);
+    // (No street path was measured here, so no booking is given up for one.)
+    assert.equal(trip.unplaced.some((entry) => entry.reason === "reserve-late"), false, where);
+    const forItsOwnReason = new Set(trip.unplaced.filter((entry) => entry.reason !== "no-room").map((entry) => entry.placeId));
+    const forWantOfRoom = trip.unplaced.filter((entry) => entry.reason === "no-room");
+    assert.equal(forWantOfRoom.some((entry) => places.find((place) => place.id === entry.placeId)!.reserve), false, `${where}: a booked place is set aside for want of room`);
+    const kept = places.length - forItsOwnReason.size - forWantOfRoom.length;
+    assert.equal(kept, mostThatFits(cityId, input, forItsOwnReason), `${where}: ${kept} kept (${forWantOfRoom.map((entry) => entry.name).join("、")} set aside)`);
+    checked += 1;
+    if (forWantOfRoom.length > 0) thinned += 1;
+  }
+  assert.ok(checked >= 150 && thinned >= 30, `${checked} trips checked, ${thinned} with places set aside`);
+});
+
+test("before a finish the two places next door are kept, not the one across town", () => {
+  // From a hotel in Asakusa, the day over by 12:00. Senso-ji is five minutes away and one
+  // more place fits beside it; Tokyo Tower alone, forty minutes each way, is not the plan.
+  const asakusa = { name: "浅草のホテル", lat: 35.7118, lon: 139.7966 };
+  const sights = named("tokyo", ["浅草寺", "東京タワー", "国立西洋美術館", "神田明神", "代々木公園", "東京スカイツリー"]);
+  const stays = [50, 60, 90, 50, 60, 60];
+  const places = sights.map((place, index): ShioriPlace => ({ ...place, stayMinutes: stays[index], ...(index === 5 ? { meal: "lunch" as const, kind: "restaurant" } : {}) }));
+  const input = { places, days: 1, hotel: asakusa, lastDayFinish: "12:00" };
+  const trip = plan("tokyo", input);
+  assertKeepsEveryEnteredTime(trip, input, "Asakusa");
+  assert.equal(trip.days[0].stops.length, 2);
+  assert.equal(trip.days[0].stops[0].place.name, "浅草寺");
+  assert.equal(trip.unplaced.length, 4);
+  assert.ok(trip.unplaced.every((entry) => entry.reason === "no-room" && entry.edge === "finish" && entry.proven === false));
+  assert.equal(mostThatFits("tokyo", input, new Set()), 2);
+  // Paris, between 14:00 and 16:00: two of six fit, and two are kept.
+  const paris = named("paris", ["ポンピドゥー・センター", "ミロのヴィーナス", "カルナヴァレ博物館", "テュイルリー宮殿", "シャン・ド・マルス公園", "サン＝ドニ大聖堂"]);
+  const parisStays = [90, 75, 90, 45, 30, 50];
+  const afternoon = { places: paris.map((place, index) => ({ ...place, stayMinutes: parisStays[index] })), days: 1, hotel: null, firstDayStart: "14:00", lastDayFinish: "16:00" };
+  const short = plan("paris", afternoon);
+  assertKeepsEveryEnteredTime(short, afternoon, "Paris");
+  assert.deepEqual([short.days[0].stops.length, short.unplaced.length, mostThatFits("paris", afternoon, new Set())], [2, 4, 2]);
+});
+
+test("a trip too full for its start and finish never runs a day through the night: what does not fit is named", () => {
+  // Kyoto, two days from a hotel at the station: free from 15:00 on day 1, done by 12:00 on day 2, nine sights.
+  const station = { name: "京都駅のホテル", lat: 34.9858, lon: 135.7588 };
+  const names = ["清水寺", "金閣寺", "伏見稲荷大社", "二条城", "嵐山", "銀閣寺", "京都御所", "八坂神社", "南禅寺"];
+  const stays = [90, 60, 90, 75, 120, 60, 75, 50, 50];
+  const input = { places: named("kyoto", names).map((place, index) => ({ ...place, stayMinutes: stays[index] })), days: 2, hotel: station, firstDayStart: "15:00", lastDayFinish: "12:00" };
+  const trip = plan("kyoto", input);
+  assertKeepsEveryEnteredTime(trip, input, "Kyoto");
+  // Nothing is printed after midnight, on either day.
+  for (const day of trip.days) for (const stop of day.stops) assert.equal(stop.arriveNextDay || stop.leaveNextDay, false, `${stop.place.name} ${stop.arrive}-${stop.leave}`);
+  // What the two days cannot hold is listed by name, as not fitting — not hidden in a day that ends at 06:34.
+  assert.ok(trip.unplaced.length >= 2 && trip.unplaced.every((entry) => entry.reason === "no-room" && entry.proven === false), JSON.stringify(trip.unplaced));
+  assert.equal(trip.days.reduce((sum, day) => sum + day.stops.length, 0) + trip.unplaced.length, 9);
+  for (const entry of trip.unplaced) assert.ok(trip.notices.some((notice) => notice.kind === "unplaced" && notice.placeId === entry.placeId));
+  // More days hold it, and that is offered because that plan was made.
+  const more = trip.notices.find((notice) => notice.kind === "needs-days");
+  assert.ok(more && more.kind === "needs-days");
+  assert.deepEqual(plan("kyoto", { ...input, days: more.days }).unplaced, []);
+  // The same nine places with nothing entered are planned as they always were: nothing is set aside.
+  assert.deepEqual(plan("kyoto", { ...input, firstDayStart: null, lastDayFinish: null }).unplaced, []);
+
+  // Sixteen places, two days, free from 20:00 and done by 11:00: day 1 used to run for twenty-eight hours,
+  // onto the last day and past its finish.
+  const sixteen = named("tokyo", ["浅草神社", "東京都美術館", "東京タワー", "秋葉原", "東京ディズニーシー", "東京スカイツリー", "豊洲市場", "国立科学博物館", "新宿御苑", "国立西洋美術館", "国立新美術館", "上野動物園", "モード学園コクーンタワー", "迎賓館赤坂離宮", "東京国際フォーラム", "泉岳寺"]);
+  const evening = { places: sixteen, days: 2, hotel: null, firstDayStart: "20:00", lastDayFinish: "11:00" };
+  const night = plan("tokyo", evening);
+  assertKeepsEveryEnteredTime(night, evening, "Tokyo");
+  assert.ok(night.days.length >= 1 && night.unplaced.length >= 10);
+  for (const day of night.days) {
+    assert.equal(day.endsNextDay, false);
+    for (const stop of day.stops) assert.equal(stop.arriveNextDay || stop.leaveNextDay, false, `${stop.place.name} ${stop.arrive}-${stop.leave}`);
+  }
 });
 
 /* ------------------------------------------------------------ worked trips */
