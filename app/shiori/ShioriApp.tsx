@@ -250,6 +250,11 @@ const text = {
     rideStops: (stops: number) => `${stops}駅`,
     rideLabel: "乗車",
     changeWalk: (minutes: number) => `乗り換え 約${minutes}分`,
+    legWhen: (from: string, to: string) => `${from}発 → ${to}ごろ着`,
+    legChain: "乗り継ぎの順番",
+    legWalking: (minutes: number) => `徒歩 計${minutes}分`,
+    legChanges: (count: number) => `乗り換え${count}回`,
+    legDirect: "乗り換えなし",
     mapExpand: "地図を広げる",
     mapCollapse: "地図をたたむ",
     mapView: "しおりで見る",
@@ -419,6 +424,11 @@ const text = {
     rideStops: (stops: number) => `${stops} stop${stops === 1 ? "" : "s"}`,
     rideLabel: "Ride",
     changeWalk: (minutes: number) => `Change · ~${minutes} min`,
+    legWhen: (from: string, to: string) => `leave ${from} → arrive ~${to}`,
+    legChain: "Order of the journey",
+    legWalking: (minutes: number) => `${minutes} min on foot in all`,
+    legChanges: (count: number) => `${count} change${count === 1 ? "" : "s"}`,
+    legDirect: "no change",
     mapExpand: "Expand map",
     mapCollapse: "Collapse map",
     mapView: "Show in booklet",
@@ -503,8 +513,18 @@ function Photo({ img, alt, width, icon = "pin" }: { img?: string; alt: string; w
   return <img alt={alt} className="shiori-photo" decoding="async" loading="lazy" onError={() => setFailed(true)} src={url} />;
 }
 
-function LegCard({ leg, locale, heading }: { leg: ShioriLeg; locale: Locale; heading?: string }) {
+/** "09:08" plus minutes, wrapping past midnight. */
+function clockPlus(time: string, minutes: number) {
+  const [hour, minute] = time.split(":").map(Number);
+  const total = (((hour * 60 + minute + minutes) % 1_440) + 1_440) % 1_440;
+  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+}
+
+function LegCard({ leg, locale, heading, depart }: { leg: ShioriLeg; locale: Locale; heading?: string; depart?: string }) {
   const t = text[locale];
+  // The way a maps app sums a journey up: when, how long, and the chain of
+  // walk › line › line › walk; the tickets below are the detail.
+  const walking = leg.rail ? leg.rail.walkToMinutes + leg.rail.walkFromMinutes + leg.rail.transferMinutes : 0;
   const label = leg.mode === "walk" ? t.walk : leg.mode === "rail" ? t.rail : leg.mode === "taxi" ? t.taxi : t.transit;
   const icon = leg.mode === "walk" ? "walk" : leg.mode === "rail" ? "rail" : leg.mode === "taxi" ? "taxi" : "bus";
   // One change of train: the minutes on foot belong to it. With several, the
@@ -518,7 +538,24 @@ function LegCard({ leg, locale, heading }: { leg: ShioriLeg; locale: Locale; hea
           <Icon name={icon} />
           <b>{label} {t.about}{leg.minutes}{t.minute}</b>
           {leg.mode === "transit" || leg.mode === "taxi" ? <i className="shiori-est">{t.estimate}</i> : null}
+          {depart ? <span className="shiori-leg-when">{t.legWhen(depart, clockPlus(depart, leg.minutes))}</span> : null}
         </span>
+        {leg.rail ? (
+          <>
+            <ol aria-label={t.legChain} className="shiori-chain">
+              {[
+                ...(leg.rail.walkToMinutes > 0 ? [<li className="is-walk" key="to"><Icon name="walk" /><span>{leg.rail.walkToMinutes}{t.minute}</span></li>] : []),
+                ...leg.rail.rides.map((ride, index) => (
+                  <li className="is-line" key={`${ride.from}-${ride.to}-${index}`} style={lineColor(ride.line) ? { ["--lc" as string]: lineColor(ride.line)! } : undefined}>
+                    <i aria-hidden="true" /><span>{ride.line ?? t.rail}</span>
+                  </li>
+                )),
+                ...(leg.rail.walkFromMinutes > 0 ? [<li className="is-walk" key="from"><Icon name="walk" /><span>{leg.rail.walkFromMinutes}{t.minute}</span></li>] : []),
+              ].flatMap((item, index) => index === 0 ? [item] : [<li aria-hidden="true" className="is-sep" key={`sep-${index}`}>›</li>, item])}
+            </ol>
+            <p className="shiori-leg-facts">{[t.legWalking(walking), leg.rail.rides.length > 1 ? t.legChanges(leg.rail.rides.length - 1) : t.legDirect].join(" ・ ")}</p>
+          </>
+        ) : null}
       </div>
       {leg.rail ? (
         <ol className="shiori-rail">
@@ -1482,7 +1519,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
                     {day.fromHotel && startPart ? (
                       <li className="is-leg">
                         <p className="shiori-part"><span>{t.parts[startPart]}</span></p>
-                        <LegCard heading={t.fromHotel} leg={day.fromHotel} locale={locale} />
+                        <LegCard depart={day.start} heading={t.fromHotel} leg={day.fromHotel} locale={locale} />
                       </li>
                     ) : null}
                     {day.stops.map((stop, index) => {
@@ -1562,11 +1599,11 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
                               })}
                             />
                           ) : null}
-                          {day.legs[index] ? <LegCard leg={day.legs[index]} locale={locale} /> : null}
+                          {day.legs[index] ? <LegCard depart={stop.leave} leg={day.legs[index]} locale={locale} /> : null}
                         </li>
                       );
                     })}
-                    {day.toHotel ? <li className="is-leg"><LegCard heading={t.toHotel} leg={day.toHotel} locale={locale} /></li> : null}
+                    {day.toHotel ? <li className="is-leg"><LegCard depart={day.stops.at(-1)?.leave} heading={t.toHotel} leg={day.toHotel} locale={locale} /></li> : null}
                   </ol>
                   {day.ideas.length > 0 ? (
                     <div className="shiori-ideas">

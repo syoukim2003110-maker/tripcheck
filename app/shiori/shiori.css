@@ -365,6 +365,17 @@
 .shiori-leg-head .shiori-eyebrow { font-size: 12px; letter-spacing: 0.12em; margin-bottom: 4px; }
 .shiori-leg-title { align-items: center; display: flex; flex-wrap: wrap; gap: 4px 8px; }
 .shiori-leg-title b { font: 700 15px/1.4 var(--gothic); font-variant-numeric: tabular-nums lining-nums; }
+/* The journey at a glance, the way a maps app shows it: when, then walk › line › line › walk. */
+.shiori-leg-when { color: var(--muted); font: 600 13px/1.4 var(--gothic); font-variant-numeric: tabular-nums lining-nums; margin-left: auto; }
+.shiori-chain { align-items: center; display: flex; flex-wrap: wrap; gap: 6px 4px; list-style: none; margin: 8px 0 4px; padding: 0; }
+.shiori-chain li { align-items: center; color: var(--ink); display: inline-flex; font: 600 12px/1.3 var(--gothic); gap: 4px; }
+.shiori-chain li.is-sep { color: var(--muted); font-size: 14px; }
+.shiori-chain li.is-walk { color: var(--muted); }
+.shiori-chain li.is-walk svg { height: 16px; width: 16px; }
+.shiori-chain li.is-line { background: var(--card); border: 1px solid var(--rule); border-radius: 4px; padding: 3px 7px 3px 0; }
+.shiori-chain li.is-line i { align-self: stretch; background: var(--lc, #8c8272); border-radius: 3px 0 0 3px; box-shadow: inset 0 0 0 1px rgba(42, 36, 32, 0.25); margin-right: 3px; min-height: 18px; width: 6px; }
+.shiori-chain li.is-line span { overflow-wrap: anywhere; }
+.shiori-leg-facts { color: var(--muted); font-size: 12px; margin: 0 0 6px; }
 .shiori-rail { list-style: none; margin: 8px 0 0; padding: 0; }
 .shiori-rail li.is-walk { align-items: flex-start; color: var(--muted); display: flex; font-size: 13px; gap: 6px; line-height: 1.5; padding: 6px 0; }
 .shiori-rail li.is-walk .shiori-icon { height: 16px; margin-top: 1px; width: 16px; }

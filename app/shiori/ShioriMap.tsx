@@ -203,8 +203,11 @@ export default function ShioriMap({ days, selectedDay, hotel, focus, onSelectSto
         };
         foldCredit();
         tintBasemap(instance);
-        // The credit text can arrive with the first tiles, after "load".
-        instance.once("idle", foldCredit);
+        // The credit text arrives with the first tiles, after the style: until
+        // the map has settled, each batch of data folds it again, or it sits
+        // open over a pin for the seconds the tiles take.
+        instance.on("sourcedata", foldCredit);
+        instance.once("idle", () => { foldCredit(); instance.off("sourcedata", foldCredit); });
         instance.addSource("legs", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
         instance.addSource("stations", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
         const selected = ["==", ["get", "selected"], true] as unknown as boolean;
