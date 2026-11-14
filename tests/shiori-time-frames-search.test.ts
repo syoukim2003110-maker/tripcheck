@@ -228,7 +228,12 @@ function reference(problem: SearchProblem, order: readonly number[], first: bool
       if (position > 0) now += minutes[order[position - 1]][stop] + 10;
       if (typeof entry.fixed === "number") {
         // A booking earlier than the usual start opens the day, if the traveller can be there at all.
-        if (position === 0 && now > entry.fixed && start + door <= entry.fixed) now = entry.fixed;
+        // Between two entered times — the day's start and a booking, one booking and the next —
+        // the ride alone has to arrive in time: the ten minutes of slack are given up there.
+        const rideArrives = position === 0
+          ? start + (hotel ? hotel.out[order[0]] : 0) <= entry.fixed
+          : typeof stops[order[position - 1]].fixed === "number" && now - 10 <= entry.fixed;
+        if (now > entry.fixed && rideArrives) now = entry.fixed;
         if (now <= entry.fixed) now = entry.fixed;
         else late += 1;
       } else if (entry.meal) {

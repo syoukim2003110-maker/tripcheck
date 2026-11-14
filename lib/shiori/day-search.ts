@@ -213,11 +213,27 @@ export type ClockFrame = {
   fixed?: readonly (number | null | undefined)[];
   /** The earliest the first stop can be reached at all: a booking before the usual start opens the day that early. */
   earliest?: number;
+  /**
+   * The same without the ten minutes of slack after the ride out: when the
+   * ride itself arrives. A booking between the two is still kept — the day
+   * starts at its earliest and the slack is given up (see clockPass).
+   */
+  tightest?: number;
   /** The day is over by this minute, the ride home included. */
   close?: number | null;
   /** Minutes of the ride home after the last stop; 0 without a hotel. */
   homeward?: number;
 };
+
+/*
+ * The ten minutes of slack after a ride are the planner's habit, there to
+ * keep a day of estimates from running late. Between two times the traveller
+ * entered — one booking straight after another, or a booking straight after
+ * the hour day 1 can start — nothing can be moved to make room for them, and
+ * the bookings are not the planner's to refuse: when the ride itself arrives
+ * in time, the booking is kept and the slack given up. Everywhere else the
+ * slack stays, because there the planner can choose another order.
+ */
 
 /** One pass of the engine's clock over a day in a fixed order. */
 function clockPass(stays: readonly number[], meals: readonly Meal[], rides: readonly number[], first: number, lunchAt: number, frame?: ClockFrame) {
@@ -234,10 +250,19 @@ function clockPass(stays: readonly number[], meals: readonly Meal[], rides: read
     let arrival = cursor;
     let held = 0;
     if (fixed !== null) {
-      // A booking before the usual start opens the day that much earlier.
-      if (position === 0 && cursor > fixed && (frame!.earliest ?? Infinity) <= fixed) {
+      if (position === 0 && cursor > fixed) {
+        // A booking before the usual start opens the day that much earlier.
+        if ((frame!.earliest ?? Infinity) <= fixed) {
+          cursor = fixed;
+          opened = fixed;
+        } else if ((frame!.tightest ?? Infinity) <= fixed) {
+          // Reached by the ride alone: the day starts as early as it can.
+          cursor = fixed;
+          opened = frame!.earliest!;
+        }
+      } else if (position > 0 && cursor > fixed && cursor - DAY_CLOCK.legBuffer <= fixed && (frame!.fixed![position - 1] ?? null) !== null) {
+        // Straight from one booking to the next: the ride arrives in time, the slack is given up.
         cursor = fixed;
-        opened = fixed;
       }
       // Early is a wait; late is late — the engine keeps the clock running, and so does this.
       // (No meal hours here: the booked time is the traveller's own fact.)
@@ -359,7 +384,7 @@ export function scheduleDay(
   }
   const open = frame.open ?? 0;
   const usual = Math.max(hotelOut === null ? DAY_CLOCK.start : DAY_CLOCK.hotelStart, open) + door;
-  const full: ClockFrame = { fixed: frame.fixed, close: frame.close, homeward: frame.homeward, earliest: open + door };
+  const full: ClockFrame = { fixed: frame.fixed, close: frame.close, homeward: frame.homeward, earliest: open + door, tightest: open + (hotelOut ?? 0) };
   const reserved = (position: number) => (frame.fixed?.[position] ?? null) !== null;
   /** Minutes past what the planner's own habits allow: sights by 18:00, a dinner by 21:30. A booked stop is not held to them. */
   const softOver = (clock: { leave: number[] }) => {
@@ -483,6 +508,7 @@ export function daySearch(
       ? {
         fixed: order.map((stop) => fixedOf[stop]),
         earliest: (cls & 1 ? firstStart! : 0) + door(order[0]),
+        tightest: (cls & 1 ? firstStart! : 0) + (hotel ? hotel.out[order[0]] : 0),
         close: cls & 2 ? lastFinish : null,
         homeward: hotel ? hotel.back[order.at(-1)!] : 0,
       }
@@ -1093,7 +1119,7 @@ export function daySearch(
           let arrival = cursor;
           let wait = 0;
           if (fixed !== null) {
-            if (position === 0 && cursor > fixed && opens + door(stop) <= fixed) cursor = fixed;
+            if (cursor > fixed && (position === 0 ? opens + (hotel ? hotel.out[stop] : 0) <= fixed : cursor - buffer <= fixed && fixedOf[order[position - 1]] !== null)) cursor = fixed;
             if (cursor <= fixed) {
               wait = fixed - cursor;
               arrival = fixed;
@@ -1185,7 +1211,7 @@ export function daySearch(
           let lateNow = lateSoFar;
           let arrival = cursor;
           if (fixed !== null) {
-            if (last < 0 && cursor > fixed && opens + door(stop) <= fixed) cursor = fixed;
+            if (cursor > fixed && (last < 0 ? opens + (hotel ? hotel.out[stop] : 0) <= fixed : cursor - buffer <= fixed && fixedOf[last] !== null)) cursor = fixed;
             if (cursor <= fixed) arrival = fixed;
             else lateNow += 1;
           } else if (stops[stop].meal) {
@@ -1197,8 +1223,10 @@ export function daySearch(
           if (found) {
             // Booked hours still to come that are already out of reach are late in every ending.
             let least = lateNow;
+            // (Straight from a booking the slack may be given up; by any other way it is not.)
+            const soonest = departure + (fixed !== null ? 0 : buffer);
             for (const other of booked) {
-              if (other !== stop && !used[other] && fixedOf[other]! < departure + buffer) least += 1;
+              if (other !== stop && !used[other] && fixedOf[other]! < soonest) least += 1;
             }
             if (least > found.broken) continue;
             // The rides — these, and no less than the cheapest into each stop still to come, and home — already cost more than the best order found.

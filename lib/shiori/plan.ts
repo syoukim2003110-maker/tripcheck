@@ -165,27 +165,48 @@ export type ShioriStop = {
 /**
  * A place the plan could not keep without breaking a time the traveller
  * entered. It is not shown at another time or on another day: it is listed
- * as not fitting, with the reason. `proven` is true only where the numbers
- * show it cannot be done whatever else is on the day; everything else is
- * "could not fit", which is all the planner knows.
+ * as not fitting, with the reason.
+ *
+ * `proven` is true only where the traveller's own entries contradict each
+ * other — a day the trip does not have, a booking before the entered start,
+ * a booked visit that ends after the entered finish, two booked visits that
+ * overlap. Those are said as "cannot". Everything that rests on one of the
+ * planner's estimates — a ride — is not proven: it is "could not fit", and
+ * the ride is given as the estimate it is.
  */
 export type ShioriUnplaced = { placeId: string; name: string } & (
   /** The booking is on a day the trip does not have. */
   | { reason: "reserve-day"; day: number; days: number; proven: true }
-  /** The booking is earlier than the place can be reached. `earliest` is the earliest possible arrival. */
-  | { reason: "reserve-before-start"; day: number; time: ShioriClock; earliest: ShioriClock; proven: true }
-  /** The booked visit (and the ride back) ends after the last-day finish. `ends` is when it would be over. */
-  | { reason: "reserve-after-finish"; day: number; time: ShioriClock; ends: ShioriClock; finish: ShioriClock; proven: true }
+  /**
+   * The booking is earlier than the place can be reached. Proven when it is
+   * before the entered start of day 1 itself (`start`); otherwise it is the
+   * estimated ride from the hotel (`rideMinutes`) that does not fit, and
+   * `earliest` is the estimated arrival.
+   */
+  | { reason: "reserve-before-start"; day: number; time: ShioriClock; start: ShioriClock | null; rideMinutes: number; earliest: ShioriClock; proven: boolean }
+  /**
+   * The booked visit does not fit before the last-day finish. `ends` is when
+   * the visit itself is over (its time plus its stay); proven when that is
+   * already past the finish. Otherwise it is the estimated ride back to the
+   * hotel (`rideMinutes`) that does not fit.
+   */
+  | { reason: "reserve-after-finish"; day: number; time: ShioriClock; ends: ShioriClock; rideMinutes: number; finish: ShioriClock; proven: boolean }
   /**
    * Two bookings on one day cannot both be kept; the one higher in the list
-   * stays. `earlierId` is whichever of the two is first on the clock and
-   * `freeAt` the earliest arrival at the other one after it.
+   * stays. `earlierId` is whichever of the two is first on the clock,
+   * `stayEnds` when its visit is over. Proven when that is already past the
+   * other's time; otherwise the estimated ride between them (`rideMinutes`)
+   * does not fit, and `freeAt` is the estimated arrival at the other.
    */
-  | { reason: "reserve-clash"; day: number; time: ShioriClock; withId: string; withName: string; withTime: ShioriClock; earlierId: string; freeAt: ShioriClock; proven: true }
+  | { reason: "reserve-clash"; day: number; time: ShioriClock; withId: string; withName: string; withTime: ShioriClock; earlierId: string; stayEnds: ShioriClock; rideMinutes: number; freeAt: ShioriClock; proven: boolean }
   /** No way was found to be at the booking on time (a measured path made the way there too long). */
   | { reason: "reserve-late"; day: number; time: ShioriClock; proven: false }
-  /** No room was found before the finish time (`edge: "finish"`) or around the booked times. */
-  | { reason: "no-room"; day: number; edge: "finish" | "reserve"; proven: false }
+  /**
+   * No room was found: before the finish time (`edge: "finish"`), around the
+   * booked times (`"reserve"`), or — on a trip with entered times — before
+   * the day's own midnight (`"day"`).
+   */
+  | { reason: "no-room"; day: number; edge: "finish" | "reserve" | "day"; proven: false }
 );
 
 /**
@@ -444,7 +465,13 @@ function hotelBase(hotel: ShioriHotel): ResolvedInputStop {
 type Built = { plan: BuiltTripPlan; context: TripPlannerContext; raw: string; usedDays: number };
 const stayOf = (place: ShioriPlace) => Math.max(15, Math.round(place.stayMinutes));
 
-function buildWithEngine(input: ShioriInput, extra: Partial<TripPlannerContext>, usedDays: number, frames: Frames | null = null): Built {
+/**
+ * `slackFree`: booked places that come straight after another entered time —
+ * the day's first stop, or the stop after another booking. They are reached
+ * by the ride alone when the ten minutes of slack would pass their time (see
+ * day-search.ts, which decides the same on the same numbers).
+ */
+function buildWithEngine(input: ShioriInput, extra: Partial<TripPlannerContext>, usedDays: number, frames: Frames | null = null, slackFree: ReadonlySet<string> = NO_IDS): Built {
   const settings = paceSettings.standard;
   const stops = input.places.map(resolvedStop);
   const raw = stops.map((stop) => stop.input).join("\n");
@@ -477,7 +504,7 @@ function buildWithEngine(input: ShioriInput, extra: Partial<TripPlannerContext>,
       // looks kept. (Room is left for the lunch hour its stay may carry.)
       const hours = place.meal ? DAY_CLOCK.meals[place.meal] : null;
       const window = booked
-        ? { openMinutes: booked.at, closeMinutes: booked.at + stayOf(place) + LUNCH_MINUTES + 1, lastEntryMinutes: booked.at }
+        ? { openMinutes: booked.at, closeMinutes: booked.at + stayOf(place) + LUNCH_MINUTES + 1, lastEntryMinutes: booked.at, ...(slackFree.has(place.id) ? { slackFreeEntry: true } : {}) }
         : { openMinutes: hours!.open, closeMinutes: hours!.lastSeat + Math.max(15, Math.round(place.stayMinutes)) };
       return [[place.id, Object.fromEntries(Array.from({ length: usedDays }, (_, day) => [day, [window]]))] as const];
     })),
@@ -526,6 +553,8 @@ type Structure = {
   timing: DayTiming;
   /** Wet days (1-based, as printed) that were given another planned day because of the forecast. */
   weatherDays: number[];
+  /** Booked places reached straight from another entered time (see buildWithEngine). */
+  slackFree: ReadonlySet<string>;
 };
 /** What the clock decides once the order is known: where lunch goes and when each day starts. */
 type DayTiming = {
@@ -976,8 +1005,14 @@ function planCore(input: ShioriInput, options: PlanOptions, frames: Frames | nul
     const lockedOrderByDay: Record<number, string[]> = {};
     const timing: DayTiming = { lunchAfter: new Map(), durationOverrides: {}, dayStartTimes: {}, noLunchRoom: new Set() };
     const numbering = weatherNumbering(input, trip.days, frames);
+    const slackFree = new Set<string>();
     for (const day of trip.days) {
       const places = day.order.map((stop) => input.places[stop]);
+      if (frames) {
+        places.forEach((place, position) => {
+          if (frames.booked.has(place.id) && (position === 0 || frames.booked.has(places[position - 1].id))) slackFree.add(place.id);
+        });
+      }
       const dayNumber = numbering.dayFor.get(day.day) ?? day.day;
       lockedOrderByDay[dayNumber - 1] = places.map((place) => place.id);
       for (const place of places) pins[place.id] = dayNumber;
@@ -997,8 +1032,8 @@ function planCore(input: ShioriInput, options: PlanOptions, frames: Frames | nul
       lockedOrderByDay,
       durationOverrides: timing.durationOverrides,
       dayStartTimes: timing.dayStartTimes,
-    }, trip.slots, frames);
-    return { built, journeys, transit, walking, walkAdvised, driving, pins, legModeOverrides, timing, weatherDays: numbering.wetDays };
+    }, trip.slots, frames, slackFree);
+    return { built, journeys, transit, walking, walkAdvised, driving, pins, legModeOverrides, timing, weatherDays: numbering.wetDays, slackFree };
   };
   const cacheKey = structureKey(input, frames, excluded);
   const shelf = structures.get(rail ?? NO_RAIL) ?? new Map<string, Structure>();
@@ -1049,7 +1084,7 @@ function planCore(input: ShioriInput, options: PlanOptions, frames: Frames | nul
           return [key, journey ? taxiAgainstTrain(minutes, journey.totalMinutes) : minutes];
         })),
       },
-    }, known.built.usedDays, frames);
+    }, known.built.usedDays, frames, known.slackFree);
     built = measured(timing);
     const corrected = timingOf(built.plan);
     if (!sameTiming(corrected, timing)) {
@@ -1285,6 +1320,10 @@ function planFramed(input: ShioriInput, options: PlanOptions, frames: Frames): S
     // stay later whatever else the day holds, so these checks — each booking
     // against the day's ends, neighbours on the clock against each other —
     // are exactly what it takes for a day's bookings to be kept together.
+    // Between two entered times the ride alone has to fit: the ten minutes
+    // of slack are the planner's habit and are given up there (day-search.ts).
+    // What fails without any ride at all is proven; what fails on a ride is
+    // an estimate that did not fit, and is said as that.
     const keptOn = new Map<number, Array<{ index: number; place: ShioriPlace; at: number; time: ShioriClock }>>();
     input.places.forEach((place, index) => {
       const booked = frames.booked.get(place.id);
@@ -1294,14 +1333,16 @@ function planFramed(input: ShioriInput, options: PlanOptions, frames: Frames): S
         setAside({ ...about, reason: "reserve-day", days: requested, proven: true });
         return;
       }
-      const earliest = (booked.day === 1 && frames.start !== null ? frames.start : 0) + (pricing.hotel ? pricing.hotel.out[index] + DAY_CLOCK.legBuffer : 0);
-      if (booked.at < earliest) {
-        setAside({ ...about, reason: "reserve-before-start", time: booked.time, earliest: clock(earliest), proven: true });
+      const start = booked.day === 1 ? frames.start : null;
+      const rideOut = pricing.hotel ? pricing.hotel.out[index] : 0;
+      if (booked.at < (start ?? 0) + rideOut) {
+        setAside({ ...about, reason: "reserve-before-start", time: booked.time, start: start === null ? null : clock(start), rideMinutes: rideOut, earliest: clock((start ?? 0) + rideOut), proven: start !== null && booked.at < start });
         return;
       }
-      const ends = booked.at + stayOf(place) + (pricing.hotel ? pricing.hotel.back[index] : 0);
-      if (booked.day === requested && frames.finish !== null && ends > frames.finish) {
-        setAside({ ...about, reason: "reserve-after-finish", time: booked.time, ends: clock(ends), finish: clock(frames.finish), proven: true });
+      const ends = booked.at + stayOf(place);
+      const rideBack = pricing.hotel ? pricing.hotel.back[index] : 0;
+      if (booked.day === requested && frames.finish !== null && ends + rideBack > frames.finish) {
+        setAside({ ...about, reason: "reserve-after-finish", time: booked.time, ends: clock(ends), rideMinutes: rideBack, finish: clock(frames.finish), proven: ends > frames.finish });
         return;
       }
       // Of two bookings that cannot both be kept, the one higher in the list stays.
@@ -1309,13 +1350,16 @@ function planFramed(input: ShioriInput, options: PlanOptions, frames: Frames): S
       keptOn.set(booked.day, kept);
       const before = kept.filter((other) => other.at <= booked.at).sort((left, right) => right.at - left.at)[0];
       const after = kept.filter((other) => other.at > booked.at).sort((left, right) => left.at - right.at)[0];
-      const reach = (from: { index: number; place: ShioriPlace; at: number }, to: number) => from.at + stayOf(from.place) + pricing.minutes[from.index][to] + DAY_CLOCK.legBuffer;
       const self = { index, place, at: booked.at, time: booked.time };
-      const clash = before && reach(before, index) > booked.at
-        ? { other: before, earlierId: before.place.id, freeAt: reach(before, index) }
-        : after && reach(self, after.index) > after.at ? { other: after, earlierId: place.id, freeAt: reach(self, after.index) } : null;
+      const between = (from: typeof self, to: typeof self) => {
+        const stayEnds = from.at + stayOf(from.place);
+        const ride = pricing.minutes[from.index][to.index];
+        return stayEnds + ride > to.at ? { earlierId: from.place.id, stayEnds: clock(stayEnds), rideMinutes: ride, freeAt: clock(stayEnds + ride), proven: stayEnds > to.at } : null;
+      };
+      const clash = (before ? between(before, self) : null) ?? (after ? between(self, after) : null);
       if (clash) {
-        setAside({ ...about, reason: "reserve-clash", time: booked.time, withId: clash.other.place.id, withName: clash.other.place.name, withTime: clash.other.time, earlierId: clash.earlierId, freeAt: clock(clash.freeAt), proven: true });
+        const other = clash.earlierId === place.id ? after : before;
+        setAside({ ...about, reason: "reserve-clash", time: booked.time, withId: other.place.id, withName: other.place.name, withTime: other.time, ...clash });
         return;
       }
       kept.push(self);

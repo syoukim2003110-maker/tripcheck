@@ -4,7 +4,7 @@ import test from "node:test";
 
 import { curateSights, type PopularDestination } from "../lib/popular-sights.ts";
 import { RailNetwork } from "../lib/rail-router.ts";
-import { buildShioriPlan, clockOfDay, departureAfterStop, type ShioriInput, type ShioriPlace, type ShioriPlan, type ShioriRoute } from "../lib/shiori/plan.ts";
+import { buildShioriPlan, clockOfDay, departureAfterStop, shioriPricing, type ShioriInput, type ShioriPlace, type ShioriPlan, type ShioriRoute } from "../lib/shiori/plan.ts";
 import { placeFromSight } from "../lib/shiori/state.ts";
 
 /*
@@ -70,8 +70,21 @@ function assertKeepsEveryEnteredTime(trip: ShioriPlan, input: Omit<ShioriInput, 
       trip.notices.some((notice) => (notice.kind === "unplaced" && notice.placeId === entry.placeId && notice.reason === entry.reason) || notice.kind === "frame-order"),
       `${where}: ${entry.name} set aside without a notice`,
     );
-    // "Cannot" only where the numbers show it; "could not fit" for the rest.
-    assert.equal(entry.proven, entry.reason === "reserve-day" || entry.reason === "reserve-before-start" || entry.reason === "reserve-after-finish" || entry.reason === "reserve-clash", where);
+    // "Cannot" only where the traveller's own entries contradict each other,
+    // with no ride in it: a day the trip does not have, a booking before the
+    // entered start, a visit that ends after the entered finish, two visits
+    // that overlap. Whatever rests on an estimated ride is "could not fit".
+    const place = input.places.find((candidate) => candidate.id === entry.placeId)!;
+    const visitEnds = (of: ShioriPlace) => at(of.reserve!.time) + Math.max(15, Math.round(of.stayMinutes));
+    const proven = entry.reason === "reserve-day"
+      || (entry.reason === "reserve-before-start" && entry.day === 1 && start !== null && at(place.reserve!.time) < start)
+      || (entry.reason === "reserve-after-finish" && finish !== null && visitEnds(place) > finish)
+      || (entry.reason === "reserve-clash" && (() => {
+        const other = input.places.find((candidate) => candidate.id === entry.withId)!;
+        const [earlier, later] = entry.earlierId === place.id ? [place, other] : [other, place];
+        return visitEnds(earlier) > at(later.reserve!.time);
+      })());
+    assert.equal(entry.proven, proven, `${where}: ${entry.name} ${entry.reason}`);
   }
   for (const place of input.places) {
     const time = clockOfDay(place.reserve?.time);
@@ -119,6 +132,8 @@ function assertKeepsEveryEnteredTime(trip: ShioriPlan, input: Omit<ShioriInput, 
     // A day that says it has no room for a lunch hour has none — and no restaurant chosen for lunch either.
     if (day.noLunchRoom) assert.equal(day.meals.some((meal) => meal.kind === "lunch") || day.stops.some((stop) => stop.place.meal === "lunch"), false, where);
     // The clock is one clock: each arrival is the departure before it, the ride, ten minutes of slack and the wait that is printed.
+    // (Between two entered times — the day's start and a booking, one booking and the next —
+    // the slack may be given up: the booking is then reached by the ride alone, never later than its time.)
     let lifted = 0;
     const lift = (clock: string) => {
       let minutes = at(clock);
@@ -127,11 +142,16 @@ function assertKeepsEveryEnteredTime(trip: ShioriPlan, input: Omit<ShioriInput, 
       return minutes;
     };
     let cursor = lift(day.start) + (day.fromHotel ? day.fromHotel.minutes + 10 : 0);
+    let rode = Boolean(day.fromHotel);
     day.stops.forEach((stop, position) => {
       assert.ok(stop.waitMinutes >= 0, where);
       const arrive = lift(stop.arrive);
-      assert.equal(arrive, cursor + stop.waitMinutes, `${where}: day ${day.index + 1} ${stop.place.name} arrives ${stop.arrive}, reached ${cursor}, wait ${stop.waitMinutes}`);
+      const afterEntered = position === 0 ? rode : day.stops[position - 1].reserved;
+      if (stop.reserved && afterEntered && arrive < cursor) {
+        assert.ok(cursor - 10 <= arrive && stop.waitMinutes === 0, `${where}: day ${day.index + 1} ${stop.place.name} arrives ${stop.arrive}, but the ride alone gets there at ${cursor - 10}`);
+      } else assert.equal(arrive, cursor + stop.waitMinutes, `${where}: day ${day.index + 1} ${stop.place.name} arrives ${stop.arrive}, reached ${cursor}, wait ${stop.waitMinutes}`);
       cursor = lift(departureAfterStop(day, position)!) + (day.legs[position] ? day.legs[position].minutes + 10 : 0);
+      rode = true;
     });
   }
 }
@@ -301,21 +321,35 @@ test("a booking on a day the trip does not have is never moved: it is named, wit
   assert.equal(trip.notices.some((notice) => notice.kind === "too-much" || notice.kind === "drop"), false);
 });
 
-test("a booking the traveller cannot reach in time says the earliest arrival there is", () => {
+test("a booking before the entered start cannot be kept; one the estimated ride reaches too late could not be fitted", () => {
   const places = sightsOf("tokyo", 3);
   places[0] = booked(places[0], 1, "10:00");
-  // No hotel: the earliest is the time entered itself.
+  // No hotel: the booking is before the time entered itself. That is proven.
   const input = { places, days: 2, hotel: null, firstDayStart: "11:30" };
   const trip = plan("tokyo", input);
   assertKeepsEveryEnteredTime(trip, input, "before start");
-  assert.deepEqual(unplacedOf(trip, places[0].id), { placeId: places[0].id, name: places[0].name, day: 1, reason: "reserve-before-start", time: "10:00", earliest: "11:30", proven: true });
-  // From a hotel the ride there, and ten minutes, come on top.
+  assert.deepEqual(unplacedOf(trip, places[0].id), { placeId: places[0].id, name: places[0].name, day: 1, reason: "reserve-before-start", time: "10:00", start: "11:30", rideMinutes: 0, earliest: "11:30", proven: true });
+  // From a hotel it is still proven — the booking is before the start — and the estimated ride is given beside it.
   const withHotel = plan("tokyo", { ...input, hotel: SHINJUKU });
   const entry = unplacedOf(withHotel, places[0].id)!;
-  assert.equal(entry.reason, "reserve-before-start");
   const kept = plan("tokyo", { ...input, hotel: SHINJUKU, firstDayStart: null });
   const ride = stopOf(kept, places[0].id)!.day.fromHotel!.minutes;
-  assert.equal(entry.reason === "reserve-before-start" && entry.earliest, clockText(at("11:30") + ride + 10));
+  assert.ok(ride >= 15, "the hotel is a ride away");
+  assert.deepEqual(entry, { placeId: places[0].id, name: places[0].name, day: 1, reason: "reserve-before-start", time: "10:00", start: "11:30", rideMinutes: ride, earliest: clockText(at("11:30") + ride), proven: true });
+  // A start before the booking, from which the estimated ride arrives five minutes too late: not proven —
+  // the ride is the planner's estimate — but the booklet cannot show it, and says so with the numbers.
+  const justLate = { ...input, hotel: SHINJUKU, firstDayStart: clockText(at("10:00") - ride + 5) };
+  const late = plan("tokyo", justLate);
+  assertKeepsEveryEnteredTime(late, justLate, "ride too long");
+  assert.deepEqual(unplacedOf(late, places[0].id), { placeId: places[0].id, name: places[0].name, day: 1, reason: "reserve-before-start", time: "10:00", start: justLate.firstDayStart, rideMinutes: ride, earliest: "10:05", proven: false });
+  // A start from which the ride alone arrives in time is kept: the ten minutes of slack are the
+  // planner's habit, and are given up between two times the traveller entered.
+  const justInTime = { ...input, hotel: SHINJUKU, firstDayStart: clockText(at("10:00") - ride - 3) };
+  const made = plan("tokyo", justInTime);
+  assertKeepsEveryEnteredTime(made, justInTime, "ride alone arrives");
+  assert.deepEqual(made.unplaced, []);
+  const first = stopOf(made, places[0].id)!;
+  assert.deepEqual([first.day.index, first.position, first.day.start, first.stop.arrive, first.stop.waitMinutes], [0, 0, justInTime.firstDayStart, "10:00", 0]);
   // On day 2 the same booking is no problem, and neither is a start it can be reached from.
   const dayTwo = { ...input, places: [booked(places[0], 2, "10:00"), places[1], places[2]] };
   assert.deepEqual(plan("tokyo", dayTwo).unplaced, []);
@@ -324,17 +358,27 @@ test("a booking the traveller cannot reach in time says the earliest arrival the
   assert.equal(trip.notices.some((notice) => notice.kind === "needs-days" || notice.kind === "too-much"), false);
 });
 
-test("a booking that runs past the last day's finish says when it would be over", () => {
+test("a booked visit that ends after the last day's finish cannot be kept; one only the ride back carries past it could not be fitted", () => {
   const places = sightsOf("tokyo", 3);
   places[2] = booked({ ...places[2], stayMinutes: 90 }, 2, "14:00");
   const input = { places, days: 2, hotel: null, lastDayFinish: "15:00" };
   const trip = plan("tokyo", input);
   assertKeepsEveryEnteredTime(trip, input, "after finish");
-  assert.deepEqual(unplacedOf(trip, places[2].id), { placeId: places[2].id, name: places[2].name, day: 2, reason: "reserve-after-finish", time: "14:00", ends: "15:30", finish: "15:00", proven: true });
+  assert.deepEqual(unplacedOf(trip, places[2].id), { placeId: places[2].id, name: places[2].name, day: 2, reason: "reserve-after-finish", time: "14:00", ends: "15:30", rideMinutes: 0, finish: "15:00", proven: true });
   // Until 15:30 it fits, to the minute.
   const fits = plan("tokyo", { ...input, lastDayFinish: "15:30" });
   assert.deepEqual(fits.unplaced, []);
   assert.equal(stopOf(fits, places[2].id)!.stop.leave, "15:30");
+  // With a hotel the visit is over in time (15:30) but the estimated ride back is not: said as an
+  // estimate that did not fit, with the visit's end and the ride apart — never as one clock time.
+  const back = shioriPricing({ ...input, hotel: SHINJUKU, locale: "ja" }, { rail: railOf("tokyo") }).toHotel![2];
+  assert.ok(back >= 15, "the hotel is a ride away");
+  const rideOver = { ...input, hotel: SHINJUKU, lastDayFinish: clockText(at("15:30") + back - 5) };
+  const over = plan("tokyo", rideOver);
+  assertKeepsEveryEnteredTime(over, rideOver, "ride back");
+  assert.deepEqual(unplacedOf(over, places[2].id), { placeId: places[2].id, name: places[2].name, day: 2, reason: "reserve-after-finish", time: "14:00", ends: "15:30", rideMinutes: back, finish: rideOver.lastDayFinish, proven: false });
+  const rideFits = { ...input, hotel: SHINJUKU, lastDayFinish: clockText(at("15:30") + back) };
+  assert.equal(unplacedOf(plan("tokyo", rideFits), places[2].id), null);
 });
 
 test("of two bookings that cannot both be kept the one higher in the list stays, and the notice gives the numbers", () => {
@@ -347,11 +391,26 @@ test("of two bookings that cannot both be kept the one higher in the list stays,
   assert.equal(entry.reason, "reserve-clash");
   assert.equal(stopOf(trip, skytree.id)!.stop.arrive, "10:00");
   if (entry.reason === "reserve-clash") {
-    assert.deepEqual([entry.withId, entry.withTime, entry.earlierId, entry.proven], [skytree.id, "10:00", skytree.id, true]);
-    // Out of the Skytree at 11:00, the ride as priced, ten minutes: that is when the Tower can be reached.
-    const alone = plan("tokyo", { places: [{ ...skytree, stayMinutes: 60, day: 1 }, { ...tower, day: 1 }], days: 1, hotel: null });
-    const ride = alone.days[0].legs.find((leg) => leg.fromName === skytree.name)?.minutes ?? alone.days[0].legs[0].minutes;
-    assert.equal(alone.days[0].stops[0].place.id === skytree.id ? entry.freeAt : null, alone.days[0].stops[0].place.id === skytree.id ? clockText(at("11:00") + ride + 10) : null);
+    // The Skytree visit (60 minutes from 10:00) is still on at 10:30: the two overlap. That is proven.
+    assert.deepEqual([entry.withId, entry.withTime, entry.earlierId, entry.stayEnds, entry.proven], [skytree.id, "10:00", skytree.id, "11:00", true]);
+    // Out of the Skytree at 11:00 and the ride as priced: that is when the Tower would be reached, by estimate.
+    const ride = shioriPricing({ ...input, locale: "ja" }, { rail: railOf("tokyo") }).minutes[0][1];
+    assert.deepEqual([entry.rideMinutes, entry.freeAt], [ride, clockText(at("11:00") + ride)]);
+    // The Tower booked for after the Skytree visit, but before the estimated ride gets there: not proven —
+    // "could not fit" — and still never shown late.
+    const tight = { ...input, places: [places[0], booked(tower, 1, clockText(at("11:00") + ride - 5)), museum] };
+    const unproven = plan("tokyo", tight);
+    assertKeepsEveryEnteredTime(unproven, tight, "ride between bookings");
+    const estimate = unplacedOf(unproven, tower.id)!;
+    assert.deepEqual([estimate.reason, estimate.proven, estimate.reason === "reserve-clash" && estimate.freeAt], ["reserve-clash", false, clockText(at("11:00") + ride)]);
+    // Booked for the minute the ride arrives, both are kept: straight from one booking to the next
+    // the ten minutes of slack are given up (they are the planner's habit; the two times are the traveller's).
+    const exact = { ...input, places: [places[0], booked(tower, 1, clockText(at("11:00") + ride)), museum] };
+    const both = plan("tokyo", exact);
+    assertKeepsEveryEnteredTime(both, exact, "back to back");
+    assert.deepEqual(both.unplaced, []);
+    const second = stopOf(both, tower.id)!;
+    assert.deepEqual([second.day.stops[second.position - 1].place.id, second.stop.arrive, second.stop.waitMinutes], [skytree.id, clockText(at("11:00") + ride), 0]);
   }
   // Listed the other way round, the Tower stays and the Skytree is named — it is first on the clock, so the Tower is reached too late from it.
   const swapped = plan("tokyo", { ...input, places: [places[1], places[0], museum] });
@@ -364,6 +423,33 @@ test("of two bookings that cannot both be kept the one higher in the list stays,
   assert.deepEqual(apart.unplaced, []);
   // A clash is not "too much for the days": no day count and no other place cures it.
   assert.equal(trip.notices.some((notice) => notice.kind === "too-much" || notice.kind === "needs-days" || notice.kind === "drop"), false);
+});
+
+test("two bookings next door a quarter of an hour apart are both on the plan; only an overlap is called impossible", () => {
+  // The zoo from 12:00 for an hour, the museum beside it (an eight-minute walk by estimate).
+  const [zoo, museum, park] = named("tokyo", ["上野動物園", "国立西洋美術館", "上野公園"]);
+  const trip = (time: string) => ({ places: [booked({ ...zoo, stayMinutes: 60 }, 1, "12:00"), booked({ ...museum, stayMinutes: 60 }, 1, time), park], days: 1, hotel: null });
+  const walk = shioriPricing({ ...trip("13:15"), locale: "ja" }, { rail: railOf("tokyo") }).minutes[0][1];
+  assert.ok(walk >= 1 && walk <= 12, `the walk is ${walk} minutes`);
+  // 13:15: the walk arrives with minutes to spare. Both are shown, each at its own time.
+  const both = plan("tokyo", trip("13:15"));
+  assertKeepsEveryEnteredTime(both, trip("13:15"), "13:15");
+  assert.deepEqual(both.unplaced, []);
+  assert.deepEqual([stopOf(both, zoo.id)!.stop.arrive, stopOf(both, museum.id)!.stop.arrive], ["12:00", "13:15"]);
+  // 13:00 plus the walk, to the minute: still both.
+  const exact = clockText(at("13:00") + walk);
+  assert.deepEqual(plan("tokyo", trip(exact)).unplaced, []);
+  // A minute less than the walk: the estimate does not fit. Set aside, not proven, the walk given as what it is.
+  const short = clockText(at("13:00") + walk - 1);
+  const unproven = plan("tokyo", trip(short));
+  assertKeepsEveryEnteredTime(unproven, trip(short), short);
+  assert.deepEqual(unplacedOf(unproven, museum.id), {
+    placeId: museum.id, name: museum.name, day: 1, reason: "reserve-clash", time: short, withId: zoo.id, withName: zoo.name, withTime: "12:00",
+    earlierId: zoo.id, stayEnds: "13:00", rideMinutes: walk, freeAt: exact, proven: false,
+  });
+  // 12:45: the zoo visit is still on. That, and only that, is proven.
+  const overlap = unplacedOf(plan("tokyo", trip("12:45")), museum.id)!;
+  assert.deepEqual([overlap.reason, overlap.proven], ["reserve-clash", true]);
 });
 
 test("what does not fit before the finish is set aside — as little as possible, and never a booked place", () => {

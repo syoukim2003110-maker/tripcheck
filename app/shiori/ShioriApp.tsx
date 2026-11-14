@@ -234,12 +234,18 @@ const text = {
     waitReserved: (minutes: string) => `予約の時刻まで約${minutes}の空き時間`,
     noLunchRoom: "予約や終了時刻に合わせたため、この日は昼食の1時間を取れていません。",
     unReserveDay: (name: string, day: number, days: number) => `「${name}」の予約は${day}日目ですが、旅行は${days}日間です。日を変えるか、日数を増やしてください。`,
-    unBeforeStart: (name: string, day: number, time: string, earliest: string) => `「${name}」の予約（${day}日目 ${time}）には間に合いません。早くても${earliest}の到着です。動き始める時刻か予約を見直してください。`,
-    unAfterFinish: (name: string, time: string, ends: string, finish: string) => `「${name}」の予約（${time}）は${ends}までかかり、最終日の${finish}に収まりません。終了時刻・滞在時間・予約のいずれかを見直してください。`,
-    unClash: (name: string, time: string, other: string, otherTime: string, first: string, freeAt: string) => `「${name}」（${time}）と「${other}」（${otherTime}）の予約は両立しません。「${first}」のあと、もう一方には早くても${freeAt}の到着です。時刻か滞在時間を変えてください。`,
+    // "Cannot" (ません) only where the traveller's own entries contradict each other. Where an estimated ride is what
+    // does not fit, the line says "could not" (ませんでした) and gives the ride as an estimate (約・ごろ・目安).
+    unBeforeStart: (name: string, day: number, time: string, start: string) => `「${name}」の予約（${day}日目 ${time}）は、動き始められる時刻（${start}）より前のため、間に合いません。動き始める時刻か予約を見直してください。`,
+    unBeforeStartRide: (name: string, day: number, time: string, start: string | null, ride: string, earliest: string) => `「${name}」の予約（${day}日目 ${time}）は入れられませんでした。このしおりの目安では、${start ? `${start}にホテルを出ても移動に約${ride}かかり、着くのは${earliest}ごろです` : `ホテルからの移動に約${ride}かかります`}。${start ? "動き始める時刻か予約" : "予約"}を見直してください。`,
+    unAfterFinish: (name: string, time: string, ends: string, finish: string) => `「${name}」の予約（${time}）は滞在が${ends}までで、最終日の${finish}に収まりません。終了時刻・滞在時間・予約のいずれかを見直してください。`,
+    unAfterFinishRide: (name: string, time: string, ends: string, ride: string, finish: string) => `「${name}」の予約（${time}）は入れられませんでした。滞在は${ends}までですが、このしおりの目安ではホテルへ戻る移動に約${ride}かかり、最終日の${finish}までに戻れない見込みです。終了時刻・滞在時間・予約のいずれかを見直してください。`,
+    unClash: (name: string, time: string, other: string, otherTime: string, first: string, stayEnds: string) => `「${name}」（${time}）と「${other}」（${otherTime}）の予約は両立しません。「${first}」の滞在が${stayEnds}までで、時間が重なっています。時刻か滞在時間を変えてください。`,
+    unClashRide: (name: string, time: string, other: string, otherTime: string, first: string, stayEnds: string, ride: string, freeAt: string) => `「${name}」（${time}）と「${other}」（${otherTime}）の予約は、両方を入れられませんでした。このしおりの目安では、「${first}」を${stayEnds}に出て移動に約${ride}かかり、次に着くのは${freeAt}ごろです。時刻か滞在時間を見直してください。`,
     unReserveLate: (name: string, time: string) => `「${name}」の予約（${time}）に間に合う行き方を組めませんでした。前後の予定か時刻を見直してください。`,
     unNoRoomFinish: (names: string[], finish: string) => `${names.map((name) => `「${name}」`).join("")}は最終日の${finish}までに入りきりませんでした。日数を増やすか、場所や滞在時間を減らすか、終了時刻を見直してください。`,
     unNoRoomReserve: (names: string[]) => `${names.map((name) => `「${name}」`).join("")}は予約の時刻に合わせると入りきりませんでした。別の日に移すか、予約の前後の予定を減らしてください。`,
+    unNoRoomDay: (names: string[]) => `${names.map((name) => `「${name}」`).join("")}は、入力した時刻の条件ではその日のうちに入りきりませんでした（日付が変わってしまいます）。日数を増やすか、場所や滞在時間を減らすか、時刻の条件を見直してください。`,
     frameOrder: (start: string, finish: string) => `動き始める時刻（${start}）が終了時刻（${finish}）より後です。どちらかを変えてください。`,
     weatherKinds: { clear: "晴れ", partly: "晴れ時々くもり", cloudy: "くもり", fog: "霧", rain: "雨", snow: "雪", storm: "雷雨" },
     rainChance: (percent: number) => `降水確率 ${percent}%`,
@@ -484,12 +490,16 @@ const text = {
     waitReserved: (minutes: string) => `About ${minutes} free before the booked time`,
     noLunchRoom: "To keep your times, this day has no hour set aside for lunch.",
     unReserveDay: (name: string, day: number, days: number) => `“${name}” is booked on day ${day}, but the trip has ${days} ${days === 1 ? "day" : "days"}. Change the day or add days.`,
-    unBeforeStart: (name: string, day: number, time: string, earliest: string) => `“${name}” (${time}, day ${day}) cannot be reached in time: ${earliest} at the earliest. Change your start time or the booking.`,
-    unAfterFinish: (name: string, time: string, ends: string, finish: string) => `“${name}” (${time}) lasts until ${ends}, past your ${finish} finish on the last day. Change the finish, the stay or the booking.`,
-    unClash: (name: string, time: string, other: string, otherTime: string, first: string, freeAt: string) => `“${name}” (${time}) and “${other}” (${otherTime}) cannot both be kept: after “${first}” you reach the other at ${freeAt} at the earliest. Change a time or a stay.`,
+    unBeforeStart: (name: string, day: number, time: string, start: string) => `“${name}” (${time}, day ${day}) is before the time you can start (${start}), so it cannot be kept. Change your start time or the booking.`,
+    unBeforeStartRide: (name: string, day: number, time: string, start: string | null, ride: string, earliest: string) => `“${name}” (${time}, day ${day}) could not be fitted in: by this booklet's estimate the ride from the hotel is about ${ride}${start ? `, so leaving at ${start} you would arrive around ${earliest}` : ""}. Change ${start ? "your start time or the booking" : "the booking"}.`,
+    unAfterFinish: (name: string, time: string, ends: string, finish: string) => `“${name}” (${time}) lasts until ${ends}, past your ${finish} finish on the last day, so it cannot be kept. Change the finish, the stay or the booking.`,
+    unAfterFinishRide: (name: string, time: string, ends: string, ride: string, finish: string) => `“${name}” (${time}) could not be fitted in: the visit ends at ${ends}, and by this booklet's estimate the ride back to the hotel is about ${ride} — past your ${finish} finish on the last day. Change the finish, the stay or the booking.`,
+    unClash: (name: string, time: string, other: string, otherTime: string, first: string, stayEnds: string) => `“${name}” (${time}) and “${other}” (${otherTime}) cannot both be kept: they overlap — “${first}” lasts until ${stayEnds}. Change a time or a stay.`,
+    unClashRide: (name: string, time: string, other: string, otherTime: string, first: string, stayEnds: string, ride: string, freeAt: string) => `“${name}” (${time}) and “${other}” (${otherTime}) could not both be fitted in: by this booklet's estimate the way from “${first}” (left at ${stayEnds}) takes about ${ride}, arriving around ${freeAt}. Change a time or a stay.`,
     unReserveLate: (name: string, time: string) => `No way was found to reach “${name}” by ${time}. Change what comes before it, or the time.`,
     unNoRoomFinish: (names: string[], finish: string) => `${names.map((name) => `“${name}”`).join(", ")} could not be fitted in before ${finish} on the last day. Add a day, remove a place or shorten a stay, or change the finish.`,
     unNoRoomReserve: (names: string[]) => `${names.map((name) => `“${name}”`).join(", ")} could not be fitted in around your booked times. Move it to another day, or plan less around the booking.`,
+    unNoRoomDay: (names: string[]) => `${names.map((name) => `“${name}”`).join(", ")} could not be fitted into the day with the times you entered (the day would run past midnight). Add a day, remove a place or shorten a stay, or change the times.`,
     frameOrder: (start: string, finish: string) => `Your start (${start}) is not before your finish (${finish}). Change one of them.`,
     weatherKinds: { clear: "Clear", partly: "Partly cloudy", cloudy: "Cloudy", fog: "Fog", rain: "Rain", snow: "Snow", storm: "Thunderstorm" },
     rainChance: (percent: number) => `rain chance ${percent}%`,
@@ -1905,21 +1915,30 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
   }
 
   const noticeKey = (notice: ShioriNotice) => `${notice.kind}-${"placeId" in notice ? notice.placeId : "days" in notice ? notice.days : ""}`;
-  // Why a place is not on the plan. "Cannot" where the numbers prove it; "could not be fitted" where the planner only failed to.
+  // Why a place is not on the plan. "Cannot" only where the traveller's own entries contradict each other;
+  // "could not be fitted" wherever one of the booklet's estimates (a ride) is what does not fit.
   const unplacedText = (entry: ShioriUnplaced, names: string[] = [entry.name]) => {
     switch (entry.reason) {
       case "reserve-day":
         return t.unReserveDay(entry.name, entry.day, entry.days);
       case "reserve-before-start":
-        return t.unBeforeStart(entry.name, entry.day, entry.time, entry.earliest);
+        return entry.proven && entry.start
+          ? t.unBeforeStart(entry.name, entry.day, entry.time, entry.start)
+          : t.unBeforeStartRide(entry.name, entry.day, entry.time, entry.start, durationText(entry.rideMinutes, locale), entry.earliest);
       case "reserve-after-finish":
-        return t.unAfterFinish(entry.name, entry.time, entry.ends, entry.finish);
-      case "reserve-clash":
-        return t.unClash(entry.name, entry.time, entry.withName, entry.withTime, entry.earlierId === entry.placeId ? entry.name : entry.withName, entry.freeAt);
+        return entry.proven
+          ? t.unAfterFinish(entry.name, entry.time, entry.ends, entry.finish)
+          : t.unAfterFinishRide(entry.name, entry.time, entry.ends, durationText(entry.rideMinutes, locale), entry.finish);
+      case "reserve-clash": {
+        const first = entry.earlierId === entry.placeId ? entry.name : entry.withName;
+        return entry.proven
+          ? t.unClash(entry.name, entry.time, entry.withName, entry.withTime, first, entry.stayEnds)
+          : t.unClashRide(entry.name, entry.time, entry.withName, entry.withTime, first, entry.stayEnds, durationText(entry.rideMinutes, locale), entry.freeAt);
+      }
       case "reserve-late":
         return t.unReserveLate(entry.name, entry.time);
       case "no-room":
-        return entry.edge === "finish" ? t.unNoRoomFinish(names, trip.lastDayFinish ?? "") : t.unNoRoomReserve(names);
+        return entry.edge === "finish" ? t.unNoRoomFinish(names, trip.lastDayFinish ?? "") : entry.edge === "day" ? t.unNoRoomDay(names) : t.unNoRoomReserve(names);
     }
   };
   const sameRoom = (left: ShioriNotice, right: ShioriNotice) => left.kind === "unplaced" && right.kind === "unplaced" && left.reason === "no-room" && right.reason === "no-room" && left.edge === right.edge && left.day === right.day;

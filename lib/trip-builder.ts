@@ -118,6 +118,13 @@ export type VisitWindow = {
   closeMinutes: number;
   /** Admission cutoff, distinct from the time the facility closes. */
   lastEntryMinutes?: number;
+  /**
+   * The margin added after the ride in may be given up to make this entry:
+   * when the ride itself arrives by `lastEntryMinutes` and only the margin
+   * would pass it, the visit starts at `lastEntryMinutes`. For a fixed time
+   * that follows another fixed time, where nothing in between can be moved.
+   */
+  slackFreeEntry?: boolean;
 };
 
 export type StopPriority = "must" | "normal" | "optional";
@@ -1648,6 +1655,10 @@ function buildDay(
     // evening; a written clock time still wins over the vaguer wish.
     if (constraint.fixedTimeMinutes === null && constraint.timeOfDay === "evening") cursor = Math.max(cursor, 16 * 60);
     if (constraint.fixedTimeMinutes === null && constraint.timeOfDay === "night") cursor = Math.max(cursor, 18 * 60);
+    if (stopIndex > 0 || startBase) {
+      const entry = openingWindows[stop.id]?.find((window) => window.slackFreeEntry && window.lastEntryMinutes !== undefined)?.lastEntryMinutes;
+      if (entry !== undefined && cursor > entry && cursor - transferBufferMinutes <= entry) cursor = entry;
+    }
     const opening = fitVisitToWindow(cursor, stop.planningDurationMinutes, openingWindows[stop.id]);
     if (opening.status !== "conflict" && opening.status !== "closed_day") cursor = opening.start;
     const reservationLateMinutes = constraint.fixedTimeMinutes === null ? 0 : Math.max(0, cursor - constraint.fixedTimeMinutes);
