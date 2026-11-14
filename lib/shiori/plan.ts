@@ -473,7 +473,17 @@ const stayOf = (place: ShioriPlace) => Math.max(15, Math.round(place.stayMinutes
  */
 function buildWithEngine(input: ShioriInput, extra: Partial<TripPlannerContext>, usedDays: number, frames: Frames | null = null, slackFree: ReadonlySet<string> = NO_IDS): Built {
   const settings = paceSettings.standard;
-  const stops = input.places.map(resolvedStop);
+  // A stay that carries the lunch hour is handed over as a changed stay, and
+  // the engine takes a changed stay only up to eight hours: a longer one it
+  // drops without a word, and the visit would be printed an hour short. Such
+  // a stay is the stop's own length instead. (Only a visit booked before
+  // seven can be over seven hours long and end by lunchtime.)
+  const lent = extra.durationOverrides ?? {};
+  const stops = input.places.map((place, index) => {
+    const stop = resolvedStop(place, index);
+    const stay = lent[place.id];
+    return typeof stay === "number" && stay > 480 ? { ...stop, planningDurationMinutes: Math.round(stay) } : stop;
+  });
   const raw = stops.map((stop) => stop.input).join("\n");
   const base = input.hotel ? hotelBase(input.hotel) : null;
   const dayOverrides = Object.fromEntries(input.places.flatMap((place) => {

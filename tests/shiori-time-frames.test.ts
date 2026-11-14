@@ -138,6 +138,8 @@ function assertKeepsEveryEnteredTime(trip: ShioriPlan, input: Omit<ShioriInput, 
       assert.ok(at(departureAfterStop(day, day.stops.length - 1)!) + (day.toHotel?.minutes ?? 0) <= finish, `${where}: last stop ${last.leave} + ride home`);
       assert.equal(day.meals.some((meal) => meal.kind === "dinner"), false, `${where}: no dinner is suggested after the finish`);
     }
+    // A visit is printed as long as it is: the lunch hour that follows it is never taken out of it.
+    for (const stop of day.stops) assert.equal(stop.stayMinutes, Math.max(15, Math.round(stop.place.stayMinutes)), `${where}: day ${day.index + 1} ${stop.place.name} is printed ${stop.arrive}-${stop.leave}`);
     // A day that says it has no room for a lunch hour has none — and no restaurant chosen for lunch either.
     if (day.noLunchRoom) assert.equal(day.meals.some((meal) => meal.kind === "lunch") || day.stops.some((stop) => stop.place.meal === "lunch"), false, where);
     // The clock is one clock: each arrival is the departure before it, the ride, ten minutes of slack and the wait that is printed.
@@ -832,6 +834,23 @@ test("the forecast never moves a day that holds a booking, day 1 with a start or
 });
 
 /* ------------------------------------------------- nothing entered, nothing changed */
+
+test("a booked visit of seven and a half hours that ends at lunchtime is printed whole, with the lunch hour after it", () => {
+  // The lunch hour is lent to the stay of the stop it follows; the engine used to drop a stay over
+  // eight hours, and the visit came out an hour short with every later clock an hour early.
+  const [sea, park] = named("tokyo", ["東京ディズニーシー", "上野公園"]);
+  const input = { places: [booked({ ...sea, stayMinutes: 450 }, 1, "06:30"), { ...park, stayMinutes: 60 }], days: 1, hotel: null };
+  const trip = plan("tokyo", input);
+  assertKeepsEveryEnteredTime(trip, input, "long booked stay");
+  const day = trip.days[0];
+  assert.deepEqual(day.stops.map((stop) => [stop.place.name, stop.arrive, stop.leave, stop.stayMinutes]), [["東京ディズニーシー", "06:30", "14:00", 450], ["上野公園", clockText(at("15:00") + day.legs[0].minutes + 10), clockText(at("16:00") + day.legs[0].minutes + 10), 60]]);
+  assert.deepEqual(day.meals.filter((meal) => meal.kind === "lunch").map((meal) => [meal.afterStop, meal.start, meal.end]), [[0, "14:00", "15:00"]]);
+  // The longest stay there is, booked at dawn: still whole.
+  const longest = { places: [booked({ ...sea, stayMinutes: 480 }, 1, "05:30"), { ...park, stayMinutes: 60 }], days: 1, hotel: null };
+  const dawn = plan("tokyo", longest);
+  assertKeepsEveryEnteredTime(dawn, longest, "eight-hour booked stay");
+  assert.deepEqual([dawn.days[0].stops[0].arrive, dawn.days[0].stops[0].leave], ["05:30", "13:30"]);
+});
 
 test("with no time entered the plan is the plan there has always been", () => {
   for (const [cityId, count, days, hotel] of [["tokyo", 8, 2, SHINJUKU], ["kyoto", 9, 3, null], ["osaka", 7, 2, null], ["tokyo", 12, 3, null]] as const) {
