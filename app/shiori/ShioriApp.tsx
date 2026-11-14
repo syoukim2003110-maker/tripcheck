@@ -13,7 +13,7 @@ import type { HotelCandidate } from "../../lib/google-hotels";
 import { requestHotelRecommendations } from "../../lib/hotel-recommendations-client";
 import { requestPlaceResolution } from "../../lib/place-resolution-client";
 import { curateSights, filterDestinations, type PopularDestination, type PopularSight } from "../../lib/popular-sights";
-import { loadRailNetwork } from "../../lib/rail-network-client";
+import { loadRailNetwork, loadToeiTimetable } from "../../lib/rail-network-client";
 import type { RailNetwork } from "../../lib/rail-router";
 import { fetchStreetRoute } from "../../lib/street-route-client";
 import { addAnchor, openCandidate, openLookupHit, placeOfCandidate, putPlace, searchAddCandidates, type AddCandidate } from "../../lib/shiori/add-search";
@@ -21,6 +21,7 @@ import { BulkBudgetError, bulkAfterTripChange, bulkLeftover, bulkProgress, bulkS
 import { findCafes, withListedCafes, type CafeBreak, type CafePick } from "../../lib/shiori/cafes";
 import { fetchedStamp, forecastCentre, loadForecast, wetDaysOf, type DayForecast, type ForecastAnswer, type ForecastCache } from "../../lib/shiori/forecast";
 import { lineColor } from "../../lib/shiori/line-colors";
+import { clockOf, hasToeiRide, legTimetables, type RideTimetable, type ServiceCalendar, type TimetableTrain, type ToeiTimetableData } from "../../lib/shiori/timetable";
 import { buildShioriPlan, departureAfterStop, type ShioriLeg, type ShioriMeal, type ShioriNotice, type ShioriPlace, type ShioriPlan, type ShioriRoute, type ShioriStop } from "../../lib/shiori/plan";
 import {
   MAX_DAYS,
@@ -41,7 +42,7 @@ import {
   withStartDate,
   type ShioriTrip,
 } from "../../lib/shiori/state";
-import { FORECAST_DAYS_AHEAD, dateLabel, earliestStartDate, forecastWindow, tripDate, type ForecastWindow } from "../../lib/shiori/trip-dates";
+import { FORECAST_DAYS_AHEAD, MONTHS, dateLabel, earliestStartDate, forecastWindow, tripDate, type ForecastWindow } from "../../lib/shiori/trip-dates";
 import { isWetForecast, wetReason, type WetReason } from "../../lib/shiori/weather-days";
 import type { WeatherKind } from "../../lib/weather";
 import PlaceCard from "./PlaceCard";
@@ -307,6 +308,16 @@ const text = {
     rideLabel: "乗車",
     changeWalk: (minutes: number) => `乗り換え 約${minutes}分`,
     legWhen: (from: string, to: string) => `${from}発 → ${to}ごろ着`,
+    // The operator's published departures beside a dated Toei ride. The plan's
+    // own times stay estimates; this line says which timetable it read.
+    timetableDays: { Weekday: "平日ダイヤ", Saturday: "土曜ダイヤ", Holiday: "休日ダイヤ", SaturdayHoliday: "土休日ダイヤ" } as Record<ServiceCalendar, string>,
+    timetableTrains: (line: string, days: string, first: TimetableTrain, next: string[]) =>
+      `${line} 時刻表（${days}）：${clockOf(first.depart)}発${first.arrive === null ? "" : ` → ${clockOf(first.arrive)}着`}（${first.type ? `${first.type.ja} ` : ""}${first.destination.ja}行き）${next.length > 0 ? `・次 ${next.join("・")}` : ""}`,
+    timetableAfterLast: (line: string, days: string) => `${line} 時刻表（${days}）：この時刻は終電後です`,
+    timetableCredit: (credit: string, lines: string) => `都営線の時刻表：${credit}（CC BY 4.0）。${lines}改正の時刻表によるもので、運休・遅れや、その後の改正は反映されていません。`,
+    timetableIssued: (line: string, date: string) => `${line} ${date}`,
+    timetableDate: (year: number, month: number, day: number) => `${year}年${month}月${day}日`,
+    timetableHint: "出発日を入れると、都営線の区間に時刻表の発車時刻を添えます。",
     legChain: "乗り継ぎの順番",
     legWalking: (minutes: number) => `徒歩 計${minutes}分`,
     legChanges: (count: number) => `乗り換え${count}回`,
@@ -523,6 +534,14 @@ const text = {
     rideLabel: "Ride",
     changeWalk: (minutes: number) => `Change · ~${minutes} min`,
     legWhen: (from: string, to: string) => `leave ${from} → arrive ~${to}`,
+    timetableDays: { Weekday: "weekday timetable", Saturday: "Saturday timetable", Holiday: "Sunday and holiday timetable", SaturdayHoliday: "weekend and holiday timetable" } as Record<ServiceCalendar, string>,
+    timetableTrains: (line: string, days: string, first: TimetableTrain, next: string[]) =>
+      `${line}, ${days}: ${clockOf(first.depart)}${first.arrive === null ? "" : ` → ${clockOf(first.arrive)}`} (${first.type ? `${first.type.en}, ` : ""}for ${first.destination.en})${next.length > 0 ? ` · next ${next.join(", ")}` : ""}`,
+    timetableAfterLast: (line: string, days: string) => `${line}, ${days}: after the last train`,
+    timetableCredit: (credit: string, lines: string) => `Toei timetables: ${credit} (CC BY 4.0). From the timetables revised ${lines}; suspensions, delays and later revisions are not shown.`,
+    timetableIssued: (line: string, date: string) => `${date} (${line})`,
+    timetableDate: (year: number, month: number, day: number) => `${day} ${MONTHS[month - 1]} ${year}`,
+    timetableHint: "Add a start date to see the timetabled departures of the Toei trains.",
     legChain: "Order of the journey",
     legWalking: (minutes: number) => `${minutes} min on foot in all`,
     legChanges: (count: number) => `${count} change${count === 1 ? "" : "s"}`,
@@ -641,7 +660,16 @@ function clockPlus(time: string, minutes: number) {
   return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
 }
 
-function LegCard({ leg, locale, heading, depart }: { leg: ShioriLeg; locale: Locale; heading?: string; depart?: string }) {
+/** One published-timetable line for a ride: the first train and the departures of the next ones. */
+function timetableLine(answer: RideTimetable, line: string, locale: Locale) {
+  const t = text[locale];
+  const days = t.timetableDays[answer.calendar];
+  if (answer.kind === "after-last") return t.timetableAfterLast(line, days);
+  const [first, ...next] = answer.trains;
+  return t.timetableTrains(line, days, first, next.map((train) => clockOf(train.depart)));
+}
+
+function LegCard({ leg, locale, heading, depart, times }: { leg: ShioriLeg; locale: Locale; heading?: string; depart?: string; times?: ReadonlyArray<RideTimetable | null> | null }) {
   const t = text[locale];
   // The way a maps app sums a journey up: when, how long, and the chain of
   // walk › line › line › walk; the tickets below are the detail.
@@ -689,6 +717,12 @@ function LegCard({ leg, locale, heading, depart }: { leg: ShioriLeg; locale: Loc
               ].flatMap((item, index) => index === 0 ? [item] : [<li aria-hidden="true" className="is-sep" key={`sep-${index}`}>›</li>, item])}
             </ol>
             <p className="shiori-leg-facts">{[t.legWalking(walking), leg.rail.rides.length > 1 ? t.legChanges(leg.rail.rides.length - 1) : t.legDirect].join(" ・ ")}</p>
+            {/* The operator's own departures for a Toei ride on a dated day,
+                beside the estimate rather than in place of it. */}
+            {times ? leg.rail.rides.map((ride, index) => {
+              const answer = times[index];
+              return answer ? <p className="shiori-leg-facts" key={`timetable-${ride.from}-${ride.to}-${index}`}>{timetableLine(answer, ride.line ?? t.rail, locale)}</p> : null;
+            }) : null}
           </>
         ) : null}
       </div>
@@ -1137,6 +1171,48 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
   // A plan made on an earlier visit to this screen is another trip's plan.
   const plan = screen === "plan" && planned && planned.visit === planVisit ? planned.plan : null;
   const planning = screen === "plan" && planned?.key !== planKey;
+  // The Toei lines' published departures. The file is asked for (from this
+  // site) only once a plan with a start date has a ride on a Toei line.
+  // Toei runs only in Tokyo: a same-named line elsewhere (Kobe's 三田線) must not fetch the timetable or show its hint.
+  const toeiRide = useMemo(() => trip.cityId === "tokyo" && Boolean(plan?.days.some((day) => [day.fromHotel, ...day.legs, day.toHotel].some((leg) => leg?.rail && hasToeiRide(leg.rail.rides)))), [plan, trip.cityId]);
+  const toeiWanted = toeiRide && Boolean(startDate);
+  const [toei, setToei] = useState<ToeiTimetableData | null>(null);
+  useEffect(() => {
+    if (!toeiWanted || toei) return;
+    let current = true;
+    void loadToeiTimetable().then((data) => { if (current && data) setToei(data); });
+    return () => { current = false; };
+  }, [toeiWanted, toei]);
+  // Each rail leg's trains on its own date, from the time the plan sets off.
+  const legTimes = useMemo(() => {
+    const found = new Map<ShioriLeg, Array<RideTimetable | null>>();
+    if (!toei || !startDate || !plan) return found;
+    for (const day of plan.days) {
+      const date = tripDate(startDate, day.index);
+      if (!date) continue;
+      const add = (leg: ShioriLeg | null | undefined, depart: string | undefined) => {
+        if (leg?.rail && depart && hasToeiRide(leg.rail.rides)) found.set(leg, legTimetables(toei, leg.rail, depart, date));
+      };
+      add(day.fromHotel, day.start);
+      day.legs.forEach((leg, index) => add(leg, departureAfterStop(day, index)));
+      add(day.toHotel, departureAfterStop(day, day.stops.length - 1));
+    }
+    return found;
+  }, [toei, startDate, plan]);
+  // The credit, once per plan, names each line whose times are shown and the revision they come from.
+  const timetableCredit = useMemo(() => {
+    if (!toei) return null;
+    const issued = new Map<string, string>();
+    for (const answers of legTimes.values()) for (const answer of answers) if (answer) issued.set(answer.railway, answer.issued);
+    if (issued.size === 0) return null;
+    const t = text[locale];
+    const lines = [...issued].map(([id, date]) => {
+      const railway = toei.railways.find((entry) => entry.id === id);
+      const [year, month, day] = date.split("-").map(Number);
+      return t.timetableIssued(railway ? (locale === "ja" ? railway.ja : railway.en) : id, t.timetableDate(year, month, day));
+    });
+    return t.timetableCredit(toei.credit[locale], lines.join(locale === "ja" ? "、" : "; "));
+  }, [toei, legTimes, locale]);
 
   // Every leg that is not a train ride gets the way along the streets, so
   // the map shows where one actually walks or drives and the clock uses the
@@ -1915,7 +1991,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
                     {day.fromHotel && startPart ? (
                       <li className="is-leg">
                         <p className="shiori-part"><span>{t.parts[startPart]}</span></p>
-                        <LegCard depart={day.start} heading={t.fromHotel} leg={day.fromHotel} locale={locale} />
+                        <LegCard depart={day.start} heading={t.fromHotel} leg={day.fromHotel} locale={locale} times={legTimes.get(day.fromHotel)} />
                       </li>
                     ) : null}
                     {day.stops.map((stop, index) => {
@@ -1997,11 +2073,11 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
                             />
                           ) : null}
                           {/* A lunch hour suggested after this stop is spent before setting off: the leg leaves when lunch ends. */}
-                          {day.legs[index] ? <LegCard depart={departureAfterStop(day, index)} leg={day.legs[index]} locale={locale} /> : null}
+                          {day.legs[index] ? <LegCard depart={departureAfterStop(day, index)} leg={day.legs[index]} locale={locale} times={legTimes.get(day.legs[index])} /> : null}
                         </li>
                       );
                     })}
-                    {day.toHotel ? <li className="is-leg"><LegCard depart={departureAfterStop(day, day.stops.length - 1)} heading={t.toHotel} leg={day.toHotel} locale={locale} /></li> : null}
+                    {day.toHotel ? <li className="is-leg"><LegCard depart={departureAfterStop(day, day.stops.length - 1)} heading={t.toHotel} leg={day.toHotel} locale={locale} times={legTimes.get(day.toHotel)} /></li> : null}
                   </ol>
                   {/* With rain forecast for this date, the roofed ideas come before the others. */}
                   {wet ? rainIdeas : null}
@@ -2081,10 +2157,13 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
           {plan ? <StayNear locale={locale} onHotel={(hotel) => update((current) => ({ ...current, hotel }))} plan={plan} trip={trip} /> : null}
 
           {usedDays === 0 && plan ? <p className="shiori-quiet">{t.needOne}</p> : null}
+          {toeiRide && !startDate ? <p className="shiori-quiet">{t.timetableHint}</p> : null}
 
           <footer className="shiori-foot">
             <p>{t.note}</p>
             <p>{t.credits}</p>
+            {/* The timetable's licence (CC BY 4.0) asks for this credit wherever its times are shown. */}
+            {timetableCredit ? <p className="shiori-credit">{timetableCredit}</p> : null}
             {/* Restaurant listings and photos in Japan come from this service; its guideline asks for this line on the site. */}
             <p className="shiori-credit">Powered by <a href="http://webservice.recruit.co.jp/">ホットペッパーグルメ Webサービス</a></p>
             <p>
