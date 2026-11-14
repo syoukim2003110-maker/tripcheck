@@ -3,8 +3,8 @@ import ShioriApp from "./shiori/ShioriApp";
 import "./shiori/shiori.css";
 
 export const metadata: Metadata = {
-  title: "TripCheck — pick places, get a day-by-day trip booklet",
-  description: "Choose a destination and tap the places you want. TripCheck works out which day, what order and how to get between them — with train lines, hotel and meal ideas — on a map. Free, no account.",
+  title: "TripCheck — plan your trip",
+  description: "Choose your places, restaurants and hotel. Plan each day with travel times and a map. Free, no account.",
   alternates: { canonical: "/" },
 };
 
