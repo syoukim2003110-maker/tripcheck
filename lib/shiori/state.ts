@@ -1,5 +1,5 @@
 import type { PopularDestination, PopularSight } from "../popular-sights.ts";
-import { MAX_TRIP_DAYS, type ShioriHotel, type ShioriPace, type ShioriPlace } from "./plan.ts";
+import { MAX_TRIP_DAYS, clockOfDay, type ShioriHotel, type ShioriPace, type ShioriPlace, type ShioriReservation } from "./plan.ts";
 import { shioriStayMinutes } from "./stay.ts";
 import { usableStartDate } from "./trip-dates.ts";
 
@@ -21,6 +21,13 @@ export type ShioriTrip = {
    * it the booklet has numbered days only and asks nobody about the weather.
    */
   startDate?: string;
+  /**
+   * When the traveller can start moving on day 1 ("13:00") and by when the
+   * last day has to be over ("15:00"). Both optional, both absent on every
+   * trip made before they existed.
+   */
+  firstDayStart?: string;
+  lastDayFinish?: string;
 };
 
 export const emptyTrip: ShioriTrip = { cityId: null, cityName: "", places: [], days: 3, pace: "standard", hotel: null };
@@ -100,7 +107,61 @@ export function withCity(trip: ShioriTrip, city: PopularDestination, locale: "ja
   // A new destination is a new trip: places from another city make no sense
   // on this one's map.
   // The dates are the traveller's, not the city's: they carry over with the day count.
-  return { ...emptyTrip, days: trip.days, pace: trip.pace, cityId: city.id, cityName: locale === "ja" ? city.ja : city.en, ...(trip.startDate ? { startDate: trip.startDate } : {}) };
+  return {
+    ...emptyTrip,
+    days: trip.days,
+    pace: trip.pace,
+    cityId: city.id,
+    cityName: locale === "ja" ? city.ja : city.en,
+    ...(trip.startDate ? { startDate: trip.startDate } : {}),
+    // So are the hours the traveller arrives and has to leave.
+    ...(trip.firstDayStart ? { firstDayStart: trip.firstDayStart } : {}),
+    ...(trip.lastDayFinish ? { lastDayFinish: trip.lastDayFinish } : {}),
+  };
+}
+
+/**
+ * The trip with the time a time field handed over for day 1's start or the
+ * last day's finish. An empty field removes it; anything that is not a whole
+ * "HH:MM" (half-typed) leaves the trip as it is.
+ */
+function withClock(trip: ShioriTrip, key: "firstDayStart" | "lastDayFinish", value: string): ShioriTrip {
+  if (value === "") {
+    const rest = { ...trip };
+    delete rest[key];
+    return rest;
+  }
+  return clockOfDay(value) === null ? trip : { ...trip, [key]: value };
+}
+export const withFirstDayStart = (trip: ShioriTrip, value: string) => withClock(trip, "firstDayStart", value);
+export const withLastDayFinish = (trip: ShioriTrip, value: string) => withClock(trip, "lastDayFinish", value);
+
+/** A booking as the trip keeps it: a whole day from 1 to the longest trip, and a whole "HH:MM". Anything else is no booking. */
+function usableReservation(reserve: unknown): ShioriReservation | null {
+  if (!reserve || typeof reserve !== "object") return null;
+  const { day, time } = reserve as Partial<ShioriReservation>;
+  return typeof day === "number" && Number.isInteger(day) && day >= 1 && day <= MAX_DAYS && clockOfDay(time) !== null ? { day, time: time as string } : null;
+}
+
+/**
+ * Sets or clears the fixed time of a place. Day and time come together. A
+ * booking also puts the place on its day; clearing it leaves the place on
+ * that day (the traveller chose it), free to be moved again. A booking that
+ * is not usable leaves the trip as it is.
+ */
+export function withReservation(trip: ShioriTrip, placeId: string, reserve: ShioriReservation | null): ShioriTrip {
+  const usable = reserve === null ? null : usableReservation(reserve);
+  if (reserve !== null && !usable) return trip;
+  return {
+    ...trip,
+    places: trip.places.map((place) => {
+      if (place.id !== placeId) return place;
+      if (usable) return { ...place, day: usable.day, reserve: usable };
+      const { reserve: _dropped, ...rest } = place;
+      void _dropped;
+      return rest;
+    }),
+  };
 }
 
 /**
@@ -125,10 +186,20 @@ type Wire = {
   n: string;
   d: number;
   p: ShioriPace;
-  s: Array<[id: string, name: string, lat: number, lon: number, stay: number, day: number | null, kind: string | null, img: string | null, meal?: "lunch" | "dinner" | null]>;
+  /**
+   * The tenth element is a booking, `[day, minutes since midnight]`. It is
+   * written only for a place that has one, so a place without encodes
+   * exactly as it always did.
+   */
+  s: Array<[id: string, name: string, lat: number, lon: number, stay: number, day: number | null, kind: string | null, img: string | null, meal?: "lunch" | "dinner" | null, reserve?: [day: number, minutes: number] | null]>;
   h: [name: string, lat: number, lon: number] | null;
   /** Start date. Written only when there is one, so a trip without a date encodes exactly as it always did. */
   t?: string;
+  /**
+   * `[start of day 1, finish of the last day]` in minutes since midnight,
+   * null for the one not set. Written only when one of them is set.
+   */
+  w?: [number | null, number | null];
 };
 
 function isPace(value: unknown): value is ShioriPace {
@@ -145,25 +216,34 @@ function finite(value: unknown, minimum: number, maximum: number): value is numb
  * so no single place can make the saved trip or its link unreadable.
  */
 export function encodeTrip(trip: ShioriTrip): string {
+  const start = clockOfDay(trip.firstDayStart);
+  const finish = clockOfDay(trip.lastDayFinish);
   const wire: Wire = {
     v: 1,
     c: trip.cityId,
     n: trip.cityName,
     d: Math.min(MAX_DAYS, Math.max(1, Math.round(trip.days))),
     p: trip.pace,
-    s: trip.places.map((place) => [
-      place.id,
-      clipName(place.name),
-      Number(place.lat.toFixed(5)),
-      Number(place.lon.toFixed(5)),
-      place.stayMinutes,
-      place.day ?? null,
-      place.kind && place.kind.length <= MAX_KIND ? place.kind : null,
-      place.img ?? null,
-      place.meal ?? null,
-    ]),
+    s: trip.places.map((place): Wire["s"][number] => {
+      const reserve = usableReservation(place.reserve);
+      const entry: Wire["s"][number] = [
+        place.id,
+        clipName(place.name),
+        Number(place.lat.toFixed(5)),
+        Number(place.lon.toFixed(5)),
+        place.stayMinutes,
+        // A booking's day is the place's day.
+        reserve ? reserve.day : place.day ?? null,
+        place.kind && place.kind.length <= MAX_KIND ? place.kind : null,
+        place.img ?? null,
+        place.meal ?? null,
+      ];
+      if (reserve) entry.push([reserve.day, clockOfDay(reserve.time)!]);
+      return entry;
+    }),
     h: trip.hotel ? [clipName(trip.hotel.name), Number(trip.hotel.lat.toFixed(5)), Number(trip.hotel.lon.toFixed(5))] : null,
     ...(trip.startDate ? { t: trip.startDate } : {}),
+    ...(start !== null || finish !== null ? { w: [start, finish] as [number | null, number | null] } : {}),
   };
   const bytes = new TextEncoder().encode(JSON.stringify(wire));
   let binary = "";
@@ -171,11 +251,34 @@ export function encodeTrip(trip: ShioriTrip): string {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
+const wholeMinute = (value: unknown): value is number => typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 1_439;
+const clockText = (minutes: number) => `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+
+/** A booking as it was written: exactly `[day, minutes]`, both whole and in range. */
+function wholeReservation(value: unknown): ShioriReservation | null {
+  if (!Array.isArray(value) || value.length !== 2) return null;
+  const [day, minutes] = value as unknown[];
+  return typeof day === "number" && Number.isInteger(day) && day >= 1 && day <= MAX_DAYS && wholeMinute(minutes) ? { day, time: clockText(minutes) } : null;
+}
+
+/** Day 1's start and the last day's finish as they were written: exactly two entries, each null or a whole minute of the day. */
+function wholeFrames(value: unknown): Pick<ShioriTrip, "firstDayStart" | "lastDayFinish"> {
+  if (!Array.isArray(value) || value.length !== 2) return {};
+  const [start, finish] = value as unknown[];
+  if (!(start === null || wholeMinute(start)) || !(finish === null || wholeMinute(finish))) return {};
+  return { ...(start === null ? {} : { firstDayStart: clockText(start) }), ...(finish === null ? {} : { lastDayFinish: clockText(finish) }) };
+}
+
 /**
  * Reads a stored or shared trip. Anything malformed is dropped rather than
  * repaired: a share link is text from somewhere else, and the worst it may do
  * is fail to open. (The start date is the one exception: it is an extra, so
- * a bad or expired one is left out and the rest is read.)
+ * a bad or expired one is left out and the rest is read. The times a
+ * traveller entered — day 1's start, the last day's finish, a booking — are
+ * extras in the same way: one that is not exactly a whole day and a whole
+ * minute of the day is left out, and the place or the trip opens without
+ * it. A booking's day is never moved: one beyond the trip's days is kept as
+ * entered and the plan says it does not fit.)
  */
 export function decodeTrip(encoded: string, now: Date = new Date()): ShioriTrip | null {
   try {
@@ -188,7 +291,8 @@ export function decodeTrip(encoded: string, now: Date = new Date()): ShioriTrip 
     const places: ShioriPlace[] = [];
     for (const entry of wire.s) {
       if (!Array.isArray(entry)) return null;
-      const [id, name, lat, lon, stay, day, kind, img, meal] = entry;
+      const [id, name, lat, lon, stay, day, kind, img, meal, booked] = entry as unknown[];
+      const reserve = wholeReservation(booked);
       if (typeof id !== "string" || !PLACE_ID.test(id) || seen.has(id)) return null;
       if (typeof name !== "string" || name.trim().length === 0 || name.length > MAX_NAME) return null;
       if (!finite(lat, -90, 90) || !finite(lon, -180, 180) || !finite(stay, 15, 720)) return null;
@@ -199,11 +303,13 @@ export function decodeTrip(encoded: string, now: Date = new Date()): ShioriTrip 
         lat,
         lon,
         stayMinutes: Math.round(stay),
-        ...(finite(day, 1, MAX_DAYS) ? { day: Math.round(day) } : {}),
+        // A booking's day is the place's day.
+        ...(reserve ? { day: reserve.day } : finite(day, 1, MAX_DAYS) ? { day: Math.round(day) } : {}),
         ...(typeof kind === "string" && kind.length <= MAX_KIND ? { kind } : {}),
         // A file name, never a URL: it is only ever appended to the Commons path.
         ...(typeof img === "string" && img.length <= 240 && !/[\\/?#]|\.\./.test(img) ? { img } : {}),
         ...(meal === "lunch" || meal === "dinner" ? { meal } : {}),
+        ...(reserve ? { reserve } : {}),
       });
     }
     const hotel = Array.isArray(wire.h) && typeof wire.h[0] === "string" && wire.h[0].length <= MAX_NAME
@@ -220,6 +326,7 @@ export function decodeTrip(encoded: string, now: Date = new Date()): ShioriTrip 
       hotel,
       // A date that is malformed or long past is forgotten; the trip still opens.
       ...(usableStartDate(wire.t, now) ? { startDate: wire.t } : {}),
+      ...wholeFrames(wire.w),
     };
   } catch {
     return null;
