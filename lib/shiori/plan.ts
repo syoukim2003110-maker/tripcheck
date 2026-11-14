@@ -1639,9 +1639,20 @@ export function buildShioriPlan(input: ShioriInput, options: PlanOptions = {}): 
     let found = false;
     // Never past the longest trip that can be kept: a length that cannot be
     // saved must not be offered.
+    // A booking no number of days can keep — before the entered start,
+    // clashing with another — is set aside at every length, and is said in
+    // its own notice. "This many days hold it" is said of the rest: without
+    // this, one such booking turned every too-full trip into "too much even
+    // with more days", which is not so.
+    const beyondDays = new Set(plan.unplaced.flatMap((entry) => (curable(entry) ? [] : [entry.placeId])));
+    const holds = (candidate: ShioriPlan) => (beyondDays.size === 0 ? fits(candidate) : (
+      candidate.leftOut.length === candidate.unplaced.length
+      && candidate.unplaced.every((entry) => beyondDays.has(entry.placeId))
+      && !candidate.days.some((day) => day.runsLate || day.stops.some((stop) => stop.mealMissed))
+    ));
     for (let days = Math.max(requested + 1, least); days <= MAX_TRIP_DAYS && !found; days += 1) {
       // Said only if the plan the traveller would then get — the full one — fits.
-      if (fits(planOnce({ ...input, days }, options))) {
+      if (holds(planOnce({ ...input, days }, options))) {
         notices.push({ kind: "needs-days", days });
         found = true;
       }

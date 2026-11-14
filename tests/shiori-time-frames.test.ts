@@ -944,6 +944,25 @@ test("a day the entered start or finish leaves empty is named, not offered as a 
   assert.deepEqual(crossed.freeDayIdeas, []);
 });
 
+test("a booking that cannot be kept does not turn 'one more day holds it' into 'too much'", () => {
+  // Day 1 can only start at 23:30, and a place is booked on day 1 at 19:00: that booking cannot be kept
+  // on a trip of any length, and is said so. The rest does not fit the one day left — and does fit two,
+  // which is what a third day gives. The advice is about the rest, and it is the true one.
+  const places = sightsOf("tokyo", 6).map((place) => (place.name === "皇居" ? booked(place, 1, "19:00") : place));
+  const input = { places, days: 2, hotel: null, firstDayStart: "23:30" };
+  const trip = plan("tokyo", input);
+  assertKeepsEveryEnteredTime(trip, input, "a booking before the start");
+  const palace = places.find((place) => place.name === "皇居")!;
+  assert.deepEqual(trip.unplaced.filter((entry) => entry.reason !== "no-room").map((entry) => [entry.placeId, entry.reason, entry.proven]), [[palace.id, "reserve-before-start", true]]);
+  assert.ok(trip.unplaced.some((entry) => entry.reason === "no-room"));
+  assert.deepEqual(trip.notices.filter((notice) => notice.kind === "needs-days" || notice.kind === "too-much"), [{ kind: "needs-days", days: 3 }]);
+  // The plan it points to is the one the traveller gets: everything but that booking, no day running late.
+  const longer = plan("tokyo", { ...input, days: 3 });
+  assert.deepEqual(longer.leftOut, ["皇居"]);
+  assert.equal(longer.days.some((day) => day.runsLate), false);
+  assert.equal(longer.notices.some((notice) => notice.kind === "needs-days" || notice.kind === "too-much"), false);
+});
+
 test("with no time entered the plan is the plan there has always been", () => {
   for (const [cityId, count, days, hotel] of [["tokyo", 8, 2, SHINJUKU], ["kyoto", 9, 3, null], ["osaka", 7, 2, null], ["tokyo", 12, 3, null]] as const) {
     const input = { places: sightsOf(cityId, count), days, hotel };
