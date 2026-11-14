@@ -92,6 +92,10 @@ function assertKeepsEveryEnteredTime(trip: ShioriPlan, input: Omit<ShioriInput, 
     assert.equal(stop.stop.mealMissed, false, `${where}: a booked table is not "missed"`);
     assert.ok(day <= days, where);
   }
+  // The one thing the traveller cannot move is never the place offered for removal.
+  for (const notice of trip.notices) {
+    if (notice.kind === "drop") assert.equal(clockOfDay(input.places.find((place) => place.id === notice.placeId)?.reserve?.time), null, `${where}: a booked place is offered for removal`);
+  }
   // A pinned place that is on the plan is on its day.
   for (const place of input.places) {
     const stop = stopOf(trip, place.id);
@@ -112,6 +116,8 @@ function assertKeepsEveryEnteredTime(trip: ShioriPlan, input: Omit<ShioriInput, 
       assert.ok(at(departureAfterStop(day, day.stops.length - 1)!) + (day.toHotel?.minutes ?? 0) <= finish, `${where}: last stop ${last.leave} + ride home`);
       assert.equal(day.meals.some((meal) => meal.kind === "dinner"), false, `${where}: no dinner is suggested after the finish`);
     }
+    // A day that says it has no room for a lunch hour has none — and no restaurant chosen for lunch either.
+    if (day.noLunchRoom) assert.equal(day.meals.some((meal) => meal.kind === "lunch") || day.stops.some((stop) => stop.place.meal === "lunch"), false, where);
     // The clock is one clock: each arrival is the departure before it, the ride, ten minutes of slack and the wait that is printed.
     let lifted = 0;
     const lift = (clock: string) => {
@@ -234,6 +240,27 @@ test("a booked lunch is that day's lunch at its time, and the morning is planned
   assert.deepEqual(trip.unplaced, []);
   // Nothing else on the plan is marked as a booking.
   assert.equal(trip.days.flatMap((day) => day.stops).filter((stop) => stop.reserved).length, 1);
+});
+
+test("a day that has no room for a lunch hour beside its times says so, and is not a conflict", () => {
+  const sights = named("tokyo", ["浅草寺", "東京スカイツリー", "東京国立博物館", "明治神宮", "東京タワー", "皇居"]);
+  sights[4] = booked(sights[4], 2, "10:30");
+  const lunch: ShioriPlace = { id: "r-ginza", name: "銀座の店", lat: 35.6717, lon: 139.765, stayMinutes: 60, kind: "restaurant", meal: "lunch", reserve: { day: 1, time: "13:00" } };
+  const input = { places: [...sights, lunch], days: 2, hotel: SHINJUKU, firstDayStart: "10:30", lastDayFinish: "16:00" };
+  const trip = plan("tokyo", input);
+  assertKeepsEveryEnteredTime(trip, input, "no lunch room");
+  assert.deepEqual(trip.unplaced, []);
+  const last = trip.days.find((day) => day.index === 1)!;
+  // Three visits between the 10:30 booking and the way back by 16:00: an hour for lunch would carry the day past its finish.
+  assert.equal(last.noLunchRoom, true);
+  assert.equal(last.meals.some((meal) => meal.kind === "lunch"), false);
+  assert.ok(at(last.end) <= at("16:00"));
+  // The day with the booked lunch has its lunch and says nothing.
+  assert.equal(trip.days.find((day) => day.index === 0)!.noLunchRoom, false);
+  // With the finish an hour and a half later the lunch hour is back.
+  const later = plan("tokyo", { ...input, lastDayFinish: "17:30" });
+  const relaxed = later.days.find((day) => day.index === 1)!;
+  assert.deepEqual([relaxed.noLunchRoom, relaxed.meals.some((meal) => meal.kind === "lunch")], [false, true]);
 });
 
 test("the time the traveller can start on day 1 and the finish of the last day are both kept, hotel rides included", () => {
