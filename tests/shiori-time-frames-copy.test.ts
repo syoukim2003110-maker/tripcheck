@@ -17,7 +17,7 @@ test("every word about entered times exists in Japanese and English, and says 'c
     "framesTitle", "firstStart", "firstStartHint", "lastFinish", "lastFinishHint", "framesSummary", "dayFrom", "dayBy",
     "reserveLabel", "reserveDay", "reserveTime", "reserveClear", "reserveLocked", "reserveChip", "waitReserved", "noLunchRoom",
     "unReserveDay", "unBeforeStart", "unBeforeStartRide", "unAfterFinish", "unAfterFinishRide", "unClash", "unClashRide",
-    "unReserveLate", "unNoRoomFinish", "unNoRoomReserve", "unNoRoomDay", "frameOrder",
+    "unReserveLate", "unNoRoomFinish", "unNoRoomReserve", "unNoRoomDay", "frameOrder", "dayEmptyStart", "dayEmptyFinish",
   ];
   for (const key of keys) {
     assert.match(ja, new RegExp(`\\n    ${key}: `), `ja: ${key}`);
@@ -27,6 +27,12 @@ test("every word about entered times exists in Japanese and English, and says 'c
   // The start is when the traveller can move, not when a flight lands — said in so many words.
   assert.match(line(ja, "firstStart"), /動き始められる時刻/);
   assert.match(line(en, "firstStart"), /when you can start/i);
+  // A day left empty by an entered time: what the plan did and why — not a proof that nothing could go there.
+  for (const key of ["dayEmptyStart", "dayEmptyFinish"]) {
+    assert.match(line(ja, key), /予定を入れていません/, key);
+    assert.match(line(en, key), /has nothing planned/, key);
+    assert.doesNotMatch(line(en, key), /cannot/i, key);
+  }
   // A booking is "booked", never "about" or "estimate".
   assert.match(line(ja, "reserveChip"), /予約/);
   assert.doesNotMatch(line(ja, "reserveChip").replace("予約", ""), /約|目安|ごろ/);

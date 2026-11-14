@@ -115,6 +115,17 @@ function assertKeepsEveryEnteredTime(trip: ShioriPlan, input: Omit<ShioriInput, 
     const stop = stopOf(trip, place.id);
     if (stop && typeof place.day === "number" && place.day <= days && !place.reserve) assert.equal(stop.day.index, place.day - 1, `${where}: ${place.name} pinned to day ${place.day}`);
   }
+  // A day left empty by the entered start or finish is named, and is not a free day; no day is counted twice.
+  const emptied = trip.notices.flatMap((notice) => (notice.kind === "day-empty" ? [notice] : []));
+  for (const notice of emptied) {
+    assert.equal(trip.days.some((day) => day.index === notice.day - 1), false, `${where}: day ${notice.day} is printed and called empty`);
+    assert.equal(notice.day, notice.edge === "start" ? 1 : days, where);
+    assert.equal(notice.time, notice.edge === "start" ? input.firstDayStart : input.lastDayFinish, where);
+  }
+  assert.equal(new Set(emptied.map((notice) => notice.day)).size, emptied.length, where);
+  // (A one-day trip whose start is not before its finish has no day to call free.)
+  assert.equal(trip.freeDays, trip.notices.some((notice) => notice.kind === "frame-order") ? 0 : days - trip.days.length - emptied.length, `${where}: free days`);
+  if (trip.freeDays === 0) assert.equal(trip.freeDayIdeas.length, 0, where);
   // A trip with an entered time lies on the calendar: every day ends on its own date. Nothing nobody
   // booked is shown after midnight — what would run into the next day is named as not fitting instead.
   const entered = start !== null || finish !== null || input.places.some((place) => clockOfDay(place.reserve?.time) !== null && typeof place.reserve?.day === "number" && Number.isInteger(place.reserve.day) && place.reserve.day >= 1);
@@ -887,6 +898,50 @@ test("no coffee break is suggested on a day that has to be over when there is no
     assert.equal(trip.days[0].noLunchRoom, !lunch, finish);
     assert.equal(trip.days[0].cafe?.time ?? null, breakAt, `finish ${finish}: the day ends ${trip.days[0].end}`);
   }
+});
+
+test("a day the entered start or finish leaves empty is named, not offered as a free day", () => {
+  const places = sightsOf("tokyo", 6);
+  // The last day has to be over at nine, half an hour after the hotel door: nothing goes on it,
+  // the list does not fit the day that is left — and the booklet must not also say "one more day free".
+  const early = { places, days: 2, hotel: SHINJUKU, lastDayFinish: "09:00" };
+  const closed = plan("tokyo", early);
+  assertKeepsEveryEnteredTime(closed, early, "finish 09:00");
+  assert.deepEqual(closed.days.map((day) => day.index), [0]);
+  assert.equal(closed.freeDays, 0);
+  assert.deepEqual(closed.freeDayIdeas, []);
+  assert.deepEqual(closed.notices.filter((notice) => notice.kind === "day-empty"), [{ kind: "day-empty", day: 2, edge: "finish", time: "09:00" }]);
+  // Day 1 can only start at half past eleven at night: the same, at the other end.
+  const late = { places, days: 2, hotel: null, firstDayStart: "23:30" };
+  const night = plan("tokyo", late);
+  assertKeepsEveryEnteredTime(night, late, "start 23:30");
+  assert.deepEqual(night.days.map((day) => day.index), [1]);
+  assert.equal(night.freeDays, 0);
+  assert.deepEqual(night.notices.filter((notice) => notice.kind === "day-empty"), [{ kind: "day-empty", day: 1, edge: "start", time: "23:30" }]);
+  // What is set aside and the empty day come first, in that order, before the advice on days.
+  const kinds = night.notices.map((notice) => notice.kind);
+  assert.ok(kinds.indexOf("day-empty") < kinds.indexOf("needs-days"), kinds.join(","));
+  // A day the list never needed is a free day as it always was: four places fit day 1 with or without the finish.
+  const few = sightsOf("tokyo", 4);
+  const plain = plan("tokyo", { places: few, days: 2, hotel: SHINJUKU });
+  const input = { places: few, days: 2, hotel: SHINJUKU, lastDayFinish: "16:00" };
+  const spare = plan("tokyo", input);
+  assertKeepsEveryEnteredTime(spare, input, "a spare day");
+  assert.equal(plain.freeDays, 1);
+  assert.equal(spare.freeDays, 1);
+  assert.equal(spare.notices.some((notice) => notice.kind === "day-empty"), false);
+  assert.ok(spare.freeDayIdeas.length > 0);
+  // So is a day that is empty because every place is pinned elsewhere, whatever time was entered for it.
+  const pinned = { places: few.map((place) => ({ ...place, day: 2 })), days: 3, hotel: null, firstDayStart: "13:00", lastDayFinish: "15:00" };
+  const middle = plan("tokyo", pinned);
+  assertKeepsEveryEnteredTime(middle, pinned, "all on day 2");
+  assert.deepEqual(middle.days.map((day) => day.index), [1]);
+  assert.equal(middle.freeDays, 2);
+  assert.equal(middle.notices.some((notice) => notice.kind === "day-empty"), false);
+  // A one-day trip that may not start before it has to end has no free day either.
+  const crossed = plan("tokyo", { places: few, days: 1, hotel: null, firstDayStart: "15:00", lastDayFinish: "10:00" });
+  assert.equal(crossed.freeDays, 0);
+  assert.deepEqual(crossed.freeDayIdeas, []);
 });
 
 test("with no time entered the plan is the plan there has always been", () => {

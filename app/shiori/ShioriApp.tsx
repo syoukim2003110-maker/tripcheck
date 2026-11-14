@@ -247,6 +247,8 @@ const text = {
     unNoRoomReserve: (names: string[]) => `${names.map((name) => `「${name}」`).join("")}は予約の時刻に合わせると入りきりませんでした。別の日に移すか、予約の前後の予定を減らしてください。`,
     unNoRoomDay: (names: string[]) => `${names.map((name) => `「${name}」`).join("")}は、入力した時刻の条件ではその日のうちに入りきりませんでした（日付が変わってしまいます）。日数を増やすか、場所や滞在時間を減らすか、時刻の条件を見直してください。`,
     frameOrder: (start: string, finish: string) => `動き始める時刻（${start}）が終了時刻（${finish}）より後です。どちらかを変えてください。`,
+    dayEmptyStart: (time: string) => `1日目は動き始められるのが${time}からのため、予定を入れていません。もっと早く動き始められるときは、時刻を変えてください。`,
+    dayEmptyFinish: (day: number, time: string) => `最終日（${day}日目）は${time}までに終える条件のため、予定を入れていません。もっと遅くまで動けるときは、時刻を変えてください。`,
     weatherKinds: { clear: "晴れ", partly: "晴れ時々くもり", cloudy: "くもり", fog: "霧", rain: "雨", snow: "雪", storm: "雷雨" },
     rainChance: (percent: number) => `降水確率 ${percent}%`,
     forecastTag: "予報",
@@ -501,6 +503,8 @@ const text = {
     unNoRoomReserve: (names: string[]) => `${names.map((name) => `“${name}”`).join(", ")} could not be fitted in around your booked times. Move it to another day, or plan less around the booking.`,
     unNoRoomDay: (names: string[]) => `${names.map((name) => `“${name}”`).join(", ")} could not be fitted into the day with the times you entered (the day would run past midnight). Add a day, remove a place or shorten a stay, or change the times.`,
     frameOrder: (start: string, finish: string) => `Your start (${start}) is not before your finish (${finish}). Change one of them.`,
+    dayEmptyStart: (time: string) => `Day 1 has nothing planned, because you can only start from ${time}. If you can start earlier, change the time.`,
+    dayEmptyFinish: (day: number, time: string) => `Day ${day}, the last day, has nothing planned, because it has to be over by ${time}. If you can stay out later, change the time.`,
     weatherKinds: { clear: "Clear", partly: "Partly cloudy", cloudy: "Cloudy", fog: "Fog", rain: "Rain", snow: "Snow", storm: "Thunderstorm" },
     rainChance: (percent: number) => `rain chance ${percent}%`,
     forecastTag: "Forecast",
@@ -1914,7 +1918,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
     );
   }
 
-  const noticeKey = (notice: ShioriNotice) => `${notice.kind}-${"placeId" in notice ? notice.placeId : "days" in notice ? notice.days : ""}`;
+  const noticeKey = (notice: ShioriNotice) => `${notice.kind}-${"placeId" in notice ? notice.placeId : "days" in notice ? notice.days : notice.kind === "day-empty" ? notice.edge : ""}`;
   // Why a place is not on the plan. "Cannot" only where the traveller's own entries contradict each other;
   // "could not be fitted" wherever one of the booklet's estimates (a ride) is what does not fit.
   const unplacedText = (entry: ShioriUnplaced, names: string[] = [entry.name]) => {
@@ -1950,6 +1954,8 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
         return <span>{unplacedText(notice, notice.reason === "no-room" ? (plan?.notices ?? []).flatMap((other) => (other.kind === "unplaced" && sameRoom(notice, other) ? [other.name] : [])) : undefined)}</span>;
       case "frame-order":
         return <span>{t.frameOrder(notice.start, notice.finish)}</span>;
+      case "day-empty":
+        return <span>{notice.edge === "start" ? t.dayEmptyStart(notice.time) : t.dayEmptyFinish(notice.day, notice.time)}</span>;
       case "needs-days":
         return <><span>{t.noticeNeedsDays(trip.days, notice.days)}</span><button onClick={() => update((current) => ({ ...current, days: notice.days }))} type="button">{t.noticeNeedsDaysAction(notice.days)}</button></>;
       case "drop":

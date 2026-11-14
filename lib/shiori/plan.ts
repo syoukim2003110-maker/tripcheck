@@ -237,7 +237,13 @@ export type ShioriNotice =
   /** A place left out so that no entered time is broken. */
   | ({ kind: "unplaced" } & ShioriUnplaced)
   /** A one-day trip whose start is not before its finish: nothing can be planned. */
-  | { kind: "frame-order"; start: ShioriClock; finish: ShioriClock };
+  | { kind: "frame-order"; start: ShioriClock; finish: ShioriClock }
+  /**
+   * Day 1 (`edge: "start"`) or the last day (`"finish"`) has nothing on it
+   * because of the time entered for it: the same trip without that time puts
+   * places there. Such a day is not a free day (see `freeDays`).
+   */
+  | { kind: "day-empty"; day: number; edge: "start" | "finish"; time: ShioriClock };
 
 export type ShioriMeal = {
   kind: "lunch" | "dinner";
@@ -290,7 +296,11 @@ export type ShioriDay = {
 
 export type ShioriPlan = {
   days: ShioriDay[];
-  /** Requested days the wishlist does not need. */
+  /**
+   * Requested days the wishlist does not need. A day left empty by the start
+   * or the finish the traveller entered is not one of them: the list would
+   * use it, the time does not let it (it is named in a `day-empty` notice).
+   */
   freeDays: number;
   /** Ideas for the free days: the destination's best-known unlisted sights. */
   freeDayIdeas: PopularSight[];
@@ -817,13 +827,35 @@ function searchProblem(input: ShioriInput, pricing: TripPrices, frames: Frames |
  * it has already worked out instead of solving them again.
  */
 let lastSearch: { minutes: number[][]; out: number[] | null; key: string; search: ReturnType<typeof daySearch> } | null = null;
+const searchKey = (input: ShioriInput, frames: Frames | null) => JSON.stringify(input.places.map((place) => [stayOf(place), place.meal ?? "", place.day ?? 0]))
+  + (frames ? JSON.stringify([frames.start, frames.finish, input.places.map((place) => { const booked = frames.booked.get(place.id); return booked ? [booked.day, booked.at] : 0; })]) : "");
 function searchFor(input: ShioriInput, pricing: TripPrices, frames: Frames | null = null) {
-  const key = JSON.stringify(input.places.map((place) => [stayOf(place), place.meal ?? "", place.day ?? 0]))
-    + (frames ? JSON.stringify([frames.start, frames.finish, input.places.map((place) => { const booked = frames.booked.get(place.id); return booked ? [booked.day, booked.at] : 0; })]) : "");
+  const key = searchKey(input, frames);
   const out = pricing.hotel?.out ?? null;
   if (lastSearch && lastSearch.minutes === pricing.minutes && lastSearch.out === out && lastSearch.key === key) return lastSearch.search;
   const search = daySearch(searchProblem(input, pricing, frames));
   lastSearch = { minutes: pricing.minutes, out, key, search };
+  return search;
+}
+
+/**
+ * The search for the same trip with other entered times — asked "would this
+ * day be used if the start had not been entered?". Kept beside the search in
+ * hand, never in its place: that one is asked again and again while a trip
+ * is on screen. A few are remembered per trip, so the question costs one
+ * search however many lengths of trip it is asked for.
+ */
+const sideSearches = new WeakMap<object, Map<string, ReturnType<typeof daySearch>>>();
+function sideSearchFor(input: ShioriInput, pricing: TripPrices, frames: Frames | null) {
+  const shelf = sideSearches.get(pricing.minutes) ?? new Map<string, ReturnType<typeof daySearch>>();
+  sideSearches.set(pricing.minutes, shelf);
+  const key = `${searchKey(input, frames)}|${pricing.hotel ? pricing.hotel.out.join(",") : ""}`;
+  let search = shelf.get(key);
+  if (!search) {
+    search = daySearch(searchProblem(input, pricing, frames));
+    shelf.set(key, search);
+    if (shelf.size > 4) shelf.delete(shelf.keys().next().value as string);
+  }
   return search;
 }
 
@@ -1325,7 +1357,8 @@ function planFramed(input: ShioriInput, options: PlanOptions, frames: Frames): S
   // A one-day trip that may not start before it has to end: nothing is planned into it.
   if (requested === 1 && frames.start !== null && frames.finish !== null && frames.start >= frames.finish) {
     for (const place of input.places) setAside({ placeId: place.id, name: place.name, reason: "no-room", day: 1, edge: "finish", proven: false });
-    return { ...planCore(input, options, frames, excluded), unplaced, notices: [{ kind: "frame-order", start: clock(frames.start), finish: clock(frames.finish) }] };
+    // (Its one day is not a free day to fill: nothing can go on it.)
+    return { ...planCore(input, options, frames, excluded), freeDays: 0, freeDayIdeas: [], unplaced, notices: [{ kind: "frame-order", start: clock(frames.start), finish: clock(frames.finish) }] };
   }
   if (input.places.length > 0) {
     const pricing = priceTrip(input, rail);
@@ -1473,7 +1506,40 @@ function planFramed(input: ShioriInput, options: PlanOptions, frames: Frames): S
     setAside(victim);
     plan = planCore(input, options, frames, excluded);
   }
-  return { ...plan, unplaced, notices: [...unplaced.map((entry): ShioriNotice => ({ kind: "unplaced", ...entry })), ...plan.notices] };
+  // A day with nothing on it is a free day only when the list does not need
+  // it. Day 1 with a start, or the last day with a finish, may be empty for
+  // another reason: the time leaves no use for it. Which it is, is asked of
+  // the search — the same trip without that one time (bookings that cannot
+  // be kept still set aside): when that trip puts places on the day, the day
+  // is empty because of the time, and is said to be, not offered as free.
+  const emptied: ShioriNotice[] = [];
+  if (input.places.length > 0) {
+    const printed = new Set(plan.days.map((day) => day.index + 1));
+    const broken = new Set(unplaced.flatMap((entry) => (entry.reason === "no-room" ? [] : [entry.placeId])));
+    const without = input.places.flatMap((place, index) => (broken.has(place.id) ? [index] : []));
+    // (Day 1 without its start needs no search when nothing is pinned or
+    // booked: the days of a trip are filled from day 1 on.)
+    const anyPin = input.places.some((place, index) => !without.includes(index) && (frames.booked.has(place.id) || typeof place.day === "number"));
+    const usedWithout = (edge: "start" | "finish", day: number) => {
+      if (edge === "start" && !anyPin) return without.length < input.places.length;
+      const other: Frames = { ...frames, [edge]: null };
+      const rest = other.start === null && other.finish === null && other.booked.size === 0 ? null : other;
+      return sideSearchFor(input, priceTrip(input, rail), rest).choose(input.days, { without }).days.some((entry) => entry.day === day);
+    };
+    if (frames.start !== null && !printed.has(1) && usedWithout("start", 1)) emptied.push({ kind: "day-empty", day: 1, edge: "start", time: clock(frames.start) });
+    // (A one-day trip's only day is named once.)
+    if (frames.finish !== null && !printed.has(requested) && emptied.every((notice) => notice.kind !== "day-empty" || notice.day !== requested) && usedWithout("finish", requested)) {
+      emptied.push({ kind: "day-empty", day: requested, edge: "finish", time: clock(frames.finish) });
+    }
+  }
+  const freeDays = Math.max(0, plan.freeDays - emptied.length);
+  return {
+    ...plan,
+    freeDays,
+    freeDayIdeas: freeDays > 0 ? plan.freeDayIdeas : [],
+    unplaced,
+    notices: [...unplaced.map((entry): ShioriNotice => ({ kind: "unplaced", ...entry })), ...emptied, ...plan.notices],
+  };
 }
 
 /**
@@ -1687,6 +1753,6 @@ export function buildShioriPlan(input: ShioriInput, options: PlanOptions = {}): 
   }
   // First what an entered time left no room for; last what the forecast
   // moved: that is something to know, not something to fix.
-  const entered = (notice: ShioriNotice) => notice.kind === "unplaced" || notice.kind === "frame-order";
+  const entered = (notice: ShioriNotice) => notice.kind === "unplaced" || notice.kind === "frame-order" || notice.kind === "day-empty";
   return { ...plan, stayNear, notices: [...plan.notices.filter(entered), ...notices, ...plan.notices.filter((notice) => !entered(notice))] };
 }
