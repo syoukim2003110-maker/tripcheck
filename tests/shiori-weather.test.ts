@@ -358,7 +358,18 @@ test("a place of unknown kind is not counted as indoors: its day is never moved 
   assert.equal(weatherExposure({ kind: "restaurant" }), "indoor");
   // Typed by name, or a kind that says neither.
   assert.equal(weatherExposure({}), "unknown");
-  assert.equal(weatherExposure({ kind: "observation tower" }), "unknown");
+  // Kinds whose weather is plain, among the cities' best-known sights.
+  assert.equal(weatherExposure({ kind: "observation tower" }), "indoor");
+  assert.equal(weatherExposure({ kind: "minor basilica" }), "indoor");
+  assert.equal(weatherExposure({ kind: "catholic cathedral" }), "indoor");
+  assert.equal(weatherExposure({ kind: "archaeological site" }), "outdoor");
+  assert.equal(weatherExposure({ kind: "fortress" }), "outdoor");
+  assert.equal(weatherExposure({ kind: "historic district" }), "outdoor");
+  // Kinds that could go either way stay unknown, and their day stays put.
+  assert.equal(weatherExposure({ kind: "stadium" }), "unknown");
+  assert.equal(weatherExposure({ kind: "onsen" }), "unknown");
+  assert.equal(weatherExposure({ kind: "cave" }), "unknown");
+  assert.equal(weatherExposure({ kind: "bell tower" }), "unknown");
 
   // Two days far apart: a garden day in the north, and in the south a day
   // whose places are either museums or typed by name.

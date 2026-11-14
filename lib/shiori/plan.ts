@@ -697,6 +697,17 @@ export function shioriPricing(input: ShioriInput, options: { rail?: RailNetwork 
 /** A place to eat or drink is under a roof whatever else is known of it. */
 const TABLE_KIND = /restaurant|caf[eé]/;
 
+/*
+ * Kinds the two lists above leave out but whose weather is plain, used only
+ * for deciding which date a day goes on (a fifth of the cities' best-known
+ * sights would otherwise be "unknown" and keep their days fixed). A church or
+ * an observation deck is visited under a roof; a fort, a historic quarter or
+ * a harbour is walked in the open. Kinds that could go either way (stadium,
+ * onsen, cave, tower) stay unknown.
+ */
+const WEATHER_INDOOR_KIND = /cathedral|basilica|church|mosque|synagogue|chapel|observation (deck|tower)|skyscraper/;
+const WEATHER_OUTDOOR_KIND = /archaeological site|fort|citadel|gate|historic (site|district)|old town|avenue|harbou?r|volcano|triumphal arch|fountain|lighthouse/;
+
 /**
  * Whether a place is out of doors, as far as its kind says. A place that is
  * both ("museum in a park") counts as indoors; one with no kind, or a kind
@@ -705,8 +716,8 @@ const TABLE_KIND = /restaurant|caf[eé]/;
  */
 export function weatherExposure(place: Pick<ShioriPlace, "kind" | "meal">): "outdoor" | "indoor" | "unknown" {
   const kind = (place.kind ?? "").toLowerCase();
-  if (place.meal || TABLE_KIND.test(kind) || INDOOR_KIND.test(kind)) return "indoor";
-  return OUTDOOR_KIND.test(kind) ? "outdoor" : "unknown";
+  if (place.meal || TABLE_KIND.test(kind) || INDOOR_KIND.test(kind) || WEATHER_INDOOR_KIND.test(kind)) return "indoor";
+  return OUTDOOR_KIND.test(kind) || WEATHER_OUTDOOR_KIND.test(kind) ? "outdoor" : "unknown";
 }
 
 /** Time at places that are out of doors. */
