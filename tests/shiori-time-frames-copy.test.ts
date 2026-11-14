@@ -27,6 +27,12 @@ test("every word about entered times exists in Japanese and English, and says 'c
   // The start is when the traveller can move, not when a flight lands — said in so many words.
   assert.match(line(ja, "firstStart"), /動き始められる時刻/);
   assert.match(line(en, "firstStart"), /when you can start/i);
+  // The line under day 1's heading is the traveller's condition, not when the plan starts: a start
+  // entered as 06:00 leaves the day starting at 09:00, and "starts from 06:00" would be untrue.
+  assert.match(line(ja, "dayFrom"), /動き始められる/);
+  assert.match(line(en, "dayFrom"), /You can start from/);
+  assert.doesNotMatch(line(ja, "dayFrom"), /から動き始め`/);
+  assert.doesNotMatch(line(en, "dayFrom"), /Starts from/);
   // A day left empty by an entered time: what the plan did and why — not a proof that nothing could go there.
   for (const key of ["dayEmptyStart", "dayEmptyFinish"]) {
     assert.match(line(ja, key), /予定を入れていません/, key);
