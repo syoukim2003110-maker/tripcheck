@@ -539,6 +539,27 @@ test("the last day's finish decides which places end the trip", () => {
   }
 });
 
+test("two dinners share an evening rather than break the last day's finish", () => {
+  // Two sights, a dinner booked for 20:30 on day 1 and a second dinner
+  // nobody booked. Kept apart, the second dinner would sit on day 2 — which
+  // has to be over by 15:00, hours before any kitchen opens for dinner.
+  const stops: Stop[] = [
+    { stay: 60, meal: null, day: null },
+    { stay: 60, meal: null, day: null },
+    { stay: 90, meal: "dinner", day: 1, fixed: at("20:30") },
+    { stay: 90, meal: "dinner", day: null },
+  ];
+  const problem = (lastFinish: number | null): SearchProblem => ({ stops, minutes: table(4, () => 15), km: table(4, () => 2), hotel: null, frames: { firstStart: null, lastFinish } });
+  const trip = daySearch(problem(at("15:00"))).choose(2);
+  const dayOf = (stop: number) => trip.days.find((day) => day.order.includes(stop))!;
+  assert.equal(trip.days.every((day) => day.late === 0 && day.hardOver === 0), true);
+  assert.equal(dayOf(3).day, 1, "the second dinner is on the booked dinner's evening");
+  assert.equal(dayOf(2).arrive[dayOf(2).order.indexOf(2)], at("20:30"));
+  // Without the finish the two dinners are two evenings, as ever.
+  const free = daySearch(problem(null)).choose(2);
+  assert.notEqual(free.days.find((day) => day.order.includes(3))!.day, free.days.find((day) => day.order.includes(2))!.day);
+});
+
 test("a booking beyond the days asked for is never moved onto another day by the search", () => {
   const stops: Stop[] = [
     { stay: 60, meal: null, day: null },

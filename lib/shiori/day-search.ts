@@ -1267,7 +1267,8 @@ export function daySearch(
     // Whether any order at all could be kept: the stays alone, from the
     // earliest start, against 18:00 (and half an hour, as on any day) and
     // against the finish the traveller entered.
-    const earliest = Math.min(...ids.map((stop) => firstArrival(stop, cls)));
+    // (A booking before the usual start may open the day at its own hour.)
+    const earliest = Math.min(...ids.map((stop) => Math.min(firstArrival(stop, cls), fixedOf[stop] ?? Infinity)));
     const sights = free.filter((stop) => stops[stop].meal !== "dinner");
     const hopeless = earliest + sights.reduce((sum, stop) => sum + stops[stop].stay, 0) + DAY_CLOCK.legBuffer * Math.max(0, sights.length - 1) > DAY_CLOCK.sightsEnd + 30
       || (cls & 2 && earliest + ids.reduce((sum, stop) => sum + stops[stop].stay, 0) + DAY_CLOCK.legBuffer * (ids.length - 1) + (hotel ? Math.min(...ids.map((stop) => hotel.back[stop])) : 0) > lastFinish!);
