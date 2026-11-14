@@ -1255,7 +1255,7 @@ function planCore(input: ShioriInput, options: PlanOptions, frames: Frames | nul
       meals,
       walkMinutes,
       ideas,
-      cafe: cafeBreakFor({ stops, legs, meals }),
+      cafe: cafeBreakFor({ stops, legs, meals, spare: finish === null ? null : finish - (clockMinutes(day.startTime) + day.totalMinutes), noLunchRoom: timing.noLunchRoom.has(index) }),
       travelMinutes,
       load,
       rainIdeas,

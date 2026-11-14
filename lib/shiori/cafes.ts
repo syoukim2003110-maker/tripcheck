@@ -76,6 +76,14 @@ export function cafeBreakFor(day: {
   stops: readonly ShioriStop[];
   legs: readonly ShioriLeg[];
   meals: ReadonlyArray<ShioriMeal & { afterStop: number }>;
+  /**
+   * On a day the traveller has to be done by a certain time: the minutes
+   * between the end of the day as planned (the ride back included) and that
+   * time. Null or absent on any other day.
+   */
+  spare?: number | null;
+  /** The day has no room for a lunch hour beside the times the traveller entered. */
+  noLunchRoom?: boolean;
 }): CafeBreak | null {
   // One place all day (a theme park) has its own cafés; a break is between places.
   if (day.stops.length < 2) return null;
@@ -91,8 +99,14 @@ export function cafeBreakFor(day: {
     if (lunchEnds.some((end) => leave - end >= 0 && leave - end < 75)) return [];
     const next = day.stops[index + 1];
     if (next?.place.meal) return [];
-    // Nor in front of a booked time with no half hour to spare before it.
-    if (next?.reserved && next.waitMinutes < 30) return [];
+    // A break takes time, and everything after it moves by that much. Where
+    // a time the traveller entered comes later in the day there has to be a
+    // half hour to give: idle time in front of the next booked visit, or —
+    // with no booking left — before the hour the day has to be over.
+    const booked = day.stops.find((later, position) => position > index && later.reserved);
+    if (booked ? booked.waitMinutes < 30 : typeof day.spare === "number" && day.spare < 30) return [];
+    // And a day that could not keep an hour for lunch does not end with coffee.
+    if (!next && day.noLunchRoom) return [];
     return [{ index, leave }];
   }).sort((left, right) => Math.abs(left.leave - 900) - Math.abs(right.leave - 900));
   const chosen = candidates[0];

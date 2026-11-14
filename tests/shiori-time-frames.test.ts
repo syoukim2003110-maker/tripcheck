@@ -140,6 +140,14 @@ function assertKeepsEveryEnteredTime(trip: ShioriPlan, input: Omit<ShioriInput, 
     }
     // A visit is printed as long as it is: the lunch hour that follows it is never taken out of it.
     for (const stop of day.stops) assert.equal(stop.stayMinutes, Math.max(15, Math.round(stop.place.stayMinutes)), `${where}: day ${day.index + 1} ${stop.place.name} is printed ${stop.arrive}-${stop.leave}`);
+    // A coffee break takes time. One is suggested only where half an hour can be given: idle time in front
+    // of the next booked visit, or — with no booking left that day — before the hour the day has to be over.
+    if (day.cafe) {
+      const later = day.stops.find((stop, position) => position > day.cafe!.afterStop && stop.reserved);
+      if (later) assert.ok(later.waitMinutes >= 30, `${where}: a break at ${day.cafe.time} with ${later.waitMinutes} min to spare before ${later.place.name}`);
+      else if (finish !== null && day.index === days - 1) assert.ok(at(day.end) + 30 <= finish, `${where}: a break at ${day.cafe.time} on a day that ends ${day.end}, to be over by ${input.lastDayFinish}`);
+      if (day.noLunchRoom) assert.ok(day.cafe.afterStop < day.stops.length - 1, `${where}: no lunch hour, and a break after the last stop`);
+    }
     // A day that says it has no room for a lunch hour has none — and no restaurant chosen for lunch either.
     if (day.noLunchRoom) assert.equal(day.meals.some((meal) => meal.kind === "lunch") || day.stops.some((stop) => stop.place.meal === "lunch"), false, where);
     // The clock is one clock: each arrival is the departure before it, the ride, ten minutes of slack and the wait that is printed.
@@ -850,6 +858,35 @@ test("a booked visit of seven and a half hours that ends at lunchtime is printed
   const dawn = plan("tokyo", longest);
   assertKeepsEveryEnteredTime(dawn, longest, "eight-hour booked stay");
   assert.deepEqual([dawn.days[0].stops[0].arrive, dawn.days[0].stops[0].leave], ["05:30", "13:30"]);
+});
+
+test("no coffee break is suggested on a day that has to be over when there is no half hour left for it", () => {
+  const places = named("tokyo", ["浅草寺", "東京スカイツリー", "上野公園", "秋葉原"]).map((place, index) => ({ ...place, stayMinutes: index === 0 ? 50 : 60 }));
+  const without = plan("tokyo", { places, days: 1, hotel: null });
+  // (The day as it is with no finish: lunch after the third stop, over at 15:20, and a break suggested after the last stop.)
+  assert.equal(without.days[0].end, "15:20");
+  assert.deepEqual([without.days[0].cafe?.time, without.days[0].cafe?.afterStop], ["15:20", 3]);
+  for (const [finish, hotel, ends, lunch, breakAt] of [
+    // Over exactly at the finish, with no hour for lunch: no break either.
+    ["14:20", null, "14:20", false, null],
+    // Half an hour to spare, but the day could not keep its lunch hour: it does not end with coffee.
+    ["14:50", null, "14:20", false, null],
+    // Lunch fits; the day ends on the finish, or 25 minutes before it: no half hour for a break.
+    ["15:20", null, "15:20", true, null],
+    ["15:45", null, "15:20", true, null],
+    // Half an hour to spare after a day with its lunch: the break is suggested.
+    ["15:50", null, "15:20", true, "15:20"],
+    // From a hotel the ride back counts: back one minute before the finish.
+    ["15:15", SHINJUKU, "15:14", false, null],
+  ] as const) {
+    const input = { places, days: 1, hotel, lastDayFinish: finish };
+    const trip = plan("tokyo", input);
+    assertKeepsEveryEnteredTime(trip, input, `finish ${finish}`);
+    assert.equal(trip.unplaced.length, 0, finish);
+    assert.equal(trip.days[0].end, ends, finish);
+    assert.equal(trip.days[0].noLunchRoom, !lunch, finish);
+    assert.equal(trip.days[0].cafe?.time ?? null, breakAt, `finish ${finish}: the day ends ${trip.days[0].end}`);
+  }
 });
 
 test("with no time entered the plan is the plan there has always been", () => {
