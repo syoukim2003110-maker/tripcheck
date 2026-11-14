@@ -95,7 +95,9 @@ function with_state(string $name, callable $work)
         rewind($handle);
         // A write that fails (disk full) leaves an empty file, which would
         // read back as a fresh day with no calls counted: refuse instead.
-        if (fwrite($handle, (string) json_encode($next)) === false || !fflush($handle)) {
+        $json = (string) json_encode($next);
+        // A short write would leave half a count on disk.
+        if (fwrite($handle, $json) !== strlen($json) || !fflush($handle)) {
             flock($handle, LOCK_UN);
             fclose($handle);
             respond(503, ['code' => 'unavailable']);

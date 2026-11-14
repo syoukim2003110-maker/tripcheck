@@ -23,7 +23,8 @@ test("the relay refuses when its quota file cannot be opened, locked or written"
   assert.doesNotMatch(withState, /\$work\(\[\]/);
   assert.match(withState, /if \(\$handle === false\) respond\(503, \['code' => 'unavailable'\]\);/);
   assert.match(withState, /if \(!flock\(\$handle, LOCK_EX\)\) \{[^}]*respond\(503,/);
-  assert.match(withState, /fwrite\([^;]*=== false \|\| !fflush\(\$handle\)\) \{[^}]*respond\(503,/);
+  // A short write counts as a failure too: half a count on disk is not a count.
+  assert.match(withState, /fwrite\(\$handle, \$json\) !== strlen\(\$json\) \|\| !fflush\(\$handle\)\) \{[^}]*respond\(503,/);
 });
 
 test("no reply from Apple, or Apple refusing the relay, is an outage and never 'no answer'", () => {

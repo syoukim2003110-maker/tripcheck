@@ -30,6 +30,11 @@ test("a 'needs more days' notice never offers a length that cannot be saved", ()
   // A shorter trip is still told what it needs.
   const short = buildShioriPlan({ places: Array.from({ length: 3 }, (_, index) => sight(index, 480)), days: 2, hotel: null, locale: "en" });
   assert.deepEqual(short.notices.filter((notice) => notice.kind === "needs-days"), [{ kind: "needs-days", days: 3 }]);
+  // ...even when it needs several more days than it has: the search runs up to the limit, not just two days on.
+  const needs = (count: number, stay: number, days: number) => buildShioriPlan({ places: Array.from({ length: count }, (_, index) => sight(index, stay)), days, hotel: null, locale: "en" }).notices.filter((notice) => notice.kind === "needs-days");
+  assert.deepEqual(needs(4, 480, 1), [{ kind: "needs-days", days: 4 }]);
+  assert.deepEqual(needs(5, 480, 2), [{ kind: "needs-days", days: 5 }]);
+  assert.deepEqual(needs(12, 180, 2), [{ kind: "needs-days", days: 6 }]);
 });
 
 test("a trip saved with more days than the limit opens with its places, shortened", () => {

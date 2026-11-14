@@ -1031,7 +1031,7 @@ export function buildShioriPlan(input: ShioriInput, options: PlanOptions = {}): 
     let found = false;
     // Never past the longest trip that can be kept: a length that cannot be
     // saved must not be offered.
-    for (let days = Math.max(requested + 1, least); days <= Math.min(MAX_TRIP_DAYS, requested + 2) && !found; days += 1) {
+    for (let days = Math.max(requested + 1, least); days <= MAX_TRIP_DAYS && !found; days += 1) {
       // Said only if the plan the traveller would then get — the full one — fits.
       if (fits(planOnce({ ...input, days }, options))) {
         notices.push({ kind: "needs-days", days });

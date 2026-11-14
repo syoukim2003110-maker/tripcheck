@@ -3,8 +3,11 @@ import { appleRelayUrl } from "./apple-relay-client.ts";
 /*
  * Restaurants with a photo and a budget, from HotPepper Gourmet through the
  * site's own relay (the key never reaches the browser). Japan only, and only
- * the shops listed there. The provider's terms forbid keeping a copy, so
- * nothing here is written to storage: an answer lives as long as the page.
+ * the shops listed there. Nothing from the provider is kept on TripCheck's
+ * server or in any database, and a list of shops lives only as long as the
+ * page. The one thing that outlives it is a shop the traveller chooses: its
+ * name, id and position go into that traveller's own trip (their browser, and
+ * a link they share), which is what the plan is rebuilt from.
  */
 
 export type HotpepperShop = Readonly<{
