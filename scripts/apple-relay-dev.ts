@@ -10,6 +10,7 @@
  * Reads APPLE_MAPS_TEAM_ID / APPLE_MAPS_KEY_ID / APPLE_MAPS_PRIVATE_KEY from
  * .env.local. Never deployed.
  */
+import { createSign } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
 
@@ -84,6 +85,23 @@ createServer(async (request, response) => {
           }];
         }),
       });
+    } catch {
+      return send(502, { code: "unavailable" });
+    }
+  }
+  if (url.searchParams.get("op") === "maptoken") {
+    // The same contract as apple.php's op=maptoken: a 20-minute MapKit JS
+    // token tied to the page that asked. Here that page is the local app on
+    // another port, so its origin comes from the Origin header.
+    if (!credentials || !/^http:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/.test(origin)) return send(403, { code: "forbidden" });
+    const b64 = (value: string | Buffer) => Buffer.from(value).toString("base64url");
+    const now = Math.floor(Date.now() / 1000);
+    const expiresAt = now + 1200;
+    const head = b64(JSON.stringify({ alg: "ES256", kid: credentials.keyId, typ: "JWT" }));
+    const body = b64(JSON.stringify({ iss: credentials.teamId, iat: now, exp: expiresAt, origin }));
+    try {
+      const signature = createSign("SHA256").update(`${head}.${body}`).sign({ key: credentials.privateKey, dsaEncoding: "ieee-p1363" });
+      return send(200, { token: `${head}.${body}.${b64(signature)}`, expiresAt });
     } catch {
       return send(502, { code: "unavailable" });
     }

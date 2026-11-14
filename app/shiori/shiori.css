@@ -571,6 +571,15 @@
   .shiori-ticket-notch, .shiori-notices::before, .shiori-map-creases { display: none; }
 }
 
+/* ---------- Place card: Apple's opening hours, phone and website inside an opened stop ---------- */
+.shiori-placecard { flex: 1 1 100%; min-width: 0; }
+.shiori-placecard-panel { margin-top: 10px; min-width: 0; }
+.shiori-placecard-panel > p { color: var(--muted); font-size: 13px; line-height: 1.6; margin: 0; }
+/* Apple draws the card at its own width; it is held to the stop's, so a phone page never slides sideways. */
+.shiori-placecard-host { border-radius: 10px; max-width: 100%; overflow: hidden; }
+.shiori-placecard-host[hidden] { display: none; }
+.shiori-placecard-note { margin-top: 8px !important; }
+
 /* ---------- Paper: every day, one after another, in ink-friendly black on white ---------- */
 @media print {
   @page { margin: 14mm; size: A4; }

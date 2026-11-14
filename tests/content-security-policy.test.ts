@@ -51,8 +51,15 @@ test("only named map providers are allowed, on the directives they need", () => 
   // HotPepper Gourmet serves the restaurant photos shown (with its credit) in the meal list.
   const photoHosts = ["https://*.wikimedia.org", "https://imgfp.hotp.jp"];
   assert.deepEqual(remote("img-src").filter((value) => !/google|gstatic|ggpht/.test(value)), photoHosts);
+  // Apple's place card (opening hours and phone in an opened stop) is Apple's
+  // own script drawing into Apple's own frame, both from one host, fetched
+  // only when a traveller asks for a card. It needs no image or font host.
+  const placeCardHost = "https://cdn.apple-mapkit.com";
+  assert.ok(remote("script-src").includes(placeCardHost));
+  assert.ok(remote("frame-src").includes(placeCardHost));
+  assert.equal(remote("img-src").some((value) => value.includes("apple")), false);
   for (const name of ["script-src", "img-src", "frame-src"]) {
-    for (const value of remote(name).filter((entry) => !photoHosts.includes(entry))) {
+    for (const value of remote(name).filter((entry) => !photoHosts.includes(entry) && entry !== placeCardHost)) {
       assert.match(
         value,
         /^https:\/\/(\*\.)?(googleapis|gstatic|google|googleusercontent|ggpht)\.com$|^https:\/\/(www|maps)\.google\.com$/,
@@ -73,6 +80,10 @@ test("only named map providers are allowed, on the directives they need", () => 
     "https://routing.openstreetmap.de",
     "https://api.open-meteo.com",
     "https://date.nager.at",
+    // The place card's strings and start-up call, and its place lookup.
+    // Apple's usage report (gsp10.apple-mapkit.com) is deliberately absent.
+    "https://cdn.apple-mapkit.com",
+    "https://api.apple-mapkit.com",
   ]);
   assert.equal(remote("script-src").includes("https://tiles.openfreemap.org"), false, "MapLibre is bundled, not remotely scripted");
   assert.equal(remote("img-src").includes("https://tiles.openfreemap.org"), false, "MapLibre fetches vector tiles through connect-src");
