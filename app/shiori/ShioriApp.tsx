@@ -627,9 +627,10 @@ function LegCard({ leg, locale, heading, depart }: { leg: ShioriLeg; locale: Loc
           })}
           <li className="is-walk"><Icon name="walk" />{t.walkFrom(leg.rail.walkFromMinutes, leg.rail.walkFromStation)}</li>
         </ol>
-          {links}
         </details>
-      ) : links}
+      ) : null}
+      {/* The way out to a maps app and the timetable stays one tap away, not two. */}
+      {links}
     </div>
   );
 }
@@ -1138,6 +1139,20 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
     }
   };
 
+  // Paper cannot be unfolded: before printing, every folded part is opened
+  // (older Safari and Firefox print a closed <details> closed) and put back after.
+  useEffect(() => {
+    let opened: HTMLDetailsElement[] = [];
+    const before = () => {
+      opened = [...document.querySelectorAll<HTMLDetailsElement>(".shiori-days details:not([open])")];
+      for (const part of opened) part.open = true;
+    };
+    const after = () => { for (const part of opened) part.open = false; opened = []; };
+    window.addEventListener("beforeprint", before);
+    window.addEventListener("afterprint", after);
+    return () => { window.removeEventListener("beforeprint", before); window.removeEventListener("afterprint", after); };
+  }, []);
+
   const share = async () => {
     const link = `${window.location.origin}${window.location.pathname}#s=${encodeTrip(trip)}`;
     try {
@@ -1288,7 +1303,8 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
             <h1>{t.pickTitle(trip.cityName)}</h1>
             <p className="shiori-quiet">{t.pickHint}</p>
           </div>
-          <details className="shiori-add-panel">
+          {/* Open when something was added by name: its chips are the only place to see or remove it. */}
+          <details className="shiori-add-panel" open={extras.length > 0 || Boolean(trip.hotel) || undefined}>
             <summary><Icon name="plus" />{t.addPanel}</summary>
             {addForm}
           </details>
@@ -1568,7 +1584,8 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
                               })}
                             />
                           ) : null}
-                          {day.legs[index] ? <LegCard depart={stop.leave} leg={day.legs[index]} locale={locale} /> : null}
+                          {/* A lunch hour suggested after this stop is spent before setting off: the leg leaves when lunch ends. */}
+                          {day.legs[index] ? <LegCard depart={day.meals.find((meal) => meal.afterStop === index && meal.kind === "lunch" && meal.end)?.end ?? stop.leave} leg={day.legs[index]} locale={locale} /> : null}
                         </li>
                       );
                     })}
