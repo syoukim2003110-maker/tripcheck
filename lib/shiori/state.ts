@@ -1,5 +1,5 @@
 import type { PopularDestination, PopularSight } from "../popular-sights.ts";
-import type { ShioriHotel, ShioriPace, ShioriPlace } from "./plan.ts";
+import { MAX_TRIP_DAYS, type ShioriHotel, type ShioriPace, type ShioriPlace } from "./plan.ts";
 import { shioriStayMinutes } from "./stay.ts";
 
 /*
@@ -19,7 +19,52 @@ export type ShioriTrip = {
 export const emptyTrip: ShioriTrip = { cityId: null, cityName: "", places: [], days: 3, pace: "standard", hotel: null };
 
 export const MAX_PLACES = 24;
-export const MAX_DAYS = 7;
+export const MAX_DAYS = MAX_TRIP_DAYS;
+/** Trips saved by an earlier build could carry up to this many days; they are read and shortened, not refused. */
+const MAX_DAYS_READ = 14;
+const MAX_NAME = 120;
+const MAX_KIND = 80;
+const PLACE_ID = /^[\w.:,@-]{1,160}$/;
+
+/**
+ * An id as the saved form accepts it. Ids come from outside (a map search, a
+ * restaurant listing); one odd character or an over-long id would otherwise
+ * make the whole saved trip unreadable.
+ */
+export function safePlaceId(raw: string) {
+  return raw.replace(/[^\w.:,@-]/g, "_").slice(0, 160);
+}
+
+/** A name short enough to be read back. Cut by whole characters, so an emoji is never split in two. */
+function clipName(name: string) {
+  const trimmed = name.trim();
+  if (trimmed.length <= MAX_NAME) return trimmed;
+  const characters = Array.from(trimmed).slice(0, MAX_NAME);
+  while (characters.join("").length > MAX_NAME) characters.pop();
+  return characters.join("").trim();
+}
+
+/**
+ * What to do with the stored trip after a change. An empty trip clears the
+ * stored one only if this visit wrote it: the home screen starts with an
+ * empty trip and must not wipe what the traveller saved last time, but
+ * removing the last place must not leave the old list to come back.
+ */
+export function storageStep(trip: ShioriTrip, wroteBefore: boolean): "write" | "clear" | "none" {
+  if (trip.places.length > 0) return "write";
+  return wroteBefore ? "clear" : "none";
+}
+
+/**
+ * The trip to keep as "the previous one" when `next` replaces what this
+ * device holds: the trip in hand, or — when nothing has been opened yet on
+ * this visit — the one saved last time. Null when nothing would be lost.
+ */
+export function keepAside(inHand: ShioriTrip, saved: ShioriTrip | null, next: ShioriTrip): ShioriTrip | null {
+  const leaving = inHand.places.length > 0 ? inHand : saved && saved.places.length > 0 ? saved : null;
+  if (!leaving || encodeTrip(leaving) === encodeTrip(next)) return null;
+  return leaving;
+}
 
 export function placeFromSight(sight: PopularSight, locale: "ja" | "en"): ShioriPlace {
   const name = (locale === "ja" ? sight.ja : sight.en).trim();
@@ -70,25 +115,30 @@ function finite(value: unknown, minimum: number, maximum: number): value is numb
   return typeof value === "number" && Number.isFinite(value) && value >= minimum && value <= maximum;
 }
 
+/**
+ * Writes only what decodeTrip reads back: a name that is too long is cut and
+ * an over-long kind dropped here, at the one place every trip passes through,
+ * so no single place can make the saved trip or its link unreadable.
+ */
 export function encodeTrip(trip: ShioriTrip): string {
   const wire: Wire = {
     v: 1,
     c: trip.cityId,
     n: trip.cityName,
-    d: trip.days,
+    d: Math.min(MAX_DAYS, Math.max(1, Math.round(trip.days))),
     p: trip.pace,
     s: trip.places.map((place) => [
       place.id,
-      place.name,
+      clipName(place.name),
       Number(place.lat.toFixed(5)),
       Number(place.lon.toFixed(5)),
       place.stayMinutes,
       place.day ?? null,
-      place.kind ?? null,
+      place.kind && place.kind.length <= MAX_KIND ? place.kind : null,
       place.img ?? null,
       place.meal ?? null,
     ]),
-    h: trip.hotel ? [trip.hotel.name, Number(trip.hotel.lat.toFixed(5)), Number(trip.hotel.lon.toFixed(5))] : null,
+    h: trip.hotel ? [clipName(trip.hotel.name), Number(trip.hotel.lat.toFixed(5)), Number(trip.hotel.lon.toFixed(5))] : null,
   };
   const bytes = new TextEncoder().encode(JSON.stringify(wire));
   let binary = "";
@@ -107,14 +157,14 @@ export function decodeTrip(encoded: string): ShioriTrip | null {
     const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
     const wire = JSON.parse(new TextDecoder().decode(bytes)) as Partial<Wire>;
     if (wire.v !== 1 || !Array.isArray(wire.s) || wire.s.length > MAX_PLACES) return null;
-    if (!finite(wire.d, 1, MAX_DAYS) || !isPace(wire.p)) return null;
+    if (!finite(wire.d, 1, MAX_DAYS_READ) || !isPace(wire.p)) return null;
     const seen = new Set<string>();
     const places: ShioriPlace[] = [];
     for (const entry of wire.s) {
       if (!Array.isArray(entry)) return null;
       const [id, name, lat, lon, stay, day, kind, img, meal] = entry;
-      if (typeof id !== "string" || !/^[\w.:,@-]{1,160}$/.test(id) || seen.has(id)) return null;
-      if (typeof name !== "string" || name.trim().length === 0 || name.length > 120) return null;
+      if (typeof id !== "string" || !PLACE_ID.test(id) || seen.has(id)) return null;
+      if (typeof name !== "string" || name.trim().length === 0 || name.length > MAX_NAME) return null;
       if (!finite(lat, -90, 90) || !finite(lon, -180, 180) || !finite(stay, 15, 720)) return null;
       seen.add(id);
       places.push({
@@ -124,13 +174,13 @@ export function decodeTrip(encoded: string): ShioriTrip | null {
         lon,
         stayMinutes: Math.round(stay),
         ...(finite(day, 1, MAX_DAYS) ? { day: Math.round(day) } : {}),
-        ...(typeof kind === "string" && kind.length <= 80 ? { kind } : {}),
+        ...(typeof kind === "string" && kind.length <= MAX_KIND ? { kind } : {}),
         // A file name, never a URL: it is only ever appended to the Commons path.
         ...(typeof img === "string" && img.length <= 240 && !/[\\/?#]|\.\./.test(img) ? { img } : {}),
         ...(meal === "lunch" || meal === "dinner" ? { meal } : {}),
       });
     }
-    const hotel = Array.isArray(wire.h) && typeof wire.h[0] === "string" && wire.h[0].length <= 120
+    const hotel = Array.isArray(wire.h) && typeof wire.h[0] === "string" && wire.h[0].length <= MAX_NAME
       && finite(wire.h[1], -90, 90) && finite(wire.h[2], -180, 180)
       ? { name: wire.h[0], lat: wire.h[1], lon: wire.h[2] }
       : null;
@@ -138,7 +188,8 @@ export function decodeTrip(encoded: string): ShioriTrip | null {
       cityId: typeof wire.c === "string" && /^[a-z]{2,24}$/.test(wire.c) ? wire.c : null,
       cityName: typeof wire.n === "string" ? wire.n.slice(0, 60) : "",
       places,
-      days: Math.round(wire.d),
+      // A length from before the limits agreed: the places matter more than the eighth day.
+      days: Math.min(MAX_DAYS, Math.round(wire.d)),
       pace: wire.p,
       hotel,
     };

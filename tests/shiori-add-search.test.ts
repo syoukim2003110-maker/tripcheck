@@ -39,3 +39,18 @@ test("distances and kind labels", () => {
   assert.equal(kindOfCategory("Unknown"), null);
   assert.equal(kindOfCategory(null), null);
 });
+
+test("an id the map returns can always be saved with the trip", async () => {
+  const { decodeTrip, emptyTrip, encodeTrip } = await import("../lib/shiori/state.ts");
+  const found = addCandidates([
+    place("Slash", 35.68, 139.76, "I/7+A=="),
+    place("Long", 35.69, 139.77, "x".repeat(200)),
+    place("Plain", 35.7, 139.78, "I63802885C8189B2B"),
+    place("No id", 35.71, 139.79, null),
+  ], addAnchor(TOKYO, []), 100);
+  assert.equal(found.length, 4);
+  for (const entry of found) assert.match(entry.id, /^[\w.:,@-]{1,160}$/);
+  assert.equal(found[2].id, "apple-I63802885C8189B2B");
+  const trip = { ...emptyTrip, places: found.map((entry) => ({ id: entry.id, name: entry.name, lat: entry.lat, lon: entry.lon, stayMinutes: 60 })) };
+  assert.equal(decodeTrip(encodeTrip(trip))?.places.length, 4);
+});

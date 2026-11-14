@@ -37,6 +37,22 @@ import {
 
 export type ShioriPace = "relaxed" | "standard" | "packed";
 
+/**
+ * The longest trip the booklet keeps. Defined once: the day picker, a "this
+ * needs more days" notice and the saved form must agree, or the app offers a
+ * length that cannot be stored and the saved trip is unreadable next visit.
+ */
+export const MAX_TRIP_DAYS = 7;
+
+/**
+ * When the leg out of stops[index] sets off. A lunch hour suggested after a
+ * stop is spent before leaving, so the leg — to the next stop or back to the
+ * hotel — leaves when lunch ends. (A dinner slot has no end on the clock.)
+ */
+export function departureAfterStop(day: Pick<ShioriDay, "stops" | "meals">, index: number): string | undefined {
+  return day.meals.find((meal) => meal.afterStop === index && meal.kind === "lunch" && meal.end)?.end ?? day.stops[index]?.leave;
+}
+
 export type ShioriPlace = {
   id: string;
   name: string;
@@ -1013,7 +1029,9 @@ export function buildShioriPlan(input: ShioriInput, options: PlanOptions = {}): 
     // No day holds more than its nine and a half hours of stays: fewer days than that are not worth planning.
     const least = Math.ceil(input.places.reduce((sum, place) => sum + (place.meal === "dinner" ? 0 : stayOf(place) + DAY_CLOCK.legBuffer), 0) / (DAY_CLOCK.sightsEnd - DAY_CLOCK.hotelStart + DAY_CLOCK.legBuffer));
     let found = false;
-    for (let days = Math.max(requested + 1, least); days <= Math.min(14, Math.max(7, requested + 2)) && !found; days += 1) {
+    // Never past the longest trip that can be kept: a length that cannot be
+    // saved must not be offered.
+    for (let days = Math.max(requested + 1, least); days <= Math.min(MAX_TRIP_DAYS, requested + 2) && !found; days += 1) {
       // Said only if the plan the traveller would then get — the full one — fits.
       if (fits(planOnce({ ...input, days }, options))) {
         notices.push({ kind: "needs-days", days });

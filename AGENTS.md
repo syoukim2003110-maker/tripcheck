@@ -54,7 +54,11 @@ Working branch: `claude/free-place-resolution`.
   `Powered by <a href="http://webservice.recruit.co.jp/">ホットペッパーグルメ Webサービス</a>`
   must stay exactly as written (the provider forbids altering the wording or
   the HTML) and stay visible wherever its shops or photos are shown, plus the
-  line in the page footer. Nothing from that service may be stored.
+  line in the page footer. Nothing from that service may be stored on
+  TripCheck's server or in any database, and its search answers (lists,
+  photos, budgets, hours) are never saved anywhere; only a shop the traveller
+  adds to the trip is kept, as a stop (name, position, shop ID), in that
+  traveller's own trip in their browser and in a link they share.
 - **Map credit.** OpenFreeMap / OpenStreetMap attribution stays reachable.
 - **Apple place card.** It is drawn by Apple inside a closed element; do not
   restyle its inside, and keep it lazy (nothing is requested until the

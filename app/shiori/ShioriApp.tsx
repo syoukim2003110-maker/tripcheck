@@ -8,6 +8,7 @@ import { budgetLabel, fetchHotpepperShops, inJapan, lunchPrice, shopsForMeal, ty
 import { placeCardsAvailable } from "../../lib/apple-place-card";
 import { appleRelayClient, appleRelaySearch } from "../../lib/apple-relay-client";
 import { defaultFoodDiscoveryQuery, type FoodCandidate } from "../../lib/google-food";
+import { rerankHotelCandidates } from "../../lib/apple-hotels";
 import type { HotelCandidate } from "../../lib/google-hotels";
 import { requestHotelRecommendations } from "../../lib/hotel-recommendations-client";
 import { requestPlaceResolution } from "../../lib/place-resolution-client";
@@ -15,10 +16,10 @@ import { curateSights, filterDestinations, type PopularDestination, type Popular
 import { loadRailNetwork } from "../../lib/rail-network-client";
 import type { RailNetwork } from "../../lib/rail-router";
 import { fetchStreetRoute } from "../../lib/street-route-client";
-import { addAnchor, addCandidates, kindOfCategory, type AddCandidate } from "../../lib/shiori/add-search";
+import { addAnchor, kindOfCategory, openCandidate, searchAddCandidates, type AddCandidate } from "../../lib/shiori/add-search";
 import { findCafes, withListedCafes, type CafeBreak, type CafePick } from "../../lib/shiori/cafes";
 import { lineColor } from "../../lib/shiori/line-colors";
-import { buildShioriPlan, type ShioriLeg, type ShioriMeal, type ShioriNotice, type ShioriPlace, type ShioriPlan, type ShioriRoute, type ShioriStop } from "../../lib/shiori/plan";
+import { buildShioriPlan, departureAfterStop, type ShioriLeg, type ShioriMeal, type ShioriNotice, type ShioriPlace, type ShioriPlan, type ShioriRoute, type ShioriStop } from "../../lib/shiori/plan";
 import {
   MAX_DAYS,
   MAX_PLACES,
@@ -26,10 +27,13 @@ import {
   durationText,
   emptyTrip,
   encodeTrip,
+  keepAside,
   kindLabel,
   photoCreditUrl,
   photoUrl,
   placeFromSight,
+  safePlaceId,
+  storageStep,
   togglePlace,
   withCity,
   type ShioriTrip,
@@ -796,7 +800,14 @@ function StayNear({ plan, trip, locale, onHotel }: { plan: ShioriPlan; trip: Shi
   const key = plan.stayNear ? `${plan.stayNear.latitude.toFixed(2)},${plan.stayNear.longitude.toFixed(2)}` : "";
   const available = useMemo(() => appleRelayClient() !== null, []);
   const [answer, setAnswer] = useState<{ key: string; hotels: HotelCandidate[] } | null>(null);
-  const hotels = answer?.key === key ? answer.hotels : [];
+  // The search is kept as it came; the order and the printed distance are
+  // worked out again from the days as they are now. Places can move a long
+  // way while the centre stays put, and the list must not keep an old answer.
+  const routePoints = plan.stayNear?.routePoints;
+  const hotels = useMemo(
+    () => answer?.key === key && routePoints ? rerankHotelCandidates(answer.hotels, routePoints.slice(0, 10)).slice(0, 4) : [],
+    [answer, key, routePoints],
+  );
   const state: "loading" | "ready" | "failed" = !available ? "failed" : answer?.key !== key ? "loading" : hotels.length > 0 ? "ready" : "failed";
   useEffect(() => {
     if (!plan.stayNear || !available) return;
@@ -807,10 +818,11 @@ function StayNear({ plan, trip, locale, onHotel }: { plan: ShioriPlan; trip: Shi
       area: trip.cityName.slice(0, 80) || "trip",
       routePoints: plan.stayNear.routePoints.slice(0, 10),
     }, locale).then((response) => {
-      if (!cancelled) setAnswer({ key, hotels: response.candidates.slice(0, 4) });
+      if (!cancelled) setAnswer({ key, hotels: response.candidates });
     }).catch(() => { if (!cancelled) setAnswer({ key, hotels: [] }); });
     return () => { cancelled = true; };
-    // Keyed on the rounded centre; the other inputs follow from it.
+    // Keyed on the rounded centre only: a re-plan must not spend a request.
+    // What the other inputs change — the ranking — is recomputed above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, locale]);
   if (!plan.stayNear) return null;
@@ -880,6 +892,10 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
   const askedRoutes = useRef(new Set<string>());
   const routeAttempts = useRef(new Map<string, number>());
   const hydrated = useRef(false);
+  // Whether this visit has saved the trip in hand (see storageStep).
+  const wrote = useRef(false);
+  // Counts searches by name; an answer is used only if its search is still the latest.
+  const otherRun = useRef(0);
   // Which way the page turns when another day is opened.
   const [dayDir, setDayDir] = useState<"fwd" | "back">("fwd");
   const tabs = useRef<HTMLDivElement | null>(null);
@@ -931,9 +947,14 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
   /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
-    if (!hydrated.current || trip.places.length === 0) return;
+    if (!hydrated.current) return;
+    const step = storageStep(trip, wrote.current);
+    if (step === "none") return;
+    wrote.current = step === "write";
     try {
-      window.localStorage.setItem(STORAGE_KEY, encodeTrip(trip));
+      if (step === "write") window.localStorage.setItem(STORAGE_KEY, encodeTrip(trip));
+      // The last place was removed: the old list must not come back on the next visit.
+      else window.localStorage.removeItem(STORAGE_KEY);
     } catch {
       // Private mode: the booklet still works for this visit.
     }
@@ -1054,9 +1075,13 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
   useEffect(() => { if (hydrated.current) writeRoutes(routes); }, [routes]);
   const chooseCity = (destination: PopularDestination) => {
     // Another destination starts another trip; the one in hand is kept aside.
-    if (trip.places.length > 0 && trip.cityId !== destination.id) {
-      setPrevious(trip);
-      try { window.localStorage.setItem(PREVIOUS_KEY, encodeTrip(trip)); } catch { /* ignore */ }
+    // So is the trip saved on an earlier visit when it was not reopened: the
+    // first place added to the new trip would otherwise overwrite it.
+    const aside = keepAside(trip, saved, withCity(trip, destination, locale));
+    if (aside) {
+      setPrevious(aside);
+      setSaved(null);
+      try { window.localStorage.setItem(PREVIOUS_KEY, encodeTrip(aside)); } catch { /* ignore */ }
     }
     update((current) => withCity(current, destination, locale));
     setQuery("");
@@ -1088,6 +1113,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
       });
     }
     setAdded({ id: kind === "hotel" ? null : candidate.id, name: candidate.name, kind });
+    otherRun.current += 1;
     setOtherHits(null);
     setOther("");
     setOtherState("idle");
@@ -1098,45 +1124,39 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
     if (!name || otherState === "busy") return;
     const kind = otherKind;
     if (kind !== "hotel" && trip.places.length >= MAX_PLACES) { setOtherState("full"); return; }
+    // Only the latest search may change the form: typing, another kind,
+    // cancelling or choosing a hit moves the counter on and this one is dropped.
+    const run = ++otherRun.current;
     setOtherState("busy");
     setOtherHits(null);
     setAdded(null);
     const anchor = addAnchor(city, trip.places);
     const reach = (city?.radiusKm ?? 60) + 80;
-    try {
-      let candidates: AddCandidate[] = [];
-      if (appleRelayClient()) {
-        // Asked near the trip: a same-named shop in another city is not what was meant.
-        const ask = (poiOnly: boolean) => appleRelaySearch({ query: name, language: locale === "ja" ? "ja-JP" : "en-US", near: anchor, poiOnly });
-        candidates = addCandidates(await ask(kind !== "place"), anchor, reach, 6, city?.radiusKm ?? reach);
-        if (candidates.length === 0 && kind !== "place") candidates = addCandidates(await ask(false), anchor, reach, 6, city?.radiusKm ?? reach);
-      }
-      if (candidates.length === 0) {
-        // No map search in this build, or it knew nothing: the open lookup,
-        // with the places already chosen as its hint of which city this is.
+    const candidates = await searchAddCandidates({
+      poiFirst: kind !== "place",
+      anchor,
+      reachKm: reach,
+      cityKm: city?.radiusKm ?? reach,
+      // Asked near the trip: a same-named shop in another city is not what was meant.
+      mapSearch: appleRelayClient() ? (poiOnly) => appleRelaySearch({ query: name, language: locale === "ja" ? "ja-JP" : "en-US", near: anchor, poiOnly }) : null,
+      // No map search in this build, it knew nothing, or it could not be
+      // reached: the open lookup, with the places already chosen as its hint
+      // of which city this is.
+      openLookup: async () => {
         const context = trip.places.length >= 2 || !city
           ? trip.places.map((place) => place.name)
           : [...trip.places.map((place) => place.name), ...city.sights.slice(0, 3).map((sight) => locale === "ja" ? sight.ja : sight.en)];
         const result = await requestPlaceResolution([...context, name].join("\n"), "", locale);
         const hit = result.places.find((place) => place.input === name)
           ?? result.ambiguous.find((entry) => entry.input === name)?.candidates[0];
-        if (hit) {
-          const km = anchor ? Math.hypot(hit.latitude - anchor.latitude, (hit.longitude - anchor.longitude) * Math.cos((anchor.latitude * Math.PI) / 180)) * 111 : 0;
-          if (km <= reach) {
-            candidates = [{
-              id: hit.id, name: hit.name, lat: hit.latitude, lon: hit.longitude, address: "", category: null, km,
-              stayMinutes: Math.min(240, Math.max(30, hit.planningDurationMinutes)),
-              ...(hit.placeTypes?.[0] ? { kind: hit.placeTypes[0].replace(/_/g, " ") } : {}),
-            }];
-          }
-        }
-      }
-      if (candidates.length === 0) { setOtherState("failed"); return; }
-      setOtherHits({ kind, candidates });
-      setOtherState("idle");
-    } catch {
-      setOtherState("failed");
-    }
+        return hit ? openCandidate(hit, anchor, reach) : null;
+      },
+      isCurrent: () => run === otherRun.current,
+    });
+    if (candidates === null) return;
+    if (candidates.length === 0) { setOtherState("failed"); return; }
+    setOtherHits({ kind, candidates });
+    setOtherState("idle");
   };
 
   // Paper cannot be unfolded: before printing, every folded part is opened
@@ -1205,17 +1225,17 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
       <label htmlFor="shiori-other">{phrases(t.addOther)}</label>
       <div className="shiori-pace" role="group" aria-label={t.addOther}>
         {(["place", "lunch", "dinner", "hotel"] as const).map((kind) => (
-          <button aria-pressed={otherKind === kind} key={kind} onClick={() => { setOtherKind(kind); setOtherState("idle"); }} type="button">{t.addKinds[kind]}</button>
+          <button aria-pressed={otherKind === kind} key={kind} onClick={() => { otherRun.current += 1; setOtherKind(kind); setOtherState("idle"); }} type="button">{t.addKinds[kind]}</button>
         ))}
       </div>
       <div className="shiori-other-row">
-        <input id="shiori-other" onChange={(event) => { setOther(event.target.value); setOtherState("idle"); setOtherHits(null); }} placeholder={t.addPlaceholders[otherKind]} value={other} />
+        <input id="shiori-other" onChange={(event) => { otherRun.current += 1; setOther(event.target.value); setOtherState("idle"); setOtherHits(null); }} placeholder={t.addPlaceholders[otherKind]} value={other} />
         <button disabled={otherState === "busy" || !other.trim()} type="submit">{otherState === "busy" ? t.adding : t.addSearch}</button>
       </div>
       {otherState === "failed" ? <p className="shiori-warn" role="alert">{t.addFailed}</p> : null}
       {otherHits ? (
         <div className="shiori-hits" role="group" aria-label={t.addChoose}>
-          <p className="shiori-hits-head"><b>{t.addChoose}</b><button onClick={() => setOtherHits(null)} type="button">{t.addCancel}</button></p>
+          <p className="shiori-hits-head"><b>{t.addChoose}</b><button onClick={() => { otherRun.current += 1; setOtherHits(null); }} type="button">{t.addCancel}</button></p>
           <ul>
             {otherHits.candidates.map((candidate) => (
               <li key={candidate.id}>
@@ -1260,7 +1280,22 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
             <input autoComplete="off" onChange={(event) => setQuery(event.target.value)} placeholder={t.wherePlaceholder} type="search" value={query} />
           </label>
           {[trip.places.length > 0 ? trip : saved, previous].flatMap((candidate, index) => candidate && candidate.places.length > 0 ? [(
-            <button className="shiori-resume" key={index} onClick={() => { setTrip(candidate); setSelectedDay(0); go("plan"); }} type="button">
+            <button className="shiori-resume" key={index} onClick={() => {
+              if (index === 1) {
+                // Opening the previous trip swaps the two: the one in hand becomes the previous one, not nothing.
+                const aside = keepAside(trip, saved, candidate);
+                setPrevious(aside);
+                try {
+                  if (aside) window.localStorage.setItem(PREVIOUS_KEY, encodeTrip(aside));
+                  else window.localStorage.removeItem(PREVIOUS_KEY);
+                } catch { /* ignore */ }
+              }
+              // The page-load copy has done its job; it must not reappear after the trip is emptied.
+              setSaved(null);
+              setTrip(candidate);
+              setSelectedDay(0);
+              go("plan");
+            }} type="button">
               <Icon name="clock" />
               <span>{index === 0 ? t.resume : t.resumePrevious}：{candidate.cityName || candidate.places[0]?.name} ・ {candidate.places.length}</span>
             </button>
@@ -1564,7 +1599,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
                             meal={meal}
                             onAdd={(shop, kind) => {
                               if (trip.places.length >= MAX_PLACES) return;
-                              const id = `hotpepper-${shop.id}`;
+                              const id = safePlaceId(`hotpepper-${shop.id}`);
                               update((current) => current.places.some((place) => place.id === id) ? current : {
                                 ...current,
                                 places: [...current.places, { id, name: shop.name, lat: shop.latitude, lon: shop.longitude, stayMinutes: kind === "lunch" ? 60 : 90, kind: "restaurant", meal: kind, day: day.index + 1 }],
@@ -1585,11 +1620,11 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
                             />
                           ) : null}
                           {/* A lunch hour suggested after this stop is spent before setting off: the leg leaves when lunch ends. */}
-                          {day.legs[index] ? <LegCard depart={day.meals.find((meal) => meal.afterStop === index && meal.kind === "lunch" && meal.end)?.end ?? stop.leave} leg={day.legs[index]} locale={locale} /> : null}
+                          {day.legs[index] ? <LegCard depart={departureAfterStop(day, index)} leg={day.legs[index]} locale={locale} /> : null}
                         </li>
                       );
                     })}
-                    {day.toHotel ? <li className="is-leg"><LegCard depart={day.stops.at(-1)?.leave} heading={t.toHotel} leg={day.toHotel} locale={locale} /></li> : null}
+                    {day.toHotel ? <li className="is-leg"><LegCard depart={departureAfterStop(day, day.stops.length - 1)} heading={t.toHotel} leg={day.toHotel} locale={locale} /></li> : null}
                   </ol>
                   {day.ideas.length > 0 ? (
                     <div className="shiori-ideas">

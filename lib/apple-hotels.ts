@@ -59,19 +59,12 @@ export async function fetchAppleHotelCandidates(
   // A resort area or a quiet town has few hotels inside a short walk.
   if (!typed && places.length < 5) places = [...places, ...await search(generic, WIDE_METERS)];
 
-  const routePoints = request.routePoints?.length
-    ? request.routePoints
-    : [{ latitude: request.latitude, longitude: request.longitude }];
   const seen = new Set<string>();
   const candidates = places.flatMap((place, index): HotelCandidate[] => {
     const coordinate = `${place.latitude.toFixed(5)},${place.longitude.toFixed(5)}`;
     const key = `${place.name.normalize("NFKC").toLocaleLowerCase()}@${place.latitude.toFixed(3)},${place.longitude.toFixed(3)}`;
     if (seen.has(key)) return [];
     seen.add(key);
-    const distances = routePoints.map((point) => distanceMeters(point.latitude, point.longitude, place.latitude, place.longitude));
-    const average = distances.reduce((sum, value) => sum + value, 0) / distances.length;
-    const worst = Math.max(...distances);
-    const burden = 0.7 * average + 0.3 * worst;
     return [{
       id: `apple-${place.id ?? coordinate}`.slice(0, 300),
       name: place.name,
@@ -85,11 +78,11 @@ export async function fetchAppleHotelCandidates(
       rating: null,
       userRatingCount: null,
       distanceMeters: Math.round(distanceMeters(request.latitude, request.longitude, place.latitude, place.longitude)),
-      routeAverageDistanceMeters: Math.round(average),
-      routeWorstDistanceMeters: Math.round(worst),
-      routeBurdenMeters: Math.round(burden),
-      // Closer to the whole trip scores higher; nothing else is known.
-      score: Math.round(Math.max(0, 100 - burden / 100) * 100) / 100,
+      // Filled in by the ranking below.
+      routeAverageDistanceMeters: 0,
+      routeWorstDistanceMeters: 0,
+      routeBurdenMeters: 0,
+      score: 0,
       googleRelevanceRank: index + 1,
       priceLevel: null,
       styles: [],
@@ -99,7 +92,35 @@ export async function fetchAppleHotelCandidates(
       rakuten: null,
     }];
   });
-  return candidates
-    .sort((left, right) => left.routeBurdenMeters - right.routeBurdenMeters || left.name.localeCompare(right.name))
-    .slice(0, 5);
+  const routePoints = request.routePoints?.length
+    ? request.routePoints
+    : [{ latitude: request.latitude, longitude: request.longitude }];
+  return rerankHotelCandidates(candidates, routePoints).slice(0, 5);
+}
+
+/**
+ * The same hotels measured against the days as they are now, nearest to the
+ * whole trip first. No search is made: after the places of a trip move, the
+ * hotels already found are ranked again, so the order and the distance shown
+ * are never those of an earlier plan.
+ */
+export function rerankHotelCandidates(
+  candidates: readonly HotelCandidate[],
+  routePoints: ReadonlyArray<{ latitude: number; longitude: number }>,
+): HotelCandidate[] {
+  if (routePoints.length === 0) return [...candidates];
+  return candidates.map((candidate) => {
+    const distances = routePoints.map((point) => distanceMeters(point.latitude, point.longitude, candidate.latitude, candidate.longitude));
+    const average = distances.reduce((sum, value) => sum + value, 0) / distances.length;
+    const worst = Math.max(...distances);
+    const burden = 0.7 * average + 0.3 * worst;
+    return {
+      ...candidate,
+      routeAverageDistanceMeters: Math.round(average),
+      routeWorstDistanceMeters: Math.round(worst),
+      routeBurdenMeters: Math.round(burden),
+      // Closer to the whole trip scores higher; nothing else is known.
+      score: Math.round(Math.max(0, 100 - burden / 100) * 100) / 100,
+    };
+  }).sort((left, right) => left.routeBurdenMeters - right.routeBurdenMeters || left.name.localeCompare(right.name));
 }

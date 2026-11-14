@@ -1,4 +1,5 @@
 import type { AppleRelayPlace } from "../apple-relay-client";
+import { safePlaceId } from "./state.ts";
 
 /*
  * Looking up a place the traveller typed in. The map search is asked near the
@@ -50,7 +51,8 @@ export function addCandidates(results: readonly AppleRelayPlace[], anchor: AddAn
   for (const place of results) {
     const km = anchor ? kmBetween(anchor, place) : 0;
     if (anchor && km > maxKm) continue;
-    const id = place.id ? `apple-${place.id}` : `apple-${place.latitude.toFixed(5)},${place.longitude.toFixed(5)}`;
+    // The map's id is text from outside: kept in the form the saved trip accepts.
+    const id = safePlaceId(place.id ? `apple-${place.id}` : `apple-${place.latitude.toFixed(5)},${place.longitude.toFixed(5)}`);
     const twin = `${place.name}|${place.latitude.toFixed(3)},${place.longitude.toFixed(3)}`;
     if (seen.has(id) || seen.has(twin)) continue;
     seen.add(id);
@@ -79,4 +81,74 @@ const CATEGORY_KIND: Record<string, string> = {
 /** The booklet's kind label for a map category, when it has one. */
 export function kindOfCategory(category: string | null) {
   return category ? CATEGORY_KIND[category] ?? null : null;
+}
+
+/** What the open lookup knows about a place it found. */
+export type OpenLookupHit = {
+  id: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+  planningDurationMinutes: number;
+  placeTypes?: readonly string[];
+};
+
+/** The open lookup's hit as a candidate, or null when it is out of the trip's reach. */
+export function openCandidate(hit: OpenLookupHit, anchor: AddAnchor | null, reachKm: number): AddCandidate | null {
+  const km = anchor ? Math.hypot(hit.latitude - anchor.latitude, (hit.longitude - anchor.longitude) * Math.cos((anchor.latitude * Math.PI) / 180)) * 111 : 0;
+  if (km > reachKm) return null;
+  return {
+    id: safePlaceId(hit.id), name: hit.name, lat: hit.latitude, lon: hit.longitude, address: "", category: null, km,
+    stayMinutes: Math.min(240, Math.max(30, hit.planningDurationMinutes)),
+    ...(hit.placeTypes?.[0] ? { kind: hit.placeTypes[0].replace(/_/g, " ") } : {}),
+  };
+}
+
+export type AddSearch = {
+  /** A restaurant or a hotel is first asked for among points of interest only. */
+  poiFirst: boolean;
+  anchor: AddAnchor | null;
+  /** How far from the trip a hit may be, and how far still counts as inside the city. */
+  reachKm: number;
+  cityKm: number;
+  /** The map search near the trip; null in a build that has none. */
+  mapSearch: ((poiOnly: boolean) => Promise<readonly AppleRelayPlace[]>) | null;
+  /** The open lookup: its one hit, or null. */
+  openLookup: () => Promise<AddCandidate | null>;
+  /** False once the traveller has moved on (typed, changed the kind, searched again). */
+  isCurrent: () => boolean;
+};
+
+/**
+ * Looks a typed name up: the map search first, the open lookup when the map
+ * search has nothing — or cannot be reached. The map relay being down or out
+ * of quota is exactly when the fallback is needed, so its error is not the
+ * search's error. Returns null when the answer is for a search the traveller
+ * has already left: such an answer must change nothing on screen, and a stale
+ * search stops before spending another request.
+ */
+export async function searchAddCandidates(search: AddSearch): Promise<AddCandidate[] | null> {
+  let candidates: AddCandidate[] = [];
+  if (search.mapSearch) {
+    try {
+      candidates = addCandidates(await search.mapSearch(search.poiFirst), search.anchor, search.reachKm, 6, search.cityKm);
+      if (!search.isCurrent()) return null;
+      if (candidates.length === 0 && search.poiFirst) {
+        candidates = addCandidates(await search.mapSearch(false), search.anchor, search.reachKm, 6, search.cityKm);
+      }
+    } catch {
+      candidates = [];
+    }
+    if (!search.isCurrent()) return null;
+  }
+  if (candidates.length === 0) {
+    try {
+      const hit = await search.openLookup();
+      if (hit) candidates = [hit];
+    } catch {
+      // Neither source answered: the caller says "not found".
+    }
+    if (!search.isCurrent()) return null;
+  }
+  return candidates;
 }
