@@ -136,6 +136,29 @@ function withClock(trip: ShioriTrip, key: "firstDayStart" | "lastDayFinish", val
 export const withFirstDayStart = (trip: ShioriTrip, value: string) => withClock(trip, "firstDayStart", value);
 export const withLastDayFinish = (trip: ShioriTrip, value: string) => withClock(trip, "lastDayFinish", value);
 
+/**
+ * What a time field hands over, and when. While a time is being typed the
+ * browser reports every step on the way — "01:00" and "16:00" before
+ * "16:30", and "" while one part of it is being retyped — and none of those
+ * is the traveller's time: a plan made from each would throw the very stop
+ * being edited off its day in the middle of a keystroke.
+ *
+ * `typed` is what the field shows (null: untouched), `kept` what the trip
+ * holds ("" for none). Returned is the time to hand over, "" to remove the
+ * time, or null to leave the trip alone:
+ *   - a whole time that differs from the trip's is handed over on leaving
+ *     the field and after a pause in typing (a phone's time picker sets the
+ *     time without ever leaving the field);
+ *   - an emptied field removes the time only on leaving it, and only where
+ *     the field is the one way to remove it (`emptyClears`) — a booking has
+ *     its own button, and an emptied booking field goes back to the booking.
+ */
+export function settledTime(typed: string | null, kept: string, how: "pause" | "leave", emptyClears: boolean): string | null {
+  if (typed === null || typed === kept) return null;
+  if (clockOfDay(typed) !== null) return typed;
+  return typed === "" && how === "leave" && emptyClears && kept !== "" ? "" : null;
+}
+
 /** A booking as the trip keeps it: a whole day from 1 to the longest trip, and a whole "HH:MM". Anything else is no booking. */
 function usableReservation(reserve: unknown): ShioriReservation | null {
   if (!reserve || typeof reserve !== "object") return null;

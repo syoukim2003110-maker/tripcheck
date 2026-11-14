@@ -22,7 +22,7 @@ import { findCafes, withListedCafes, type CafeBreak, type CafePick } from "../..
 import { fetchedStamp, forecastCentre, loadForecast, wetDaysOf, type DayForecast, type ForecastAnswer, type ForecastCache } from "../../lib/shiori/forecast";
 import { lineColor } from "../../lib/shiori/line-colors";
 import { clockOf, hasToeiRide, legTimetables, type RideTimetable, type ServiceCalendar, type TimetableTrain, type ToeiTimetableData } from "../../lib/shiori/timetable";
-import { buildShioriPlan, clockOfDay, departureAfterStop, type ShioriLeg, type ShioriMeal, type ShioriNotice, type ShioriPlace, type ShioriPlan, type ShioriReservation, type ShioriRoute, type ShioriStop, type ShioriUnplaced } from "../../lib/shiori/plan";
+import { buildShioriPlan, departureAfterStop, type ShioriLeg, type ShioriMeal, type ShioriNotice, type ShioriPlace, type ShioriPlan, type ShioriReservation, type ShioriRoute, type ShioriStop, type ShioriUnplaced } from "../../lib/shiori/plan";
 import {
   MAX_DAYS,
   MAX_PLACES,
@@ -36,6 +36,7 @@ import {
   photoUrl,
   placeFromSight,
   safePlaceId,
+  settledTime,
   storageStep,
   togglePlace,
   withCity,
@@ -1056,18 +1057,55 @@ function StayNear({ plan, trip, locale, onHotel }: { plan: ShioriPlan; trip: Shi
 }
 
 /**
+ * A field for a time of day. It shows what is being typed and hands the
+ * trip a time only once the traveller is done with it — on leaving the
+ * field, on Enter, or a moment after the last change — because a browser
+ * reports "01:00" and "16:00" on the way to "16:30", and a plan made from
+ * each of those would move the stop being edited out from under the cursor
+ * (see settledTime in state.ts). `emptyClears`: emptying the field and
+ * leaving it removes the time.
+ */
+function TimeInput({ value, emptyClears, onCommit }: { value: string; emptyClears: boolean; onCommit: (value: string) => void }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const pause = useRef<number | null>(null);
+  const still = () => {
+    if (pause.current !== null) window.clearTimeout(pause.current);
+    pause.current = null;
+  };
+  useEffect(() => still, []);
+  const settle = (typed: string | null, how: "pause" | "leave") => {
+    still();
+    const settled = settledTime(typed, value, how, emptyClears);
+    if (settled !== null) onCommit(settled);
+    // On leaving, the field shows what the trip holds again.
+    if (how === "leave") setDraft(null);
+  };
+  return (
+    <input
+      onBlur={() => settle(draft, "leave")}
+      onChange={(event) => {
+        const typed = event.target.value;
+        setDraft(typed);
+        still();
+        pause.current = window.setTimeout(() => settle(typed, "pause"), 1500);
+      }}
+      onKeyDown={(event) => { if (event.key === "Enter") settle(draft, "leave"); }}
+      step={300}
+      type="time"
+      value={draft ?? value}
+    />
+  );
+}
+
+/**
  * A fixed time on a place: day and start together, never a time alone. The
- * fields keep what is being typed; the trip takes a booking only once both
- * are whole, and loses it when the time is emptied or "Clear" is pressed.
+ * trip takes a booking once the time is whole and the traveller is done
+ * typing it, and loses it only when "Clear" is pressed: an emptied time
+ * field goes back to the booking.
  */
 function ReserveEditor({ place, days, defaultDay, locale, onChange }: { place: ShioriPlace; days: number; defaultDay: number; locale: Locale; onChange: (reserve: ShioriReservation | null) => void }) {
   const t = text[locale];
   const [day, setDay] = useState(place.reserve?.day ?? defaultDay);
-  const [time, setTime] = useState(place.reserve?.time ?? "");
-  const apply = (nextDay: number, nextTime: string) => {
-    if (clockOfDay(nextTime) !== null) onChange({ day: nextDay, time: nextTime });
-    else if (nextTime === "" && place.reserve) onChange(null);
-  };
   // A booking on a day the trip no longer has stays selectable as it is: it is shown, not moved.
   const options = Array.from({ length: days }, (_, index) => index + 1);
   if (!options.includes(day)) options.push(day);
@@ -1076,15 +1114,15 @@ function ReserveEditor({ place, days, defaultDay, locale, onChange }: { place: S
       <span>{t.reserveLabel}</span>
       <label>
         <span>{t.reserveDay}</span>
-        <select onChange={(event) => { const value = Number(event.target.value); setDay(value); apply(value, time); }} value={day}>
+        <select onChange={(event) => { const value = Number(event.target.value); setDay(value); if (place.reserve) onChange({ day: value, time: place.reserve.time }); }} value={day}>
           {options.map((value) => <option key={value} value={value}>{t.dayTab(value - 1)}</option>)}
         </select>
       </label>
       <label>
         <span>{t.reserveTime}</span>
-        <input onChange={(event) => { const value = event.target.value; setTime(value); apply(day, value); }} step={300} type="time" value={time} />
+        <TimeInput emptyClears={false} onCommit={(time) => onChange({ day, time })} value={place.reserve?.time ?? ""} />
       </label>
-      {place.reserve ? <button onClick={() => { setTime(""); onChange(null); }} type="button">{t.reserveClear}</button> : null}
+      {place.reserve ? <button onClick={() => onChange(null)} type="button">{t.reserveClear}</button> : null}
     </div>
   );
 }
@@ -1398,33 +1436,21 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
     </label>
   );
   // When day 1 can start and when the last day has to be over: optional,
-  // folded away beside the date. Like the date, a field shows the keystrokes
-  // and the trip takes only a whole time; an emptied field removes it.
-  const [frameDraft, setFrameDraft] = useState<{ start?: string; finish?: string }>({});
+  // folded away. A field shows the keystrokes and the trip takes a time only
+  // once it is whole and the traveller is done typing it (see TimeInput); a
+  // field emptied and left removes it.
   const framesSummary = t.framesSummary(trip.firstDayStart, trip.lastDayFinish);
   const framesField = (
     <details className="shiori-frames">
       <summary><span>{t.framesTitle}<small>{t.optional}</small></span>{framesSummary ? <b>{framesSummary}</b> : null}</summary>
       <label className="shiori-date">
         <span>{t.firstStart}</span>
-        <input
-          onBlur={() => setFrameDraft((draft) => ({ ...draft, start: undefined }))}
-          onChange={(event) => { const value = event.target.value; setFrameDraft((draft) => ({ ...draft, start: value })); update((current) => withFirstDayStart(current, value)); }}
-          step={300}
-          type="time"
-          value={frameDraft.start ?? trip.firstDayStart ?? ""}
-        />
+        <TimeInput emptyClears onCommit={(value) => update((current) => withFirstDayStart(current, value))} value={trip.firstDayStart ?? ""} />
         <small className="shiori-date-hint">{t.firstStartHint}</small>
       </label>
       <label className="shiori-date">
         <span>{t.lastFinish}</span>
-        <input
-          onBlur={() => setFrameDraft((draft) => ({ ...draft, finish: undefined }))}
-          onChange={(event) => { const value = event.target.value; setFrameDraft((draft) => ({ ...draft, finish: value })); update((current) => withLastDayFinish(current, value)); }}
-          step={300}
-          type="time"
-          value={frameDraft.finish ?? trip.lastDayFinish ?? ""}
-        />
+        <TimeInput emptyClears onCommit={(value) => update((current) => withLastDayFinish(current, value))} value={trip.lastDayFinish ?? ""} />
         <small className="shiori-date-hint">{t.lastFinishHint}</small>
       </label>
     </details>

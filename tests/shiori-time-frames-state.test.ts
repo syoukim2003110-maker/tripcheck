@@ -5,7 +5,7 @@ import test from "node:test";
 import { curateSights, type PopularDestination } from "../lib/popular-sights.ts";
 import { RailNetwork } from "../lib/rail-router.ts";
 import { buildShioriPlan, type ShioriPlace } from "../lib/shiori/plan.ts";
-import { decodeTrip, emptyTrip, encodeTrip, placeFromSight, withCity, withFirstDayStart, withLastDayFinish, withReservation, type ShioriTrip } from "../lib/shiori/state.ts";
+import { decodeTrip, emptyTrip, encodeTrip, placeFromSight, settledTime, withCity, withFirstDayStart, withLastDayFinish, withReservation, type ShioriTrip } from "../lib/shiori/state.ts";
 
 /*
  * Times a traveller entered, as the trip keeps them: in localStorage and in
@@ -120,3 +120,36 @@ test("a booking beyond the trip's days is kept as entered — at decode and when
   // A day the picker cannot show (8) is not a booking at all.
   assert.equal(withReservation(trip, places[0].id, { day: 8, time: "11:00" }), trip);
 });
+
+test("a time field hands the trip a time only when the traveller is done typing it", () => {
+  // Retyping 15:00 into 16:30 the browser reports 01:00, 16:00, 16:03 and 16:30; retyping the hour of 15:00
+  // as 09 it reports 00:00 and 09:00; deleting one part reports "". None of the steps on the way is the
+  // traveller's time while the keys are still coming; the one that is there when they stop is.
+  const steps = ["01:00", "16:00", "16:03", "16:30"];
+  // Whole times are handed over after a pause and on leaving the field — the last one typed, not each.
+  assert.equal(settledTime(steps.at(-1)!, "15:00", "pause", false), "16:30");
+  assert.equal(settledTime(steps.at(-1)!, "15:00", "leave", false), "16:30");
+  assert.equal(settledTime("16:30", "", "pause", true), "16:30");
+  // Nothing typed, or the time the trip already has: nothing to hand over.
+  assert.equal(settledTime(null, "15:00", "leave", true), null);
+  assert.equal(settledTime("15:00", "15:00", "leave", true), null);
+  assert.equal(settledTime("15:00", "15:00", "pause", false), null);
+  // A part deleted to be retyped is not "remove the time": never while the field is in use …
+  assert.equal(settledTime("", "15:00", "pause", true), null);
+  assert.equal(settledTime("", "15:00", "pause", false), null);
+  // … and on leaving only where the field is the one way to remove it (day 1's start, the last day's finish).
+  assert.equal(settledTime("", "15:00", "leave", true), "");
+  // A booking has its own "Clear": an emptied booking field goes back to the booking.
+  assert.equal(settledTime("", "15:00", "leave", false), null);
+  // An empty field left empty removes nothing.
+  assert.equal(settledTime("", "", "leave", true), null);
+  // Half a time is never handed over.
+  for (const typed of ["1", "16:", "16:3", "24:00", "16:60", "1630", " 16:30"]) {
+    for (const how of ["pause", "leave"] as const) assert.equal(settledTime(typed, "15:00", how, true), null, typed);
+  }
+  // What is handed over is what the trip takes: a whole time is kept, "" removes it.
+  const base: ShioriTrip = { ...emptyTrip, firstDayStart: "15:00" };
+  assert.equal(withFirstDayStart(base, settledTime("16:30", "15:00", "leave", true)!).firstDayStart, "16:30");
+  assert.equal("firstDayStart" in withFirstDayStart(base, settledTime("", "15:00", "leave", true)!), false);
+});
+

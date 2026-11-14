@@ -67,3 +67,22 @@ test("every word about entered times exists in Japanese and English, and says 'c
     assert.match(picker.slice(picker.lastIndexOf("return", at), at), /entry\.proven/, proven);
   }
 });
+
+test("a time is typed into a field that waits for the traveller to finish", () => {
+  const source = readFileSync(new URL("../app/shiori/ShioriApp.tsx", import.meta.url), "utf8");
+  // One time field for all three times: it keeps the keystrokes and hands over what settledTime() lets through.
+  assert.equal(source.split('type="time"').length - 1, 1);
+  const field = source.slice(source.indexOf("function TimeInput("), source.indexOf("function ReserveEditor("));
+  assert.match(field, /type="time"/);
+  assert.match(field, /settledTime\(typed, value, how, emptyClears\)/);
+  // Typing only moves the draft and restarts the pause; the trip is touched from settle() alone.
+  const typing = field.slice(field.indexOf("onChange={"), field.indexOf("onKeyDown={"));
+  assert.doesNotMatch(typing, /onCommit/);
+  assert.match(typing, /setDraft\(typed\)/);
+  assert.match(field, /onBlur=\{\(\) => settle\(draft, "leave"\)\}/);
+  // A booking is cleared by its button, never by an emptied field; the start and the finish by emptying theirs.
+  const editor = source.slice(source.indexOf("function ReserveEditor("), source.indexOf("export default function ShioriApp("));
+  assert.match(editor, /<TimeInput emptyClears=\{false\}/);
+  assert.match(editor, /onClick=\{\(\) => onChange\(null\)\}/);
+  assert.equal(source.split("<TimeInput emptyClears onCommit").length - 1, 2);
+});
