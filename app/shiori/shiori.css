@@ -203,6 +203,23 @@
 .shiori-date input { background: var(--card); border: 1px solid var(--edge); border-radius: var(--r-md); font-size: 16px; min-height: 44px; padding: 0 8px; }
 .shiori-date-hint { flex: 1 1 160px; font-size: 12px; }
 .shiori-bar .shiori-date { grid-column: 1 / -1; margin-top: 0; order: 2; }
+/* Times the traveller enters: folded beside the date; a booked time on a stop is a solid chip, never the dashed estimate. */
+.shiori-frames { margin-top: 4px; }
+.shiori-frames > summary { align-content: center; color: var(--ink); font-size: 13px; font-weight: 700; line-height: 1.5; }
+.shiori-frames > summary small { color: var(--muted); font-size: 12px; font-weight: 500; }
+.shiori-frames > summary b { color: var(--muted); font-weight: 600; margin-left: 8px; }
+.shiori-frames .shiori-date { margin: 0 0 10px; }
+.shiori-bar .shiori-frames { grid-column: 1 / -1; margin-top: 0; order: 3; }
+.shiori-fixed { background: var(--card); border: 1px solid var(--ink); border-radius: var(--r-sm); color: var(--ink); display: inline-block; font: 700 12px/1.5 var(--gothic); font-style: normal; letter-spacing: 0; padding: 0 6px; vertical-align: 1px; white-space: nowrap; }
+.shiori-frame-line { color: var(--muted); display: flex; flex-wrap: wrap; font-size: 13px; gap: 0 12px; line-height: 1.6; margin: 2px 0 0; }
+.shiori-reserve { align-items: center; display: flex; flex: 1 1 100%; flex-wrap: wrap; gap: 8px; }
+.shiori-reserve > span { color: var(--muted); flex: 1 1 100%; }
+.shiori-reserve input { background: var(--card); border: 1px solid var(--edge); border-radius: var(--r-md); font-size: 16px; min-height: 44px; padding: 0 8px; }
+.shiori-unplaced { list-style: none; margin: 8px 0 0; padding: 0; }
+.shiori-unplaced li { border-top: 1px dashed var(--rule); padding: 12px 0 0; }
+.shiori-unplaced li:first-child { border-top: 0; padding-top: 0; }
+.shiori-unplaced .shiori-warn { margin: 6px 0 0; }
+.shiori-unplaced .shiori-stop-edit { border-top: 0; margin: 0; }
 /* The bar is a row taller with the date in it: the last places must still scroll clear of it. */
 .shiori:has(.shiori-bar) { padding-bottom: 216px; }
 
@@ -590,7 +607,9 @@
 /* ---------- Paper: every day, one after another, in ink-friendly black on white ---------- */
 @media print {
   @page { margin: 14mm; size: A4; }
-  .shiori-date { display: none; }
+  .shiori-date, .shiori-frames { display: none; }
+  .shiori-fixed { border: 0.5pt solid #000; color: #000; }
+  .shiori-frame-line { color: #000; }
   .shiori { background: #fff; font-size: 11pt; min-height: 0; padding: 0; }
   .shiori-top, .shiori-skip, .shiori-screen-only, .shiori-plan-actions, .shiori-plan-tools, .shiori-plan-add, .shiori-add-panel, .shiori-working, .shiori-tabs-wrap, .shiori-plan-map, .shiori-stop-edit, .shiori-notices button, .shiori-leg-link, .shiori-ideas, .shiori-daynav, .shiori-other, .shiori-hotel-actions, .shiori-meal-head button, .shiori-food li.has-action button, .shiori-bar, .shiori-link, .shiori-day-anchor { display: none !important; }
   html:has(.shiori), body:has(.shiori) { background: #fff; }

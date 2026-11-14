@@ -22,7 +22,7 @@ import { findCafes, withListedCafes, type CafeBreak, type CafePick } from "../..
 import { fetchedStamp, forecastCentre, loadForecast, wetDaysOf, type DayForecast, type ForecastAnswer, type ForecastCache } from "../../lib/shiori/forecast";
 import { lineColor } from "../../lib/shiori/line-colors";
 import { clockOf, hasToeiRide, legTimetables, type RideTimetable, type ServiceCalendar, type TimetableTrain, type ToeiTimetableData } from "../../lib/shiori/timetable";
-import { buildShioriPlan, departureAfterStop, type ShioriLeg, type ShioriMeal, type ShioriNotice, type ShioriPlace, type ShioriPlan, type ShioriRoute, type ShioriStop } from "../../lib/shiori/plan";
+import { buildShioriPlan, clockOfDay, departureAfterStop, type ShioriLeg, type ShioriMeal, type ShioriNotice, type ShioriPlace, type ShioriPlan, type ShioriReservation, type ShioriRoute, type ShioriStop, type ShioriUnplaced } from "../../lib/shiori/plan";
 import {
   MAX_DAYS,
   MAX_PLACES,
@@ -39,6 +39,9 @@ import {
   storageStep,
   togglePlace,
   withCity,
+  withFirstDayStart,
+  withLastDayFinish,
+  withReservation,
   withStartDate,
   type ShioriTrip,
 } from "../../lib/shiori/state";
@@ -213,6 +216,31 @@ const text = {
     startDate: "出発日",
     optional: "（任意）",
     startDateHint: "入れると、日付と天気予報を予定に反映します。",
+    // Times the traveller enters. They are kept exactly; everything else on the plan stays an estimate.
+    framesTitle: "時間の条件",
+    firstStart: "1日目に動き始められる時刻",
+    firstStartHint: "この時刻より前の予定は入れません。到着便の時刻ではなく、実際に動き出せる時刻を入れてください。",
+    lastFinish: "最終日に切り上げる時刻",
+    lastFinishHint: "最終日の予定を、ホテルへ戻る移動も含めてこの時刻までに終えます。",
+    framesSummary: (start: string | undefined, finish: string | undefined) => [start ? `1日目 ${start}から` : "", finish ? `最終日 ${finish}まで` : ""].filter(Boolean).join("・"),
+    dayFrom: (time: string) => `${time}から動き始め`,
+    dayBy: (time: string) => `${time}までに終了`,
+    reserveLabel: "時刻が決まっている（予約など）",
+    reserveDay: "日",
+    reserveTime: "開始時刻",
+    reserveClear: "指定を外す",
+    reserveLocked: "予約の日に固定",
+    reserveChip: (time: string) => `${time} 予約`,
+    waitReserved: (minutes: string) => `予約の時刻まで約${minutes}の空き時間`,
+    noLunchRoom: "予約や終了時刻に合わせたため、この日は昼食の1時間を取れていません。",
+    unReserveDay: (name: string, day: number, days: number) => `「${name}」の予約は${day}日目ですが、旅行は${days}日間です。日を変えるか、日数を増やしてください。`,
+    unBeforeStart: (name: string, day: number, time: string, earliest: string) => `「${name}」の予約（${day}日目 ${time}）には間に合いません。早くても${earliest}の到着です。動き始める時刻か予約を見直してください。`,
+    unAfterFinish: (name: string, time: string, ends: string, finish: string) => `「${name}」の予約（${time}）は${ends}までかかり、最終日の${finish}に収まりません。終了時刻・滞在時間・予約のいずれかを見直してください。`,
+    unClash: (name: string, time: string, other: string, otherTime: string, first: string, freeAt: string) => `「${name}」（${time}）と「${other}」（${otherTime}）の予約は両立しません。「${first}」のあと、もう一方には早くても${freeAt}の到着です。時刻か滞在時間を変えてください。`,
+    unReserveLate: (name: string, time: string) => `「${name}」の予約（${time}）に間に合う行き方を組めませんでした。前後の予定か時刻を見直してください。`,
+    unNoRoomFinish: (names: string[], finish: string) => `${names.map((name) => `「${name}」`).join("")}は最終日の${finish}までに入りきりませんでした。`,
+    unNoRoomReserve: (names: string[]) => `${names.map((name) => `「${name}」`).join("")}は予約の時刻に合わせると入りきりませんでした。`,
+    frameOrder: (start: string, finish: string) => `動き始める時刻（${start}）が終了時刻（${finish}）より後です。どちらかを変えてください。`,
     weatherKinds: { clear: "晴れ", partly: "晴れ時々くもり", cloudy: "くもり", fog: "霧", rain: "雨", snow: "雪", storm: "雷雨" },
     rainChance: (percent: number) => `降水確率 ${percent}%`,
     forecastTag: "予報",
@@ -439,6 +467,30 @@ const text = {
     startDate: "Start date",
     optional: " (optional)",
     startDateHint: "Adds dates and the weather forecast to the plan.",
+    framesTitle: "Time limits",
+    firstStart: "When you can start on day 1",
+    firstStartHint: "Nothing is planned before this. Enter when you can actually set off, not when you land.",
+    lastFinish: "Be done by (last day)",
+    lastFinishHint: "The last day, the way back to the hotel included, is over by this time.",
+    framesSummary: (start: string | undefined, finish: string | undefined) => [start ? `Day 1 from ${start}` : "", finish ? `last day by ${finish}` : ""].filter(Boolean).join(" · "),
+    dayFrom: (time: string) => `Starts from ${time}`,
+    dayBy: (time: string) => `Over by ${time}`,
+    reserveLabel: "Fixed time (a booking)",
+    reserveDay: "Day",
+    reserveTime: "Starts at",
+    reserveClear: "Clear",
+    reserveLocked: "On the day of the booking",
+    reserveChip: (time: string) => `${time} booked`,
+    waitReserved: (minutes: string) => `About ${minutes} free before the booked time`,
+    noLunchRoom: "To keep your times, this day has no hour set aside for lunch.",
+    unReserveDay: (name: string, day: number, days: number) => `“${name}” is booked on day ${day}, but the trip has ${days} ${days === 1 ? "day" : "days"}. Change the day or add days.`,
+    unBeforeStart: (name: string, day: number, time: string, earliest: string) => `“${name}” (${time}, day ${day}) cannot be reached in time: ${earliest} at the earliest. Change your start time or the booking.`,
+    unAfterFinish: (name: string, time: string, ends: string, finish: string) => `“${name}” (${time}) lasts until ${ends}, past your ${finish} finish on the last day. Change the finish, the stay or the booking.`,
+    unClash: (name: string, time: string, other: string, otherTime: string, first: string, freeAt: string) => `“${name}” (${time}) and “${other}” (${otherTime}) cannot both be kept: after “${first}” you reach the other at ${freeAt} at the earliest. Change a time or a stay.`,
+    unReserveLate: (name: string, time: string) => `No way was found to reach “${name}” by ${time}. Change what comes before it, or the time.`,
+    unNoRoomFinish: (names: string[], finish: string) => `${names.map((name) => `“${name}”`).join(", ")} could not be fitted in before ${finish} on the last day.`,
+    unNoRoomReserve: (names: string[]) => `${names.map((name) => `“${name}”`).join(", ")} could not be fitted in around your booked times.`,
+    frameOrder: (start: string, finish: string) => `Your start (${start}) is not before your finish (${finish}). Change one of them.`,
     weatherKinds: { clear: "Clear", partly: "Partly cloudy", cloudy: "Cloudy", fog: "Fog", rain: "Rain", snow: "Snow", storm: "Thunderstorm" },
     rainChance: (percent: number) => `rain chance ${percent}%`,
     forecastTag: "Forecast",
@@ -989,6 +1041,40 @@ function StayNear({ plan, trip, locale, onHotel }: { plan: ShioriPlan; trip: Shi
   );
 }
 
+/**
+ * A fixed time on a place: day and start together, never a time alone. The
+ * fields keep what is being typed; the trip takes a booking only once both
+ * are whole, and loses it when the time is emptied or "Clear" is pressed.
+ */
+function ReserveEditor({ place, days, defaultDay, locale, onChange }: { place: ShioriPlace; days: number; defaultDay: number; locale: Locale; onChange: (reserve: ShioriReservation | null) => void }) {
+  const t = text[locale];
+  const [day, setDay] = useState(place.reserve?.day ?? defaultDay);
+  const [time, setTime] = useState(place.reserve?.time ?? "");
+  const apply = (nextDay: number, nextTime: string) => {
+    if (clockOfDay(nextTime) !== null) onChange({ day: nextDay, time: nextTime });
+    else if (nextTime === "" && place.reserve) onChange(null);
+  };
+  // A booking on a day the trip no longer has stays selectable as it is: it is shown, not moved.
+  const options = Array.from({ length: days }, (_, index) => index + 1);
+  if (!options.includes(day)) options.push(day);
+  return (
+    <div aria-label={t.reserveLabel} className="shiori-reserve" role="group">
+      <span>{t.reserveLabel}</span>
+      <label>
+        <span>{t.reserveDay}</span>
+        <select onChange={(event) => { const value = Number(event.target.value); setDay(value); apply(value, time); }} value={day}>
+          {options.map((value) => <option key={value} value={value}>{t.dayTab(value - 1)}</option>)}
+        </select>
+      </label>
+      <label>
+        <span>{t.reserveTime}</span>
+        <input onChange={(event) => { const value = event.target.value; setTime(value); apply(day, value); }} step={300} type="time" value={time} />
+      </label>
+      {place.reserve ? <button onClick={() => { setTime(""); onChange(null); }} type="button">{t.reserveClear}</button> : null}
+    </div>
+  );
+}
+
 export default function ShioriApp({ locale }: { locale: Locale }) {
   const t = text[locale];
   const [cities, setCities] = useState<PopularDestination[]>([]);
@@ -1164,7 +1250,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
   useEffect(() => {
     if (!planKey) return;
     const handle = window.setTimeout(() => {
-      setPlanned({ key: planKey, visit: planVisit, plan: buildShioriPlan({ places: trip.places, days: trip.days, hotel: trip.hotel, locale, wetDays }, { rail, cities, routes }) });
+      setPlanned({ key: planKey, visit: planVisit, plan: buildShioriPlan({ places: trip.places, days: trip.days, hotel: trip.hotel, locale, wetDays, firstDayStart: trip.firstDayStart ?? null, lastDayFinish: trip.lastDayFinish ?? null }, { rail, cities, routes }) });
     }, 0);
     return () => window.clearTimeout(handle);
   }, [planKey, planVisit, trip, rail, cities, locale, routes, wetDays]);
@@ -1296,6 +1382,38 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
       />
       <small className="shiori-date-hint">{t.startDateHint}</small>
     </label>
+  );
+  // When day 1 can start and when the last day has to be over: optional,
+  // folded away beside the date. Like the date, a field shows the keystrokes
+  // and the trip takes only a whole time; an emptied field removes it.
+  const [frameDraft, setFrameDraft] = useState<{ start?: string; finish?: string }>({});
+  const framesSummary = t.framesSummary(trip.firstDayStart, trip.lastDayFinish);
+  const framesField = (
+    <details className="shiori-frames">
+      <summary><span>{t.framesTitle}<small>{t.optional}</small></span>{framesSummary ? <b>{framesSummary}</b> : null}</summary>
+      <label className="shiori-date">
+        <span>{t.firstStart}</span>
+        <input
+          onBlur={() => setFrameDraft((draft) => ({ ...draft, start: undefined }))}
+          onChange={(event) => { const value = event.target.value; setFrameDraft((draft) => ({ ...draft, start: value })); update((current) => withFirstDayStart(current, value)); }}
+          step={300}
+          type="time"
+          value={frameDraft.start ?? trip.firstDayStart ?? ""}
+        />
+        <small className="shiori-date-hint">{t.firstStartHint}</small>
+      </label>
+      <label className="shiori-date">
+        <span>{t.lastFinish}</span>
+        <input
+          onBlur={() => setFrameDraft((draft) => ({ ...draft, finish: undefined }))}
+          onChange={(event) => { const value = event.target.value; setFrameDraft((draft) => ({ ...draft, finish: value })); update((current) => withLastDayFinish(current, value)); }}
+          step={300}
+          type="time"
+          value={frameDraft.finish ?? trip.lastDayFinish ?? ""}
+        />
+        <small className="shiori-date-hint">{t.lastFinishHint}</small>
+      </label>
+    </details>
   );
   // Each screen is a history entry, so the phone's back gesture goes to the
   // previous screen instead of leaving the site with the plan.
@@ -1777,6 +1895,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
               </select>
             </label>
             {dateField}
+            {framesField}
 
           <span aria-live="polite">{trip.places.length > 0 ? withUnits(t.selected(trip.places.length)).map((part, index) => index === 1 ? <b key="count">{part}</b> : part) : t.needOne}</span>
           <button disabled={trip.places.length === 0} onClick={() => { setSelectedDay(0); go("plan"); }} type="button">{t.make} →</button>
@@ -1786,9 +1905,32 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
   }
 
   const noticeKey = (notice: ShioriNotice) => `${notice.kind}-${"placeId" in notice ? notice.placeId : "days" in notice ? notice.days : ""}`;
+  // Why a place is not on the plan. "Cannot" where the numbers prove it; "could not be fitted" where the planner only failed to.
+  const unplacedText = (entry: ShioriUnplaced, names: string[] = [entry.name]) => {
+    switch (entry.reason) {
+      case "reserve-day":
+        return t.unReserveDay(entry.name, entry.day, entry.days);
+      case "reserve-before-start":
+        return t.unBeforeStart(entry.name, entry.day, entry.time, entry.earliest);
+      case "reserve-after-finish":
+        return t.unAfterFinish(entry.name, entry.time, entry.ends, entry.finish);
+      case "reserve-clash":
+        return t.unClash(entry.name, entry.time, entry.withName, entry.withTime, entry.earlierId === entry.placeId ? entry.name : entry.withName, entry.freeAt);
+      case "reserve-late":
+        return t.unReserveLate(entry.name, entry.time);
+      case "no-room":
+        return entry.edge === "finish" ? t.unNoRoomFinish(names, trip.lastDayFinish ?? "") : t.unNoRoomReserve(names);
+    }
+  };
+  const sameRoom = (left: ShioriNotice, right: ShioriNotice) => left.kind === "unplaced" && right.kind === "unplaced" && left.reason === "no-room" && right.reason === "no-room" && left.edge === right.edge && left.day === right.day;
   const noticeView = (notice: ShioriNotice) => {
     const span = (minutes: number) => durationText(minutes, locale);
     switch (notice.kind) {
+      case "unplaced":
+        // Places that did not fit before the same finish, or around the same day's bookings, are named in one line.
+        return <span>{unplacedText(notice, notice.reason === "no-room" ? (plan?.notices ?? []).flatMap((other) => (other.kind === "unplaced" && sameRoom(notice, other) ? [other.name] : [])) : undefined)}</span>;
+      case "frame-order":
+        return <span>{t.frameOrder(notice.start, notice.finish)}</span>;
       case "needs-days":
         return <><span>{t.noticeNeedsDays(trip.days, notice.days)}</span><button onClick={() => update((current) => ({ ...current, days: notice.days }))} type="button">{t.noticeNeedsDaysAction(notice.days)}</button></>;
       case "drop":
@@ -1811,7 +1953,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
 
   // What the plan says it did because of the forecast is told beside the
   // forecast, not in the list of things that do not work.
-  const problems = plan?.notices.filter((notice) => notice.kind !== "weather-order") ?? [];
+  const problems = (plan?.notices ?? []).filter((notice, index, all) => notice.kind !== "weather-order" && !all.slice(0, index).some((earlier) => sameRoom(earlier, notice)));
   const weatherMove = plan?.notices.find((notice) => notice.kind === "weather-order") ?? null;
   const dayDate = (index: number) => (trip.startDate ? tripDate(trip.startDate, index) : null);
   const dayDateLabel = (index: number) => { const date = dayDate(index); return date ? dateLabel(date, locale) : ""; };
@@ -1827,6 +1969,31 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
     ...current,
     places: current.places.map((entry) => entry.id === place.id ? { ...entry, day: value } : entry),
   }));
+  // What can be changed about one place: its stay, its day, a fixed time, or
+  // whether it is on the list at all — for a stop on the plan and for a place
+  // that did not fit, which can only be put right from here.
+  const placeControls = (place: ShioriPlace, defaultDay: number) => (
+    <>
+      <div>
+        <span>{t.stay} {durationText(place.stayMinutes, locale)}</span>
+        <button aria-label={t.shorter} onClick={() => setStay(place, -15)} type="button">−15{t.minute}</button>
+        <button aria-label={t.longer} onClick={() => setStay(place, 15)} type="button">+15{t.minute}</button>
+      </div>
+      <div>
+        {place.reserve ? <span>{t.reserveLocked}</span> : (
+          <label>
+            <span>{t.moveDay}</span>
+            <select onChange={(event) => setDay(place, event.target.value ? Number(event.target.value) : null)} value={place.day ?? ""}>
+              <option value="">{t.auto}</option>
+              {Array.from({ length: trip.days }, (_, dayIndex) => <option key={dayIndex} value={dayIndex + 1}>{t.dayTab(dayIndex)}</option>)}
+            </select>
+          </label>
+        )}
+        <button className="is-danger" onClick={() => update((current) => togglePlace(current, place))} type="button">{t.remove}</button>
+      </div>
+      <ReserveEditor days={trip.days} defaultDay={defaultDay} locale={locale} onChange={(reserve) => update((current) => withReservation(current, place.id, reserve))} place={place} />
+    </>
+  );
 
   const dayColor = (index: number) => DAY_COLORS[index % DAY_COLORS.length];
   const cityTitle = trip.cityName || trip.places[0]?.name || "";
@@ -1887,6 +2054,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
             </label>
           </div>
           {dateField}
+          {framesField}
 
           <div className="shiori-plan-tools">
             <button onClick={() => { document.getElementById("shiori-other")?.focus({ preventScroll: true }); document.getElementById("shiori-add")?.scrollIntoView({ block: "start", behavior: "instant" }); }} type="button"><Icon name="plus" />{t.addShortcut}</button>
@@ -1966,6 +2134,13 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
                 >
                   <header className="shiori-day-head">
                     <h2><small>{t.dayTab(day.index)}{trip.startDate ? ` ・ ${dayDateLabel(day.index)}` : ""}</small> <span>{phrases(day.title)}</span></h2>
+                    {/* What the traveller entered for this day, on screen and on paper. */}
+                    {(day.index === 0 && trip.firstDayStart) || (day.index === trip.days - 1 && trip.lastDayFinish) ? (
+                      <p className="shiori-frame-line">
+                        {day.index === 0 && trip.firstDayStart ? <span>{t.dayFrom(trip.firstDayStart)}</span> : null}
+                        {day.index === trip.days - 1 && trip.lastDayFinish ? <span>{t.dayBy(trip.lastDayFinish)}</span> : null}
+                      </p>
+                    ) : null}
                     {dayWeather ? (
                       <p className="shiori-weather">
                         <Icon name={WEATHER_ICON[dayWeather.kind]} />
@@ -1987,6 +2162,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
                   </details>
                   <p className={`shiori-load is-${day.load}`}><b>{t.loads[day.load]}</b>{day.load === "tight" && !day.runsLate ? <span>{t.loadTight}</span> : null}</p>
                   {day.runsLate ? <p className="shiori-warn"><Icon name="warn" /> {t.late}</p> : null}
+                  {day.noLunchRoom ? <p className="shiori-quiet">{t.noLunchRoom}</p> : null}
                   <ol className="shiori-timeline">
                     {day.fromHotel && startPart ? (
                       <li className="is-leg">
@@ -2003,7 +2179,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
                       return (
                         <li key={stop.place.id}>
                           {(index === 0 ? startPart !== part : partOf(day.stops[index - 1].arrive) !== part) ? <p className="shiori-part"><span>{t.parts[part]}</span></p> : null}
-                          {stop.waitMinutes > 0 ? <p className="shiori-wait"><Icon name="clock" />{t.wait(durationText(stop.waitMinutes, locale))}</p> : null}
+                          {stop.waitMinutes > 0 ? <p className="shiori-wait"><Icon name="clock" />{(stop.reserved ? t.waitReserved : t.wait)(durationText(stop.waitMinutes, locale))}</p> : null}
                           <article className={`shiori-stop${isOpen ? " is-open" : ""}`} data-stop={stop.place.id}>
                             <button
                               aria-expanded={isOpen}
@@ -2015,7 +2191,8 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
                               <span className="shiori-stop-text">
                                 <span className="shiori-stop-time">
                                   {stop.arriveNextDay ? <NextDay locale={locale} /> : null}<b>{stop.arrive}</b>–{stop.leaveNextDay ? <NextDay locale={locale} /> : null}{stop.leave}
-                                  {estimated ? <> <i className="shiori-est">{t.estimate}</i></> : null}
+                                  {/* A booked time is the traveller's own: it is marked as fixed, never as an estimate. */}
+                                  {stop.reserved ? <> <i className="shiori-fixed">{t.reserveChip(stop.arrive)}</i></> : estimated ? <> <i className="shiori-est">{t.estimate}</i></> : null}
                                 </span>
                                 <b className="shiori-stop-name">{stop.place.name}</b>
                                 <small>{stop.place.meal ? t.mealLabels[stop.place.meal] : kindLabel(stop.place.kind, locale)} ・ <span className="shiori-nb">{stayText(stop.stayMinutes)}</span></small>
@@ -2025,21 +2202,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
                             </button>
                             {isOpen ? (
                               <div className="shiori-stop-edit">
-                                <div>
-                                  <span>{t.stay} {durationText(stop.place.stayMinutes, locale)}</span>
-                                  <button aria-label={t.shorter} onClick={() => setStay(stop.place, -15)} type="button">−15{t.minute}</button>
-                                  <button aria-label={t.longer} onClick={() => setStay(stop.place, 15)} type="button">+15{t.minute}</button>
-                                </div>
-                                <div>
-                                  <label>
-                                    <span>{t.moveDay}</span>
-                                    <select onChange={(event) => setDay(stop.place, event.target.value ? Number(event.target.value) : null)} value={stop.place.day ?? ""}>
-                                      <option value="">{t.auto}</option>
-                                      {Array.from({ length: trip.days }, (_, dayIndex) => <option key={dayIndex} value={dayIndex + 1}>{t.dayTab(dayIndex)}</option>)}
-                                    </select>
-                                  </label>
-                                  <button className="is-danger" onClick={() => update((current) => togglePlace(current, stop.place))} type="button">{t.remove}</button>
-                                </div>
+                                {placeControls(stop.place, day.index + 1)}
                                 {placeCardsAvailable() ? <PlaceCard locale={locale} stop={stop.place} /> : null}
                                 <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${stop.place.name} ${stop.place.lat.toFixed(5)},${stop.place.lon.toFixed(5)}`)}`} rel="noreferrer" target="_blank">{t.checkHours}</a>
                                 {stop.place.img ? <a href={photoCreditUrl(stop.place.img)} rel="noreferrer" target="_blank">{t.photo}: Wikimedia Commons ↗</a> : null}
@@ -2148,7 +2311,24 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
           {plan && plan.leftOut.length > 0 ? (
             <section className="shiori-section">
               <h2>{t.leftOut}</h2>
-              <p className="shiori-warn">{plan.leftOut.join("、")}</p>
+              {plan.unplaced.length === 0 ? <p className="shiori-warn">{plan.leftOut.join("、")}</p> : (
+                <>
+                  {plan.leftOut.length > plan.unplaced.length ? <p className="shiori-warn">{plan.leftOut.filter((name) => !plan.unplaced.some((entry) => entry.name === name)).join("、")}</p> : null}
+                  {/* A place an entered time left no room for: why, and the means to put it right. */}
+                  <ul className="shiori-unplaced">
+                    {plan.unplaced.map((entry) => {
+                      const place = trip.places.find((candidate) => candidate.id === entry.placeId);
+                      return (
+                        <li key={entry.placeId}>
+                          <b>{entry.name}</b>
+                          <p className="shiori-warn">{unplacedText(entry)}</p>
+                          {place ? <div className="shiori-stop-edit">{placeControls(place, Math.min(trip.days, Math.max(1, entry.day)))}</div> : null}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </>
+              )}
             </section>
           ) : null}
 
