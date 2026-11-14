@@ -183,6 +183,7 @@ const text = {
     minute: "分",
     estimate: "目安",
     openMaps: "地図アプリで行き方・時刻を見る",
+    openTimetable: "この時刻の電車・番線・運賃を見る（Yahoo!乗換案内）",
     walkTo: (minutes: number, station: string) => `徒歩${minutes}分で ${station}`,
     walkFrom: (minutes: number, station: string) => `${station} から徒歩${minutes}分`,
     ride: (stops: number, minutes: number) => `${stops}駅・約${minutes}分`,
@@ -357,6 +358,7 @@ const text = {
     minute: " min",
     estimate: "estimate",
     openMaps: "Open directions and times in a maps app",
+    openTimetable: "Exact trains, platform and fare (Yahoo! Transit, Japanese)",
     walkTo: (minutes: number, station: string) => `${minutes} min walk to ${station}`,
     walkFrom: (minutes: number, station: string) => `${minutes} min walk from ${station}`,
     ride: (stops: number, minutes: number) => `${stops} stops · ~${minutes} min`,
@@ -513,6 +515,19 @@ function Photo({ img, alt, width, icon = "pin" }: { img?: string; alt: string; w
   return <img alt={alt} className="shiori-photo" decoding="async" loading="lazy" onError={() => setFailed(true)} src={url} />;
 }
 
+/** Yahoo! 乗換案内 for two stations, leaving at this time today (the booklet has no dates). */
+function transitSearchUrl(from: string, to: string, time: string) {
+  const station = (name: string) => name.replace(/(駅|停留場|停留所)$/, "");
+  const [hour, minute] = time.split(":").map(Number);
+  const now = new Date();
+  const query = new URLSearchParams({
+    from: station(from), to: station(to),
+    y: String(now.getFullYear()), m: String(now.getMonth() + 1), d: String(now.getDate()),
+    hh: String(hour), m1: String(Math.floor(minute / 10)), m2: String(minute % 10), type: "1",
+  });
+  return `https://transit.yahoo.co.jp/search/result?${query}`;
+}
+
 /** "09:08" plus minutes, wrapping past midnight. */
 function clockPlus(time: string, minutes: number) {
   const [hour, minute] = time.split(":").map(Number);
@@ -525,6 +540,10 @@ function LegCard({ leg, locale, heading, depart }: { leg: ShioriLeg; locale: Loc
   // The way a maps app sums a journey up: when, how long, and the chain of
   // walk › line › line › walk; the tickets below are the detail.
   const walking = leg.rail ? leg.rail.walkToMinutes + leg.rail.walkFromMinutes + leg.rail.transferMinutes : 0;
+  // The booklet has no timetable of its own. In Japan the stations and the
+  // planned time are handed to a transit search, which has the exact trains,
+  // the platform and the fare.
+  const timetable = leg.rail && depart && inJapan(leg.from) ? transitSearchUrl(leg.rail.rides[0].from, leg.rail.rides.at(-1)!.to, clockPlus(depart, leg.rail.walkToMinutes)) : null;
   const label = leg.mode === "walk" ? t.walk : leg.mode === "rail" ? t.rail : leg.mode === "taxi" ? t.taxi : t.transit;
   const icon = leg.mode === "walk" ? "walk" : leg.mode === "rail" ? "rail" : leg.mode === "taxi" ? "taxi" : "bus";
   // One change of train: the minutes on foot belong to it. With several, the
@@ -592,6 +611,7 @@ function LegCard({ leg, locale, heading, depart }: { leg: ShioriLeg; locale: Loc
       {leg.mode !== "walk" || leg.minutes >= 12 ? (
         <a className="shiori-leg-link" href={leg.mapsUrl} rel="noreferrer" target="_blank">{t.openMaps} ↗</a>
       ) : null}
+      {timetable ? <a className="shiori-leg-link" href={timetable} rel="noreferrer" target="_blank">{t.openTimetable} ↗</a> : null}
     </div>
   );
 }
@@ -1476,6 +1496,8 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
                   hotelMark: t.hotelMark,
                   failed: t.mapFailed,
                   pinLabel: t.pinLabel,
+                  legTag: (minutes: number) => `${t.about}${minutes}${t.minute}`,
+                  modes: { walk: t.walk, rail: t.rail, transit: t.transit, taxi: t.taxi },
                   peekMeta: (stop: ShioriStop) => `${stop.arriveNextDay ? t.nextDayMark : ""}${stop.arrive}–${stop.leaveNextDay ? t.nextDayMark : ""}${stop.leave} ・ ${stayText(stop.stayMinutes)}`,
                 }}
               />

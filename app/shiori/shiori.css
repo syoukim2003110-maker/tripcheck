@@ -278,6 +278,14 @@
 /* The day being read sits above the other days' dots. */
 .shiori-pin.is-selected { z-index: 1; font-size: 14px; font-variant-numeric: tabular-nums lining-nums; height: 30px; opacity: 1; width: 30px; }
 .shiori-pin.is-focus { box-shadow: 0 0 0 3px var(--ink), var(--sh-print); height: 36px; opacity: 1; width: 36px; z-index: 2; }
+/* A restaurant, a café and the hotel show what they are; the order is a small badge. */
+.shiori-pin.has-mark { position: relative; }
+.shiori-pin.has-mark svg { flex: 0 0 auto; }
+.shiori-pin-order { align-items: center; background: #fdf9ef; border: 1.5px solid var(--pin, var(--shu)); border-radius: 50%; color: var(--pin, var(--shu)); display: flex; font: 700 10px/1 var(--gothic); height: 16px; justify-content: center; position: absolute; right: -8px; top: -8px; width: 16px; }
+/* How a leg is travelled, said on the line: an icon and its minutes. */
+.shiori-legtag { align-items: center; background: #fdf9ef; border: 1.5px solid var(--pin, var(--shu)); border-radius: 999px; box-shadow: var(--sh-print); color: var(--ink); display: flex; font: 700 11px/1 var(--gothic); font-variant-numeric: tabular-nums lining-nums; gap: 3px; padding: 3px 7px 3px 5px; pointer-events: none; white-space: nowrap; }
+.shiori-legtag svg { color: var(--pin, var(--shu)); flex: 0 0 auto; }
+.shiori-legtag.is-walk, .shiori-legtag.is-taxi, .shiori-legtag.is-transit { border-style: solid; }
 .shiori-pin.is-hotel { background: var(--ink); border-radius: var(--r-sm); cursor: default; font: 600 14px/1 var(--mincho); height: 26px; opacity: 1; width: 26px; }
 /* The card for the pin that was tapped: on a phone one row under the map, so the map and the pin stay in view. */
 .shiori-peek { align-items: center; background: var(--card); border: 1px solid var(--rule); border-left: 4px solid var(--day); border-radius: var(--r-md); box-shadow: var(--sh-card); display: grid; gap: 0 8px; grid-template-columns: minmax(0, 1fr) auto auto; margin-top: 8px; padding: 5px 0 5px 10px; }

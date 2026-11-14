@@ -32,7 +32,57 @@ export type ShioriMapText = {
   failed: string;
   pinLabel: (dayIndex: number, position: number, name: string) => string;
   peekMeta: (stop: ShioriStop) => string;
+  /** "約12分" for the tag on a leg, and what each way of travelling is called. */
+  legTag: (minutes: number) => string;
+  modes: Record<ShioriLeg["mode"], string>;
 };
+
+/*
+ * A number says the order but not what a place is, and a line says where but
+ * not how. A restaurant, a café and the hotel carry their own mark, and each
+ * leg of the day being read wears a small tag — train, on foot, taxi — with
+ * its minutes, so a long line across the map reads as "a train, 12 minutes"
+ * and not as a long walk.
+ */
+const MAP_ICONS = {
+  meal: "M7 3v7a2 2 0 0 0 2 2v9M11 3v7M9 3v7M16 3c-1.5 2-2 4-2 7h2v11",
+  cup: "M5 9h11v5a4 4 0 0 1-4 4H9a4 4 0 0 1-4-4V9ZM16 10h1.5a2.5 2.5 0 0 1 0 5H16M8 3v2M12 3v2M4 21h13",
+  bed: "M4 18v-9M4 13h16v5M20 13v-1a3 3 0 0 0-3-3h-6v4M7.5 11.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z",
+  walk: "M13 4.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0ZM9 9l3-1.5 2.5 2.5 2.5 1M12 7.5 11 13l2.5 3 .5 5M11 13l-2 3-2.5 4",
+  rail: "M7 4h10a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2ZM5 11h14M8.5 14.5h.01M15.5 14.5h.01M8 17l-2 3M16 17l2 3",
+  transit: "M6 5h12a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1ZM5 12h14M8 15h.01M16 15h.01M7 17v2M17 17v2",
+  taxi: "M5 16v-3l1.5-4h11L19 13v3M5 16h14M5 16v2M19 16v2M7.5 13.5h.01M16.5 13.5h.01M10 9V7h4v2",
+} as const;
+
+function mapIcon(name: keyof typeof MAP_ICONS, size: number) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  for (const [key, value] of Object.entries({ viewBox: "0 0 24 24", width: String(size), height: String(size), fill: "none", stroke: "currentColor", "stroke-width": "2", "stroke-linecap": "round", "stroke-linejoin": "round", "aria-hidden": "true" })) svg.setAttribute(key, value);
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", MAP_ICONS[name]);
+  svg.appendChild(path);
+  return svg;
+}
+
+/** What a stop is, when a mark says it better than a number. */
+function stopMark(stop: ShioriStop): "meal" | "cup" | null {
+  if (stop.place.meal) return "meal";
+  return /cafe|bakery/.test(stop.place.kind ?? "") ? "cup" : null;
+}
+
+/** The point halfway along a leg's drawn path, by distance. */
+function midpoint(path: ShioriLeg["path"]): [number, number] | null {
+  if (path.length === 0) return null;
+  const lengths = path.slice(1).map((point, index) => Math.hypot(point.latitude - path[index].latitude, (point.longitude - path[index].longitude) * Math.cos(point.latitude * Math.PI / 180)));
+  let half = lengths.reduce((sum, length) => sum + length, 0) / 2;
+  for (let index = 0; index < lengths.length; index += 1) {
+    if (half <= lengths[index] && lengths[index] > 0) {
+      const share = half / lengths[index];
+      return [path[index].longitude + (path[index + 1].longitude - path[index].longitude) * share, path[index].latitude + (path[index + 1].latitude - path[index].latitude) * share];
+    }
+    half -= lengths[index];
+  }
+  return [path[0].longitude, path[0].latitude];
+}
 
 type Props = {
   days: ShioriDay[];
@@ -286,7 +336,18 @@ export default function ShioriMap({ days, selectedDay, hotel, focus, onSelectSto
         element.type = "button";
         element.className = `shiori-pin${isSelected ? " is-selected" : ""}`;
         element.style.setProperty("--pin", DAY_COLORS[day.index % DAY_COLORS.length]);
-        element.textContent = isSelected ? String(position + 1) : "";
+        const mark = isSelected ? stopMark(stop) : null;
+        if (mark) {
+          // What it is, large; where it comes in the day, as a small badge.
+          element.classList.add("has-mark");
+          element.appendChild(mapIcon(mark, 17));
+          const order = document.createElement("span");
+          order.className = "shiori-pin-order";
+          order.textContent = String(position + 1);
+          element.appendChild(order);
+        } else {
+          element.textContent = isSelected ? String(position + 1) : "";
+        }
         element.title = stop.place.name;
         element.dataset.place = stop.place.id;
         element.setAttribute("aria-label", text.pinLabel(day.index, position, stop.place.name));
@@ -306,14 +367,32 @@ export default function ShioriMap({ days, selectedDay, hotel, focus, onSelectSto
     }
     if (hotel) {
       const element = document.createElement("div");
-      element.className = "shiori-pin is-hotel";
-      element.textContent = text.hotelMark;
+      element.className = "shiori-pin is-hotel has-mark";
+      element.appendChild(mapIcon("bed", 17));
       element.title = hotel.name;
       element.setAttribute("role", "img");
       element.setAttribute("aria-label", hotel.name);
       markers.current.push(new maplibre.Marker({ element }).setLngLat([hotel.lon, hotel.lat]).addTo(instance));
       bounds.extend([hotel.lon, hotel.lat]);
       boundsCount += 1;
+    }
+    // How each leg of the day being read is travelled, said on the line itself.
+    const today = days.find((day) => day.index === selectedDay);
+    for (const leg of today ? [...(today.fromHotel ? [today.fromHotel] : []), ...today.legs, ...(today.toHotel ? [today.toHotel] : [])] : []) {
+      // A few minutes on foot between neighbours needs no tag; it would only hide the pins.
+      if (leg.mode === "walk" && leg.minutes < 5) continue;
+      const at = midpoint(leg.path);
+      if (!at) continue;
+      const element = document.createElement("div");
+      element.className = `shiori-legtag is-${leg.mode}`;
+      element.style.setProperty("--pin", DAY_COLORS[today!.index % DAY_COLORS.length]);
+      element.setAttribute("role", "img");
+      element.setAttribute("aria-label", `${text.modes[leg.mode]} ${text.legTag(leg.minutes)}`);
+      element.appendChild(mapIcon(leg.mode, 14));
+      const minutes = document.createElement("span");
+      minutes.textContent = text.legTag(leg.minutes);
+      element.appendChild(minutes);
+      markers.current.push(new maplibre.Marker({ element }).setLngLat(at).addTo(instance));
     }
     if (boundsCount === 0) {
       for (const day of days) for (const stop of day.stops) { bounds.extend([stop.place.lon, stop.place.lat]); boundsCount += 1; }
@@ -391,7 +470,7 @@ export default function ShioriMap({ days, selectedDay, hotel, focus, onSelectSto
           {kinds.has("rail") ? <li><i className="is-rail" />{legend.rail}</li> : null}
           {kinds.has("street") ? <li><i className="is-street" />{legend.street}</li> : null}
           {kinds.has("straight") ? <li><i className="is-straight" />{legend.straight}</li> : null}
-          {hotel ? <li><i aria-hidden="true" className="is-hotel">{text.hotelMark}</i>{text.hotel}</li> : null}
+          {hotel ? <li><i aria-hidden="true" className="is-hotel"><svg fill="none" height="12" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" width="12"><path d={MAP_ICONS.bed} /></svg></i>{text.hotel}</li> : null}
         </ul>
         <button aria-controls="shiori-map-frame" aria-expanded={expanded} className="shiori-map-toggle" onClick={() => setExpanded((value) => !value)} type="button">
           {expanded ? text.collapse : text.expand}
