@@ -30,6 +30,8 @@ export type HotpepperQuery = Readonly<{
   withinMeters?: number;
   name?: string;
   meal?: "lunch" | "dinner";
+  /** Cafés and sweets only. */
+  genre?: "cafe";
   signal?: AbortSignal;
 }>;
 
@@ -94,6 +96,7 @@ export async function fetchHotpepperShops(
   if (query.withinMeters) url.searchParams.set("within", String(Math.round(query.withinMeters)));
   if (query.name) url.searchParams.set("name", query.name.slice(0, 60));
   if (query.meal === "lunch") url.searchParams.set("meal", "lunch");
+  if (query.genre) url.searchParams.set("genre", query.genre);
   try {
     const response = await fetcher(url, { method: "GET", headers: { Accept: "application/json" }, signal: query.signal });
     const payload = await response.json().catch(() => null) as { code?: unknown } | null;

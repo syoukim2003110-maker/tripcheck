@@ -100,3 +100,26 @@ test("a lunch list puts places for eating with a lunch price first, izakaya afte
   // Too few within a short walk: the far ones are used rather than an empty list.
   assert.deepEqual(shopsForMeal(shops.slice(5), "lunch", 6).map((entry) => entry.name), ["洋食", "遠い定食"]);
 });
+
+test("a break's cafés gain the guide's photos without changing who comes first", async () => {
+  const { withListedCafes } = await import("../lib/shiori/cafes.ts");
+  const from = { latitude: 35.0000, longitude: 135.0000 };
+  const brk = { afterStop: 0, time: "15:00", reason: "after" as const, from, fromName: "寺", to: null, toName: null, search: from };
+  const pick = (name: string, latitude: number, minutes: number) => ({ id: `apple-${name}`, name, address: "", latitude, longitude: 135, kind: "cafe" as const, detourMinutes: minutes, mapsUrl: "https://example.test" });
+  const listed = (id: string, name: string, latitude: number, photo: string | null) => ({ id, name, latitude, longitude: 135, address: null, budget: "1001～1500円", photo, url: null });
+  const merged = withListedCafes(
+    [pick("スターバックス コーヒー 寺前店", 35.0010, 2), pick("喫茶 みどり", 35.0030, 6)],
+    brk,
+    [listed("a", "スターバックスコーヒー 寺前店", 35.00102, "https://imgfp.hotp.jp/a.jpg"), listed("b", "抹茶カフェ 葵", 35.0020, "https://imgfp.hotp.jp/b.jpg"), listed("c", "遠いカフェ", 35.0090, null)],
+  );
+  // The same café under two spellings is one entry, now with its photo and budget.
+  assert.deepEqual(merged.map((entry) => entry.name), ["スターバックス コーヒー 寺前店", "抹茶カフェ 葵", "喫茶 みどり", "遠いカフェ"]);
+  assert.equal(merged[0].photo, "https://imgfp.hotp.jp/a.jpg");
+  assert.equal(merged[0].budget, "1001～1500円");
+  assert.equal(merged[1].id, "hotpepper-b");
+  assert.equal(merged[2].photo, undefined);
+  // Nearest first throughout: a photo does not move a café up.
+  assert.deepEqual(merged.map((entry) => entry.detourMinutes), [...merged.map((entry) => entry.detourMinutes)].sort((x, y) => x - y));
+  // A different café next door is not mistaken for the same one.
+  assert.equal(withListedCafes([pick("喫茶 みどり", 35.0030, 6)], brk, [listed("d", "ドトール", 35.00301, "https://imgfp.hotp.jp/d.jpg")]).length, 2);
+});

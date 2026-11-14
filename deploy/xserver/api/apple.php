@@ -22,7 +22,7 @@
  *   200 {"minutes":<int>|null,"distanceMeters":<int>|null,"path":[[lat,lon],…]}
  *       (the way along the streets; at most 160 points)
  *
- *   GET apple.php?op=food&near=<lat>,<lon>[&within=<metres>][&name=<words>][&meal=lunch]
+ *   GET apple.php?op=food&near=<lat>,<lon>[&within=<metres>][&name=<words>][&meal=lunch][&genre=cafe]
  *   200 {"results":[{id,name,latitude,longitude,address,genre,budget,
  *                    budgetAverage,catch,open,photo,url}]}
  *       (restaurants listed on HotPepper Gourmet, Japan only; needs
@@ -333,6 +333,8 @@ if (($_GET['op'] ?? '') === 'food') {
     $params = ['key' => $key, 'lat' => $at[1], 'lng' => $at[2], 'range' => $range, 'order' => 4, 'count' => 100, 'format' => 'json'];
     if ($name !== '') $params['keyword'] = $name;
     if (($_GET['meal'] ?? '') === 'lunch') $params['lunch'] = 1;
+    // Cafés and sweets only (the guide's genre G014), for the coffee break.
+    if (($_GET['genre'] ?? '') === 'cafe') $params['genre'] = 'G014';
     try {
         [$status, $body] = apple_get('https://webservice.recruit.co.jp/hotpepper/gourmet/v1/?' . http_build_query($params, '', '&', PHP_QUERY_RFC3986), '');
     } catch (Throwable $error) {

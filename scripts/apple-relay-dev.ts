@@ -62,6 +62,7 @@ createServer(async (request, response) => {
     const query = new URLSearchParams({ key, lat: at[1], lng: at[2], range: String(range), order: "4", count: "100", format: "json" });
     if (name) query.set("keyword", name);
     if (url.searchParams.get("meal") === "lunch") query.set("lunch", "1");
+    if (url.searchParams.get("genre") === "cafe") query.set("genre", "G014");
     try {
       const answer = await fetch(`https://webservice.recruit.co.jp/hotpepper/gourmet/v1/?${query}`, { signal: AbortSignal.timeout(8000) });
       const body = await answer.json() as { results?: { shop?: Record<string, unknown>[] } };

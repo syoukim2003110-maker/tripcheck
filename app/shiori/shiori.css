@@ -420,6 +420,8 @@
 .shiori-food.is-shops a { align-items: center; display: flex; gap: 10px; }
 .shiori-food.is-shops img { background: var(--tile, #e5ddc8); border-radius: var(--r-sm); flex: 0 0 auto; height: 72px; object-fit: cover; width: 72px; }
 .shiori-food.is-shops a > span { display: grid; gap: 2px; min-width: 0; }
+/* A café the guide has no photo of, in a list where others have one. */
+.shiori-food-blank { align-items: center; background: var(--tile, #e5ddc8); border-radius: var(--r-sm); color: var(--muted); display: flex; flex: 0 0 auto; height: 72px; justify-content: center; width: 72px; }
 .shiori-credit { font-size: 12px; }
 .shiori-credit a { color: inherit; }
 .shiori-foot .shiori-credit a { display: inline; min-height: 0; }

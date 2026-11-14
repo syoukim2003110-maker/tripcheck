@@ -37,6 +37,9 @@ export type CafePick = {
   /** on-the-way: extra walking against going straight to the next place · after: the walk from the place just left. Minutes. */
   detourMinutes: number;
   mapsUrl: string;
+  /** From the shop guide, when it lists this café: a photo and what it costs. */
+  photo?: string;
+  budget?: string;
 };
 
 type CafeSearch = {
@@ -155,4 +158,52 @@ export async function findCafes(brk: CafeBreak, client: CafeSearch, languageCode
       mapsUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${place.name} ${coordinate}`)}`,
     }];
   }).sort((left, right) => left.detourMinutes - right.detourMinutes).slice(0, 5);
+}
+
+
+type ListedCafe = { id: string; name: string; latitude: number; longitude: number; address: string | null; budget: string | null; photo: string | null; url: string | null };
+
+const plainName = (name: string) => name.normalize("NFKC").toLocaleLowerCase().replace(/[\s・･\-‐－―()（）]/g, "");
+
+/** Two names for one café: one begins the other, or they share their first four letters. */
+function sameCafe(left: string, right: string) {
+  const a = plainName(left);
+  const b = plainName(right);
+  if (!a || !b) return false;
+  return a.startsWith(b) || b.startsWith(a) || (a.length >= 4 && b.length >= 4 && a.slice(0, 4) === b.slice(0, 4));
+}
+
+/**
+ * The break's cafés with what the shop guide knows added: a café the guide
+ * lists gets its photo and budget, and listed cafés the map search missed
+ * join the list. The order stays what it was — least off the traveller's
+ * way first — so a photo never buys a place further up.
+ */
+export function withListedCafes(picks: readonly CafePick[], brk: CafeBreak, listed: readonly ListedCafe[], limit = 6): CafePick[] {
+  const straight = brk.to ? meters(brk.from, brk.to) : 0;
+  const merged = picks.map((pick) => ({ ...pick }));
+  for (const shop of listed) {
+    const twin = merged.find((pick) => meters(pick, shop) <= 70 && sameCafe(pick.name, shop.name));
+    if (twin) {
+      if (shop.photo) twin.photo = shop.photo;
+      if (shop.budget) twin.budget = shop.budget;
+      continue;
+    }
+    if (merged.some((pick) => pick.id === `hotpepper-${shop.id}`)) continue;
+    const extra = brk.reason === "on-the-way" && brk.to ? meters(brk.from, shop) + meters(shop, brk.to) - straight : meters(brk.from, shop);
+    const coordinate = `${shop.latitude.toFixed(5)},${shop.longitude.toFixed(5)}`;
+    merged.push({
+      id: `hotpepper-${shop.id}`.slice(0, 160),
+      name: shop.name,
+      address: shop.address ?? "",
+      latitude: shop.latitude,
+      longitude: shop.longitude,
+      kind: "cafe",
+      detourMinutes: Math.max(0, Math.round(extra * 1.3 / 75)),
+      mapsUrl: shop.url ?? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${shop.name} ${coordinate}`)}`,
+      ...(shop.photo ? { photo: shop.photo } : {}),
+      ...(shop.budget ? { budget: shop.budget } : {}),
+    });
+  }
+  return merged.sort((left, right) => left.detourMinutes - right.detourMinutes).slice(0, limit);
 }

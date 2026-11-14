@@ -15,7 +15,7 @@ import { loadRailNetwork } from "../../lib/rail-network-client";
 import type { RailNetwork } from "../../lib/rail-router";
 import { fetchStreetRoute } from "../../lib/street-route-client";
 import { addAnchor, addCandidates, kindOfCategory, type AddCandidate } from "../../lib/shiori/add-search";
-import { findCafes, type CafeBreak, type CafePick } from "../../lib/shiori/cafes";
+import { findCafes, withListedCafes, type CafeBreak, type CafePick } from "../../lib/shiori/cafes";
 import { lineColor } from "../../lib/shiori/line-colors";
 import { buildShioriPlan, type ShioriLeg, type ShioriMeal, type ShioriNotice, type ShioriPlace, type ShioriPlan, type ShioriRoute, type ShioriStop } from "../../lib/shiori/plan";
 import {
@@ -201,6 +201,7 @@ const text = {
     shopNoteLunch: "ホットペッパーグルメに載っている店のうち、ランチ料金の記載がある食事の店を先に、近い順で出しています（居酒屋・バーは後ろ。載っていない店は出ません）。評判や空席は店のページで確認してください。",
     shopBudget: (band: string) => `夜の予算 ${band}`,
     shopLunch: (price: string) => `ランチ ${price}〜`,
+    shopPrice: (band: string) => `予算 ${band}`,
     shopAdd: "この店にする",
     walkAbout: (minutes: number) => `徒歩約${minutes}分`,
     ideasTitle: "時間に余裕あり。近くの人気スポット",
@@ -369,6 +370,7 @@ const text = {
     shopNoteLunch: "From HotPepper Gourmet: places for eating that state a lunch price first, nearest first (izakaya and bars after; unlisted places are not shown). Check reviews and seats on the restaurant's page.",
     shopBudget: (band: string) => `dinner budget ${band}`,
     shopLunch: (price: string) => `lunch from ${price}`,
+    shopPrice: (band: string) => `budget ${band}`,
     shopAdd: "Choose this one",
     walkAbout: (minutes: number) => `~${minutes} min walk`,
     ideasTitle: "There is time left. Well-known places nearby",
@@ -659,7 +661,12 @@ function CafeRow({ cafe, locale, onAdd }: { cafe: CafeBreak; locale: Locale; onA
     if (!relay) { setState("failed"); return; }
     setState("loading");
     try {
-      const found = await findCafes(cafe, relay, locale);
+      // Asked together: the map's cafés in walking order, and — in Japan — the shop guide's, for photos and prices.
+      const [nearby, listed] = await Promise.all([
+        findCafes(cafe, relay, locale),
+        inJapan(cafe.search) ? fetchHotpepperShops({ near: cafe.search, withinMeters: 1000, genre: "cafe" }) : Promise.resolve([]),
+      ]);
+      const found = listed.length > 0 ? withListedCafes(nearby, cafe, listed) : nearby;
       setPicks(found);
       setState(found.length > 0 ? "ready" : "failed");
     } catch {
@@ -681,18 +688,24 @@ function CafeRow({ cafe, locale, onAdd }: { cafe: CafeBreak; locale: Locale; onA
       {state === "failed" ? <p className="shiori-quiet">{t.cafeNone} <a href={mapsSearch} rel="noreferrer" target="_blank">Google Maps ↗</a></p> : null}
       {state === "ready" ? (
         <>
-          <ul className="shiori-food">
+          <ul className={`shiori-food${picks.some((pick) => pick.photo) ? " is-shops" : ""}`}>
             {picks.map((pick) => (
               <li className="has-action" key={pick.id}>
                 <a href={pick.mapsUrl} rel="noreferrer" target="_blank">
-                  <b>{pick.name}</b>
-                  <small>{t.cafeKinds[pick.kind]} ・ {cafe.reason === "on-the-way" ? t.cafeDetour(pick.detourMinutes) : t.cafeWalk(pick.detourMinutes)} <i className="shiori-est">{t.estimate}</i></small>
+                  {/* eslint-disable-next-line @next/next/no-img-element -- a static export has no image optimiser */}
+                  {pick.photo ? <img alt="" decoding="async" height={72} loading="lazy" src={pick.photo} width={72} /> : picks.some((other) => other.photo) ? <span aria-hidden="true" className="shiori-food-blank"><Icon name="cup" /></span> : null}
+                  <span>
+                    <b>{pick.name}</b>
+                    <small>{[t.cafeKinds[pick.kind], budgetLabel(pick.budget ?? null) ? t.shopPrice(budgetLabel(pick.budget ?? null)!) : null].filter(Boolean).join(" ・ ")}</small>
+                    <small>{cafe.reason === "on-the-way" ? t.cafeDetour(pick.detourMinutes) : t.cafeWalk(pick.detourMinutes)} <i className="shiori-est">{t.estimate}</i></small>
+                  </span>
                 </a>
                 <button onClick={() => onAdd(pick)} type="button">{t.cafeAdd}</button>
               </li>
             ))}
           </ul>
           <p className="shiori-quiet">{t.cafeNote}</p>
+          {picks.some((pick) => pick.photo) ? <p className="shiori-quiet shiori-credit">【画像提供：ホットペッパー グルメ】 Powered by <a href="http://webservice.recruit.co.jp/">ホットペッパーグルメ Webサービス</a></p> : null}
         </>
       ) : null}
     </div>
