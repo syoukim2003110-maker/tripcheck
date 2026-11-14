@@ -1413,6 +1413,32 @@ export function daySearch(
     return found && found.order !== start.order ? describe(found.order) : start;
   }
 
+  /*
+   * What a day costs, by the set of its places and the day's class, for the
+   * loop that costs every split of the list: a million splits each ask for
+   * three days, and with a start or a finish entered for each of them on the
+   * day it could be. Kept as plain arrays indexed by the set, so asking is an
+   * array read — the answers are solveDay()'s own, worked out once.
+   */
+  type DayTable = { cost: Float64Array; km: Float64Array; broken: Int16Array };
+  const dayTables: Array<DayTable | null> = [null, null, null, null];
+  function dayTable(cls: number): DayTable {
+    let table = dayTables[cls];
+    if (!table) {
+      table = { cost: new Float64Array(1 << count).fill(NaN), km: new Float64Array(1 << count), broken: new Int16Array(1 << count) };
+      dayTables[cls] = table;
+    }
+    return table;
+  }
+  /** Fills the table's entry for this set (`mask`: the group as bits), if it is not there yet. */
+  function costed(table: DayTable, mask: number, group: readonly number[], cls: number) {
+    if (table.cost[mask] === table.cost[mask]) return;
+    const day = solveDay(group, cls);
+    table.cost[mask] = day.cost;
+    table.km[mask] = day.km;
+    table.broken[mask] = day.broken;
+  }
+
   /** How many restaurants share a day with another one for the same meal. */
   function doubledIn(group: readonly number[]) {
     let lunches = 0;
@@ -1432,6 +1458,10 @@ export function daySearch(
    */
   const skipped = new Uint8Array(count);
   let skippedCount = 0;
+  /** The skipped stops as text, for remembering what was asked. */
+  let skippedKey = "";
+  /** The best split for each question already asked (see split). */
+  const splitAnswers = new Map<string, Grouping>();
   /**
    * How the days of the trip being chosen are numbered: how many were asked
    * for, and whether day 1 is left empty (see choose). It decides which of
@@ -1598,13 +1628,27 @@ export function daySearch(
    * apart (`pin` is the pinned day or null).
    */
   function split(parts: number, pin: readonly (number | null)[], quick: boolean): Grouping {
+    // The same question comes back whenever the trip is tried on another
+    // number of days ("would one more day hold it?"): the best split into
+    // three days is the same split whether four or five were asked for, as
+    // long as the same days have a start, a finish or a pin.
+    const special = specialDays(parts, pin);
+    const asked = `${parts}|${quick ? 1 : 0}|${skippedKey}|${special.first ? 1 : 0}${special.last ? 1 : 0}|${pin.map((day) => (day === null ? "" : framesOn ? `${day}.${classOf(day, layout.requested)}` : day)).join(",")}`;
+    const known = splitAnswers.get(asked);
+    if (known) return known;
+    const found = splitInto(parts, pin, quick, special);
+    splitAnswers.set(asked, found);
+    return found;
+  }
+  function splitInto(parts: number, pin: readonly (number | null)[], quick: boolean, special: Special): Grouping {
     const groups: number[][] = [];
+    /** Each group as bits, kept in step with `groups` (only where every split is costed: at most sixteen places). */
+    const masks: number[] = [];
     const pins: Array<number | null> = [];
     const loads: number[] = [];
     const best: { found: Grouping | null } = { found: null };
     // (A booked stop may sit in the evening, like a dinner: its stay is no part of the nine hours.)
     const load = (stop: number) => (stops[stop].meal === "dinner" || fixedOf[stop] !== null ? 0 : stops[stop].stay + DAY_CLOCK.legBuffer);
-    const special = specialDays(parts, pin);
     const brokenBy = new Float64Array(32);
     const costBy = new Float64Array(32);
     // Nine hours of sightseeing, and the half hour a hotel day starts early.
@@ -1621,18 +1665,22 @@ export function daySearch(
             // 1 and the one cheapest to end early the last day.
             let firstAt = -1;
             let lastAt = -1;
+            const usual = dayTable(0);
             if (special.first || special.last) {
+              const late = special.first ? dayTable(1) : usual;
+              const early = special.last ? dayTable(2) : usual;
               let free = 0;
               for (let index = 0; index < parts; index += 1) {
                 if (pins[index] !== null) continue;
                 free += 1;
-                const usual = solveDay(groups[index]);
-                const late = special.first ? solveDay(groups[index], 1) : usual;
-                const early = special.last ? solveDay(groups[index], 2) : usual;
-                brokenBy[index] = late.broken - usual.broken;
-                costBy[index] = late.cost - usual.cost;
-                brokenBy[16 + index] = early.broken - usual.broken;
-                costBy[16 + index] = early.cost - usual.cost;
+                const mask = masks[index];
+                costed(usual, mask, groups[index], 0);
+                if (special.first) costed(late, mask, groups[index], 1);
+                if (special.last) costed(early, mask, groups[index], 2);
+                brokenBy[index] = late.broken[mask] - usual.broken[mask];
+                costBy[index] = late.cost[mask] - usual.cost[mask];
+                brokenBy[16 + index] = early.broken[mask] - usual.broken[mask];
+                costBy[16 + index] = early.cost[mask] - usual.cost[mask];
               }
               let leastBroken = Infinity;
               let leastCost = Infinity;
@@ -1645,10 +1693,10 @@ export function daySearch(
                   if (first === last && first >= 0) {
                     // One group is both only on a one-day trip.
                     if (free > 1) continue;
-                    const usual = solveDay(groups[first]);
-                    const both = solveDay(groups[first], 3);
-                    brokenMore = both.broken - usual.broken;
-                    costMore = both.cost - usual.cost;
+                    const both = dayTable(3);
+                    costed(both, masks[first], groups[first], 3);
+                    brokenMore = both.broken[masks[first]] - usual.broken[masks[first]];
+                    costMore = both.cost[masks[first]] - usual.cost[masks[first]];
                   }
                   if (brokenMore < leastBroken || (brokenMore === leastBroken && costMore < leastCost - EPSILON)) {
                     leastBroken = brokenMore;
@@ -1667,10 +1715,12 @@ export function daySearch(
             let full = false;
             for (let index = 0; index < parts; index += 1) {
               const group = groups[index];
-              const day = solveDay(group, classAt(index));
-              cost += day.cost;
-              km += day.km;
-              broken += day.broken;
+              const cls = classAt(index);
+              const table = dayTable(cls);
+              costed(table, masks[index], group, cls);
+              cost += table.cost[masks[index]];
+              km += table.km[masks[index]];
+              broken += table.broken[masks[index]];
               if (group.length === 1 && !stops[group[0]].meal && stops[group[0]].stay < 240) lonely = true;
               if (group.length >= 3) full = true;
             }
@@ -1683,10 +1733,12 @@ export function daySearch(
           let km = 0;
           let lonely = false;
           let full = false;
-          for (const group of groups) {
-            const day = solveDay(group);
-            cost += day.cost;
-            km += day.km;
+          const table = dayTable(0);
+          for (let index = 0; index < parts; index += 1) {
+            const group = groups[index];
+            costed(table, masks[index], group, 0);
+            cost += table.cost[masks[index]];
+            km += table.km[masks[index]];
             if (group.length === 1 && !stops[group[0]].meal && stops[group[0]].stay < 240) lonely = true;
             if (group.length >= 3) full = true;
           }
@@ -1711,6 +1763,7 @@ export function daySearch(
           if (doubled + twice > doubledLimit) continue;
           const before = pins[index];
           groups[index].push(stop);
+          masks[index] |= 1 << stop;
           loads[index] += load(stop);
           doubled += twice;
           if (pinned !== null) pins[index] = pinned;
@@ -1718,14 +1771,17 @@ export function daySearch(
           pins[index] = before;
           doubled -= twice;
           loads[index] -= load(stop);
+          masks[index] ^= 1 << stop;
           groups[index].pop();
         }
         if (home < 0 && groups.length < parts) {
           groups.push([stop]);
+          masks.push(1 << stop);
           pins.push(pinned);
           loads.push(load(stop));
           place(stop + 1);
           groups.pop();
+          masks.pop();
           pins.pop();
           loads.pop();
         }
@@ -1991,6 +2047,7 @@ export function daySearch(
       skipped.fill(0);
       for (const index of left) skipped[index] = 1;
       skippedCount = left.length;
+      skippedKey = left.join(",");
       // A pin beyond the days asked for is not a pin.
       const pin = stops.map((stop, index) => (!skipped[index] && typeof stop.day === "number" && stop.day >= 1 && Math.round(stop.day) <= requested ? Math.round(stop.day) : null));
       const pinnedDays = new Set(pin.filter((day) => day !== null)).size;
@@ -2071,19 +2128,38 @@ export function daySearch(
         }
         return chosen;
       };
-      let chosen = plan(false);
       // Day 1 is used whenever it can be. Only when the trip cannot be kept
       // with it — the traveller can start at seven in the evening, and
       // whatever goes on day 1 runs into the night — is the trip also planned
       // with day 1 left free, and that plan taken when it is the better one.
-      if (firstStart !== null && chosen.late && requested >= 2 && !pin.includes(1)) {
+      const mayLeaveFirst = firstStart !== null && requested >= 2 && !pin.includes(1);
+      // When not one place could be kept on day 1 even alone, no plan that
+      // uses day 1 can be kept either: a day's first stop is reached at the
+      // hour it would be reached alone. The plan with day 1 free is then made
+      // first, and when it keeps everything it is the answer — the other
+      // would have lost to it — without costing every split a second time.
+      const firstHopeless = mayLeaveFirst && unpinned > 0
+        && stops.every((_, index) => skipped[index] || pin[index] !== null || !solveDay([index], 1).keepable);
+      let chosen: Candidate;
+      if (firstHopeless) {
         const later = plan(true);
-        if (worse(chosen, later)) chosen = later;
+        if (!later.late && later.broken === 0) chosen = later;
+        else {
+          chosen = plan(false);
+          if (worse(chosen, later)) chosen = later;
+        }
+      } else {
+        chosen = plan(false);
+        if (mayLeaveFirst && chosen.late) {
+          const later = plan(true);
+          if (worse(chosen, later)) chosen = later;
+        }
       }
       layout = { requested, emptyFirst: chosen.emptyFirst };
       const answer = numbered(chosen.found.days, requested, pin, !options.quick, chosen.emptyFirst);
       skipped.fill(0);
       skippedCount = 0;
+      skippedKey = "";
       answers.set(asked, answer);
       return answer;
     },

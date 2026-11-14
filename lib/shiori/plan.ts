@@ -1436,9 +1436,21 @@ export function buildShioriPlan(input: ShioriInput, options: PlanOptions = {}): 
   const aside = new Set(plan.unplaced.map((entry) => entry.placeId));
   const laid = aside.size > 0 ? { ...input, places: input.places.filter((place) => !aside.has(place.id)) } : input;
   const fits = (candidate: ShioriPlan) => candidate.leftOut.length === 0 && !candidate.days.some((day) => day.runsLate || day.stops.some((stop) => stop.mealMissed));
-  /** The search alone, no booklet built: enough to compare hotel areas and to see whether a shorter list would fit. */
-  // (With a time entered a day's order is not a look-up; for a hotel area that is only being compared, fewer orders are tried.)
-  const searched = (trip: ShioriInput) => daySearch(searchProblem(trip, priceTrip(trip, rail), framesOf(trip)), frames ? { bookedDayStops: 4 } : {});
+  /**
+   * The search alone, no booklet built: enough to compare hotel areas. Where
+   * to stay is a question of how far the days' places are from the door, not
+   * of the hour day 1 starts or the last day ends, so the areas are compared
+   * without those two — every area on the same terms, and at the price of an
+   * ordinary trip instead of three (a day costs differently as day 1, as the
+   * last day and in between, and each area tried is a search of its own).
+   * Bookings stay: they decide which places share a day. (A day with one is
+   * not a look-up; for an area that is only being compared, fewer orders are tried.)
+   */
+  const areaFrames = (trip: ShioriInput): Frames | null => {
+    const entered = framesOf(trip);
+    return entered && entered.booked.size > 0 ? { start: null, finish: null, booked: entered.booked } : null;
+  };
+  const searched = (trip: ShioriInput) => daySearch(searchProblem(trip, priceTrip(trip, rail), areaFrames(trip)), frames ? { bookedDayStops: 4 } : {});
   const unkept = (days: ReturnType<ReturnType<typeof daySearch>["choose"]>["days"]) => days.filter((day) => day.overrun > 0 || day.missed > 0 || day.late > 0 || day.hardOver > 0).length;
   const runsLate = plan.days.some((day) => day.runsLate);
   // Left out by the engine, not by an entered time (as on any trip).
