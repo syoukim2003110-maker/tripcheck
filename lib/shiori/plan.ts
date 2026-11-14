@@ -6,6 +6,7 @@ import type { ResolvedInputStop, RouteStop } from "../route-optimizer.ts";
 import { estimateTravelOptions } from "../time-feasibility.ts";
 import { cafeBreakFor, type CafeBreak } from "./cafes.ts";
 import { DAY_CLOCK, daySearch, packedDay, scheduleDay, type SearchProblem } from "./day-search.ts";
+import { weatherDayOrder } from "./weather-days.ts";
 import {
   buildTripFromWishlist,
   hotelRouteContextForDraft,
@@ -78,6 +79,13 @@ export type ShioriInput = {
   pace?: ShioriPace;
   hotel: ShioriHotel | null;
   locale: "ja" | "en";
+  /**
+   * The forecast, per day of the booklet (ShioriDay.index): true for a wet
+   * day, false for a dry one, null where there is no forecast. It decides
+   * only which calendar day a planned day goes on (see weather-days.ts);
+   * without it the plan is exactly the plan there has always been.
+   */
+  wetDays?: ReadonlyArray<boolean | null> | null;
 };
 
 /** A street path looked up for one leg ("walk|<key>" or "drive|<key>"). */
@@ -144,7 +152,13 @@ export type ShioriNotice =
   /** No day can reach this restaurant during the meal. */
   | { kind: "meal-time"; placeId: string; name: string; meal: "lunch" | "dinner" }
   /** The way back to the hotel after dinner here. */
-  | { kind: "meal-hotel"; placeId: string; name: string; minutes: number };
+  | { kind: "meal-hotel"; placeId: string; name: string; minutes: number }
+  /**
+   * Not a conflict but a choice the traveller should know was made: these
+   * days (1-based) have rain forecast, and the planned day with less time
+   * outdoors was put on each of them.
+   */
+  | { kind: "weather-order"; days: number[] };
 
 export type ShioriMeal = {
   kind: "lunch" | "dinner";
@@ -404,6 +418,8 @@ type Structure = {
   pins: Record<string, number>;
   legModeOverrides: Record<string, "transit">;
   timing: DayTiming;
+  /** Wet days (1-based, as printed) that were given another planned day because of the forecast. */
+  weatherDays: number[];
 };
 /** What the clock decides once the order is known: where lunch goes and when each day starts. */
 type DayTiming = {
@@ -425,6 +441,9 @@ function structureKey(input: ShioriInput) {
     input.days,
     input.hotel ? [input.hotel.name, input.hotel.lat, input.hotel.lon] : 0,
     input.locale,
+    // The forecast decides the numbering of the days: a plan made for one
+    // forecast must never be served for another.
+    (input.wetDays ?? []).map((wet) => (wet === null ? "-" : wet ? "w" : "d")).join(""),
   ]);
 }
 
@@ -675,6 +694,57 @@ export function shioriPricing(input: ShioriInput, options: { rail?: RailNetwork 
   };
 }
 
+/** A place to eat or drink is under a roof whatever else is known of it. */
+const TABLE_KIND = /restaurant|caf[eé]/;
+
+/**
+ * Whether a place is out of doors, as far as its kind says. A place that is
+ * both ("museum in a park") counts as indoors; one with no kind, or a kind
+ * that says neither (typed by name, "tower"), is unknown — it is not assumed
+ * to be under a roof.
+ */
+export function weatherExposure(place: Pick<ShioriPlace, "kind" | "meal">): "outdoor" | "indoor" | "unknown" {
+  const kind = (place.kind ?? "").toLowerCase();
+  if (place.meal || TABLE_KIND.test(kind) || INDOOR_KIND.test(kind)) return "indoor";
+  return OUTDOOR_KIND.test(kind) ? "outdoor" : "unknown";
+}
+
+/** Time at places that are out of doors. */
+function outdoorMinutes(places: readonly ShioriPlace[]) {
+  return places.reduce((sum, place) => sum + (weatherExposure(place) === "outdoor" ? stayOf(place) : 0), 0);
+}
+
+/**
+ * The day number each searched day is printed under once the forecast has
+ * had its say. The search numbers days by travel alone; where rain is
+ * forecast, whole days trade numbers so that the outdoor one falls on a dry
+ * date. Days, order, legs and clocks are untouched — they move together.
+ */
+function weatherNumbering(input: ShioriInput, days: ReadonlyArray<{ day: number; order: readonly number[] }>) {
+  const none = { dayFor: new Map<number, number>(), wetDays: [] as number[] };
+  if (!input.wetDays || !input.wetDays.some((wet) => wet !== null)) return none;
+  const sorted = [...days].sort((left, right) => left.day - right.day);
+  // The day as the booklet prints it: empty days are skipped in the count,
+  // unless a place is pinned to a day — then "Day 3" stays Day 3 (see where
+  // the days are numbered in planOnce).
+  const keepDayNumbers = input.places.some((place) => typeof place.day === "number");
+  const printed = (position: number) => (keepDayNumbers ? sorted[position].day - 1 : position);
+  const result = weatherDayOrder(sorted.map((day, position) => {
+    const places = day.order.map((stop) => input.places[stop]);
+    return {
+      outdoorMinutes: outdoorMinutes(places),
+      // A day holding a place of unknown kind is not known to be the day with
+      // less time outdoors: it stays where it is, like a pinned one.
+      fixed: places.some((place) => typeof place.day === "number" || weatherExposure(place) === "unknown"),
+      wet: input.wetDays![printed(position)] ?? null,
+    };
+  }));
+  if (!result.changed) return none;
+  // order[slot] names the group that moves onto that slot's day.
+  result.order.forEach((group, slot) => none.dayFor.set(sorted[group].day, sorted[slot].day));
+  return { dayFor: none.dayFor, wetDays: result.wetSlotsChanged.map((slot) => printed(slot) + 1) };
+}
+
 type PlanOptions = {
   rail?: RailNetwork | null;
   cities?: readonly PopularDestination[];
@@ -742,13 +812,15 @@ function planOnce(input: ShioriInput, options: PlanOptions): ShioriPlan {
     const pins: Record<string, number> = {};
     const lockedOrderByDay: Record<number, string[]> = {};
     const timing: DayTiming = { lunchAfter: new Map(), durationOverrides: {}, dayStartTimes: {} };
+    const numbering = weatherNumbering(input, trip.days);
     for (const day of trip.days) {
       const places = day.order.map((stop) => input.places[stop]);
-      lockedOrderByDay[day.day - 1] = places.map((place) => place.id);
-      for (const place of places) pins[place.id] = day.day;
-      timing.dayStartTimes[day.day - 1] = clock(day.start);
+      const dayNumber = numbering.dayFor.get(day.day) ?? day.day;
+      lockedOrderByDay[dayNumber - 1] = places.map((place) => place.id);
+      for (const place of places) pins[place.id] = dayNumber;
+      timing.dayStartTimes[dayNumber - 1] = clock(day.start);
       if (day.lunchAt >= 0) {
-        timing.lunchAfter.set(day.day - 1, places[day.lunchAt].id);
+        timing.lunchAfter.set(dayNumber - 1, places[day.lunchAt].id);
         timing.durationOverrides[places[day.lunchAt].id] = stayOf(places[day.lunchAt]) + LUNCH_MINUTES;
       }
     }
@@ -762,7 +834,7 @@ function planOnce(input: ShioriInput, options: PlanOptions): ShioriPlan {
       durationOverrides: timing.durationOverrides,
       dayStartTimes: timing.dayStartTimes,
     }, trip.slots);
-    return { built, journeys, transit, walking, walkAdvised, driving, pins, legModeOverrides, timing };
+    return { built, journeys, transit, walking, walkAdvised, driving, pins, legModeOverrides, timing, weatherDays: numbering.wetDays };
   };
   const cacheKey = structureKey(input);
   const shelf = structures.get(rail ?? NO_RAIL) ?? new Map<string, Structure>();
@@ -999,7 +1071,7 @@ function planOnce(input: ShioriInput, options: PlanOptions): ShioriPlan {
     leftOut: input.places.filter((place) => !scheduled.has(place.id)).map((place) => place.name),
     stayNear: hotelContext ? { latitude: hotelContext.latitude, longitude: hotelContext.longitude, routePoints: hotelContext.routePoints } : null,
     hotel: input.hotel,
-    notices: [],
+    notices: known.weatherDays.length > 0 ? [{ kind: "weather-order", days: known.weatherDays }] : [],
   };
 }
 
@@ -1140,5 +1212,6 @@ export function buildShioriPlan(input: ShioriInput, options: PlanOptions = {}): 
       }
     }
   }
-  return { ...plan, stayNear, notices };
+  // Last: it is something to know, not something to fix.
+  return { ...plan, stayNear, notices: [...notices, ...plan.notices] };
 }

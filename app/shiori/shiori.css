@@ -143,8 +143,8 @@
 .shiori-other > label { display: block; font: 600 18px/1.4 var(--gothic); letter-spacing: 0; margin-bottom: 12px; }
 .shiori-other-row { display: flex; gap: 8px; margin: 12px 0 8px; }
 .shiori-other input { background: #f7f8fa; border: 1px solid #c5c9ce; border-radius: var(--r-sm); flex: 1 1 auto; font-size: 16px; min-height: 44px; min-width: 0; padding: 0 12px; }
-.shiori-other button[type="submit"] { background: var(--shu); border: 0; border-radius: var(--r-md); color: var(--card); flex: 0 0 auto; font-size: 14px; font-weight: 700; min-height: 44px; padding: 0 16px; }
-.shiori-other button[type="submit"]:disabled { background: var(--edge); }
+.shiori-other button[type="submit"], .shiori-bulk-go { background: var(--shu); border: 0; border-radius: var(--r-md); color: var(--card); flex: 0 0 auto; font-size: 14px; font-weight: 700; min-height: 44px; padding: 0 16px; }
+.shiori-other button[type="submit"]:disabled, .shiori-bulk-go:disabled { background: var(--edge); }
 .shiori-other .shiori-warn { margin-bottom: 8px; }
 /* What the search found: the traveller says which one is meant before anything is added. */
 .shiori-hits { border-top: 1px dashed var(--rule); margin: 4px 0 10px; padding-top: 10px; }
@@ -156,6 +156,29 @@
 .shiori-hits li button small { color: var(--muted); font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
 .shiori-hits li button:hover { border-color: var(--ink); }
 /* Said where the traveller is looking: the plan that changed is far up the page. */
+/* The pasted-list mode of the add form: a text box, then one row per line to review before anything is added. */
+.shiori-bulk { border-top: 1px dashed var(--rule); margin-top: 12px; padding-top: 4px; }
+.shiori-bulk > label, .shiori-bulk-title { display: block; font-size: 14px; font-weight: 600; margin: 8px 0; }
+.shiori-bulk textarea { background: #f7f8fa; border: 1px solid #c5c9ce; border-radius: var(--r-sm); display: block; font: inherit; font-size: 16px; line-height: 1.6; margin-bottom: 8px; padding: 8px 12px; resize: vertical; width: 100%; }
+.shiori-bulk-actions { align-items: center; display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 8px; }
+.shiori-bulk-lines { display: grid; gap: 8px; list-style: none; margin: 8px 0; padding: 0; }
+.shiori-bulk-lines > li { background: var(--paper); border: 1px solid var(--edge); border-radius: var(--r-sm); min-width: 0; padding: 8px 12px; }
+.shiori-bulk-typed { align-items: baseline; display: flex; flex-wrap: wrap; font-size: 14px; gap: 2px 12px; justify-content: space-between; margin: 0; }
+.shiori-bulk-typed span { min-width: 0; overflow-wrap: anywhere; }
+.shiori-bulk-typed small { color: var(--muted); }
+.shiori-bulk-typed b { color: var(--muted); font-size: 12px; }
+.shiori-bulk-lines > li:is([data-status="found"], [data-status="added"]) .shiori-bulk-typed b { color: var(--shu); }
+.shiori-bulk-lines > li:is([data-status="choose"], [data-status="missing"], [data-status="failed"]) .shiori-bulk-typed b { color: #7a3d00; }
+.shiori-bulk fieldset { border: 0; margin: 0; min-width: 0; padding: 0; }
+.shiori-bulk legend { color: var(--muted); font-size: 12px; padding: 4px 0 0; }
+.shiori-bulk-pick { align-items: center; display: flex; gap: 10px; min-height: 44px; padding: 4px 0; }
+.shiori-bulk-pick input { accent-color: var(--shu); flex: 0 0 auto; height: 20px; margin: 0; min-height: 0; padding: 0; width: 20px; }
+.shiori-bulk-pick span { display: grid; font-size: 14px; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.shiori-bulk-pick small { color: var(--muted); font-size: 12px; line-height: 1.45; }
+.shiori-bulk-lines .shiori-other-row { margin: 6px 0 2px; }
+.shiori-bulk-again { background: var(--card); border: 1px solid var(--edge); border-radius: var(--r-md); color: var(--ink); flex: 0 0 auto; font-size: 13px; font-weight: 600; min-height: 44px; padding: 0 12px; }
+.shiori-bulk-again:disabled { color: var(--muted); }
+.shiori-bulk-sum { font-size: 14px; font-weight: 600; margin: 8px 0 0; }
 .shiori-added { align-items: center; background: #eaf2ff; border: 1px solid #b7cff1; border-radius: var(--r-sm); color: var(--shu); display: flex; flex-wrap: wrap; font-size: 14px; gap: 6px 12px; justify-content: space-between; margin: 4px 0 10px; padding: 8px 12px; }
 .shiori-added button { background: var(--shu); border: 0; border-radius: var(--r-sm); color: #fff; font-size: 13px; font-weight: 700; min-height: 44px; padding: 0 14px; }
 .shiori-chips { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; margin: 10px 0 0; padding: 0; }
@@ -173,6 +196,15 @@
 .shiori-bar-days { align-items: center; display: flex; font-size: 13px; gap: 8px; order: 2; }
 .shiori-bar button { background: var(--shu); border: 0; border-radius: 999px; color: #fff; font-size: 16px; font-weight: 650; grid-column: 1 / -1; min-height: 48px; order: 3; padding: 0 24px; }
 .shiori-bar button:disabled { background: #e8eaed; color: #5f6368; }
+/* The optional start date, beside the day count on both screens. */
+.shiori-date { align-items: center; color: var(--muted); display: flex; flex-wrap: wrap; font-size: 13px; gap: 2px 10px; line-height: 1.5; margin-top: 10px; }
+.shiori-date > span { color: var(--ink); font-weight: 700; }
+.shiori-date > span small { color: var(--muted); font-size: 12px; font-weight: 500; }
+.shiori-date input { background: var(--card); border: 1px solid var(--edge); border-radius: var(--r-md); font-size: 16px; min-height: 44px; padding: 0 8px; }
+.shiori-date-hint { flex: 1 1 160px; font-size: 12px; }
+.shiori-bar .shiori-date { grid-column: 1 / -1; margin-top: 0; order: 2; }
+/* The bar is a row taller with the date in it: the last places must still scroll clear of it. */
+.shiori:has(.shiori-bar) { padding-bottom: 216px; }
 
 /* Itinerary */
 .shiori.is-plan { padding-bottom: 40px; }
@@ -276,6 +308,13 @@
 .shiori-day-head { padding: 20px 0 0; }
 .shiori-day-head h2 { font-size: 21px; font-weight: 650; line-height: 1.4; overflow-wrap: anywhere; }
 .shiori-day-head h2 small { color: var(--muted); display: block; font-size: 12px; font-weight: 500; line-height: 1.3; margin-bottom: 4px; }
+/* A forecast, never a fact: every line of it carries the word. */
+.shiori-weather { align-items: center; color: var(--muted); display: flex; flex-wrap: wrap; font-size: 13px; gap: 2px 10px; line-height: 1.6; margin-top: 8px; }
+.shiori-weather b { color: var(--ink); font-weight: 600; }
+.shiori-weather small { border: 1px solid var(--rule); border-radius: var(--r-sm); font-size: 11px; padding: 0 6px; }
+.shiori-forecast { color: var(--muted); font-size: 12px; line-height: 1.6; margin-top: 12px; }
+.shiori-forecast-move { align-items: flex-start; color: var(--ink); display: flex; font-size: 13px; gap: 8px; margin-bottom: 2px; }
+.shiori-forecast-move .shiori-icon { flex: 0 0 auto; height: 16px; margin-top: 2px; width: 16px; }
 .shiori-day-summary { margin-top: 4px; }
 .shiori-day-summary > summary { align-content: center; color: var(--muted); font-size: 13px; }
 .shiori-day-summary[open] { margin-bottom: 10px; }
@@ -551,6 +590,7 @@
 /* ---------- Paper: every day, one after another, in ink-friendly black on white ---------- */
 @media print {
   @page { margin: 14mm; size: A4; }
+  .shiori-date { display: none; }
   .shiori { background: #fff; font-size: 11pt; min-height: 0; padding: 0; }
   .shiori-top, .shiori-skip, .shiori-screen-only, .shiori-plan-actions, .shiori-plan-tools, .shiori-plan-add, .shiori-add-panel, .shiori-working, .shiori-tabs-wrap, .shiori-plan-map, .shiori-stop-edit, .shiori-notices button, .shiori-leg-link, .shiori-ideas, .shiori-daynav, .shiori-other, .shiori-hotel-actions, .shiori-meal-head button, .shiori-food li.has-action button, .shiori-bar, .shiori-link, .shiori-day-anchor { display: none !important; }
   html:has(.shiori), body:has(.shiori) { background: #fff; }

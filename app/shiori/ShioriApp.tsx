@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, 
 import { fetchAppleFoodCandidates } from "../../lib/apple-food";
 import { budgetLabel, fetchHotpepperShops, inJapan, lunchPrice, shopsForMeal, type HotpepperShop } from "../../lib/hotpepper-client";
 import { placeCardsAvailable } from "../../lib/apple-place-card";
-import { appleRelayClient, appleRelaySearch } from "../../lib/apple-relay-client";
+import { AppleRelayError, appleRelayClient, appleRelaySearch } from "../../lib/apple-relay-client";
 import { defaultFoodDiscoveryQuery, type FoodCandidate } from "../../lib/google-food";
 import { rerankHotelCandidates } from "../../lib/apple-hotels";
 import type { HotelCandidate } from "../../lib/google-hotels";
@@ -16,8 +16,10 @@ import { curateSights, filterDestinations, type PopularDestination, type Popular
 import { loadRailNetwork } from "../../lib/rail-network-client";
 import type { RailNetwork } from "../../lib/rail-router";
 import { fetchStreetRoute } from "../../lib/street-route-client";
-import { addAnchor, kindOfCategory, openCandidate, searchAddCandidates, type AddCandidate } from "../../lib/shiori/add-search";
+import { addAnchor, openCandidate, openLookupHit, placeOfCandidate, putPlace, searchAddCandidates, type AddCandidate } from "../../lib/shiori/add-search";
+import { BulkBudgetError, bulkAfterTripChange, bulkLeftover, bulkProgress, bulkSummary, bundledMatches, chooseBulk, confirmBulk, mergeBulk, requeueBulk, resolveBulk, startBulk, tripChange, type BulkLine, type BulkStatus } from "../../lib/shiori/bulk-add";
 import { findCafes, withListedCafes, type CafeBreak, type CafePick } from "../../lib/shiori/cafes";
+import { fetchedStamp, forecastCentre, loadForecast, wetDaysOf, type DayForecast, type ForecastAnswer, type ForecastCache } from "../../lib/shiori/forecast";
 import { lineColor } from "../../lib/shiori/line-colors";
 import { buildShioriPlan, departureAfterStop, type ShioriLeg, type ShioriMeal, type ShioriNotice, type ShioriPlace, type ShioriPlan, type ShioriRoute, type ShioriStop } from "../../lib/shiori/plan";
 import {
@@ -36,8 +38,12 @@ import {
   storageStep,
   togglePlace,
   withCity,
+  withStartDate,
   type ShioriTrip,
 } from "../../lib/shiori/state";
+import { FORECAST_DAYS_AHEAD, dateLabel, earliestStartDate, forecastWindow, tripDate, type ForecastWindow } from "../../lib/shiori/trip-dates";
+import { isWetForecast, wetReason, type WetReason } from "../../lib/shiori/weather-days";
+import type { WeatherKind } from "../../lib/weather";
 import PlaceCard from "./PlaceCard";
 import ShioriMap, { DAY_COLORS } from "./ShioriMap";
 
@@ -164,6 +170,28 @@ const text = {
     addedWhere: (day: number) => `${day}日目に入りました。`,
     addedSee: "予定で見る",
     addFull: `一度に組めるのは${MAX_PLACES}か所までです。`,
+    bulkOpen: "リストをまとめて貼る",
+    bulkLabel: "行きたい場所のリスト（1行に1つ）",
+    bulkPlaceholder: "浅草寺\n東京タワー\n上野公園",
+    bulkHint: (room: number) => `あと${room}か所まで。追加する前に、見つかった場所を確認できます。`,
+    bulkCheck: "確認する",
+    bulkChecking: (at: number, total: number) => `${at} / ${total} を確認中`,
+    bulkChecked: "確認が終わりました。",
+    bulkLeftOut: (count: number) => `${count}件は入りきらないため確認していません（1つの旅は${MAX_PLACES}か所まで）。`,
+    bulkBudget: "地図検索の利用上限に達したため、ここで止めました。残りの行は検索していません。時間をおいてやり直してください。",
+    bulkStatus: { waiting: "順番待ち", checking: "確認中", found: "見つかりました", choose: "選んでください", missing: "見つかりません", failed: "検索できませんでした", already: "追加済み", repeat: "上の行と同じ場所", added: "追加しました" } as Record<BulkStatus, string>,
+    bulkSearchedAs: (query: string) => `「${query}」で検索`,
+    bulkChooseFor: (text: string) => `「${text}」はどれですか`,
+    bulkSkip: "追加しない",
+    bulkEdit: (text: string) => `「${text}」を書き直す`,
+    bulkAgain: "探し直す",
+    bulkRetry: "やり直す",
+    bulkSummary: (add: number, held: number) => `${add}件を追加します・${held}件は保留`,
+    bulkAdd: (count: number) => `${count}件を追加`,
+    bulkAdded: (count: number) => `${count}件を追加しました。`,
+    bulkOver: (count: number) => `${count}件は入りきりませんでした（1つの旅は${MAX_PLACES}か所まで）。`,
+    bulkHeld: "保留の行は、閉じると入力欄に戻ります。",
+    bulkClose: "閉じる",
     selected: (count: number) => `${count}か所を選択中`,
     make: "予定を作る",
     needOne: "場所を1つ以上選んでください",
@@ -178,6 +206,22 @@ const text = {
     loads: { easy: "ゆとりのある日", normal: "ちょうどいい日", tight: "詰まっている日" },
     loadTight: "移動や立ち寄りが多めです。1か所を別の日に移すか、減らすと楽になります。",
     rainTitle: "雨の日なら（屋内の候補）",
+    // What a wet day's forecast says: only rain is called rain.
+    wetForecast: { rain: "雨の予報", snow: "雪の予報", storm: "荒天の予報", chance: "降水確率が高い予報" } as Record<WetReason, string>,
+    rainTitleWet: (forecast: string) => `${forecast}です（屋内の候補）`,
+    startDate: "出発日",
+    optional: "（任意）",
+    startDateHint: "入れると、日付と天気予報を予定に反映します。",
+    weatherKinds: { clear: "晴れ", partly: "晴れ時々くもり", cloudy: "くもり", fog: "霧", rain: "雨", snow: "雪", storm: "雷雨" },
+    rainChance: (percent: number) => `降水確率 ${percent}%`,
+    forecastTag: "予報",
+    forecastBy: "予報:",
+    forecastFetched: (time: string) => `${time} 取得`,
+    forecastFailed: "天気を取得できませんでした。",
+    forecastLater: (day: number, date: string, whole: boolean) => whole
+      ? `天気予報は${date}ごろから反映します（予報があるのは${FORECAST_DAYS_AHEAD}日先まで）。`
+      : `${day}日目以降の天気予報は${date}ごろから反映します。`,
+    weatherOrder: (days: Array<{ day: number; forecast: string }>) => `${days.map((entry) => `${entry.day}日目は${entry.forecast}`).join("、")}のため、そこに屋外で過ごす時間が短い日を入れました。予報は変わることがあります。`,
     checkHours: "営業日・営業時間・予約を地図で確認 ↗",
     hoursNote: "営業時間・定休日・予約の要否は未確認です。各スポットを開いて確認してください。",
     hoursNotePrint: "営業時間・定休日・予約の要否は未確認です。出発前に各スポットの公式案内で確認してください。",
@@ -343,6 +387,28 @@ const text = {
     addedWhere: (day: number) => `It is on day ${day}.`,
     addedSee: "Show in the plan",
     addFull: `One trip holds up to ${MAX_PLACES} places.`,
+    bulkOpen: "Paste a list",
+    bulkLabel: "Your list of places (one per line)",
+    bulkPlaceholder: "Senso-ji\nTokyo Tower\nUeno Park",
+    bulkHint: (room: number) => `Room for ${room} more. You check what was found before anything is added.`,
+    bulkCheck: "Check the list",
+    bulkChecking: (at: number, total: number) => `Checking ${at} of ${total}`,
+    bulkChecked: "Finished checking.",
+    bulkLeftOut: (count: number) => `${count} ${count === 1 ? "line was" : "lines were"} not checked: one trip holds up to ${MAX_PLACES} places.`,
+    bulkBudget: "The map search has reached its usage limit, so the check stopped here. The remaining lines were not searched. Please try again later.",
+    bulkStatus: { waiting: "Waiting", checking: "Checking", found: "Found", choose: "Please choose", missing: "Not found", failed: "Could not search", already: "Already added", repeat: "Same place as a line above", added: "Added" } as Record<BulkStatus, string>,
+    bulkSearchedAs: (query: string) => `searched as "${query}"`,
+    bulkChooseFor: (text: string) => `Which one is "${text}"?`,
+    bulkSkip: "Don't add",
+    bulkEdit: (text: string) => `Rewrite "${text}"`,
+    bulkAgain: "Search again",
+    bulkRetry: "Retry",
+    bulkSummary: (add: number, held: number) => `${add} to add · ${held} on hold`,
+    bulkAdd: (count: number) => `Add ${count}`,
+    bulkAdded: (count: number) => `Added ${count} ${count === 1 ? "place" : "places"}.`,
+    bulkOver: (count: number) => `${count} did not fit: one trip holds up to ${MAX_PLACES} places.`,
+    bulkHeld: "Lines on hold go back into the box when you close.",
+    bulkClose: "Close",
     selected: (count: number) => `${count} selected`,
     make: "Plan my trip",
     needOne: "Pick at least one place",
@@ -357,6 +423,21 @@ const text = {
     loads: { easy: "An easy day", normal: "A comfortable day", tight: "A packed day" },
     loadTight: "A lot of moving or many stops. Moving one place to another day, or dropping one, makes it easier.",
     rainTitle: "If it rains (indoor ideas)",
+    wetForecast: { rain: "Rain is forecast", snow: "Snow is forecast", storm: "Stormy weather is forecast", chance: "A high chance of precipitation is forecast" } as Record<WetReason, string>,
+    rainTitleWet: (forecast: string) => `${forecast} (indoor ideas)`,
+    startDate: "Start date",
+    optional: " (optional)",
+    startDateHint: "Adds dates and the weather forecast to the plan.",
+    weatherKinds: { clear: "Clear", partly: "Partly cloudy", cloudy: "Cloudy", fog: "Fog", rain: "Rain", snow: "Snow", storm: "Thunderstorm" },
+    rainChance: (percent: number) => `rain chance ${percent}%`,
+    forecastTag: "Forecast",
+    forecastBy: "Forecast:",
+    forecastFetched: (time: string) => `fetched ${time}`,
+    forecastFailed: "Could not get the weather forecast.",
+    forecastLater: (day: number, date: string, whole: boolean) => whole
+      ? `The weather forecast is added from about ${date} (forecasts reach ${FORECAST_DAYS_AHEAD} days ahead).`
+      : `The forecast for day ${day} onward is added from about ${date}.`,
+    weatherOrder: (days: Array<{ day: number; forecast: string }>) => `${days.map((entry, index) => `${index === 0 ? entry.forecast : entry.forecast.charAt(0).toLowerCase() + entry.forecast.slice(1)} for day ${entry.day}`).join(" and ")}, so the day with less time outdoors was put there. Forecasts change.`,
     checkHours: "Check opening days, hours and booking on the map ↗",
     hoursNote: "Opening hours, closed days and booking requirements are not checked. Open each place to confirm before you go.",
     hoursNotePrint: "Opening hours, closed days and booking requirements are not checked. Confirm on each place's website before you go.",
@@ -458,7 +539,11 @@ const text = {
   },
 };
 
-type IconName = "walk" | "rail" | "bus" | "taxi" | "meal" | "bed" | "check" | "plus" | "pin" | "back" | "link" | "send" | "printer" | "cup" | "clock" | "info" | "spark" | "umbrella" | "book" | "warn";
+type IconName = "walk" | "rail" | "bus" | "taxi" | "meal" | "bed" | "check" | "plus" | "pin" | "back" | "link" | "send" | "printer" | "cup" | "clock" | "info" | "spark" | "umbrella" | "book" | "warn" | "sun" | "cloudsun" | "cloud" | "fog" | "rain" | "snow" | "storm";
+
+/** The symbol for each kind of forecast day. */
+const WEATHER_ICON: Record<WeatherKind, IconName> = { clear: "sun", partly: "cloudsun", cloudy: "cloud", fog: "fog", rain: "rain", snow: "snow", storm: "storm" };
+const CLOUD = "M7 15a4 4 0 0 1-.5-7.97A5.5 5.5 0 0 1 17 6.5a4.25 4.25 0 0 1 .5 8.5H7Z";
 
 function Icon({ name }: { name: IconName }) {
   const paths: Record<IconName, string> = {
@@ -482,6 +567,13 @@ function Icon({ name }: { name: IconName }) {
     umbrella: "M12 3v1M4 12a8 8 0 0 1 16 0H4ZM12 12v7a2 2 0 0 1-4 0",
     book: "M5 4h11a2 2 0 0 1 2 2v14H7a2 2 0 0 1-2-2V4ZM5 18a2 2 0 0 1 2-2h11M9 8h5",
     warn: "M12 4 3 20h18L12 4ZM12 10v5M12 17.5h.01",
+    sun: "M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6 7 7M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4",
+    cloudsun: "M8 4.5V3M3 9.500H1.500M4.5 6 3.400 4.900M11.500 6l1.100-1.100M5 11.800A3.500 3.500 0 1 1 11.300 8.300M9 20a3.500 3.500 0 0 1-.4-6.980A4.800 4.800 0 0 1 17.800 13.600 3.300 3.300 0 0 1 17.500 20H9Z",
+    cloud: "M7 18a4 4 0 0 1-.5-7.97A5.5 5.5 0 0 1 17 9.5a4.25 4.25 0 0 1 .5 8.5H7Z",
+    fog: "M5 8h14M3 12h18M6 16h12M9 20h6",
+    rain: `${CLOUD}M8 18l-1 3M12 18l-1 3M16 18l-1 3`,
+    snow: `${CLOUD}M8 18.500h.01M12 18.500h.01M16 18.500h.01M10 21.500h.01M14 21.500h.01`,
+    storm: `${CLOUD}M13 16l-2.500 3h3L11 22`,
   };
   return (
     <svg aria-hidden="true" className="shiori-icon" fill="none" height="18" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" viewBox="0 0 24 24" width="18">
@@ -885,6 +977,10 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
   const [otherHits, setOtherHits] = useState<{ kind: AddKind; candidates: AddCandidate[] } | null>(null);
   // The last thing added, said out loud: the plan it changed is far up the page.
   const [added, setAdded] = useState<{ id: string | null; name: string; kind: AddKind } | null>(null);
+  // The pasted-list mode of the add form: the text, and, once it is being checked, the review of its lines.
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkText, setBulkText] = useState("");
+  const [bulkReview, setBulk] = useState<{ cityId: string | null; lines: BulkLine[]; leftOut: string[]; busy: boolean; stopped: "budget" | null; over: number; added: number; edits: Record<number, string> } | null>(null);
   const [copied, setCopied] = useState(false);
   // Street paths looked up so far, keyed "walk|<leg>" / "drive|<leg>". Null
   // means the map service had no answer; it is not asked twice.
@@ -896,6 +992,14 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
   const wrote = useRef(false);
   // Counts searches by name; an answer is used only if its search is still the latest.
   const otherRun = useRef(0);
+  // The same for checks of a pasted list: cancelling or starting another moves it on.
+  const bulkRun = useRef(0);
+  // Where the keyboard goes once the list mode has changed its face: the
+  // button just pressed is gone from the page by then.
+  const bulkFocus = useRef<"text" | "status" | "opener" | null>(null);
+  const bulkOpener = useRef<HTMLButtonElement | null>(null);
+  const bulkBox = useRef<HTMLTextAreaElement | null>(null);
+  const bulkStatusLine = useRef<HTMLParagraphElement | null>(null);
   // Which way the page turns when another day is opened.
   const [dayDir, setDayDir] = useState<"fwd" | "back">("fwd");
   const tabs = useRef<HTMLDivElement | null>(null);
@@ -978,15 +1082,56 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
   // Planning a long list takes a second or two. It runs after the screen
   // has painted, so a tap shows "working" at once instead of a frozen page;
   // the plan on screen stays until its replacement is ready.
-  const planKey = useMemo(() => screen === "plan" ? `${planVisit}|${locale}|${encodeTrip(trip)}` : null, [screen, planVisit, locale, trip]);
+  // The forecast, once the traveller has given a start date — and not before:
+  // without a date nothing is asked of anyone. One question per plan, for the
+  // destination's rounded centre and the trip's dates; answers are kept for
+  // three hours, so editing the list does not ask again; an older answer is
+  // asked for anew the next time the plan is put together — not on a timer.
+  const forecastCache = useRef<ForecastCache>(new Map());
+  // The question now on its way: a plan put together twice in a row waits for the one answer.
+  const forecastAsk = useRef<{ key: string; answer: Promise<ForecastAnswer> } | null>(null);
+  const [forecast, setForecast] = useState<{ key: string; byIndex: Record<number, DayForecast>; failed: boolean; later: ForecastWindow["later"] } | null>(null);
+  // A trip with a city waits for the city list: asking about the middle of
+  // the places first and the city's centre a moment later would be two
+  // questions where one is promised.
+  const centre = useMemo(() => (trip.cityId && cities.length === 0 ? null : forecastCentre(city, trip.places)), [trip.cityId, cities.length, city, trip.places]);
+  const centreLat = centre?.latitude ?? null;
+  const centreLon = centre?.longitude ?? null;
+  const startDate = trip.startDate ?? null;
+  const forecastKey = screen === "plan" && startDate && centreLat !== null && centreLon !== null ? `${centreLat},${centreLon}|${startDate}|${trip.days}` : null;
+  useEffect(() => {
+    if (!forecastKey || !startDate || centreLat === null || centreLon === null) return;
+    let current = true;
+    const days = forecastWindow(startDate, trip.days);
+    const pending = forecastAsk.current?.key === forecastKey ? forecastAsk.current.answer : null;
+    const answer = (pending ?? Promise.resolve()).then(() => loadForecast({ latitude: centreLat, longitude: centreLon }, days.within, forecastCache.current));
+    const ask = { key: forecastKey, answer };
+    forecastAsk.current = ask;
+    void answer.then((found) => {
+      if (forecastAsk.current === ask) forecastAsk.current = null;
+      if (!current) return;
+      const next = { key: forecastKey, ...found, later: days.later };
+      // The same answer again is the same forecast: the plan is not put together a second time for it.
+      setForecast((shown) => (shown && JSON.stringify(shown) === JSON.stringify(next) ? shown : next));
+    });
+    return () => { current = false; };
+    // `trip` and `planVisit`: every time the plan is put together again the
+    // cache is consulted, which is when an expired answer is asked for anew.
+  }, [forecastKey, startDate, centreLat, centreLon, trip.days, trip, planVisit]);
+  // A forecast for other dates or another place is not this trip's forecast.
+  const weather = forecast && forecast.key === forecastKey ? forecast : null;
+  const wetDays = useMemo(() => (weather ? wetDaysOf(weather.byIndex, trip.days) : null), [weather, trip.days]);
+  // The forecast is part of what the plan is made from: a plan numbered for
+  // one forecast is not shown for another.
+  const planKey = useMemo(() => screen === "plan" ? `${planVisit}|${locale}|${encodeTrip(trip)}|${JSON.stringify(wetDays)}` : null, [screen, planVisit, locale, trip, wetDays]);
   const [planned, setPlanned] = useState<{ key: string; visit: number; plan: ShioriPlan } | null>(null);
   useEffect(() => {
     if (!planKey) return;
     const handle = window.setTimeout(() => {
-      setPlanned({ key: planKey, visit: planVisit, plan: buildShioriPlan({ places: trip.places, days: trip.days, hotel: trip.hotel, locale }, { rail, cities, routes }) });
+      setPlanned({ key: planKey, visit: planVisit, plan: buildShioriPlan({ places: trip.places, days: trip.days, hotel: trip.hotel, locale, wetDays }, { rail, cities, routes }) });
     }, 0);
     return () => window.clearTimeout(handle);
-  }, [planKey, planVisit, trip, rail, cities, locale, routes]);
+  }, [planKey, planVisit, trip, rail, cities, locale, routes, wetDays]);
   // A plan made on an earlier visit to this screen is another trip's plan.
   const plan = screen === "plan" && planned && planned.visit === planVisit ? planned.plan : null;
   const planning = screen === "plan" && planned?.key !== planKey;
@@ -1056,6 +1201,24 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
   }, [activeDay, plan]);
 
   const update = useCallback((change: (current: ShioriTrip) => ShioriTrip) => setTrip(change), []);
+  // The start date, optional, beside the day count on both screens. While a
+  // date is being typed the field shows the keystrokes; the trip only takes
+  // a date it can use, and on leaving the field it shows what the trip has.
+  const [dateDraft, setDateDraft] = useState<string | null>(null);
+  const [firstDate] = useState(() => earliestStartDate());
+  const dateField = (
+    <label className="shiori-date">
+      <span>{t.startDate}<small>{t.optional}</small></span>
+      <input
+        min={firstDate}
+        onBlur={() => setDateDraft(null)}
+        onChange={(event) => { const value = event.target.value; setDateDraft(value); update((current) => withStartDate(current, value)); }}
+        type="date"
+        value={dateDraft ?? trip.startDate ?? ""}
+      />
+      <small className="shiori-date-hint">{t.startDateHint}</small>
+    </label>
+  );
   // Each screen is a history entry, so the phone's back gesture goes to the
   // previous screen instead of leaving the site with the plan.
   const go = useCallback((next: Screen) => {
@@ -1073,11 +1236,24 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
     return () => window.removeEventListener("popstate", onPop);
   }, []);
   useEffect(() => { if (hydrated.current) writeRoutes(routes); }, [routes]);
+  // A pasted list under review was checked against the trip in hand. When
+  // another trip takes its place (a new one, a saved one, another
+  // destination) the running check is cancelled and the review dropped; what
+  // was not added goes back to the box only if the same trip stays open.
+  const leaveTrip = (next: ShioriTrip) => {
+    const step = bulkAfterTripChange(bulkReview, bulkText, tripChange(trip, next));
+    if (!step.cancel) return;
+    bulkRun.current += 1;
+    setBulk(null);
+    setBulkText(step.text);
+  };
   const chooseCity = (destination: PopularDestination) => {
     // Another destination starts another trip; the one in hand is kept aside.
     // So is the trip saved on an earlier visit when it was not reopened: the
     // first place added to the new trip would otherwise overwrite it.
-    const aside = keepAside(trip, saved, withCity(trip, destination, locale));
+    const next = withCity(trip, destination, locale);
+    leaveTrip(next);
+    const aside = keepAside(trip, saved, next);
     if (aside) {
       setPrevious(aside);
       setSaved(null);
@@ -1094,29 +1270,48 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
     if (kind === "hotel") {
       update((current) => ({ ...current, hotel: { name: candidate.name, lat: candidate.lat, lon: candidate.lon } }));
     } else {
-      update((current) => {
-        const label = kindOfCategory(candidate.category);
-        const place: ShioriPlace = {
-          id: candidate.id,
-          name: candidate.name,
-          lat: candidate.lat,
-          lon: candidate.lon,
-          ...(kind === "place"
-            ? { stayMinutes: candidate.stayMinutes ?? 60, ...(candidate.kind ?? label ? { kind: candidate.kind ?? label ?? undefined } : {}) }
-            : { stayMinutes: kind === "lunch" ? 60 : 90, kind: "restaurant", meal: kind }),
-        };
-        // Adding a place that is already listed updates it (a sight that is
-        // really tonight's dinner) instead of removing it.
-        return current.places.some((entry) => entry.id === place.id)
-          ? { ...current, places: current.places.map((entry) => entry.id === place.id ? { ...entry, ...place } : entry) }
-          : togglePlace(current, place);
-      });
+      update((current) => putPlace(current, placeOfCandidate(candidate, kind)));
     }
     setAdded({ id: kind === "hotel" ? null : candidate.id, name: candidate.name, kind });
     otherRun.current += 1;
     setOtherHits(null);
     setOther("");
     setOtherState("idle");
+  };
+
+  // One name looked up near the trip. `mapFailed` hears why the map search
+  // could not be asked; the lookup itself still falls back to the open one.
+  const lookUp = (name: string, kind: AddKind, isCurrent: () => boolean, mapFailed?: (error: unknown) => void, openFailed?: () => void) => {
+    const anchor = addAnchor(city, trip.places);
+    const reach = (city?.radiusKm ?? 60) + 80;
+    return searchAddCandidates({
+      poiFirst: kind !== "place",
+      anchor,
+      reachKm: reach,
+      cityKm: city?.radiusKm ?? reach,
+      // Asked near the trip: a same-named shop in another city is not what was meant.
+      mapSearch: appleRelayClient()
+        ? (poiOnly) => appleRelaySearch({ query: name, language: locale === "ja" ? "ja-JP" : "en-US", near: anchor, poiOnly }).catch((error: unknown) => { mapFailed?.(error); throw error; })
+        : null,
+      // No map search in this build, it knew nothing, or it could not be
+      // reached: the open lookup, with the places already chosen as its hint
+      // of which city this is.
+      openLookup: async () => {
+        try {
+          const context = trip.places.length >= 2 || !city
+            ? trip.places.map((place) => place.name)
+            : [...trip.places.map((place) => place.name), ...city.sights.slice(0, 3).map((sight) => locale === "ja" ? sight.ja : sight.en)];
+          const result = await requestPlaceResolution([...context, name].join("\n"), "", locale);
+          // The first of several the lookup could not decide between is a guess, and is carried as one.
+          const found = openLookupHit(result, name);
+          return found ? openCandidate(found.hit, anchor, reach, found.ambiguous) : null;
+        } catch (error) {
+          openFailed?.();
+          throw error;
+        }
+      },
+      isCurrent,
+    });
   };
 
   const addOther = async () => {
@@ -1130,33 +1325,84 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
     setOtherState("busy");
     setOtherHits(null);
     setAdded(null);
-    const anchor = addAnchor(city, trip.places);
-    const reach = (city?.radiusKm ?? 60) + 80;
-    const candidates = await searchAddCandidates({
-      poiFirst: kind !== "place",
-      anchor,
-      reachKm: reach,
-      cityKm: city?.radiusKm ?? reach,
-      // Asked near the trip: a same-named shop in another city is not what was meant.
-      mapSearch: appleRelayClient() ? (poiOnly) => appleRelaySearch({ query: name, language: locale === "ja" ? "ja-JP" : "en-US", near: anchor, poiOnly }) : null,
-      // No map search in this build, it knew nothing, or it could not be
-      // reached: the open lookup, with the places already chosen as its hint
-      // of which city this is.
-      openLookup: async () => {
-        const context = trip.places.length >= 2 || !city
-          ? trip.places.map((place) => place.name)
-          : [...trip.places.map((place) => place.name), ...city.sights.slice(0, 3).map((sight) => locale === "ja" ? sight.ja : sight.en)];
-        const result = await requestPlaceResolution([...context, name].join("\n"), "", locale);
-        const hit = result.places.find((place) => place.input === name)
-          ?? result.ambiguous.find((entry) => entry.input === name)?.candidates[0];
-        return hit ? openCandidate(hit, anchor, reach) : null;
-      },
-      isCurrent: () => run === otherRun.current,
-    });
+    const candidates = await lookUp(name, kind, () => run === otherRun.current);
     if (candidates === null) return;
     if (candidates.length === 0) { setOtherState("failed"); return; }
     setOtherHits({ kind, candidates });
     setOtherState("idle");
+  };
+
+  // A review belongs to the destination it was checked for: its candidates
+  // are places of that city, so another destination starts without one.
+  const bulk = bulkReview && bulkReview.cityId === trip.cityId ? bulkReview : null;
+  useEffect(() => { bulkRun.current += 1; }, [trip.cityId]);
+
+  // Looks up every waiting line of the pasted list and lets the review follow.
+  const checkBulk = async (lines: BulkLine[]) => {
+    const run = ++bulkRun.current;
+    const isCurrent = () => run === bulkRun.current;
+    const anchor = addAnchor(city, trip.places);
+    setBulk((current) => current ? { ...current, lines, busy: true, stopped: null } : current);
+    const outcome = await resolveBulk(lines, {
+      local: (name) => city ? bundledMatches(name, city.sights, locale, anchor) : [],
+      search: async (name) => {
+        let mapError: unknown = null;
+        let openDown = false;
+        const candidates = await lookUp(name, "place", isCurrent, (error) => { mapError = error; }, () => { openDown = true; });
+        if (candidates === null) return null;
+        // A spent budget fails every later line the same way: the run stops instead of asking on.
+        if (mapError instanceof AppleRelayError && mapError.code === "quota_exhausted") throw new BulkBudgetError();
+        // "Not found" is only said when a search really answered so.
+        if (candidates.length === 0 && (mapError || (!appleRelayClient() && openDown))) throw new Error("search unavailable");
+        return candidates;
+      },
+      takenIds: new Set(trip.places.map((place) => place.id)),
+      isCurrent,
+      onChange: (next) => { if (isCurrent()) setBulk((current) => current ? { ...current, lines: mergeBulk(current.lines, next) } : current); },
+    });
+    if (!outcome || !isCurrent()) return;
+    setBulk((current) => current ? { ...current, lines: mergeBulk(current.lines, outcome.lines), busy: false, stopped: outcome.stopped } : current);
+  };
+  const pickBulk = (key: number, candidateId: string | null) => setBulk((current) => current ? { ...current, lines: chooseBulk(current.lines, key, candidateId) } : current);
+  const startBulkCheck = () => {
+    if (!bulkText.trim() || bulk) return;
+    const { lines, leftOut } = startBulk(bulkText, MAX_PLACES - trip.places.length, trip.places);
+    setAdded(null);
+    bulkFocus.current = "status";
+    setBulk({ cityId: trip.cityId, lines, leftOut, busy: false, stopped: null, over: 0, added: 0, edits: {} });
+    void checkBulk(lines);
+  };
+  // Closing (or cancelling) stops the check and hands every line that was not added back to the box.
+  const closeBulk = () => {
+    bulkRun.current += 1;
+    if (bulk) setBulkText(bulkLeftover(bulk.lines, bulk.leftOut, bulk.edits));
+    bulkFocus.current = "text";
+    setBulk(null);
+  };
+  const hasBulk = bulk !== null;
+  useEffect(() => {
+    const target = bulkFocus.current;
+    bulkFocus.current = null;
+    if (target === "text") bulkBox.current?.focus();
+    else if (target === "status") bulkStatusLine.current?.focus();
+    else if (target === "opener") bulkOpener.current?.focus();
+  }, [bulkOpen, hasBulk]);
+  const retryBulk = (line: BulkLine) => {
+    if (!bulk || bulk.busy) return;
+    void checkBulk(requeueBulk(bulk.lines, line.key, bulk.edits[line.key] ?? line.query));
+  };
+  const addBulk = () => {
+    if (!bulk || bulk.busy) return;
+    const done = confirmBulk(bulk.lines, MAX_PLACES - trip.places.length, new Set(trip.places.map((place) => place.id)));
+    if (done.add.length > 0) {
+      update((current) => done.add.reduce((next, candidate) => {
+        // A bundled sight keeps its photo, description and usual length of stay.
+        const sight = city?.sights.find((entry) => `wikidata-${entry.q}` === candidate.id);
+        return putPlace(next, sight ? placeFromSight(sight, locale) : placeOfCandidate(candidate, "place"));
+      }, current));
+    }
+    setAdded(null);
+    setBulk({ ...bulk, lines: done.lines, over: done.over, added: bulk.added + done.add.length });
   };
 
   // Paper cannot be unfolded: before printing, every folded part is opened
@@ -1220,6 +1466,9 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
   // Places the traveller typed in themselves: restaurants, and anything the
   // destination's list does not have.
   const extras = trip.places.filter((place) => place.meal || !city?.sights.some((sight) => `wikidata-${sight.q}` === place.id));
+  const bulkRoom = MAX_PLACES - trip.places.length;
+  const bulkAt = bulkProgress(bulk?.lines ?? []);
+  const bulkSum = bulkSummary(bulk?.lines ?? []);
   const addForm = (
     <form className="shiori-other" id="shiori-add" onSubmit={(event) => { event.preventDefault(); void addOther(); }}>
       <label htmlFor="shiori-other">{phrases(t.addOther)}</label>
@@ -1265,6 +1514,84 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
           {trip.hotel ? <li><button onClick={() => update((current) => ({ ...current, hotel: null }))} type="button"><small>{t.hotelChip}: </small>{trip.hotel.name}<i aria-hidden="true"> ×</i></button></li> : null}
         </ul>
       ) : null}
+      <div className="shiori-bulk">
+        {!bulkOpen ? (
+          <button aria-expanded="false" className="shiori-link" onClick={() => { bulkFocus.current = "text"; setBulkOpen(true); }} ref={bulkOpener} type="button">{t.bulkOpen}</button>
+        ) : !bulk ? (
+          <>
+            <label htmlFor="shiori-bulk-text">{t.bulkLabel}</label>
+            {/* The example names are the chosen destination's own: Tokyo's would read oddly on a Kyoto trip. */}
+            <textarea id="shiori-bulk-text" ref={bulkBox} onChange={(event) => setBulkText(event.target.value)} placeholder={city ? city.sights.slice(0, 3).map((sight) => locale === "ja" ? sight.ja : sight.en).join("\n") : t.bulkPlaceholder} rows={5} value={bulkText} />
+            {bulkRoom > 0 ? <p className="shiori-quiet">{t.bulkHint(bulkRoom)}</p> : <p className="shiori-warn">{t.addFull}</p>}
+            <div className="shiori-bulk-actions">
+              <button className="shiori-bulk-go" disabled={!bulkText.trim()} onClick={startBulkCheck} type="button">{t.bulkCheck}</button>
+              <button className="shiori-link" onClick={() => { bulkFocus.current = "opener"; setBulkOpen(false); }} type="button">{t.bulkClose}</button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="shiori-bulk-title"><b>{t.bulkLabel}</b></p>
+            <p aria-live="polite" className="shiori-quiet" ref={bulkStatusLine} role="status" tabIndex={-1}>{bulk.busy ? t.bulkChecking(Math.min(bulkAt.done + 1, bulkAt.total), bulkAt.total) : bulk.stopped ? "" : t.bulkChecked}</p>
+            {bulk.stopped ? <p className="shiori-warn" role="alert">{t.bulkBudget}</p> : null}
+            {bulk.leftOut.length > 0 ? <p className="shiori-warn">{t.bulkLeftOut(bulk.leftOut.length)} {bulk.leftOut.join(locale === "ja" ? "、" : ", ")}</p> : null}
+            <ol className="shiori-bulk-lines">
+              {bulk.lines.map((line) => {
+                const about = (candidate: AddCandidate) => [candidate.address, city ? t.addKm(candidate.km) : null].filter(Boolean).join(" ・ ");
+                return (
+                  <li data-status={line.status} key={line.key}>
+                    <p className="shiori-bulk-typed">
+                      <span>{line.text}{line.query !== line.text ? <small>{` (${t.bulkSearchedAs(line.query)})`}</small> : null}</span>
+                      <b>{t.bulkStatus[line.status]}</b>
+                    </p>
+                    {line.status === "found" ? line.candidates.map((candidate) => (
+                      <label className="shiori-bulk-pick" key={candidate.id}>
+                        <input checked={line.chosen === candidate.id} onChange={(event) => pickBulk(line.key, event.target.checked ? candidate.id : null)} type="checkbox" />
+                        <span><b>{candidate.name}</b><small>{about(candidate)}</small></span>
+                      </label>
+                    )) : null}
+                    {line.status === "choose" ? (
+                      <fieldset>
+                        <legend>{t.bulkChooseFor(line.text)}</legend>
+                        {line.candidates.map((candidate) => (
+                          <label className="shiori-bulk-pick" key={candidate.id}>
+                            <input checked={line.chosen === candidate.id} name={`shiori-bulk-${line.key}`} onChange={() => pickBulk(line.key, candidate.id)} type="radio" />
+                            <span><b>{candidate.name}</b><small>{about(candidate)}</small></span>
+                          </label>
+                        ))}
+                        <label className="shiori-bulk-pick">
+                          <input checked={line.chosen === null} name={`shiori-bulk-${line.key}`} onChange={() => pickBulk(line.key, null)} type="radio" />
+                          <span>{t.bulkSkip}</span>
+                        </label>
+                      </fieldset>
+                    ) : null}
+                    {line.status === "missing" || line.status === "failed" ? (
+                      <div className="shiori-other-row">
+                        <input
+                          aria-label={t.bulkEdit(line.text)}
+                          onChange={(event) => setBulk((current) => current ? { ...current, edits: { ...current.edits, [line.key]: event.target.value } } : current)}
+                          // Enter here must search this line again, not send the search-by-name form above.
+                          onKeyDown={(event) => { if (event.key === "Enter" && !event.nativeEvent.isComposing) { event.preventDefault(); retryBulk(line); } }}
+                          value={bulk.edits[line.key] ?? line.query}
+                        />
+                        <button className="shiori-bulk-again" disabled={bulk.busy || !(bulk.edits[line.key] ?? line.query).trim()} onClick={() => retryBulk(line)} type="button">{line.status === "missing" ? t.bulkAgain : t.bulkRetry}</button>
+                      </div>
+                    ) : null}
+                    {(line.status === "already" || line.status === "repeat" || line.status === "added") && line.candidates[0] && line.candidates[0].name !== line.text ? <p className="shiori-quiet">{line.candidates.find((candidate) => candidate.id === line.chosen)?.name ?? line.candidates[0].name}</p> : null}
+                  </li>
+                );
+              })}
+            </ol>
+            {bulk.added > 0 ? <p className="shiori-added" role="status"><span>{t.bulkAdded(bulk.added)}</span></p> : null}
+            {bulk.over > 0 ? <p className="shiori-warn" role="alert">{t.bulkOver(bulk.over)}</p> : null}
+            {bulkSum.confirmed.length + bulkSum.held.length > 0 ? <p className="shiori-bulk-sum" role="status">{t.bulkSummary(bulkSum.confirmed.length, bulkSum.held.length)}</p> : null}
+            {bulkSum.held.length > 0 || bulk.leftOut.length > 0 ? <p className="shiori-quiet">{t.bulkHeld}</p> : null}
+            <div className="shiori-bulk-actions">
+              <button className="shiori-bulk-go" disabled={bulk.busy || bulkSum.confirmed.length === 0} onClick={addBulk} type="button">{t.bulkAdd(bulkSum.confirmed.length)}</button>
+              <button className="shiori-link" onClick={closeBulk} type="button">{bulk.added > 0 ? t.bulkClose : t.addCancel}</button>
+            </div>
+          </>
+        )}
+      </div>
     </form>
   );
 
@@ -1292,6 +1619,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
               }
               // The page-load copy has done its job; it must not reappear after the trip is emptied.
               setSaved(null);
+              leaveTrip(candidate);
               setTrip(candidate);
               setSelectedDay(0);
               go("plan");
@@ -1370,6 +1698,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
                 {Array.from({ length: MAX_DAYS }, (_, index) => index + 1).map((days) => <option key={days} value={days}>{days}{t.dayUnit}</option>)}
               </select>
             </label>
+            {dateField}
 
           <span aria-live="polite">{trip.places.length > 0 ? withUnits(t.selected(trip.places.length)).map((part, index) => index === 1 ? <b key="count">{part}</b> : part) : t.needOne}</span>
           <button disabled={trip.places.length === 0} onClick={() => { setSelectedDay(0); go("plan"); }} type="button">{t.make} →</button>
@@ -1396,9 +1725,21 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
         return <span>{t.noticeMealTime(notice.name, t.mealShort[notice.meal])}</span>;
       case "meal-hotel":
         return <span>{t.noticeMealHotel(notice.name, span(notice.minutes))}</span>;
+      case "weather-order":
+        // Each day is named with what its own forecast says; a wet day whose forecast is not on screen is only "likely wet".
+        return <span>{t.weatherOrder(notice.days.map((day) => { const known = weather?.byIndex[day - 1]; return { day, forecast: t.wetForecast[known ? wetReason(known) : "chance"] }; }))}</span>;
     }
   };
 
+  // What the plan says it did because of the forecast is told beside the
+  // forecast, not in the list of things that do not work.
+  const problems = plan?.notices.filter((notice) => notice.kind !== "weather-order") ?? [];
+  const weatherMove = plan?.notices.find((notice) => notice.kind === "weather-order") ?? null;
+  const dayDate = (index: number) => (trip.startDate ? tripDate(trip.startDate, index) : null);
+  const dayDateLabel = (index: number) => { const date = dayDate(index); return date ? dateLabel(date, locale) : ""; };
+  const shownForecasts = weather && plan ? plan.days.flatMap((day) => weather.byIndex[day.index] ?? []) : [];
+  // The oldest answer on screen: the time by which all of it was known.
+  const fetchedAt = shownForecasts.map((day) => day.fetchedAt).sort()[0] ?? null;
   const usedDays = plan?.days.length ?? 0;
   const setStay = (place: ShioriPlace, delta: number) => update((current) => ({
     ...current,
@@ -1445,11 +1786,11 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
             <p className="shiori-cover-meta">{t.coverMeta(trip.days, trip.places.length)}</p>
           </div>
 
-          {plan && plan.notices.length > 0 ? (
+          {plan && problems.length > 0 ? (
             <section aria-label={t.noticesTitle} className="shiori-notices">
               <h2>{t.noticesTitle}</h2>
               <ul>
-                {plan.notices.map((notice) => <li key={noticeKey(notice)}>{noticeView(notice)}</li>)}
+                {problems.map((notice) => <li key={noticeKey(notice)}>{noticeView(notice)}</li>)}
               </ul>
             </section>
           ) : null}
@@ -1467,6 +1808,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
               </select>
             </label>
           </div>
+          {dateField}
 
           <div className="shiori-plan-tools">
             <button onClick={() => { document.getElementById("shiori-other")?.focus({ preventScroll: true }); document.getElementById("shiori-add")?.scrollIntoView({ block: "start", behavior: "instant" }); }} type="button"><Icon name="plus" />{t.addShortcut}</button>
@@ -1475,6 +1817,16 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
           </div>
 
           {planning ? <p aria-live="polite" className={`shiori-working${plan ? " is-update" : ""}`}>{plan ? t.updating : t.working}</p> : null}
+
+          {/* Said once for the whole plan: whose forecast it is and how old, what it changed, and what is not known yet. */}
+          {plan && weather && (shownForecasts.length > 0 || weather.failed || weather.later || weatherMove) ? (
+            <div className="shiori-forecast">
+              {weatherMove ? <p className="shiori-forecast-move"><Icon name="umbrella" /><span>{noticeView(weatherMove)}</span></p> : null}
+              {shownForecasts.length > 0 && fetchedAt ? <p>{t.forecastBy} <a href="https://open-meteo.com/" rel="noreferrer" target="_blank">Open-Meteo</a> ・ {t.forecastFetched(fetchedStamp(fetchedAt, locale))}</p> : null}
+              {weather.failed ? <p aria-live="polite">{t.forecastFailed}</p> : null}
+              {weather.later ? <p>{t.forecastLater(weather.later.index + 1, dateLabel(weather.later.availableOn, locale), shownForecasts.length === 0 && !weather.failed)}</p> : null}
+            </div>
+          ) : null}
 
           <div className="shiori-day-anchor" ref={dayTop} />
           {plan && plan.days.length > 0 ? (
@@ -1493,6 +1845,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
                     type="button"
                   >
                     <b>{t.dayTab(entry.index)}</b>
+                    {trip.startDate ? <small>{dayDateLabel(entry.index)}</small> : null}
                     <small>{entry.title}</small>
                   </button>
                 ))}
@@ -1510,6 +1863,19 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
               // The day's first heading (朝…) stands before the way out of the hotel, not after it.
               const startPart = day.fromHotel ? partOf(day.start) : null;
               const steps = Math.round(day.walkMinutes / 10) * 1000;
+              // Only what was actually forecast for this date; a day without an answer shows nothing about weather.
+              const dayWeather = weather?.byIndex[day.index] ?? null;
+              const wet = dayWeather ? isWetForecast(dayWeather) : false;
+              const rainIdeas = day.rainIdeas.length > 0 ? (
+                <div className="shiori-ideas is-rain">
+                  <h3><Icon name="umbrella" />{wet && dayWeather ? t.rainTitleWet(t.wetForecast[wetReason(dayWeather)]) : t.rainTitle}</h3>
+                  <ul className="shiori-chips">
+                    {day.rainIdeas.map((sight) => (
+                      <li key={sight.q}><button onClick={() => addSight(sight)} type="button"><i aria-hidden="true">＋</i> {locale === "ja" ? sight.ja : sight.en}</button></li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null;
               return (
                 <section
                   aria-labelledby={`shiori-tab-${day.index}`}
@@ -1521,7 +1887,16 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
                   tabIndex={-1}
                 >
                   <header className="shiori-day-head">
-                    <h2><small>{t.dayTab(day.index)}</small> <span>{phrases(day.title)}</span></h2>
+                    <h2><small>{t.dayTab(day.index)}{trip.startDate ? ` ・ ${dayDateLabel(day.index)}` : ""}</small> <span>{phrases(day.title)}</span></h2>
+                    {dayWeather ? (
+                      <p className="shiori-weather">
+                        <Icon name={WEATHER_ICON[dayWeather.kind]} />
+                        <b>{t.weatherKinds[dayWeather.kind]}</b>
+                        <span>{dayWeather.temperatureMaxC}° / {dayWeather.temperatureMinC}°</span>
+                        {dayWeather.precipitationPercent !== null ? <span>{t.rainChance(dayWeather.precipitationPercent)}</span> : null}
+                        <small>{t.forecastTag}</small>
+                      </p>
+                    ) : null}
                   </header>
                   <details className="shiori-day-summary">
                     <summary>{t.daySummary}</summary>
@@ -1626,6 +2001,8 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
                     })}
                     {day.toHotel ? <li className="is-leg"><LegCard depart={departureAfterStop(day, day.stops.length - 1)} heading={t.toHotel} leg={day.toHotel} locale={locale} /></li> : null}
                   </ol>
+                  {/* With rain forecast for this date, the roofed ideas come before the others. */}
+                  {wet ? rainIdeas : null}
                   {day.ideas.length > 0 ? (
                     <div className="shiori-ideas">
                       <h3><Icon name="spark" /><span>{phrases(t.ideasTitle, "。")}</span></h3>
@@ -1636,16 +2013,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
                       </ul>
                     </div>
                   ) : null}
-                  {day.rainIdeas.length > 0 ? (
-                    <div className="shiori-ideas is-rain">
-                      <h3><Icon name="umbrella" />{t.rainTitle}</h3>
-                      <ul className="shiori-chips">
-                        {day.rainIdeas.map((sight) => (
-                          <li key={sight.q}><button onClick={() => addSight(sight)} type="button"><i aria-hidden="true">＋</i> {locale === "ja" ? sight.ja : sight.en}</button></li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
+                  {wet ? null : rainIdeas}
                   <p className="shiori-quiet shiori-hours-note"><Icon name="info" /><span className="shiori-screen-only">{t.hoursNote}</span><span className="shiori-print-only">{t.hoursNotePrint}</span></p>
                   {previousDay || nextDay ? (
                     <nav aria-label={t.dayNav} className="shiori-daynav">
@@ -1718,7 +2086,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
             {/* Restaurant listings and photos in Japan come from this service; its guideline asks for this line on the site. */}
             <p className="shiori-credit">Powered by <a href="http://webservice.recruit.co.jp/">ホットペッパーグルメ Webサービス</a></p>
             <p>
-              <button className="shiori-link" onClick={() => { setTrip(emptyTrip); setSaved(null); go("home"); try { window.localStorage.removeItem(STORAGE_KEY); } catch { /* ignore */ } window.history.replaceState({}, "", window.location.pathname); }} type="button">{t.newTrip}</button>
+              <button className="shiori-link" onClick={() => { leaveTrip(emptyTrip); setTrip(emptyTrip); setSaved(null); go("home"); try { window.localStorage.removeItem(STORAGE_KEY); } catch { /* ignore */ } window.history.replaceState({}, "", window.location.pathname); }} type="button">{t.newTrip}</button>
               {" ・ "}<Link href="/privacy">{t.privacy}</Link>
             </p>
           </footer>

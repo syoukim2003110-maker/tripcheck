@@ -1,6 +1,7 @@
 import type { PopularDestination, PopularSight } from "../popular-sights.ts";
 import { MAX_TRIP_DAYS, type ShioriHotel, type ShioriPace, type ShioriPlace } from "./plan.ts";
 import { shioriStayMinutes } from "./stay.ts";
+import { usableStartDate } from "./trip-dates.ts";
 
 /*
  * What a traveller has chosen: where, which places, how many days, how fast.
@@ -14,6 +15,12 @@ export type ShioriTrip = {
   days: number;
   pace: ShioriPace;
   hotel: ShioriHotel | null;
+  /**
+   * The first day of the trip ("2026-11-20"), if the traveller gave one. It
+   * is optional and absent on every trip made before dates existed: without
+   * it the booklet has numbered days only and asks nobody about the weather.
+   */
+  startDate?: string;
 };
 
 export const emptyTrip: ShioriTrip = { cityId: null, cityName: "", places: [], days: 3, pace: "standard", hotel: null };
@@ -92,7 +99,22 @@ export function withCity(trip: ShioriTrip, city: PopularDestination, locale: "ja
   if (trip.cityId === city.id) return trip;
   // A new destination is a new trip: places from another city make no sense
   // on this one's map.
-  return { ...emptyTrip, days: trip.days, pace: trip.pace, cityId: city.id, cityName: locale === "ja" ? city.ja : city.en };
+  // The dates are the traveller's, not the city's: they carry over with the day count.
+  return { ...emptyTrip, days: trip.days, pace: trip.pace, cityId: city.id, cityName: locale === "ja" ? city.ja : city.en, ...(trip.startDate ? { startDate: trip.startDate } : {}) };
+}
+
+/**
+ * The trip with the start date a date field handed over. An empty field
+ * removes the date; anything else that cannot be used (half-typed, long
+ * past) leaves the trip as it is, so a slip of the keyboard loses nothing.
+ */
+export function withStartDate(trip: ShioriTrip, value: string, now: Date = new Date()): ShioriTrip {
+  if (value === "") {
+    const { startDate: _dropped, ...rest } = trip;
+    void _dropped;
+    return rest;
+  }
+  return usableStartDate(value, now) ? { ...trip, startDate: value } : trip;
 }
 
 /* ------------------------------------------------------------- persistence */
@@ -105,6 +127,8 @@ type Wire = {
   p: ShioriPace;
   s: Array<[id: string, name: string, lat: number, lon: number, stay: number, day: number | null, kind: string | null, img: string | null, meal?: "lunch" | "dinner" | null]>;
   h: [name: string, lat: number, lon: number] | null;
+  /** Start date. Written only when there is one, so a trip without a date encodes exactly as it always did. */
+  t?: string;
 };
 
 function isPace(value: unknown): value is ShioriPace {
@@ -139,6 +163,7 @@ export function encodeTrip(trip: ShioriTrip): string {
       place.meal ?? null,
     ]),
     h: trip.hotel ? [clipName(trip.hotel.name), Number(trip.hotel.lat.toFixed(5)), Number(trip.hotel.lon.toFixed(5))] : null,
+    ...(trip.startDate ? { t: trip.startDate } : {}),
   };
   const bytes = new TextEncoder().encode(JSON.stringify(wire));
   let binary = "";
@@ -149,9 +174,10 @@ export function encodeTrip(trip: ShioriTrip): string {
 /**
  * Reads a stored or shared trip. Anything malformed is dropped rather than
  * repaired: a share link is text from somewhere else, and the worst it may do
- * is fail to open.
+ * is fail to open. (The start date is the one exception: it is an extra, so
+ * a bad or expired one is left out and the rest is read.)
  */
-export function decodeTrip(encoded: string): ShioriTrip | null {
+export function decodeTrip(encoded: string, now: Date = new Date()): ShioriTrip | null {
   try {
     const binary = atob(encoded.replace(/-/g, "+").replace(/_/g, "/"));
     const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
@@ -192,6 +218,8 @@ export function decodeTrip(encoded: string): ShioriTrip | null {
       days: Math.min(MAX_DAYS, Math.round(wire.d)),
       pace: wire.p,
       hotel,
+      // A date that is malformed or long past is forgotten; the trip still opens.
+      ...(usableStartDate(wire.t, now) ? { startDate: wire.t } : {}),
     };
   } catch {
     return null;

@@ -94,7 +94,7 @@ export function metersBetween(a: { lat: number; lon: number }, b: { latitude: nu
 }
 
 /** Map categories that are a way to reach a place, never the place a traveller put on the list. */
-const NOT_THE_SIGHT = new Set(["PublicTransport", "Parking", "EVCharger", "GasStation", "ATM", "CarRental", "Restroom", "Airport", "AirportGate", "AirportTerminal"]);
+export const NOT_THE_SIGHT = new Set(["PublicTransport", "Parking", "EVCharger", "GasStation", "ATM", "CarRental", "Restroom", "Airport", "AirportGate", "AirportTerminal"]);
 
 /** How far the map's pin may sit from the booklet's: further for the very same name (a shrine's grounds are large). */
 export const PLACE_MATCH_METERS = 150;

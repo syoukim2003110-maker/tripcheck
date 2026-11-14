@@ -1,5 +1,6 @@
 import type { AppleRelayPlace } from "../apple-relay-client";
-import { safePlaceId } from "./state.ts";
+import type { ShioriPlace } from "./plan.ts";
+import { safePlaceId, togglePlace, type ShioriTrip } from "./state.ts";
 
 /*
  * Looking up a place the traveller typed in. The map search is asked near the
@@ -21,6 +22,12 @@ export type AddCandidate = {
   /** Known only when the open lookup, not the map search, found the place. */
   stayMinutes?: number;
   kind?: string;
+  /**
+   * The lookup itself was not sure this is the place meant (it answered
+   * "one of these"), or there is no address to tell it by: never added
+   * without the traveller choosing it.
+   */
+  unsure?: boolean;
 };
 
 export type AddAnchor = { latitude: number; longitude: number };
@@ -93,12 +100,32 @@ export type OpenLookupHit = {
   placeTypes?: readonly string[];
 };
 
-/** The open lookup's hit as a candidate, or null when it is out of the trip's reach. */
-export function openCandidate(hit: OpenLookupHit, anchor: AddAnchor | null, reachKm: number): AddCandidate | null {
+/**
+ * The answer of the open lookup for a typed name: the place it resolved, or —
+ * marked as a guess — the first of the places it could not decide between.
+ */
+export function openLookupHit<Hit>(
+  result: { places: ReadonlyArray<Hit & { input: string }>; ambiguous: ReadonlyArray<{ input: string; candidates: readonly Hit[] }> },
+  name: string,
+): { hit: Hit; ambiguous: boolean } | null {
+  const sure = result.places.find((place) => place.input === name);
+  if (sure) return { hit: sure, ambiguous: false };
+  const guess = result.ambiguous.find((entry) => entry.input === name)?.candidates[0];
+  return guess ? { hit: guess, ambiguous: true } : null;
+}
+
+/**
+ * The open lookup's hit as a candidate, or null when it is out of the trip's
+ * reach. It is marked unsure when the lookup was (`ambiguous`), and whenever
+ * it has no address to show: a bare name cannot be told from its namesake.
+ */
+export function openCandidate(hit: OpenLookupHit, anchor: AddAnchor | null, reachKm: number, ambiguous = false): AddCandidate | null {
   const km = anchor ? Math.hypot(hit.latitude - anchor.latitude, (hit.longitude - anchor.longitude) * Math.cos((anchor.latitude * Math.PI) / 180)) * 111 : 0;
   if (km > reachKm) return null;
+  const address = "";
   return {
-    id: safePlaceId(hit.id), name: hit.name, lat: hit.latitude, lon: hit.longitude, address: "", category: null, km,
+    id: safePlaceId(hit.id), name: hit.name, lat: hit.latitude, lon: hit.longitude, address, category: null, km,
+    ...(ambiguous || !address ? { unsure: true } : {}),
     stayMinutes: Math.min(240, Math.max(30, hit.planningDurationMinutes)),
     ...(hit.placeTypes?.[0] ? { kind: hit.placeTypes[0].replace(/_/g, " ") } : {}),
   };
@@ -151,4 +178,28 @@ export async function searchAddCandidates(search: AddSearch): Promise<AddCandida
     if (!search.isCurrent()) return null;
   }
   return candidates;
+}
+
+/** A chosen candidate as a place of the trip: a sight to see, or the restaurant for one meal. */
+export function placeOfCandidate(candidate: AddCandidate, kind: "place" | "lunch" | "dinner"): ShioriPlace {
+  const label = kindOfCategory(candidate.category);
+  return {
+    id: candidate.id,
+    name: candidate.name,
+    lat: candidate.lat,
+    lon: candidate.lon,
+    ...(kind === "place"
+      ? { stayMinutes: candidate.stayMinutes ?? 60, ...(candidate.kind ?? label ? { kind: candidate.kind ?? label ?? undefined } : {}) }
+      : { stayMinutes: kind === "lunch" ? 60 : 90, kind: "restaurant", meal: kind }),
+  };
+}
+
+/**
+ * The trip with this place in it. Adding a place that is already listed
+ * updates it (a sight that is really tonight's dinner) instead of removing it.
+ */
+export function putPlace(trip: ShioriTrip, place: ShioriPlace): ShioriTrip {
+  return trip.places.some((entry) => entry.id === place.id)
+    ? { ...trip, places: trip.places.map((entry) => entry.id === place.id ? { ...entry, ...place } : entry) }
+    : togglePlace(trip, place);
 }
