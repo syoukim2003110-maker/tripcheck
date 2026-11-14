@@ -91,6 +91,8 @@ export function cafeBreakFor(day: {
     if (lunchEnds.some((end) => leave - end >= 0 && leave - end < 75)) return [];
     const next = day.stops[index + 1];
     if (next?.place.meal) return [];
+    // Nor in front of a booked time with no half hour to spare before it.
+    if (next?.reserved && next.waitMinutes < 30) return [];
     return [{ index, leave }];
   }).sort((left, right) => Math.abs(left.leave - 900) - Math.abs(right.leave - 900));
   const chosen = candidates[0];

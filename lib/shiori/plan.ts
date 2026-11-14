@@ -54,6 +54,22 @@ export function departureAfterStop(day: Pick<ShioriDay, "stops" | "meals">, inde
   return day.meals.find((meal) => meal.afterStop === index && meal.kind === "lunch" && meal.end)?.end ?? day.stops[index]?.leave;
 }
 
+/** A time of day as it is typed and printed: "HH:MM", 24-hour, zero-padded. */
+export type ShioriClock = string;
+
+/**
+ * A time the traveller already has for a place — a booked table, a timed
+ * ticket. The place is on this day and the visit starts at exactly this
+ * time. Day and time come together: a time alone is not offered.
+ */
+export type ShioriReservation = { /** 1-based day of the trip. */ day: number; time: ShioriClock };
+
+const CLOCK_TEXT = /^([01]\d|2[0-3]):[0-5]\d$/;
+/** Minutes since midnight for "HH:MM"; null for anything else. */
+export function clockOfDay(value: unknown): number | null {
+  return typeof value === "string" && CLOCK_TEXT.test(value) ? Number(value.slice(0, 2)) * 60 + Number(value.slice(3)) : null;
+}
+
 export type ShioriPlace = {
   id: string;
   name: string;
@@ -68,6 +84,8 @@ export type ShioriPlace = {
   day?: number | null;
   /** A restaurant the traveller wants to eat at: it is that day's lunch or dinner. */
   meal?: "lunch" | "dinner";
+  /** A fixed start the traveller entered. It outranks `day`. */
+  reserve?: ShioriReservation;
 };
 
 export type ShioriHotel = { name: string; lat: number; lon: number };
@@ -86,6 +104,14 @@ export type ShioriInput = {
    * without it the plan is exactly the plan there has always been.
    */
   wetDays?: ReadonlyArray<boolean | null> | null;
+  /**
+   * When the traveller can start moving on day 1 — not when a flight lands.
+   * Day 1 has nothing before it. Only ever later than the usual start: an
+   * earlier time changes nothing.
+   */
+  firstDayStart?: ShioriClock | null;
+  /** The last day is over by this time, the ride back to the hotel included. */
+  lastDayFinish?: ShioriClock | null;
 };
 
 /** A street path looked up for one leg ("walk|<key>" or "drive|<key>"). */
@@ -132,7 +158,35 @@ export type ShioriStop = {
    */
   arriveNextDay: boolean;
   leaveNextDay: boolean;
+  /** The arrival is a time the traveller entered (a booking), not an estimate. */
+  reserved: boolean;
 };
+
+/**
+ * A place the plan could not keep without breaking a time the traveller
+ * entered. It is not shown at another time or on another day: it is listed
+ * as not fitting, with the reason. `proven` is true only where the numbers
+ * show it cannot be done whatever else is on the day; everything else is
+ * "could not fit", which is all the planner knows.
+ */
+export type ShioriUnplaced = { placeId: string; name: string } & (
+  /** The booking is on a day the trip does not have. */
+  | { reason: "reserve-day"; day: number; days: number; proven: true }
+  /** The booking is earlier than the place can be reached. `earliest` is the earliest possible arrival. */
+  | { reason: "reserve-before-start"; day: number; time: ShioriClock; earliest: ShioriClock; proven: true }
+  /** The booked visit (and the ride back) ends after the last-day finish. `ends` is when it would be over. */
+  | { reason: "reserve-after-finish"; day: number; time: ShioriClock; ends: ShioriClock; finish: ShioriClock; proven: true }
+  /**
+   * Two bookings on one day cannot both be kept; the one higher in the list
+   * stays. `earlierId` is whichever of the two is first on the clock and
+   * `freeAt` the earliest arrival at the other one after it.
+   */
+  | { reason: "reserve-clash"; day: number; time: ShioriClock; withId: string; withName: string; withTime: ShioriClock; earlierId: string; freeAt: ShioriClock; proven: true }
+  /** No way was found to be at the booking on time (a measured path made the way there too long). */
+  | { reason: "reserve-late"; day: number; time: ShioriClock; proven: false }
+  /** No room was found before the finish time (`edge: "finish"`) or around the booked times. */
+  | { reason: "no-room"; day: number; edge: "finish" | "reserve"; proven: false }
+);
 
 /**
  * Where the traveller's own wishes pull against each other, each with the
@@ -158,7 +212,11 @@ export type ShioriNotice =
    * days (1-based) have rain forecast, and the planned day with less time
    * outdoors was put on each of them.
    */
-  | { kind: "weather-order"; days: number[] };
+  | { kind: "weather-order"; days: number[] }
+  /** A place left out so that no entered time is broken. */
+  | ({ kind: "unplaced" } & ShioriUnplaced)
+  /** A one-day trip whose start is not before its finish: nothing can be planned. */
+  | { kind: "frame-order"; start: ShioriClock; finish: ShioriClock };
 
 export type ShioriMeal = {
   kind: "lunch" | "dinner";
@@ -205,6 +263,8 @@ export type ShioriDay = {
   engineDay: number;
   /** The day ends (back at the hotel, when there is one) after midnight. */
   endsNextDay: boolean;
+  /** An hour for lunch had a place on this day, but would have broken a booked time or the finish: there is none. */
+  noLunchRoom: boolean;
 };
 
 export type ShioriPlan = {
@@ -219,6 +279,8 @@ export type ShioriPlan = {
   stayNear: { latitude: number; longitude: number; routePoints: GeoPoint[]; /** The listed place the area is around, when it is one. */ nearName?: string } | null;
   hotel: ShioriHotel | null;
   notices: ShioriNotice[];
+  /** Places left out because of a time the traveller entered (their names are in `leftOut` too). */
+  unplaced: ShioriUnplaced[];
 };
 
 const paceSettings: Record<ShioriPace, { engine: Pace; dayEnd: string }> = {
@@ -279,6 +341,32 @@ function resolvedStop(place: ShioriPlace, index: number): ResolvedInputStop {
 }
 
 type EngineDay = BuiltTripPlan["days"][number];
+const NO_IDS: ReadonlySet<string> = new Set<string>();
+
+/**
+ * What the traveller entered about times, read once: the start of day 1 and
+ * the finish of the last day in minutes, and each usable booking by place.
+ * Null when nothing was entered — the plan is then the one there has always
+ * been, by the same code.
+ */
+type Frames = {
+  start: number | null;
+  finish: number | null;
+  booked: Map<string, { day: number; at: number; time: ShioriClock }>;
+};
+function framesOf(input: ShioriInput): Frames | null {
+  const start = clockOfDay(input.firstDayStart);
+  const finish = clockOfDay(input.lastDayFinish);
+  const booked: Frames["booked"] = new Map();
+  for (const place of input.places) {
+    const at = clockOfDay(place.reserve?.time);
+    const day = place.reserve?.day;
+    // Half a booking (a time without a usable day) is no booking.
+    if (at !== null && typeof day === "number" && Number.isInteger(day) && day >= 1) booked.set(place.id, { day, at, time: place.reserve!.time });
+  }
+  return start === null && finish === null && booked.size === 0 ? null : { start, finish, booked };
+}
+const requestedDays = (input: ShioriInput) => Math.max(1, Math.min(14, Math.round(input.days)));
 
 /**
  * A day's arrivals and departures as minutes that only grow. The engine
@@ -301,9 +389,15 @@ function timeline(day: EngineDay) {
  * ends by the day's end. A chosen dinner may run to 21:30 — the dinner, not
  * the day: the last sight before it still has to be over by the day's end.
  */
-function overrunOf(day: EngineDay, dayEnd: string, dinnerIds: ReadonlySet<string>) {
+function overrunOf(day: EngineDay, dayEnd: string, dinnerIds: ReadonlySet<string>, bookedIds: ReadonlySet<string> = NO_IDS) {
   if (day.stops.length === 0) return 0;
   const times = timeline(day);
+  if (bookedIds.size > 0 && day.stops.some((stop) => bookedIds.has(stop.stop.id))) {
+    // A booked stop is not held to 18:00 or 21:30: the traveller chose its hour.
+    return day.stops.reduce((over, stop, index) => (
+      bookedIds.has(stop.stop.id) ? over : Math.max(over, times[index].leave - clockMinutes(dinnerIds.has(stop.stop.id) ? DINNER_DAY_END : dayEnd))
+    ), 0);
+  }
   const lastSight = day.stops.findLastIndex((stop) => !dinnerIds.has(stop.stop.id));
   // Sightseeing — not the ride back to the hotel — is what has to be over by
   // the day's end: the same nine hours with a hotel as without one.
@@ -312,8 +406,8 @@ function overrunOf(day: EngineDay, dayEnd: string, dinnerIds: ReadonlySet<string
   return Math.max(0, sights, hasDinner ? times.at(-1)!.leave - clockMinutes(DINNER_DAY_END) : 0);
 }
 
-function dayLate(day: EngineDay, dayEnd: string, dinnerIds: ReadonlySet<string>) {
-  return overrunOf(day, dayEnd, dinnerIds) > 0;
+function dayLate(day: EngineDay, dayEnd: string, dinnerIds: ReadonlySet<string>, bookedIds: ReadonlySet<string> = NO_IDS) {
+  return overrunOf(day, dayEnd, dinnerIds, bookedIds) > 0;
 }
 
 function dinnerIdsOf(input: ShioriInput) {
@@ -350,14 +444,16 @@ function hotelBase(hotel: ShioriHotel): ResolvedInputStop {
 type Built = { plan: BuiltTripPlan; context: TripPlannerContext; raw: string; usedDays: number };
 const stayOf = (place: ShioriPlace) => Math.max(15, Math.round(place.stayMinutes));
 
-function buildWithEngine(input: ShioriInput, extra: Partial<TripPlannerContext>, usedDays: number): Built {
+function buildWithEngine(input: ShioriInput, extra: Partial<TripPlannerContext>, usedDays: number, frames: Frames | null = null): Built {
   const settings = paceSettings.standard;
   const stops = input.places.map(resolvedStop);
   const raw = stops.map((stop) => stop.input).join("\n");
   const base = input.hotel ? hotelBase(input.hotel) : null;
-  const dayOverrides = Object.fromEntries(input.places.flatMap((place) => (
-    typeof place.day === "number" && place.day >= 1 && place.day <= usedDays ? [[place.id, place.day] as const] : []
-  )));
+  const dayOverrides = Object.fromEntries(input.places.flatMap((place) => {
+    // A booking's day outranks a pin.
+    const day = frames?.booked.get(place.id)?.day ?? place.day;
+    return typeof day === "number" && day >= 1 && day <= usedDays ? [[place.id, day] as const] : [];
+  }));
   const context: TripPlannerContext = {
     resolvedStops: stops,
     resolvedBase: base,
@@ -373,9 +469,16 @@ function buildWithEngine(input: ShioriInput, extra: Partial<TripPlannerContext>,
     // A restaurant is only a meal during the meal: the engine waits for it to
     // open and will not seat anyone after the kitchen's last order.
     openingWindowsByDay: Object.fromEntries(input.places.flatMap((place) => {
-      if (!place.meal) return [];
-      const hours = DAY_CLOCK.meals[place.meal];
-      const window = { openMinutes: hours.open, closeMinutes: hours.lastSeat + Math.max(15, Math.round(place.stayMinutes)) };
+      const booked = frames?.booked.get(place.id);
+      if (!place.meal && !booked) return [];
+      // A booked time is a door that opens at that minute and lets nobody in
+      // after it: reached early the engine waits, reached late it says so
+      // and keeps the clock running — never an earlier or a later start that
+      // looks kept. (Room is left for the lunch hour its stay may carry.)
+      const hours = place.meal ? DAY_CLOCK.meals[place.meal] : null;
+      const window = booked
+        ? { openMinutes: booked.at, closeMinutes: booked.at + stayOf(place) + LUNCH_MINUTES + 1, lastEntryMinutes: booked.at }
+        : { openMinutes: hours!.open, closeMinutes: hours!.lastSeat + Math.max(15, Math.round(place.stayMinutes)) };
       return [[place.id, Object.fromEntries(Array.from({ length: usedDays }, (_, day) => [day, [window]]))] as const];
     })),
     ...extra,
@@ -395,6 +498,9 @@ function buildWithEngine(input: ShioriInput, extra: Partial<TripPlannerContext>,
     const lastSight = ids.findLastIndex((id) => !dinnerIds.has(id));
     const firstDinner = ids.findIndex((id) => dinnerIds.has(id));
     if (firstDinner < 0 || firstDinner > lastSight) return [];
+    // (A day with a booked time keeps the order it was given: a booked night
+    // visit may well come after dinner.)
+    if (frames && ids.some((id) => frames.booked.has(id))) return [];
     return [[index, [...ids.filter((id) => !dinnerIds.has(id)), ...ids.filter((id) => dinnerIds.has(id))]] as const];
   }));
   if (Object.keys(reordered).length > 0) {
@@ -427,13 +533,15 @@ type DayTiming = {
   lunchAfter: Map<number, string>;
   durationOverrides: Record<string, number>;
   dayStartTimes: Record<number, string>;
+  /** Engine day indices where a lunch hour had a place but an entered time left it no room. */
+  noLunchRoom: Set<number>;
 };
 const sameTiming = (left: DayTiming, right: DayTiming) => (
   JSON.stringify([[...left.lunchAfter], left.dayStartTimes]) === JSON.stringify([[...right.lunchAfter], right.dayStartTimes])
 );
 const NO_RAIL = {};
 const structures = new WeakMap<object, Map<string, Structure>>();
-function structureKey(input: ShioriInput) {
+function structureKey(input: ShioriInput, frames: Frames | null = null, excluded: ReadonlySet<string> = NO_IDS) {
   return JSON.stringify([
     // The names too: they are printed on the legs, and a renamed place or
     // hotel must not come back under its old name.
@@ -444,6 +552,8 @@ function structureKey(input: ShioriInput) {
     // The forecast decides the numbering of the days: a plan made for one
     // forecast must never be served for another.
     (input.wetDays ?? []).map((wet) => (wet === null ? "-" : wet ? "w" : "d")).join(""),
+    // The times the traveller entered, and what they left no room for.
+    ...(frames ? [[frames.start, frames.finish, input.places.map((place) => { const booked = frames.booked.get(place.id); return booked ? [booked.day, booked.at] : 0; }), [...excluded].sort()]] : []),
   ]);
 }
 
@@ -645,14 +755,20 @@ function priceTrip(input: ShioriInput, rail: RailNetwork | null): TripPrices {
   return prices;
 }
 
-/** The trip as the search sees it: stays, meals, pins and a table of minutes. */
-function searchProblem(input: ShioriInput, pricing: TripPrices): SearchProblem {
+/** The trip as the search sees it: stays, meals, pins, entered times and a table of minutes. */
+function searchProblem(input: ShioriInput, pricing: TripPrices, frames: Frames | null = null): SearchProblem {
   return {
-    stops: input.places.map((place) => ({ stay: stayOf(place), meal: place.meal ?? null, day: typeof place.day === "number" ? place.day : null })),
+    stops: input.places.map((place) => {
+      const booked = frames?.booked.get(place.id);
+      return booked
+        ? { stay: stayOf(place), meal: place.meal ?? null, day: booked.day, fixed: booked.at }
+        : { stay: stayOf(place), meal: place.meal ?? null, day: typeof place.day === "number" ? place.day : null };
+    }),
     minutes: pricing.minutes,
     km: input.places.map((from) => input.places.map((to) => straightKm(from, to))),
     taxi: pricing.taxi,
     hotel: pricing.hotel && input.hotel ? { ...pricing.hotel, km: input.places.map((place) => straightKm(place, input.hotel!)) } : null,
+    ...(frames && (frames.start !== null || frames.finish !== null) ? { frames: { firstStart: frames.start, lastFinish: frames.finish } } : {}),
   };
 }
 
@@ -662,11 +778,12 @@ function searchProblem(input: ShioriInput, pricing: TripPrices): SearchProblem {
  * it has already worked out instead of solving them again.
  */
 let lastSearch: { minutes: number[][]; out: number[] | null; key: string; search: ReturnType<typeof daySearch> } | null = null;
-function searchFor(input: ShioriInput, pricing: TripPrices) {
-  const key = JSON.stringify(input.places.map((place) => [stayOf(place), place.meal ?? "", place.day ?? 0]));
+function searchFor(input: ShioriInput, pricing: TripPrices, frames: Frames | null = null) {
+  const key = JSON.stringify(input.places.map((place) => [stayOf(place), place.meal ?? "", place.day ?? 0]))
+    + (frames ? JSON.stringify([frames.start, frames.finish, input.places.map((place) => { const booked = frames.booked.get(place.id); return booked ? [booked.day, booked.at] : 0; })]) : "");
   const out = pricing.hotel?.out ?? null;
   if (lastSearch && lastSearch.minutes === pricing.minutes && lastSearch.out === out && lastSearch.key === key) return lastSearch.search;
-  const search = daySearch(searchProblem(input, pricing));
+  const search = daySearch(searchProblem(input, pricing, frames));
   lastSearch = { minutes: pricing.minutes, out, key, search };
   return search;
 }
@@ -731,22 +848,33 @@ function outdoorMinutes(places: readonly ShioriPlace[]) {
  * forecast, whole days trade numbers so that the outdoor one falls on a dry
  * date. Days, order, legs and clocks are untouched — they move together.
  */
-function weatherNumbering(input: ShioriInput, days: ReadonlyArray<{ day: number; order: readonly number[] }>) {
+function weatherNumbering(input: ShioriInput, days: ReadonlyArray<{ day: number; order: readonly number[] }>, frames: Frames | null = null) {
   const none = { dayFor: new Map<number, number>(), wetDays: [] as number[] };
   if (!input.wetDays || !input.wetDays.some((wet) => wet !== null)) return none;
   const sorted = [...days].sort((left, right) => left.day - right.day);
   // The day as the booklet prints it: empty days are skipped in the count,
   // unless a place is pinned to a day — then "Day 3" stays Day 3 (see where
   // the days are numbered in planOnce).
-  const keepDayNumbers = input.places.some((place) => typeof place.day === "number");
+  // An entered time means calendar days too: day 1 is the day the traveller
+  // arrives, a booking's day is the day it was booked for.
+  const keepDayNumbers = frames !== null || input.places.some((place) => typeof place.day === "number");
   const printed = (position: number) => (keepDayNumbers ? sorted[position].day - 1 : position);
+  const lastDay = requestedDays(input);
   const result = weatherDayOrder(sorted.map((day, position) => {
     const places = day.order.map((stop) => input.places[stop]);
     return {
       outdoorMinutes: outdoorMinutes(places),
       // A day holding a place of unknown kind is not known to be the day with
-      // less time outdoors: it stays where it is, like a pinned one.
-      fixed: places.some((place) => typeof place.day === "number" || weatherExposure(place) === "unknown"),
+      // less time outdoors: it stays where it is, like a pinned one. So does
+      // a day with a booking on it, day 1 when it has a start and the last
+      // day when it has a finish: those days were planned for their own
+      // hours, and no other day's places would fit them.
+      fixed: places.some((place) => typeof place.day === "number" || weatherExposure(place) === "unknown")
+        || (frames !== null && (
+          places.some((place) => frames.booked.has(place.id))
+          || (frames.start !== null && day.day === 1)
+          || (frames.finish !== null && day.day === lastDay)
+        )),
       wet: input.wetDays![printed(position)] ?? null,
     };
   }));
@@ -764,11 +892,25 @@ type PlanOptions = {
 };
 
 function planOnce(input: ShioriInput, options: PlanOptions): ShioriPlan {
-  if (input.places.length === 0) {
-    return { days: [], freeDays: Math.max(0, input.days), freeDayIdeas: [], leftOut: [], stayNear: null, hotel: input.hotel, notices: [] };
+  const frames = framesOf(input);
+  return frames ? planFramed(input, options, frames) : planCore(input, options, null, NO_IDS);
+}
+
+/**
+ * The booklet for the list less the places in `excluded` — places an entered
+ * time left no room for. They stay in the list (it is priced and searched
+ * once, whatever is set aside) and come back in `leftOut`. Without `frames`
+ * nothing is ever excluded and this is the plan as it has always been made.
+ */
+function planCore(input: ShioriInput, options: PlanOptions, frames: Frames | null, excluded: ReadonlySet<string>): ShioriPlan {
+  const engineInput = excluded.size === 0 ? input : { ...input, places: input.places.filter((place) => !excluded.has(place.id)) };
+  if (engineInput.places.length === 0) {
+    return { days: [], freeDays: Math.max(0, input.days), freeDayIdeas: [], leftOut: input.places.map((place) => place.name), stayNear: null, hotel: input.hotel, notices: [], unplaced: [] };
   }
   const settings = paceSettings.standard;
   const dinnerIds = dinnerIdsOf(input);
+  const bookedIds: ReadonlySet<string> = frames ? new Set(frames.booked.keys()) : NO_IDS;
+  const requested = requestedDays(input);
   const rail = options.rail ?? null;
 
   const routes = options.routes ?? new Map<string, ShioriRoute | null>();
@@ -785,16 +927,24 @@ function planOnce(input: ShioriInput, options: PlanOptions): ShioriPlan {
    * clock the search keeps, run over the engine's own minutes.
    */
   const timingOf = (plan: BuiltTripPlan): DayTiming => {
-    const timing: DayTiming = { lunchAfter: new Map(), durationOverrides: {}, dayStartTimes: {} };
+    const timing: DayTiming = { lunchAfter: new Map(), durationOverrides: {}, dayStartTimes: {}, noLunchRoom: new Set() };
     plan.days.forEach((day, index) => {
       const places = day.stops.flatMap((entry) => placeById.get(entry.stop.id) ?? []);
       if (places.length === 0 || places.length !== day.stops.length) return;
+      // The day's entered times, exactly as the search knows them (see day-search.ts).
+      const open = frames && index === 0 ? frames.start : null;
+      const close = frames && index === requested - 1 ? frames.finish : null;
+      const framed = frames !== null && (open !== null || close !== null || places.some((place) => frames.booked.has(place.id)));
       const schedule = scheduleDay(
         places.map(stayOf),
         places.map((place) => place.meal ?? null),
         day.legs.map((leg) => leg.comparison.recommended.minutes),
         day.startBase && day.hotelOutboundMinutes !== null ? day.hotelOutboundMinutes : null,
+        framed
+          ? { fixed: places.map((place) => frames.booked.get(place.id)?.at ?? null), open, close, homeward: day.endBase && day.hotelInboundMinutes !== null ? day.hotelInboundMinutes : 0 }
+          : undefined,
       );
+      if (schedule.noLunchRoom) timing.noLunchRoom.add(index);
       timing.dayStartTimes[index] = clock(schedule.start);
       if (schedule.lunchAt >= 0) {
         timing.lunchAfter.set(index, places[schedule.lunchAt].id);
@@ -814,7 +964,9 @@ function planOnce(input: ShioriInput, options: PlanOptions): ShioriPlan {
     const { journeys, transit, walking, walkAdvised, driving, legModeOverrides } = pricing.tables;
     // Which places share a day and in what order is decided on the priced
     // minutes alone (see day-search.ts).
-    const trip = searchFor(input, pricing).choose(input.days);
+    const without = excluded.size === 0 ? null : input.places.flatMap((place, index) => (excluded.has(place.id) ? [index] : []));
+    const search = searchFor(input, pricing, frames);
+    const trip = without ? search.choose(input.days, { without }) : search.choose(input.days);
 
     // The engine then builds exactly those days in exactly that order, so
     // every clock, leg and hotel ride in the booklet comes from one place.
@@ -822,20 +974,21 @@ function planOnce(input: ShioriInput, options: PlanOptions): ShioriPlan {
     // follows. A day that would wait at a restaurant's door starts later.
     const pins: Record<string, number> = {};
     const lockedOrderByDay: Record<number, string[]> = {};
-    const timing: DayTiming = { lunchAfter: new Map(), durationOverrides: {}, dayStartTimes: {} };
-    const numbering = weatherNumbering(input, trip.days);
+    const timing: DayTiming = { lunchAfter: new Map(), durationOverrides: {}, dayStartTimes: {}, noLunchRoom: new Set() };
+    const numbering = weatherNumbering(input, trip.days, frames);
     for (const day of trip.days) {
       const places = day.order.map((stop) => input.places[stop]);
       const dayNumber = numbering.dayFor.get(day.day) ?? day.day;
       lockedOrderByDay[dayNumber - 1] = places.map((place) => place.id);
       for (const place of places) pins[place.id] = dayNumber;
       timing.dayStartTimes[dayNumber - 1] = clock(day.start);
+      if (day.noLunchRoom) timing.noLunchRoom.add(dayNumber - 1);
       if (day.lunchAt >= 0) {
         timing.lunchAfter.set(dayNumber - 1, places[day.lunchAt].id);
         timing.durationOverrides[places[day.lunchAt].id] = stayOf(places[day.lunchAt]) + LUNCH_MINUTES;
       }
     }
-    const built = buildWithEngine(input, {
+    const built = buildWithEngine(engineInput, {
       liveTransitMinutes: transit,
       liveWalkingMinutes: walking,
       liveDrivingMinutes: driving,
@@ -844,10 +997,10 @@ function planOnce(input: ShioriInput, options: PlanOptions): ShioriPlan {
       lockedOrderByDay,
       durationOverrides: timing.durationOverrides,
       dayStartTimes: timing.dayStartTimes,
-    }, trip.slots);
+    }, trip.slots, frames);
     return { built, journeys, transit, walking, walkAdvised, driving, pins, legModeOverrides, timing, weatherDays: numbering.wetDays };
   };
-  const cacheKey = structureKey(input);
+  const cacheKey = structureKey(input, frames, excluded);
   const shelf = structures.get(rail ?? NO_RAIL) ?? new Map<string, Structure>();
   structures.set(rail ?? NO_RAIL, shelf);
   let known = shelf.get(cacheKey);
@@ -879,7 +1032,7 @@ function planOnce(input: ShioriInput, options: PlanOptions): ShioriPlan {
     for (const [key, minutes] of Object.entries(measuredWalking)) {
       if (walkAdvised.has(key)) measuredTransit[key] = minutes + 8;
     }
-    const measured = (when: DayTiming) => buildWithEngine(input, {
+    const measured = (when: DayTiming) => buildWithEngine(engineInput, {
       dayOverrides: pins,
       legModeOverrides,
       lockedOrderByDay: orderOf(known.built.plan),
@@ -896,7 +1049,7 @@ function planOnce(input: ShioriInput, options: PlanOptions): ShioriPlan {
           return [key, journey ? taxiAgainstTrain(minutes, journey.totalMinutes) : minutes];
         })),
       },
-    }, known.built.usedDays);
+    }, known.built.usedDays, frames);
     built = measured(timing);
     const corrected = timingOf(built.plan);
     if (!sameTiming(corrected, timing)) {
@@ -944,7 +1097,7 @@ function planOnce(input: ShioriInput, options: PlanOptions): ShioriPlan {
   };
 
   const listedNames = input.places.map((place) => place.name);
-  const keepDayNumbers = input.places.some((place) => typeof place.day === "number");
+  const keepDayNumbers = frames !== null || input.places.some((place) => typeof place.day === "number");
   const cities = options.cities ?? [];
   const days = plan.days.flatMap((day, index): ShioriDay[] => {
     if (day.stops.length === 0) return [];
@@ -977,11 +1130,14 @@ function planOnce(input: ShioriInput, options: PlanOptions): ShioriPlan {
         mealMissed: Boolean(place.meal) && entry.openingStatus !== "verified_open",
         arriveNextDay: times[stopIndex].arrive >= 1_440,
         leaveNextDay: leaveMinutes >= 1_440,
+        reserved: bookedIds.has(place.id),
       }];
     });
     if (stops.length === 0) return [];
     const lastPlace = stops.at(-1)!.place;
-    if (times.at(-1)!.leave >= 16 * 60 + 30 && !stops.some((stop) => stop.place.meal === "dinner")) {
+    // The day the traveller has to be done by a certain time is over by then: no dinner is suggested after it.
+    const finish = frames && index === requested - 1 ? frames.finish : null;
+    if (times.at(-1)!.leave >= 16 * 60 + 30 && !stops.some((stop) => stop.place.meal === "dinner") && finish === null) {
       meals.push({ kind: "dinner", afterStop: stops.length - 1, start: stops.at(-1)!.leave, end: null, near: { latitude: lastPlace.lat, longitude: lastPlace.lon }, nearName: lastPlace.name, ...(times.at(-1)!.leave >= 1_440 ? { nextDay: true } : {}) });
     }
     const legs = day.legs.map((leg) => legView(leg.from, leg.to, leg, { mode: null, minutes: null }));
@@ -999,7 +1155,9 @@ function planOnce(input: ShioriInput, options: PlanOptions): ShioriPlan {
     ), 0);
     const routePoints = stops.map((stop) => ({ latitude: stop.place.lat, longitude: stop.place.lon }));
     // A long gap before a chosen dinner is room for one more place, too.
-    const endsEarly = times.at(-1)!.leave <= clockMinutes(settings.dayEnd) - 120 || stops.some((stop) => stop.waitMinutes >= 120);
+    // (On a day with a finish, room means room before that finish and the ride back.)
+    const dayCloses = finish === null ? clockMinutes(settings.dayEnd) : Math.min(clockMinutes(settings.dayEnd), finish - (toHotel?.minutes ?? 0));
+    const endsEarly = times.at(-1)!.leave <= dayCloses - 120 || stops.some((stop) => stop.waitMinutes >= 120);
     const ideas = endsEarly && cities.length > 0
       ? bundledSightsNearRoute({ routePoints, excludedNames: listedNames, languageCode: input.locale, cities })
         .slice(0, 4)
@@ -1010,7 +1168,7 @@ function planOnce(input: ShioriInput, options: PlanOptions): ShioriPlan {
       : [];
     const names = stops.map((stop) => stop.place.name);
     const travelMinutes = allLegs.reduce((sum, leg) => sum + leg.minutes, 0);
-    const late = dayLate(day, settings.dayEnd, dinnerIds);
+    const late = dayLate(day, settings.dayEnd, dinnerIds, bookedIds);
     const span = times.at(-1)!.leave - times[0].arrive;
     // Tight: a day that runs late, or what the search itself calls a packed
     // day (day-search.ts: six places, eight hours of sightseeing, two and a
@@ -1021,7 +1179,9 @@ function planOnce(input: ShioriInput, options: PlanOptions): ShioriPlan {
     const packed = packedDay({
       stops: stops.length,
       sights: stops.filter((stop) => stop.place.meal !== "dinner").length,
-      span: times[Math.max(0, lastSight)].leave - times[0].arrive,
+      // (The idle time in front of a booked hour is not sightseeing.)
+      span: times[Math.max(0, lastSight)].leave - times[0].arrive
+        - stops.reduce((sum, stop, position) => sum + (stop.reserved && position >= 1 && position <= lastSight ? stop.waitMinutes : 0), 0),
       rides: legs.map((leg) => leg.minutes),
     });
     const load: ShioriDay["load"] = late || packed || (stops.length >= 2 && walkMinutes >= 90)
@@ -1054,15 +1214,15 @@ function planOnce(input: ShioriInput, options: PlanOptions): ShioriPlan {
       travelMinutes,
       load,
       rainIdeas,
-      runsLate: dayLate(day, settings.dayEnd, dinnerIds),
+      runsLate: dayLate(day, settings.dayEnd, dinnerIds, bookedIds),
       engineDay: index + 1,
       endsNextDay: clockMinutes(day.startTime) + day.totalMinutes >= 1_440,
+      noLunchRoom: timing.noLunchRoom.has(index),
     }];
   // Empty days are not printed. The rest are numbered 1, 2, 3 — unless the
   // traveller pinned a place to a day: "Day 3" must then stay Day 3.
   }).map((day, position) => (keepDayNumbers ? day : { ...day, index: position }));
 
-  const requested = Math.max(1, Math.min(14, Math.round(input.days)));
   const freeDays = Math.max(0, requested - days.length);
   const listed = new Set(input.places.map((place) => place.id));
   const centre = input.places.reduce((sum, place) => ({ lat: sum.lat + place.lat / input.places.length, lon: sum.lon + place.lon / input.places.length }), { lat: 0, lon: 0 });
@@ -1083,7 +1243,173 @@ function planOnce(input: ShioriInput, options: PlanOptions): ShioriPlan {
     stayNear: hotelContext ? { latitude: hotelContext.latitude, longitude: hotelContext.longitude, routePoints: hotelContext.routePoints } : null,
     hotel: input.hotel,
     notices: known.weatherDays.length > 0 ? [{ kind: "weather-order", days: known.weatherDays }] : [],
+    unplaced: [],
   };
+}
+
+/**
+ * The plan when the traveller entered a time: a start on day 1, a finish on
+ * the last day, a booking. One rule above all: a day that is printed breaks
+ * none of them. Whatever cannot be placed without breaking one is set aside
+ * and listed, with the reason — never shown at another time. Three layers,
+ * each on its own:
+ *
+ *   1. What the numbers prove impossible whatever else is on the day (a
+ *      booking on a day the trip does not have, before the day can start,
+ *      past its finish, or clashing with another booking) is set aside
+ *      before anything is planned. Only these are called "cannot".
+ *   2. The search breaks an entered time only when it found no way not to;
+ *      if it still does, a place nobody booked is set aside from that day
+ *      and the trip searched again.
+ *   3. The booklet as built — after measured street paths have corrected
+ *      its clocks — is read back against every entered time; a place is set
+ *      aside and the booklet built again for as long as one is broken.
+ */
+function planFramed(input: ShioriInput, options: PlanOptions, frames: Frames): ShioriPlan {
+  const rail = options.rail ?? null;
+  const requested = requestedDays(input);
+  const unplaced: ShioriUnplaced[] = [];
+  const excluded = new Set<string>();
+  const setAside = (entry: ShioriUnplaced) => {
+    unplaced.push(entry);
+    excluded.add(entry.placeId);
+  };
+  // A one-day trip that may not start before it has to end: nothing is planned into it.
+  if (requested === 1 && frames.start !== null && frames.finish !== null && frames.start >= frames.finish) {
+    for (const place of input.places) setAside({ placeId: place.id, name: place.name, reason: "no-room", day: 1, edge: "finish", proven: false });
+    return { ...planCore(input, options, frames, excluded), unplaced, notices: [{ kind: "frame-order", start: clock(frames.start), finish: clock(frames.finish) }] };
+  }
+  if (input.places.length > 0) {
+    const pricing = priceTrip(input, rail);
+    // 1. The bookings alone. A booked visit starts at its time and leaves a
+    // stay later whatever else the day holds, so these checks — each booking
+    // against the day's ends, neighbours on the clock against each other —
+    // are exactly what it takes for a day's bookings to be kept together.
+    const keptOn = new Map<number, Array<{ index: number; place: ShioriPlace; at: number; time: ShioriClock }>>();
+    input.places.forEach((place, index) => {
+      const booked = frames.booked.get(place.id);
+      if (!booked) return;
+      const about = { placeId: place.id, name: place.name, day: booked.day };
+      if (booked.day > requested) {
+        setAside({ ...about, reason: "reserve-day", days: requested, proven: true });
+        return;
+      }
+      const earliest = (booked.day === 1 && frames.start !== null ? frames.start : 0) + (pricing.hotel ? pricing.hotel.out[index] + DAY_CLOCK.legBuffer : 0);
+      if (booked.at < earliest) {
+        setAside({ ...about, reason: "reserve-before-start", time: booked.time, earliest: clock(earliest), proven: true });
+        return;
+      }
+      const ends = booked.at + stayOf(place) + (pricing.hotel ? pricing.hotel.back[index] : 0);
+      if (booked.day === requested && frames.finish !== null && ends > frames.finish) {
+        setAside({ ...about, reason: "reserve-after-finish", time: booked.time, ends: clock(ends), finish: clock(frames.finish), proven: true });
+        return;
+      }
+      // Of two bookings that cannot both be kept, the one higher in the list stays.
+      const kept = keptOn.get(booked.day) ?? [];
+      keptOn.set(booked.day, kept);
+      const before = kept.filter((other) => other.at <= booked.at).sort((left, right) => right.at - left.at)[0];
+      const after = kept.filter((other) => other.at > booked.at).sort((left, right) => left.at - right.at)[0];
+      const reach = (from: { index: number; place: ShioriPlace; at: number }, to: number) => from.at + stayOf(from.place) + pricing.minutes[from.index][to] + DAY_CLOCK.legBuffer;
+      const self = { index, place, at: booked.at, time: booked.time };
+      const clash = before && reach(before, index) > booked.at
+        ? { other: before, earlierId: before.place.id, freeAt: reach(before, index) }
+        : after && reach(self, after.index) > after.at ? { other: after, earlierId: place.id, freeAt: reach(self, after.index) } : null;
+      if (clash) {
+        setAside({ ...about, reason: "reserve-clash", time: booked.time, withId: clash.other.place.id, withName: clash.other.place.name, withTime: clash.other.time, earlierId: clash.earlierId, freeAt: clock(clash.freeAt), proven: true });
+        return;
+      }
+      kept.push(self);
+    });
+    // 2. The search, until it breaks nothing.
+    const search = searchFor(input, pricing, frames);
+    const without = () => input.places.flatMap((place, index) => (excluded.has(place.id) ? [index] : []));
+    const broken = (days: ReadonlyArray<{ late: number; hardOver: number }>) => days.some((day) => day.late > 0 || day.hardOver > 0);
+    while (excluded.size < input.places.length) {
+      const day = search.choose(input.days, { without: without() }).days.find((entry) => entry.late > 0 || entry.hardOver > 0);
+      if (!day) break;
+      const places = day.order.map((stop) => input.places[stop]);
+      const bookedAt = places.map((place) => frames.booked.get(place.id)?.at ?? null);
+      // The first booking reached late — or, when only the finish is passed, the end of the day.
+      const latePosition = day.late > 0 ? places.findIndex((_, position) => bookedAt[position] !== null && day.arrive[position] > bookedAt[position]!) : -1;
+      const edge = latePosition >= 0 ? "reserve" as const : "finish" as const;
+      // Places nobody booked go first: in front of the late booking the
+      // nearest first, else from the end of the day backwards.
+      const candidates = places.flatMap((_, position) => (bookedAt[position] === null && (latePosition < 0 || position < latePosition) ? [position] : [])).reverse();
+      // The one whose absence lets every entered time be kept is the one set
+      // aside; when no single place does that, the first, and the search goes on.
+      const cure = candidates.find((position) => !broken(search.choose(input.days, { without: [...without(), day.order[position]] }).days));
+      const position = cure ?? candidates[0];
+      if (position !== undefined) {
+        setAside({ placeId: places[position].id, name: places[position].name, reason: "no-room", day: day.day, edge, proven: false });
+        continue;
+      }
+      // Nothing but bookings in the way. (Not expected: the bookings alone were checked above.)
+      const last = latePosition >= 0 ? latePosition : places.length - 1;
+      const booked = frames.booked.get(places[last].id);
+      setAside(latePosition >= 0 && booked
+        ? { placeId: places[last].id, name: places[last].name, reason: "reserve-late", day: day.day, time: booked.time, proven: false }
+        : { placeId: places[last].id, name: places[last].name, reason: "no-room", day: day.day, edge: "finish", proven: false });
+    }
+    // Places were set aside one at a time, the first of them while the day
+    // was still far too full: one of those may fit again now that others are
+    // gone. Each is tried, in the traveller's own order, and kept out only if
+    // the trip cannot hold it.
+    const listed = new Map(input.places.map((place, index) => [place.id, index]));
+    for (const entry of unplaced.filter((candidate) => candidate.reason === "no-room").sort((left, right) => listed.get(left.placeId)! - listed.get(right.placeId)!)) {
+      const others = without().filter((index) => input.places[index].id !== entry.placeId);
+      if (broken(search.choose(input.days, { without: others }).days)) continue;
+      excluded.delete(entry.placeId);
+      unplaced.splice(unplaced.indexOf(entry), 1);
+    }
+  }
+  // 3. The booklet itself, read back.
+  let plan = planCore(input, options, frames, excluded);
+  for (let round = 0; round <= input.places.length; round += 1) {
+    const victim = brokenInPrint(plan, input, frames, excluded);
+    if (!victim) break;
+    setAside(victim);
+    plan = planCore(input, options, frames, excluded);
+  }
+  return { ...plan, unplaced, notices: [...unplaced.map((entry): ShioriNotice => ({ kind: "unplaced", ...entry })), ...plan.notices] };
+}
+
+/**
+ * Reads the booklet as printed against every time the traveller entered and
+ * names the place to set aside for the first one that is broken, or null
+ * when all are kept. It looks only at what is on the page — day, arrival,
+ * start, end — so it holds whatever the search and the engine did.
+ */
+function brokenInPrint(plan: ShioriPlan, input: ShioriInput, frames: Frames, excluded: ReadonlySet<string>): ShioriUnplaced | null {
+  const requested = requestedDays(input);
+  for (const place of input.places) {
+    const booked = frames.booked.get(place.id);
+    if (!booked || excluded.has(place.id)) continue;
+    const late: ShioriUnplaced = { placeId: place.id, name: place.name, reason: "reserve-late", day: booked.day, time: booked.time, proven: false };
+    const day = plan.days.find((entry) => entry.stops.some((stop) => stop.place.id === place.id));
+    if (!day) return late;
+    const position = day.stops.findIndex((stop) => stop.place.id === place.id);
+    const stop = day.stops[position];
+    if (day.index === booked.day - 1 && stop.arrive === booked.time && !stop.arriveNextDay) continue;
+    // What is in front of it is what made it late: the nearest place nobody booked goes.
+    for (let before = position - 1; before >= 0 && day.index === booked.day - 1; before -= 1) {
+      if (!day.stops[before].reserved) return { placeId: day.stops[before].place.id, name: day.stops[before].place.name, reason: "no-room", day: booked.day, edge: "reserve", proven: false };
+    }
+    return late;
+  }
+  const aside = (day: ShioriDay, stop: ShioriStop, edge: "finish" | "reserve"): ShioriUnplaced => ({ placeId: stop.place.id, name: stop.place.name, reason: "no-room", day: day.index + 1, edge, proven: false });
+  if (frames.start !== null) {
+    const first = plan.days.find((day) => day.index === 0);
+    if (first && (clockMinutes(first.start) < frames.start || clockMinutes(first.stops[0].arrive) < frames.start)) {
+      return aside(first, first.stops.find((stop) => !stop.reserved) ?? first.stops[0], "reserve");
+    }
+  }
+  if (frames.finish !== null) {
+    const last = plan.days.find((day) => day.index === requested - 1);
+    if (last && (last.endsNextDay || clockMinutes(last.end) > frames.finish)) {
+      return aside(last, last.stops.findLast((stop) => !stop.reserved) ?? last.stops.at(-1)!, "finish");
+    }
+  }
+  return null;
 }
 
 function straightMinutes(from: GeoPoint, to: GeoPoint) {
@@ -1102,13 +1428,26 @@ export function buildShioriPlan(input: ShioriInput, options: PlanOptions = {}): 
   if (plan.days.length === 0) return plan;
   const rail = options.rail ?? null;
   const notices: ShioriNotice[] = [];
-  const requested = Math.max(1, Math.min(14, Math.round(input.days)));
+  const requested = requestedDays(input);
+  const frames = framesOf(input);
+  // What the planner laid out: the list less what an entered time left no
+  // room for. The hotel area is judged on that — a booking that cannot be
+  // kept says nothing about where to stay.
+  const aside = new Set(plan.unplaced.map((entry) => entry.placeId));
+  const laid = aside.size > 0 ? { ...input, places: input.places.filter((place) => !aside.has(place.id)) } : input;
   const fits = (candidate: ShioriPlan) => candidate.leftOut.length === 0 && !candidate.days.some((day) => day.runsLate || day.stops.some((stop) => stop.mealMissed));
   /** The search alone, no booklet built: enough to compare hotel areas and to see whether a shorter list would fit. */
-  const searched = (trip: ShioriInput) => daySearch(searchProblem(trip, priceTrip(trip, rail)));
-  const unkept = (days: ReturnType<ReturnType<typeof daySearch>["choose"]>["days"]) => days.filter((day) => day.overrun > 0 || day.missed > 0).length;
+  // (With a time entered a day's order is not a look-up; for a hotel area that is only being compared, fewer orders are tried.)
+  const searched = (trip: ShioriInput) => daySearch(searchProblem(trip, priceTrip(trip, rail), framesOf(trip)), frames ? { bookedDayStops: 4 } : {});
+  const unkept = (days: ReturnType<ReturnType<typeof daySearch>["choose"]>["days"]) => days.filter((day) => day.overrun > 0 || day.missed > 0 || day.late > 0 || day.hardOver > 0).length;
+  const runsLate = plan.days.some((day) => day.runsLate);
+  // Left out by the engine, not by an entered time (as on any trip).
+  const otherLeftOut = plan.leftOut.length > plan.unplaced.length;
+  // What more days, or one place fewer, could cure. A booking that clashes
+  // with another, or cannot be reached in time, is cured by neither.
+  const curable = (entry: ShioriUnplaced) => entry.reason === "no-room" || entry.reason === "reserve-day" || entry.reason === "reserve-after-finish";
 
-  if (plan.leftOut.length > 0 || plan.days.some((day) => day.runsLate)) {
+  if (runsLate || otherLeftOut || plan.unplaced.some(curable)) {
     // No day holds more than its nine and a half hours of stays: fewer days than that are not worth planning.
     const least = Math.ceil(input.places.reduce((sum, place) => sum + (place.meal === "dinner" ? 0 : stayOf(place) + DAY_CLOCK.legBuffer), 0) / (DAY_CLOCK.sightsEnd - DAY_CLOCK.hotelStart + DAY_CLOCK.legBuffer));
     let found = false;
@@ -1129,13 +1468,14 @@ export function buildShioriPlan(input: ShioriInput, options: PlanOptions = {}): 
     // once any one place is gone, whichever day it was on); the one that
     // works is then planned for real before it is offered.
     const centre = input.places.reduce((sum, place) => ({ lat: sum.lat + place.lat / input.places.length, lon: sum.lon + place.lon / input.places.length }), { lat: 0, lon: 0 });
+    // (A booked place is never the one to leave out: it is the one thing the traveller cannot move.)
     const costly = input.places
-      .filter((place) => !place.meal)
+      .filter((place) => !place.meal && !frames?.booked.has(place.id))
       .map((place) => ({ place, cost: place.stayMinutes + 2 * straightMinutes({ latitude: centre.lat, longitude: centre.lon }, { latitude: place.lat, longitude: place.lon }) }))
       .sort((left, right) => right.cost - left.cost)
       .slice(0, input.places.length <= 12 ? input.places.length : 6);
     const pricing = priceTrip(input, rail);
-    const whole = searchFor(input, pricing);
+    const whole = searchFor(input, pricing, frames);
     // How far over the plan is, all its days together. A place whose stay
     // and longest rides in and out are well short of that cannot be the one
     // whose absence makes the list fit: it is not tried.
@@ -1144,13 +1484,15 @@ export function buildShioriPlan(input: ShioriInput, options: PlanOptions = {}): 
     const takes = (index: number) => stayOf(input.places[index]) + DAY_CLOCK.legBuffer
       + Math.max(pricing.hotel?.out[index] ?? 0, ...pricing.minutes.map((row) => row[index]))
       + Math.max(pricing.hotel?.back[index] ?? 0, ...pricing.minutes[index]);
-    const droppable = costly.find(({ place }) => {
+    // (Where a booking itself cannot be kept, leaving out some other place cures nothing.)
+    const droppable = plan.unplaced.some((entry) => entry.reason !== "no-room") ? undefined : costly.find(({ place }) => {
       const without = { ...input, places: input.places.filter((entry) => entry.id !== place.id) };
       if (without.places.length === 0 || over > takes(input.places.indexOf(place)) + 30) return false;
       return unkept(whole.choose(input.days, { quick: true, without: input.places.indexOf(place) }).days) === 0 && fits(planOnce(without, options));
     });
     if (droppable) notices.push({ kind: "drop", placeId: droppable.place.id, name: droppable.place.name });
-    if (!found && !droppable) notices.push({ kind: "too-much" });
+    // "Too much for the days" is said of a list, never of a booking that cannot be kept.
+    if (!found && !droppable && (runsLate || otherLeftOut || plan.unplaced.some((entry) => entry.reason === "no-room"))) notices.push({ kind: "too-much" });
   }
 
   for (const day of plan.days) {
@@ -1180,20 +1522,20 @@ export function buildShioriPlan(input: ShioriInput, options: PlanOptions = {}): 
   // nothing of train lines.
   let stayNear = plan.stayNear;
   if (plan.stayNear) {
-    const count = input.places.length;
+    const count = laid.places.length;
     const dayOf = new Map(plan.days.flatMap((day) => day.stops.map((stop) => [stop.place.id, day.engineDay] as const)));
     const usedDays = Math.max(...plan.days.map((day) => day.engineDay));
     type Measure = { late: number; travel: number };
     const sum = (days: ReturnType<ReturnType<typeof daySearch>["choose"]>["days"]): Measure => ({ late: unkept(days), travel: days.reduce((total, day) => total + day.travel, 0) });
     // The days as planned, each in its best order from that hotel (cheap) …
-    const kept = (hotel: ShioriHotel) => sum(searched({ ...input, hotel }).keep(input.places.map((place) => dayOf.get(place.id) ?? 1), usedDays, { quick: true }).days);
+    const kept = (hotel: ShioriHotel) => sum(searched({ ...laid, hotel }).keep(laid.places.map((place) => dayOf.get(place.id) ?? 1), usedDays, frames ? { quick: true, requested } : { quick: true }).days);
     // … and the trip planned afresh from that hotel, which changes which
     // places share a day. Short lists exactly as the booklet would plan
     // them; long ones with the lighter search.
-    const planned = (hotel: ShioriHotel) => sum(searched({ ...input, hotel }).choose(input.days, { quick: count > 10 }).days);
+    const planned = (hotel: ShioriHotel) => sum(searched({ ...laid, hotel }).choose(input.days, { quick: count > 10 }).days);
     const less = (left: Measure, right: Measure) => left.late - right.late || left.travel - right.travel;
     const seen = new Set<string>();
-    const candidates = input.places.flatMap((place) => {
+    const candidates = laid.places.flatMap((place) => {
       const spot = `${place.lat.toFixed(4)},${place.lon.toFixed(4)}`;
       if (seen.has(spot)) return [];
       seen.add(spot);
@@ -1223,6 +1565,8 @@ export function buildShioriPlan(input: ShioriInput, options: PlanOptions = {}): 
       }
     }
   }
-  // Last: it is something to know, not something to fix.
-  return { ...plan, stayNear, notices: [...notices, ...plan.notices] };
+  // First what an entered time left no room for; last what the forecast
+  // moved: that is something to know, not something to fix.
+  const entered = (notice: ShioriNotice) => notice.kind === "unplaced" || notice.kind === "frame-order";
+  return { ...plan, stayNear, notices: [...plan.notices.filter(entered), ...notices, ...plan.notices.filter((notice) => !entered(notice))] };
 }
