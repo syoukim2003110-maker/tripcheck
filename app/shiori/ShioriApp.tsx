@@ -1907,6 +1907,8 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
             <summary><Icon name="plus" />{t.addPanel}</summary>
             {addForm}
           </details>
+          {/* In the page, not in the bar fixed to the bottom: opened, it is taller than a phone held sideways. */}
+          {framesField}
           <div className="shiori-sights">
             {sights.map((sight) => {
               const id = `wikidata-${sight.q}`;
@@ -1935,7 +1937,6 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
               </select>
             </label>
             {dateField}
-            {framesField}
 
           <span aria-live="polite">{trip.places.length > 0 ? withUnits(t.selected(trip.places.length)).map((part, index) => index === 1 ? <b key="count">{part}</b> : part) : t.needOne}</span>
           <button disabled={trip.places.length === 0} onClick={() => { setSelectedDay(0); go("plan"); }} type="button">{t.make} →</button>

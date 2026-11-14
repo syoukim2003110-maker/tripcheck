@@ -86,3 +86,17 @@ test("a time is typed into a field that waits for the traveller to finish", () =
   assert.match(editor, /onClick=\{\(\) => onChange\(null\)\}/);
   assert.equal(source.split("<TimeInput emptyClears onCommit").length - 1, 2);
 });
+
+test("on the place-picking screen the fold of time limits is in the page, not in the bar fixed to the bottom", () => {
+  // Opened inside the fixed bar it was taller than a phone held sideways (its own summary off the top of
+  // the screen, and a fixed bar cannot be scrolled), and closed it hid the end of the list.
+  const source = readFileSync(new URL("../app/shiori/ShioriApp.tsx", import.meta.url), "utf8");
+  const pick = source.slice(source.indexOf('if (screen === "pick") {'), source.indexOf("const noticeKey = "));
+  const bar = pick.slice(pick.indexOf('<div className="shiori-bar">'));
+  assert.ok(bar.length > 0 && !bar.includes("framesField"), "the fold is in the fixed bar");
+  assert.ok(pick.slice(0, pick.indexOf('<div className="shiori-bar">')).includes("{framesField}"), "the fold is missing from the picking screen");
+  const css = readFileSync(new URL("../app/shiori/shiori.css", import.meta.url), "utf8");
+  assert.doesNotMatch(css, /\.shiori-bar \.shiori-frames/);
+  // The space kept clear under the list is the bar's own height, as before the fold existed.
+  assert.match(css, /\.shiori:has\(\.shiori-bar\) \{ padding-bottom: 216px; \}/);
+});

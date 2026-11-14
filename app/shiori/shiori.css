@@ -209,7 +209,8 @@
 .shiori-frames > summary small { color: var(--muted); font-size: 12px; font-weight: 500; }
 .shiori-frames > summary b { color: var(--muted); font-weight: 600; margin-left: 8px; }
 .shiori-frames .shiori-date { margin: 0 0 10px; }
-.shiori-bar .shiori-frames { grid-column: 1 / -1; margin-top: 0; order: 3; }
+/* On the place-picking screen the fold is a box in the page, under the "add by name" fold: the bar fixed to the bottom keeps its height. */
+.shiori-pick > .shiori-frames { border: 1px solid var(--rule); border-radius: var(--r-md); margin: -12px 0 24px; padding: 0 16px; }
 .shiori-fixed { background: var(--card); border: 1px solid var(--ink); border-radius: var(--r-sm); color: var(--ink); display: inline-block; font: 700 12px/1.5 var(--gothic); font-style: normal; letter-spacing: 0; padding: 0 6px; vertical-align: 1px; white-space: nowrap; }
 .shiori-frame-line { color: var(--muted); display: flex; flex-wrap: wrap; font-size: 13px; gap: 0 12px; line-height: 1.6; margin: 2px 0 0; }
 .shiori-reserve { align-items: center; display: flex; flex: 1 1 100%; flex-wrap: wrap; gap: 8px; }
