@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, 
 
 import { fetchAppleFoodCandidates } from "../../lib/apple-food";
 import { budgetLabel, fetchHotpepperShops, inJapan, lunchPrice, shopsForMeal, type HotpepperShop } from "../../lib/hotpepper-client";
+import { placeCardsAvailable } from "../../lib/apple-place-card";
 import { appleRelayClient, appleRelaySearch } from "../../lib/apple-relay-client";
 import { defaultFoodDiscoveryQuery, type FoodCandidate } from "../../lib/google-food";
 import type { HotelCandidate } from "../../lib/google-hotels";
@@ -33,6 +34,7 @@ import {
   withCity,
   type ShioriTrip,
 } from "../../lib/shiori/state";
+import PlaceCard from "./PlaceCard";
 import ShioriMap, { DAY_COLORS } from "./ShioriMap";
 
 type Locale = "ja" | "en";
@@ -1531,6 +1533,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
                                   </label>
                                   <button className="is-danger" onClick={() => update((current) => togglePlace(current, stop.place))} type="button">{t.remove}</button>
                                 </div>
+                                {placeCardsAvailable() ? <PlaceCard locale={locale} stop={stop.place} /> : null}
                                 <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${stop.place.name} ${stop.place.lat.toFixed(5)},${stop.place.lon.toFixed(5)}`)}`} rel="noreferrer" target="_blank">{t.checkHours}</a>
                                 {stop.place.img ? <a href={photoCreditUrl(stop.place.img)} rel="noreferrer" target="_blank">{t.photo}: Wikimedia Commons ↗</a> : null}
                               </div>

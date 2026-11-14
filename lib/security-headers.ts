@@ -46,6 +46,20 @@ const SIGHT_PHOTO_HOSTS = [
   "https://imgfp.hotp.jp",
 ] as const;
 
+/**
+ * Apple's place card (opening hours, phone, website) in an opened stop of the
+ * booklet. Its script is fetched only when a traveller asks for a card. Each
+ * list holds only what the card was seen to need under this policy: the
+ * script, its strings and start-up call (cdn) and the place lookup (api),
+ * and the frame Apple draws the card in. Its images and fonts load inside
+ * that frame, so img-src and font-src stay as they were. Apple's usage
+ * report from the page (gsp10.apple-mapkit.com) is left blocked on purpose:
+ * the card works without it.
+ */
+const APPLE_PLACE_CARD_SCRIPT_HOSTS = ["https://cdn.apple-mapkit.com"] as const;
+const APPLE_PLACE_CARD_CONNECT_HOSTS = ["https://cdn.apple-mapkit.com", "https://api.apple-mapkit.com"] as const;
+const APPLE_PLACE_CARD_FRAME_HOSTS = ["https://cdn.apple-mapkit.com"] as const;
+
 /** Tiles, markers, Street View and the photo redirect's destination. */
 const GOOGLE_IMAGE_HOSTS = [
   ...GOOGLE_MAPS_HOSTS,
@@ -66,7 +80,7 @@ export const productionContentSecurityPolicy = [
   // to 'wasm-unsafe-eval' is the next step and needs a staged rollout with
   // report-only collection, because a wrong guess breaks the map in
   // production and the QA harness cannot load Maps to tell us.
-  `script-src 'self' 'unsafe-inline' 'unsafe-eval' ${GOOGLE_MAPS_HOSTS.join(" ")}`,
+  `script-src 'self' 'unsafe-inline' 'unsafe-eval' ${GOOGLE_MAPS_HOSTS.join(" ")} ${APPLE_PLACE_CARD_SCRIPT_HOSTS.join(" ")}`,
   "style-src 'self' 'unsafe-inline'",
   "font-src 'self' data:",
   // Was `https:`, which let anything that got script onto the page exfiltrate
@@ -76,9 +90,9 @@ export const productionContentSecurityPolicy = [
   // the Maps runtime's own tile and metadata traffic. There are no websockets
   // in production — that allowance existed for local HMR, which never sees
   // this policy.
-  `connect-src 'self' data: blob: ${GOOGLE_MAPS_HOSTS.join(" ")} ${OPEN_FREE_MAP_HOSTS.join(" ")} ${OPEN_PLACE_DATA_HOSTS.join(" ")}`,
+  `connect-src 'self' data: blob: ${GOOGLE_MAPS_HOSTS.join(" ")} ${OPEN_FREE_MAP_HOSTS.join(" ")} ${[...OPEN_PLACE_DATA_HOSTS, ...APPLE_PLACE_CARD_CONNECT_HOSTS].join(" ")}`,
   "worker-src 'self' blob:",
-  "frame-src 'self' https://www.google.com https://maps.google.com",
+  `frame-src ${["'self'", "https://www.google.com", "https://maps.google.com", ...APPLE_PLACE_CARD_FRAME_HOSTS].join(" ")}`,
 ].join("; ");
 
 function isLocalDevelopment(url: URL) {

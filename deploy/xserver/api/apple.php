@@ -25,6 +25,12 @@
  *   GET apple.php?op=food&near=<lat>,<lon>[&within=<metres>][&name=<words>][&meal=lunch][&genre=cafe]
  *   200 {"results":[{id,name,latitude,longitude,address,genre,budget,
  *                    budgetAverage,catch,open,photo,url}]}
+ *   GET apple.php?op=maptoken
+ *   200 {"token":"<jwt>","expiresAt":<unix seconds>}
+ *       (a 20-minute MapKit JS token for the place card showing opening
+ *        hours; it names this site's own origin, so a copy is useless on
+ *        any other site. The private key itself never leaves this file.)
+ *
  *       (restaurants listed on HotPepper Gourmet, Japan only; needs
  *        'hotpepper_key' in apple-config.php, else 503 not_configured.
  *        Nothing is stored: the terms forbid keeping a copy.)
@@ -110,16 +116,17 @@ function der_to_raw_signature(string $der): string
     return $r . $s;
 }
 
-function sign_auth_token(array $config): string
+/** $claims replaces the server-API claims: the browser's MapKit JS token has its own. */
+function sign_auth_token(array $config, ?array $claims = null): string
 {
     $now = time();
     $header = base64url(json_encode(['alg' => 'ES256', 'kid' => $config['key_id'], 'typ' => 'JWT']));
-    $payload = base64url(json_encode([
+    $payload = base64url(json_encode($claims ?? [
         'iss' => $config['team_id'],
         'iat' => $now,
         'exp' => $now + 1800,
         'scope' => 'server_api',
-    ]));
+    ], JSON_UNESCAPED_SLASHES));
     $key = openssl_pkey_get_private($config['private_key']);
     if ($key === false) throw new RuntimeException('bad private key');
     if (!openssl_sign($header . '.' . $payload, $der, $key, OPENSSL_ALGO_SHA256)) {
@@ -215,6 +222,31 @@ if (
 }
 
 $coordinatePattern = '/^(-?\d{1,2}(?:\.\d{1,6})?),(-?\d{1,3}(?:\.\d{1,6})?)$/';
+
+if (($_GET['op'] ?? '') === 'maptoken') {
+    // The token is tied to the site that asked for it (Apple compares the
+    // claim with the browser's Origin header), so one copied out of a page
+    // opens no place card anywhere else.
+    $host = strtolower((string) ($_SERVER['HTTP_HOST'] ?? ''));
+    if (!preg_match('/^[a-z0-9.-]{1,253}(:\d{1,5})?$/', $host)) respond(400, ['code' => 'invalid_request']);
+    $secure = (($_SERVER['HTTPS'] ?? '') !== '' && $_SERVER['HTTPS'] !== 'off')
+        || ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https'
+        || (string) ($_SERVER['SERVER_PORT'] ?? '') === '443';
+    admit();
+    $now = time();
+    $expires = $now + 1200;
+    try {
+        $token = sign_auth_token($config, [
+            'iss' => $config['team_id'],
+            'iat' => $now,
+            'exp' => $expires,
+            'origin' => ($secure ? 'https://' : 'http://') . $host,
+        ]);
+    } catch (Throwable $error) {
+        respond(502, ['code' => 'unavailable']);
+    }
+    respond(200, ['token' => $token, 'expiresAt' => $expires]);
+}
 
 if (($_GET['op'] ?? '') === 'eta') {
     $mode = (string) ($_GET['mode'] ?? '');

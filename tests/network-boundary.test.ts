@@ -19,6 +19,9 @@ const BROWSER_TRANSPORT = [
   // Static hosting: the page itself performs the keyless place lookup
   // (Wikipedia, Wikidata, OpenStreetMap) and reaches Apple through the relay.
   "lib/apple-relay-client.ts",
+  // The place card's short-lived MapKit JS token, asked of the same relay
+  // only when a traveller opens a card (the key stays on the server).
+  "lib/apple-place-card.ts",
   // Restaurant photos and budgets, through the same relay (the key stays on the server).
   "lib/hotpepper-client.ts",
   "lib/nominatim-place-resolver.ts",
