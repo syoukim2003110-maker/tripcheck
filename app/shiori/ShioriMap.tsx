@@ -135,14 +135,25 @@ function tintBasemap(instance: MapLibreMap) {
   }
 }
 
+/*
+ * Only the day being read draws its route: every day's lines at once crossed
+ * into a tangle no one could follow, while the other days' places stay as
+ * small dots. The way to and from the hotel is drawn thin and light — it is
+ * the same each day and it is not where the day's sights are.
+ */
 function lineFeatures(days: ShioriDay[], selectedDay: number) {
-  return days.flatMap((day) => {
-    const legs: ShioriLeg[] = [...(day.fromHotel ? [day.fromHotel] : []), ...day.legs, ...(day.toHotel ? [day.toHotel] : [])];
+  return days.filter((day) => day.index === selectedDay).flatMap((day) => {
+    const legs: Array<ShioriLeg & { hotelLeg?: boolean }> = [
+      ...(day.fromHotel ? [{ ...day.fromHotel, hotelLeg: true }] : []),
+      ...day.legs,
+      ...(day.toHotel ? [{ ...day.toHotel, hotelLeg: true }] : []),
+    ];
     // A leg whose way is still being looked up is not drawn yet: a straight
     // line that turns into a street a second later only reads as a mistake.
     return legs.filter((leg) => leg.hasPath || leg.noPath).map((leg) => ({
       type: "Feature" as const,
       properties: {
+        hotel: Boolean(leg.hotelLeg),
         // rail: through the stations · street: along the roads · straight: unknown
         kind: leg.mode === "rail" ? "rail" : leg.hasPath ? "street" : "straight",
         color: DAY_COLORS[day.index % DAY_COLORS.length],
@@ -157,7 +168,8 @@ function lineFeatures(days: ShioriDay[], selectedDay: number) {
 function stationFeatures(days: ShioriDay[], selectedDay: number) {
   return days.filter((day) => day.index === selectedDay).flatMap((day) => {
     const legs: ShioriLeg[] = [...(day.fromHotel ? [day.fromHotel] : []), ...day.legs, ...(day.toHotel ? [day.toHotel] : [])];
-    return legs.filter((leg) => leg.mode === "rail" && leg.rail).flatMap((leg) => leg.rail!.rides.flatMap((ride) => ride.path.map((point) => ({
+    // Only where one boards and gets off: a ring at every stop passed made the line look like beads.
+    return legs.filter((leg) => leg.mode === "rail" && leg.rail).flatMap((leg) => leg.rail!.rides.flatMap((ride) => (ride.path.length > 1 ? [ride.path[0], ride.path[ride.path.length - 1]] : ride.path).map((point) => ({
       type: "Feature" as const,
       properties: { color: DAY_COLORS[day.index % DAY_COLORS.length] },
       geometry: { type: "Point" as const, coordinates: [point.longitude, point.latitude] },
@@ -170,6 +182,7 @@ export default function ShioriMap({ days, selectedDay, hotel, focus, onSelectSto
   const map = useRef<MapLibreMap | null>(null);
   const library = useRef<typeof import("maplibre-gl") | null>(null);
   const markers = useRef<Marker[]>([]);
+  const tagElements = useRef<HTMLElement[]>([]);
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -261,7 +274,7 @@ export default function ShioriMap({ days, selectedDay, hotel, focus, onSelectSto
         instance.addSource("legs", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
         instance.addSource("stations", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
         const selected = ["==", ["get", "selected"], true] as unknown as boolean;
-        const opacity = ["case", selected, 0.95, 0.35] as unknown as number;
+        const opacity = ["case", ["==", ["get", "hotel"], true], 0.45, 0.95] as unknown as number;
         const color = ["get", "color"] as unknown as string;
         const round = { "line-cap": "round", "line-join": "round" } as const;
         instance.addLayer({
@@ -276,7 +289,7 @@ export default function ShioriMap({ days, selectedDay, hotel, focus, onSelectSto
           id: "legs-casing",
           type: "line",
           source: "legs",
-          filter: ["all", ["!=", ["get", "kind"], "straight"], selected] as unknown as boolean,
+          filter: ["all", ["!=", ["get", "kind"], "straight"], ["!=", ["get", "hotel"], true]] as unknown as boolean,
           layout: round,
           paint: { "line-color": CARD, "line-width": ["case", ["==", ["get", "kind"], "rail"], 8.5, 7] as unknown as number, "line-opacity": 0.9 },
         });
@@ -286,7 +299,7 @@ export default function ShioriMap({ days, selectedDay, hotel, focus, onSelectSto
           source: "legs",
           filter: ["==", ["get", "kind"], "street"],
           layout: round,
-          paint: { "line-color": color, "line-width": ["case", selected, 4, 2] as unknown as number, "line-opacity": opacity },
+          paint: { "line-color": color, "line-width": ["case", ["==", ["get", "hotel"], true], 2.5, 4] as unknown as number, "line-opacity": opacity },
         });
         instance.addLayer({
           id: "legs-rail",
@@ -294,7 +307,7 @@ export default function ShioriMap({ days, selectedDay, hotel, focus, onSelectSto
           source: "legs",
           filter: ["==", ["get", "kind"], "rail"],
           layout: round,
-          paint: { "line-color": color, "line-width": ["case", selected, 5.5, 2.5] as unknown as number, "line-opacity": opacity },
+          paint: { "line-color": color, "line-width": ["case", ["==", ["get", "hotel"], true], 3, 5.5] as unknown as number, "line-opacity": opacity },
         });
         instance.addLayer({
           id: "legs-stations",
@@ -377,8 +390,11 @@ export default function ShioriMap({ days, selectedDay, hotel, focus, onSelectSto
       boundsCount += 1;
     }
     // How each leg of the day being read is travelled, said on the line itself.
+    // The hotel legs carry no tag: their minutes are in the list, and their
+    // tags piled up where the two hotel lines meet.
     const today = days.find((day) => day.index === selectedDay);
-    for (const leg of today ? [...(today.fromHotel ? [today.fromHotel] : []), ...today.legs, ...(today.toHotel ? [today.toHotel] : [])] : []) {
+    const tags: HTMLElement[] = [];
+    for (const leg of today ? today.legs : []) {
       // A few minutes on foot between neighbours needs no tag; it would only hide the pins.
       if (leg.mode === "walk" && leg.minutes < 5) continue;
       const at = midpoint(leg.path);
@@ -393,7 +409,9 @@ export default function ShioriMap({ days, selectedDay, hotel, focus, onSelectSto
       minutes.textContent = text.legTag(leg.minutes);
       element.appendChild(minutes);
       markers.current.push(new maplibre.Marker({ element }).setLngLat(at).addTo(instance));
+      tags.push(element);
     }
+    tagElements.current = tags;
     if (boundsCount === 0) {
       for (const day of days) for (const stop of day.stops) { bounds.extend([stop.place.lon, stop.place.lat]); boundsCount += 1; }
     }
@@ -402,6 +420,28 @@ export default function ShioriMap({ days, selectedDay, hotel, focus, onSelectSto
     else if (boundsCount > 1) instance.fitBounds(bounds, { padding: { top: peekShown.current && (container.current?.clientHeight ?? 0) >= 420 ? 110 : 40, right: 40, left: 40, bottom: 40 }, maxZoom: 15, duration: 500 });
     // The pin texts are rebuilt with the days; the wording itself does not change between plans.
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [days, selectedDay, hotel, ready]);
+
+  // A tag that would cover a pin or another tag is hidden until zooming in
+  // makes room: two labels on top of each other read as neither.
+  useEffect(() => {
+    const instance = map.current;
+    if (!ready || !instance) return;
+    const declutter = () => {
+      const pins = markers.current.map((marker) => marker.getElement()).filter((element) => element.classList.contains("shiori-pin") && element.classList.contains("is-selected") || element.classList.contains("is-hotel")).map((element) => element.getBoundingClientRect());
+      const shown: DOMRect[] = [];
+      for (const tag of tagElements.current) {
+        tag.style.visibility = "visible";
+        const box = tag.getBoundingClientRect();
+        const hit = (other: DOMRect) => box.left < other.right + 2 && box.right > other.left - 2 && box.top < other.bottom + 2 && box.bottom > other.top - 2;
+        if (pins.some(hit) || shown.some(hit)) tag.style.visibility = "hidden";
+        else shown.push(box);
+      }
+    };
+    declutter();
+    instance.on("moveend", declutter);
+    instance.on("resize", declutter);
+    return () => { instance.off("moveend", declutter); instance.off("resize", declutter); };
   }, [days, selectedDay, hotel, ready]);
 
   // The stop whose card is open, or that is open in the itinerary, is the larger, ringed pin.

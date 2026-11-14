@@ -240,8 +240,8 @@ const text = {
     about: "約",
     minute: "分",
     estimate: "目安",
-    openMaps: "地図アプリで行き方・時刻を見る",
-    openTimetable: "この時刻の電車・番線・運賃を見る（Yahoo!乗換案内）",
+    openMaps: "地図アプリで行き方を見る",
+    openTimetable: "この時刻の電車・番線・運賃を調べる（Yahoo!乗換案内）",
     walkTo: (minutes: number, station: string) => `徒歩${minutes}分で ${station}`,
     walkFrom: (minutes: number, station: string) => `${station} から徒歩${minutes}分`,
     ride: (stops: number, minutes: number) => `${stops}駅・約${minutes}分`,
@@ -456,7 +456,7 @@ const text = {
     about: "~",
     minute: " min",
     estimate: "estimate",
-    openMaps: "Open directions and times in a maps app",
+    openMaps: "Directions in a maps app",
     openTimetable: "Exact trains, platform and fare (Yahoo! Transit, Japanese)",
     walkTo: (minutes: number, station: string) => `${minutes} min walk to ${station}`,
     walkFrom: (minutes: number, station: string) => `${minutes} min walk from ${station}`,
@@ -657,10 +657,12 @@ function LegCard({ leg, locale, heading, depart }: { leg: ShioriLeg; locale: Loc
   const change = leg.rail && leg.rail.rides.length === 2 && leg.rail.transferMinutes > 0 ? t.changeWalk(leg.rail.transferMinutes) : t.change;
   const links = (
     <div className="shiori-leg-links">
-      {leg.mode !== "walk" || leg.minutes >= 12 ? (
-        <a className="shiori-leg-link" href={leg.mapsUrl} rel="noreferrer" target="_blank">{t.openMaps} ↗</a>
-      ) : null}
-      {timetable ? <a className="shiori-leg-link" href={timetable} rel="noreferrer" target="_blank">{t.openTimetable} ↗</a> : null}
+      {/* One way out, only where it adds something the booklet lacks. A train
+          in Japan: the transit search has the actual trains, platform and
+          fare. Elsewhere, or a taxi or bus estimate: a maps app's live
+          directions. A short walk needs neither. */}
+      {timetable ? <a className="shiori-leg-link" href={timetable} rel="noreferrer" target="_blank">{t.openTimetable} ↗</a>
+        : leg.mode !== "walk" || leg.minutes >= 12 ? <a className="shiori-leg-link" href={leg.mapsUrl} rel="noreferrer" target="_blank">{t.openMaps} ↗</a> : null}
     </div>
   );
   return (
