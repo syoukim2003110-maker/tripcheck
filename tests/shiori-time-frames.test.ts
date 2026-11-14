@@ -867,3 +867,26 @@ test("a twelve-place, three-day trip with a start, a finish and two bookings is 
   // (Measured at about 0.3 s on the machine this was written on; the same trip with nothing entered takes about 0.27 s.)
   assert.ok(took < 2_500, `took ${Math.round(took)} ms`);
 });
+
+test("a twelve-place, three-day trip with only a start, only a finish, or both is planned in good time", () => {
+  // The commonest trip with a time on it has no booking at all, and its times often leave the list
+  // too long for its days — which is the expensive case: every split is costed, for this length and
+  // for the longer ones tried for "one more day would hold it".
+  for (const [cityId, hotel] of [["tokyo", null], ["osaka", { name: "hotel", lat: 34.65706, lon: 135.51483 }], ["paris", null]] as const) {
+    const places = sightsOf(cityId, 12);
+    const timed = (input: Omit<ShioriInput, "locale">) => {
+      const started = performance.now();
+      const trip = plan(cityId, input);
+      return { trip, took: performance.now() - started };
+    };
+    const plain = timed({ places, days: 3, hotel });
+    for (const [label, times] of [["start", { firstDayStart: "13:00" }], ["finish", { lastDayFinish: "14:00" }], ["both", { firstDayStart: "12:00", lastDayFinish: "15:00" }]] as const) {
+      const input = { places, days: 3, hotel, ...times };
+      const framed = timed(input);
+      assertKeepsEveryEnteredTime(framed.trip, input, `${cityId} ${label}`);
+      // (Measured at 0.2 to 0.5 s each on the machine this was written on, against 0.15 to 0.3 s with nothing
+      // entered. Before the splits were costed from a table these took up to seven times the plain trip.)
+      assert.ok(framed.took < 2_500, `${cityId} ${label}: took ${Math.round(framed.took)} ms (nothing entered: ${Math.round(plain.took)} ms)`);
+    }
+  }
+});

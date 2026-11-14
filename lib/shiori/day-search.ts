@@ -1728,17 +1728,51 @@ export function daySearch(
               const late = special.first ? dayTable(1) : usual;
               const early = special.last ? dayTable(2) : usual;
               let free = 0;
+              // The least this split can come to, whichever group takes day 1
+              // and whichever the last day: every day as it is on a day in
+              // between (a pinned group on its own day), plus the least any
+              // one group adds by starting late and the least any one adds by
+              // ending early.
+              let floorCost = 0;
+              let floorBroken = 0;
+              let leastLateBroken = Infinity;
+              let leastLateCost = Infinity;
+              let leastEarlyBroken = Infinity;
+              let leastEarlyCost = Infinity;
               for (let index = 0; index < parts; index += 1) {
-                if (pins[index] !== null) continue;
-                free += 1;
                 const mask = masks[index];
+                if (pins[index] !== null) {
+                  const cls = classOf(pins[index]!, layout.requested);
+                  const table = dayTable(cls);
+                  costed(table, mask, groups[index], cls);
+                  floorCost += table.cost[mask];
+                  floorBroken += table.broken[mask];
+                  continue;
+                }
+                free += 1;
                 costed(usual, mask, groups[index], 0);
                 if (special.first) costed(late, mask, groups[index], 1);
                 if (special.last) costed(early, mask, groups[index], 2);
+                floorCost += usual.cost[mask];
+                floorBroken += usual.broken[mask];
                 brokenBy[index] = late.broken[mask] - usual.broken[mask];
                 costBy[index] = late.cost[mask] - usual.cost[mask];
                 brokenBy[16 + index] = early.broken[mask] - usual.broken[mask];
                 costBy[16 + index] = early.cost[mask] - usual.cost[mask];
+                if (brokenBy[index] < leastLateBroken) leastLateBroken = brokenBy[index];
+                if (costBy[index] < leastLateCost) leastLateCost = costBy[index];
+                if (brokenBy[16 + index] < leastEarlyBroken) leastEarlyBroken = brokenBy[16 + index];
+                if (costBy[16 + index] < leastEarlyCost) leastEarlyCost = costBy[16 + index];
+              }
+              // A split whose least is already no better than the best one
+              // found is not looked at further: of a million splits a few
+              // thousand are. (Not where one group is both day 1 and the last
+              // day: that day is costed as itself, not as the two added up.)
+              const found = best.found;
+              if (found !== null && free > 0 && !(special.first && special.last && free === 1)) {
+                const leastBroken = floorBroken + (special.first ? leastLateBroken : 0) + (special.last ? leastEarlyBroken : 0);
+                const leastCost = floorCost + (special.first ? leastLateCost : 0) + (special.last ? leastEarlyCost : 0);
+                if (leastBroken > found.broken || (leastBroken === found.broken && (doubled > found.doubled || (doubled === found.doubled && leastCost > found.cost + 2 * EPSILON)))) return;
               }
               let leastBroken = Infinity;
               let leastCost = Infinity;
