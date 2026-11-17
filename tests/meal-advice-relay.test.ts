@@ -47,7 +47,7 @@ type Sent = Record<string, any>;
 
 const goodAnswer = { slots: [{ slot: "d1-lunch", options: [{ role: "quick", genre: "G004", keyword: "蕎麦", budgetMax: null, features: [], withinMeters: 300, reason: "次の予定まで50分なので、近くで手早く。" }] }] };
 const claudeReply = (answer: unknown, over: Record<string, unknown> = {}) => Response.json({
-  type: "message", role: "assistant", model: "claude-opus-5-5", stop_reason: "end_turn",
+  type: "message", role: "assistant", model: "claude-sonnet-5-5", stop_reason: "end_turn",
   content: [{ type: "thinking", thinking: "", signature: "x" }, { type: "text", text: JSON.stringify(answer) }],
   usage: { input_tokens: 600, output_tokens: 300, cache_read_input_tokens: 3600, cache_creation_input_tokens: 0 },
   ...over,
@@ -82,7 +82,7 @@ test("the Claude request: fixed model and prompt, schema-bound JSON, low effort,
   assert.equal(outgoing.headers["anthropic-version"], "2026-10-21");
   assert.equal(outgoing.timeoutMs, 18_000);
   const sent = outgoing.body as Sent;
-  assert.equal(sent.model, "claude-opus-5-5");
+  assert.equal(sent.model, "claude-sonnet-5-5");
   assert.equal(sent.max_tokens, 3000);
   assert.deepEqual(sent.output_config, { effort: "low", format: { type: "json_schema", schema: spec.answerSchema } });
   // Thinking is always on for this model and a forced tool call is refused by it.

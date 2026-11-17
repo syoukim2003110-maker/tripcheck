@@ -49,7 +49,7 @@ test("both relays take prompts, schema, models and limits from the one ai-spec.j
 
 test("the spec names the models and settings that were decided", () => {
   assert.deepEqual(spec.providers.anthropic, {
-    url: "https://api.anthropic.com/v1/messages", version: "2026-10-21", model: "claude-opus-5-5", maxTokens: 3000, effort: "low", timeoutSeconds: 18,
+    url: "https://api.anthropic.com/v1/messages", version: "2026-10-21", model: "claude-sonnet-5-5", maxTokens: 3000, effort: "low", timeoutSeconds: 18,
     beta: "server-side-fallback-2026-07-01", fallbacks: "default",
   });
   assert.deepEqual(spec.providers.openai, { url: "https://api.openai.com/v1/responses", model: "gpt-6.1-terra", maxOutputTokens: 3000, reasoningEffort: "low", timeoutSeconds: 15, minSeconds: 8 });
