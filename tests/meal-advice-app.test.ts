@@ -94,6 +94,20 @@ test("the brief without a date, a city or a wish, and a plan with nothing to ask
   assert.equal(buildMealBrief({ plan: late, city: null, prefs: EMPTY_MEAL_PREFS }), null);
 });
 
+test("Seoul and Busan are inside the box around Japan but not in Japan: the advisor is not offered there", () => {
+  const plan = tokyoPlan();
+  for (const [name, latitude, longitude] of [["Seoul", 37.5665, 126.978], ["Busan", 35.1796, 129.0756], ["Jeju", 33.4996, 126.5312]] as const) {
+    const abroad = { days: plan.days.map((day) => ({ ...day, meals: day.meals.map((meal) => ({ ...meal, near: { latitude, longitude } })) })) };
+    assert.deepEqual(openMealSlots(abroad), [], name);
+    assert.deepEqual(mealSlotKeys(abroad), {}, name);
+  }
+  // Fukuoka and Tsushima, just across the water, are.
+  for (const [latitude, longitude] of [[33.5902, 130.4017], [34.2, 129.29]] as const) {
+    const near = { days: plan.days.map((day) => ({ ...day, meals: day.meals.map((meal) => ({ ...meal, near: { latitude, longitude } })) })) };
+    assert.ok(openMealSlots(near).length > 0);
+  }
+});
+
 test("a full trip stays inside the relay's limits", () => {
   const many = curateSights(tokyo.sights).slice(6, 24).map((sight) => placeFromSight(sight, "ja"));
   const plan = tokyoPlan(many, 7);

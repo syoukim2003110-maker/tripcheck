@@ -70,6 +70,24 @@ test("budget bands read as plain yen, and only Japan is asked about", () => {
   assert.equal(inJapan({ latitude: 48.85, longitude: 2.35 }), false);
 });
 
+test("Japan is Japan, not the box around it: Korea and the Russian coast are outside, the far islands inside", () => {
+  const inside: Array<[string, number, number]> = [
+    ["Tokyo", 35.68, 139.76], ["Kyoto", 35.01, 135.77], ["Osaka", 34.69, 135.50], ["Hiroshima", 34.39, 132.46], ["Fukuoka", 33.59, 130.40],
+    ["Nagasaki", 32.75, 129.87], ["Goto", 32.70, 128.84], ["Tsushima", 34.20, 129.29], ["Iki", 33.75, 129.69], ["Shimonoseki", 33.95, 130.94],
+    ["Hagi", 34.41, 131.40], ["Matsue", 35.47, 133.05], ["Oki", 36.20, 133.33], ["Kanazawa", 36.56, 136.66], ["Sado", 38.02, 138.37],
+    ["Niigata", 37.90, 139.02], ["Sendai", 38.27, 140.87], ["Aomori", 40.82, 140.74], ["Hakodate", 41.77, 140.73], ["Sapporo", 43.06, 141.35],
+    ["Wakkanai", 45.41, 141.67], ["Nemuro", 43.33, 145.58], ["Kagoshima", 31.60, 130.56], ["Yakushima", 30.34, 130.51], ["Amami", 28.38, 129.49],
+    ["Naha", 26.21, 127.68], ["Ishigaki", 24.34, 124.16], ["Yonaguni", 24.45, 123.00], ["Chichijima", 27.09, 142.19], ["Hachijo", 33.11, 139.79],
+  ];
+  for (const [name, latitude, longitude] of inside) assert.equal(inJapan({ latitude, longitude }), true, name);
+  const outside: Array<[string, number, number]> = [
+    ["Seoul", 37.57, 126.98], ["Busan", 35.18, 129.08], ["Jeju", 33.50, 126.53], ["Pohang", 36.03, 129.37], ["Ulleungdo", 37.50, 130.87],
+    ["Wonsan", 39.15, 127.44], ["Vladivostok", 43.12, 131.89], ["Yuzhno-Sakhalinsk", 46.96, 142.73], ["Shanghai", 31.23, 121.47],
+    ["Taipei", 25.03, 121.56], ["Hong Kong", 22.28, 114.15], ["Guam", 13.44, 144.79], ["Paris", 48.85, 2.35],
+  ];
+  for (const [name, latitude, longitude] of outside) assert.equal(inJapan({ latitude, longitude }), false, name);
+});
+
 test("a lunch price is read out of the free-text average only when it is named as lunch", () => {
   assert.equal(lunchPrice("ランチ 880円、ディナー1500-2000円"), "880円");
   assert.equal(lunchPrice("昼食800円～950円　　夜の飲食お客様平均単価3000円"), "800円");

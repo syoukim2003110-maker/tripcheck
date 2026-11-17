@@ -117,9 +117,20 @@ export async function fetchHotpepperShops(
   }
 }
 
-/** Japan, roughly: the provider lists nothing elsewhere, so nothing is asked. */
+/**
+ * Japan: the provider lists nothing elsewhere, so nothing is asked. The
+ * western edge follows the coast by latitude, because one box around the
+ * islands also holds Korea (Seoul, Busan, Jeju) and Vladivostok: south of
+ * Kyushu the Nansei and Ogasawara islands, then Kyushu with the Goto islands,
+ * Tsushima, western Honshu, the Sea of Japan coast with Oki and Sado, and
+ * Hokkaido; the north stops short of Sakhalin and the east short of Kunashiri.
+ */
 export function inJapan(point: { latitude: number; longitude: number }) {
-  return point.latitude > 24 && point.latitude < 46 && point.longitude > 122.5 && point.longitude < 146.5;
+  const { latitude, longitude } = point;
+  if (!(latitude >= 24 && latitude <= 45.6)) return false;
+  if (latitude < 30.5) return longitude >= 122.9 && longitude <= 142.5;
+  const west = latitude < 34 ? 128.3 : latitude < 34.8 ? 129.1 : latitude < 36 ? 130.8 : latitude < 41 ? 132.4 : 139.3;
+  return longitude >= west && longitude <= (latitude > 43.6 ? 145.4 : 145.9);
 }
 
 /** A plain yen figure for a budget band: "2001～3000円" → "2,001〜3,000円". */
