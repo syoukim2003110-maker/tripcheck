@@ -169,13 +169,43 @@ function tokenCount(value: unknown) {
 }
 
 /**
+ * Who a request is counted against. An IPv6 line is handed a whole /64 of
+ * addresses, so those count as one client; an IPv4 address (also when written
+ * as an IPv6-mapped one) counts as itself. Anything unreadable is its own
+ * client under the text it came as.
+ */
+export function mealAdviceClientGroup(address: string): string {
+  const bare = address.trim().toLowerCase().replace(/%.*$/, "");
+  if (!bare.includes(":")) return bare;
+  const halves = bare.split("::");
+  if (halves.length > 2) return bare;
+  const groupsOf = (part: string) => (part === "" ? [] : part.split(":")).flatMap((group) => {
+    // An IPv4 tail ("::ffff:203.0.113.7") is two groups.
+    const quad = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(group);
+    if (!quad) return [group];
+    const bytes = quad.slice(1).map(Number);
+    return bytes.some((byte) => byte > 255) ? ["x"] : [((bytes[0] << 8) | bytes[1]).toString(16), ((bytes[2] << 8) | bytes[3]).toString(16)];
+  });
+  const head = groupsOf(halves[0]);
+  const tail = halves.length === 2 ? groupsOf(halves[1]) : [];
+  const missing = 8 - head.length - tail.length;
+  if (halves.length === 2 ? missing < 1 : missing !== 0) return bare;
+  const groups = [...head, ...Array.from({ length: halves.length === 2 ? missing : 0 }, () => "0"), ...tail];
+  if (groups.some((group) => !/^[0-9a-f]{1,4}$/.test(group))) return bare;
+  const words = groups.map((group) => parseInt(group, 16));
+  if (words.slice(0, 5).every((word) => word === 0) && words[5] === 0xffff) return `${words[6] >> 8}.${words[6] & 255}.${words[7] >> 8}.${words[7] & 255}`;
+  return `${words.slice(0, 4).map((word) => word.toString(16).padStart(4, "0")).join("")}::/64`;
+}
+
+/**
  * The limits of the relay, kept in memory here (ai.php keeps them in .state/):
  * a ceiling for the whole site per day, and per client so many a minute and a
  * day. `admit` counts the request when it lets it through.
  */
 export function createMealAdviceLimiter(spec: MealAdviceSpec, now: () => number = Date.now) {
   let state = { day: "", calls: 0, clients: new Map<string, number>(), minute: 0, minuteClients: new Map<string, number>() };
-  return function admit(client: string) {
+  return function admit(address: string) {
+    const client = mealAdviceClientGroup(address);
     const day = new Date(now()).toISOString().slice(0, 10);
     const minute = Math.floor(now() / 60_000);
     if (state.day !== day) state = { day, calls: 0, clients: new Map(), minute, minuteClients: new Map() };

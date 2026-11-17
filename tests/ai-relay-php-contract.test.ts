@@ -59,8 +59,16 @@ test("the spec names the models and settings that were decided", () => {
 test("ai.php takes a JSON POST from this site's own pages only, and never caches", () => {
   const head = php.slice(php.indexOf("/* ------------------------------------------------------------------ request */"));
   assert.match(head, /REQUEST_METHOD'\] \?\? ''\) !== 'POST'\) respond\(405, \['code' => 'method_not_allowed'\]\);/);
-  assert.match(head, /\$fetchSite !== '' && \$fetchSite !== 'same-origin'\) respond\(403, \['code' => 'forbidden'\]\);/);
-  assert.match(head, /strcasecmp\(\$referer, explode\(':', \$_SERVER\['HTTP_HOST'\] \?\? ''\)\[0\]\) !== 0\) \{\s*respond\(403,/);
+  // The request must say itself that it comes from this site: Sec-Fetch-Site
+  // "same-origin", or (a browser too old to send that) this site's Origin.
+  // A request with neither header is refused, not waved through.
+  assert.match(head, /\$host = explode\(':', \$_SERVER\['HTTP_HOST'\] \?\? ''\)\[0\];/);
+  assert.match(head, /\$origin = parse_url\(\$_SERVER\['HTTP_ORIGIN'\] \?\? '', PHP_URL_HOST\);/);
+  assert.match(head, /\$sameOrigin = is_string\(\$origin\) && \$origin !== '' && \$host !== '' && strcasecmp\(\$origin, \$host\) === 0;/);
+  assert.match(head, /if \(\$fetchSite !== '' \? \$fetchSite !== 'same-origin' : !\$sameOrigin\) respond\(403, \['code' => 'forbidden'\]\);/);
+  assert.doesNotMatch(head, /\$fetchSite !== '' && \$fetchSite !== 'same-origin'/, "a request without Sec-Fetch-Site is let through");
+  assert.match(head, /strcasecmp\(\$referer, \$host\) !== 0\) \{\s*respond\(403,/);
+  assert.ok(head.indexOf("!$sameOrigin) respond(403") < head.indexOf("ai-config.php"), "the origin is checked before anything else is read");
   assert.match(head, /stripos\(\(string\) \(\$_SERVER\['CONTENT_TYPE'\] \?\? ''\), 'application\/json'\) !== 0\) respond\(400,/);
   assert.match(php, /header\('Cache-Control: no-store'\);/);
   // The body is capped before it is parsed, by its declared and by its real size.
@@ -86,7 +94,17 @@ test("ai.php refuses when its counter cannot be opened, locked or written, and c
   assert.match(withState, /if \(!flock\(\$handle, LOCK_EX\)\) \{[^}]*respond\(503,/);
   assert.match(withState, /fwrite\(\$handle, \$json\) !== strlen\(\$json\) \|\| !fflush\(\$handle\)\) \{[^}]*respond\(503,/);
   const admit = between(php, "function admit(", "/* --------------------------------------------------------------- validation");
-  assert.match(admit, /hash\('sha256', \(\$_SERVER\['REMOTE_ADDR'\] \?\? 'unknown'\) \. '\|' \. date\('Y-m-d'\)\)/);
+  // The client is an IPv6 /64 or an IPv4 address, and the day in its hash is
+  // the UTC day the counters are kept for: with the server's local day the
+  // hash changed at local midnight and a client's daily count began again.
+  assert.match(admit, /hash\('sha256', client_group\(\(string\) \(\$_SERVER\['REMOTE_ADDR'\] \?\? 'unknown'\)\) \. '\|' \. gmdate\('Y-m-d'\)\)/);
+  assert.doesNotMatch(admit, /[^m]date\('Y-m-d'\)/);
+  assert.match(admit, /\$day = gmdate\('Y-m-d'\);/);
+  const group = between(php, "function client_group(", "function admit(");
+  assert.match(group, /\$packed = @inet_pton\(\$address\);/);
+  assert.match(group, /if \(!is_string\(\$packed\) \|\| strlen\(\$packed\) !== 16\) return \$address;/);
+  assert.match(group, /return bin2hex\(substr\(\$packed, 0, 8\)\) \. '::\/64';/);
+  assert.match(group, /inet_ntop\(substr\(\$packed, 12\)\)/);
   assert.match(admit, /with_state\('ai-quota',/);
   assert.match(admit, /if \(\$calls >= \$limits\['dailyCalls'\]\) return false;/);
   assert.match(admit, /\$today >= \$limits\['perClientPerDay'\] \|\| \$thisMinute >= \$limits\['perClientPerMinute'\]\) return false;/);

@@ -72,7 +72,8 @@ createServer(async (request, response) => {
     if (request.method === "OPTIONS") return send(200, {});
     if (request.method !== "POST") return send(405, { code: "method_not_allowed" });
     // Only the local page may ask, as only the site's own pages may ask ai.php.
-    if (origin !== "" && !/^http:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/.test(origin)) return send(403, { code: "forbidden" });
+    // (ai.php asks for a same-origin fetch; here the page is on another port, so its Origin is what is checked.)
+    if (!/^http:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/.test(origin)) return send(403, { code: "forbidden" });
     if (!/^application\/json\b/i.test(String(request.headers["content-type"] ?? ""))) return send(400, { code: "invalid_request" });
     const chunks: Buffer[] = [];
     let size = 0;

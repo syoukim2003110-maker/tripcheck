@@ -86,12 +86,27 @@ function with_state(string $name, callable $work)
 }
 
 /**
+ * Who a request is counted against. An IPv6 line is handed a whole /64 of
+ * addresses, so those count as one client; an IPv4 address (also when written
+ * as an IPv6-mapped one) counts as itself.
+ */
+function client_group(string $address): string
+{
+    $packed = @inet_pton($address);
+    if (!is_string($packed) || strlen($packed) !== 16) return $address;
+    if (substr($packed, 0, 12) === "\0\0\0\0\0\0\0\0\0\0\xff\xff") return (string) inet_ntop(substr($packed, 12));
+    return bin2hex(substr($packed, 0, 8)) . '::/64';
+}
+
+/**
  * The site's ceiling for a day and each client's share of it (so many a
  * minute, so many a day). A request is counted when it is let through.
  */
 function admit(array $limits): void
 {
-    $client = hash('sha256', ($_SERVER['REMOTE_ADDR'] ?? 'unknown') . '|' . date('Y-m-d'));
+    // The day in the hash is the day the counters are kept for (UTC), so a
+    // client's count for the day cannot start again halfway through it.
+    $client = hash('sha256', client_group((string) ($_SERVER['REMOTE_ADDR'] ?? 'unknown')) . '|' . gmdate('Y-m-d'));
     $allowed = with_state('ai-quota', function (array $state, callable $save) use ($client, $limits): bool {
         $day = gmdate('Y-m-d');
         $minute = (int) floor(time() / 60);
@@ -481,12 +496,18 @@ function ask_openai(array $spec, array $request, string $key)
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') respond(405, ['code' => 'method_not_allowed']);
 
-// Only this site's own pages may use the relay. A browser always sends
-// Sec-Fetch-Site on a fetch(); anything cross-site is refused outright.
+// Only this site's own pages may use the relay, and the request has to say
+// so itself: a current browser marks the page's fetch() "same-origin" in
+// Sec-Fetch-Site, and an older one (which sends no such header) still sends
+// the page's Origin with a POST. A request with neither is not from the page.
+$host = explode(':', $_SERVER['HTTP_HOST'] ?? '')[0];
 $fetchSite = $_SERVER['HTTP_SEC_FETCH_SITE'] ?? '';
-if ($fetchSite !== '' && $fetchSite !== 'same-origin') respond(403, ['code' => 'forbidden']);
+$origin = parse_url($_SERVER['HTTP_ORIGIN'] ?? '', PHP_URL_HOST);
+$sameOrigin = is_string($origin) && $origin !== '' && $host !== '' && strcasecmp($origin, $host) === 0;
+if ($fetchSite !== '' ? $fetchSite !== 'same-origin' : !$sameOrigin) respond(403, ['code' => 'forbidden']);
+if (is_string($origin) && $origin !== '' && !$sameOrigin) respond(403, ['code' => 'forbidden']);
 $referer = parse_url($_SERVER['HTTP_REFERER'] ?? '', PHP_URL_HOST);
-if (is_string($referer) && $referer !== '' && strcasecmp($referer, explode(':', $_SERVER['HTTP_HOST'] ?? '')[0]) !== 0) {
+if (is_string($referer) && $referer !== '' && strcasecmp($referer, $host) !== 0) {
     respond(403, ['code' => 'forbidden']);
 }
 // A form on another site cannot send JSON without asking first.

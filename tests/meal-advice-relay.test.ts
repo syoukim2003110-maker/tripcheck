@@ -8,6 +8,7 @@ import {
   answerMealAdvice,
   anthropicRequest,
   createMealAdviceLimiter,
+  mealAdviceClientGroup,
   mealAdviceSystemPrompt,
   openaiRequest,
   readAnthropicReply,
@@ -264,6 +265,28 @@ test("the limiter: 4 a minute and 20 a day per client, 150 a day for the site", 
   now += 24 * 60 * 60_000;
   assert.equal(site("client-0"), true);
   assert.equal(admit("a"), true);
+});
+
+test("an IPv6 line counts as one client, whatever address of its /64 it uses", () => {
+  assert.equal(mealAdviceClientGroup("2001:db8:1:2:aaaa:bbbb:cccc:dddd"), "20010db800010002::/64");
+  assert.equal(mealAdviceClientGroup("2001:db8:1:2::1"), "20010db800010002::/64");
+  assert.equal(mealAdviceClientGroup("2001:DB8:1:2:ffff:ffff:ffff:ffff%eth0"), "20010db800010002::/64");
+  assert.notEqual(mealAdviceClientGroup("2001:db8:1:3::1"), mealAdviceClientGroup("2001:db8:1:2::1"));
+  assert.equal(mealAdviceClientGroup("::1"), "0000000000000000::/64");
+  // An IPv4 address counts as itself, also when it arrives as an IPv6-mapped one.
+  assert.equal(mealAdviceClientGroup("203.0.113.7"), "203.0.113.7");
+  assert.equal(mealAdviceClientGroup("::ffff:203.0.113.7"), "203.0.113.7");
+  assert.equal(mealAdviceClientGroup("::ffff:cb00:7107"), "203.0.113.7");
+  // Something unreadable is still a client of its own, not everybody's.
+  assert.equal(mealAdviceClientGroup("unknown"), "unknown");
+  assert.equal(mealAdviceClientGroup("1:2:3"), "1:2:3");
+
+  // One line cannot multiply its share by changing address.
+  const admit = createMealAdviceLimiter(spec, () => Date.UTC(2026, 10, 17, 3, 0, 0));
+  let served = 0;
+  for (let host = 1; host <= 50; host += 1) if (admit(`2001:db8:1:2::${host.toString(16)}`)) served += 1;
+  assert.equal(served, spec.limits.perClientPerMinute);
+  assert.equal(admit("2001:db8:1:3::1"), true);
 });
 
 test("keys are found whatever the case of their name, and only when they look like keys", () => {
