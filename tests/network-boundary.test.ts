@@ -38,6 +38,9 @@ const BROWSER_TRANSPORT = [
   // The booklet's rail map: a static file of this site, not a provider.
   "lib/rail-network-client.ts",
   "lib/route-recommendations-client.ts",
+  // The meal advisor: one POST to the site's own AI relay (api/ai.php), only
+  // after the traveller confirms the form; the keys stay on the server.
+  "lib/shiori/meal-advice-client.ts",
   // The booklet's street paths: Apple through the relay, else the
   // OpenStreetMap community router, asked by the page itself.
   "lib/street-route-client.ts",

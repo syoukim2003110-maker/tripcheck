@@ -21,6 +21,9 @@ import { BulkBudgetError, bulkAfterTripChange, bulkLeftover, bulkProgress, bulkS
 import { findCafes, withListedCafes, type CafeBreak, type CafePick } from "../../lib/shiori/cafes";
 import { fetchedStamp, forecastCentre, loadForecast, wetDaysOf, type DayForecast, type ForecastAnswer, type ForecastCache } from "../../lib/shiori/forecast";
 import { lineColor } from "../../lib/shiori/line-colors";
+import { EMPTY_MEAL_PREFS, MEAL_QUICK_ASKS, MEAL_ROLE_LABELS, buildMealBrief, cleanMealPrefs, cleanMealWish, entriesFromAnswer, liveMealEntry, mealConditionsOf, mealConditionsText, mealOptionQuery, mealSlotId, mealSlotKey, mealSlotKeys, shopsForOption, shopsWithinWider, widerMealMeters, type MealAdviceEntry } from "../../lib/shiori/meal-advice";
+import { askMealAdvice, mealAdviceAvailable } from "../../lib/shiori/meal-advice-client";
+import { MEAL_ADVICE_LIMITS, MEAL_BUDGET_FEELS, MEAL_PARTIES, type MealBriefPrefs, type MealBudgetFeel, type MealParty, type MealRefineAsk, type MealWithinMeters } from "../../lib/shiori/meal-advice-contract";
 import { clockOf, hasToeiRide, legTimetables, type RideTimetable, type ServiceCalendar, type TimetableTrain, type ToeiTimetableData } from "../../lib/shiori/timetable";
 import { buildShioriPlan, departureAfterStop, type ShioriLeg, type ShioriMeal, type ShioriNotice, type ShioriPlace, type ShioriPlan, type ShioriReservation, type ShioriRoute, type ShioriStop, type ShioriUnplaced } from "../../lib/shiori/plan";
 import {
@@ -59,6 +62,8 @@ const STORAGE_KEY = "shiori-trip-v1";
 const PREVIOUS_KEY = "shiori-trip-prev";
 /** Street paths already looked up, so a reopened booklet keeps its clock and lines offline. */
 const ROUTES_KEY = "shiori-routes-v1";
+/** What the traveller told the meal advisor (who, budget, a wish). Kept on this device only; never in a share link. */
+const MEAL_PREFS_KEY = "shiori-meal-prefs-v1";
 
 function readTrip(key: string) {
   try {
@@ -300,6 +305,33 @@ const text = {
     shopLunch: (price: string) => `ランチ ${price}〜`,
     shopPrice: (band: string) => `予算 ${band}`,
     shopAdd: "この店にする",
+    // The meal advisor. What the AI gives is a kind of meal and a reason; the shops are the shop guide's.
+    aiAsk: "AIに相談",
+    aiTag: "AIの提案",
+    aiFormTitle: "食事をAIに相談",
+    aiFormLead: (count: number) => `この旅で店がまだ決まっていない食事（${count}件）を、まとめて相談します。どれも入力しなくても相談できます。`,
+    aiParty: "だれと",
+    aiBudget: "予算の感じ",
+    aiWish: "食べたいもの・希望（80文字まで）",
+    aiWishPlaceholder: "例：地元の魚を少しずつ食べたい",
+    aiUnset: "指定しない",
+    aiParties: { solo: "ひとり", couple: "ふたり", friends: "友人と", "family-kids": "子ども連れ", "family-elder": "年配の家族と" } as Record<MealParty, string>,
+    aiBudgets: { low: "手頃に", mid: "ふつう", high: "少し贅沢に" } as Record<MealBudgetFeel, string>,
+    aiNotice: "相談すると、この旅の行程（有名スポットの名前、時刻、滞在と徒歩の長さ、天気、都市名）と、ここに入力した内容が、外部のAIサービス（Anthropic または OpenAI）に送られます。検索や入力で追加した店・場所の名前と、位置は送りません。",
+    aiSend: "この内容で相談する",
+    aiCancel: "やめる",
+    aiBusy: "AIに相談しています…（20秒ほどかかることがあります）",
+    aiFailed: "いまはAIに相談できませんでした。近くのお店はこれまでどおり見られます。",
+    aiNoShops: "AIの提案に合う店が近くに見つかりませんでした。近くのお店はこれまでどおり見られます。",
+    aiSearching: "提案に合う店を探しています…",
+    aiSearched: (conditions: string) => `検索条件：${conditions}`,
+    aiWidened: (meters: number) => `${meters}m以内には無かったため、範囲を広げて探しました。`,
+    aiKeywordNote: "この言葉は店の掲載文との一致で探しています。その料理があるかは確認していません。",
+    aiNote: "理由と検索条件はAIの提案です。店はホットペッパーグルメの検索結果で、AIが選んだものではありません。予算は店が載せている目安で、評判や空席は店のページで確認してください。",
+    aiRefine: "提案を変える",
+    aiAsks: { casual: "もっと気軽に", quiet: "もっと静かに・ゆっくり", nearer: "もっと近く", cheaper: "予算を下げる", different: "別の料理" } as Record<Exclude<MealRefineAsk, "wish">, string>,
+    aiRefineWish: "希望を書いて相談（80文字まで）",
+    aiRefineSend: "相談する",
     walkAbout: (minutes: number) => `徒歩約${minutes}分`,
     ideasTitle: "近くのスポットを追加",
     ideasAdd: "追加",
@@ -556,6 +588,32 @@ const text = {
     shopLunch: (price: string) => `lunch from ${price}`,
     shopPrice: (band: string) => `budget ${band}`,
     shopAdd: "Choose this one",
+    aiAsk: "Ask the AI",
+    aiTag: "AI suggestion",
+    aiFormTitle: "Ask the AI about meals",
+    aiFormLead: (count: number) => `One question covers every meal of this trip that has no restaurant yet (${count}). Every field is optional.`,
+    aiParty: "Who is travelling",
+    aiBudget: "Budget",
+    aiWish: "What you would like to eat (up to 80 characters)",
+    aiWishPlaceholder: "e.g. small plates of local fish",
+    aiUnset: "Not set",
+    aiParties: { solo: "On my own", couple: "Two of us", friends: "With friends", "family-kids": "With children", "family-elder": "With older family" } as Record<MealParty, string>,
+    aiBudgets: { low: "Keep it cheap", mid: "Average", high: "A little special" } as Record<MealBudgetFeel, string>,
+    aiNotice: "Asking sends this trip's outline (names of well-known sights, times, how long you stay and walk, the weather, the city) and what you type here to an outside AI service (Anthropic or OpenAI). Names of restaurants and places you added by search or by typing, and all positions, are not sent.",
+    aiSend: "Ask with this",
+    aiCancel: "Cancel",
+    aiBusy: "Asking the AI… (this can take about 20 seconds)",
+    aiFailed: "The AI could not answer just now. Places nearby can be seen as before.",
+    aiNoShops: "No restaurant nearby matched the AI's suggestions. Places nearby can be seen as before.",
+    aiSearching: "Looking for restaurants that match…",
+    aiSearched: (conditions: string) => `Searched: ${conditions}`,
+    aiWidened: (meters: number) => `Nothing within ${meters} m, so the search was widened.`,
+    aiKeywordNote: "This word is matched against the restaurant's listing text; the dish itself is not verified.",
+    aiNote: "The reasons and search conditions are AI suggestions. The restaurants are HotPepper Gourmet search results, not chosen by the AI. Budgets are the restaurant's own guide; check reviews and seats on its page.",
+    aiRefine: "Change the suggestions",
+    aiAsks: { casual: "More casual", quiet: "Quieter, slower", nearer: "Closer", cheaper: "Lower budget", different: "Another cuisine" } as Record<Exclude<MealRefineAsk, "wish">, string>,
+    aiRefineWish: "Ask in your own words (up to 80 characters)",
+    aiRefineSend: "Ask",
     walkAbout: (minutes: number) => `~${minutes} min walk`,
     ideasTitle: "Add a nearby place",
     ideasAdd: "Add",
@@ -834,7 +892,153 @@ function LegCard({ leg, locale, heading, depart, times }: { leg: ShioriLeg; loca
   );
 }
 
-function MealRow({ meal, locale, onAdd }: { meal: ShioriMeal; locale: Locale; onAdd: (shop: HotpepperShop, kind: "lunch" | "dinner") => void }) {
+/** One HotPepper shop of a meal's list: its page, what it states, the walk, and the button that puts it on the trip. */
+function ShopItem({ shop, kind, locale, onAdd }: { shop: HotpepperShop; kind: "lunch" | "dinner"; locale: Locale; onAdd: (shop: HotpepperShop, kind: "lunch" | "dinner") => void }) {
+  const t = text[locale];
+  return (
+    <li className="has-action">
+      <a href={shop.url ?? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${shop.name} ${shop.address ?? ""}`)}`} rel="noreferrer" target="_blank">
+        {/* eslint-disable-next-line @next/next/no-img-element -- a static export has no image optimiser */}
+        {shop.photo ? <img alt="" decoding="async" height={72} loading="lazy" src={shop.photo} width={72} /> : null}
+        <span>
+          <b>{shop.name}</b>
+          <small>{[shop.genre, kind === "lunch" && lunchPrice(shop.budgetAverage) ? t.shopLunch(lunchPrice(shop.budgetAverage)!) : budgetLabel(shop.budget) ? t.shopBudget(budgetLabel(shop.budget)!) : null].filter(Boolean).join(" ・ ")}</small>
+          <small>{t.walkAbout(Math.max(1, Math.round(shop.distanceMeters * 1.3 / 75)))} <i className="shiori-est">{t.estimate}</i></small>
+        </span>
+      </a>
+      <button onClick={() => onAdd(shop, kind)} type="button">{t.shopAdd}</button>
+    </li>
+  );
+}
+
+/** What the page above a meal row holds for it: the AI's answer for this slot, and the ways to ask. */
+type MealRowAdvice = {
+  entry: MealAdviceEntry | null;
+  busy: boolean;
+  failed: boolean;
+  formOpen: boolean;
+  /** The row is on the day being looked at: shops are searched for only then. */
+  active: boolean;
+  prefs: MealBriefPrefs;
+  openSlots: number;
+  onForm: (open: boolean) => void;
+  onAsk: (prefs: MealBriefPrefs) => void;
+  onRefine: (ask: MealRefineAsk, wish: string) => void;
+};
+
+/** Who, what budget, what wish — all optional — and what asking sends, said before anything is sent. */
+function MealAdviceForm({ advice, locale, slot }: { advice: MealRowAdvice; locale: Locale; slot: string }) {
+  const t = text[locale];
+  const [prefs, setPrefs] = useState<MealBriefPrefs>(advice.prefs);
+  return (
+    <form aria-labelledby={`shiori-advice-title-${slot}`} className="shiori-advice-form" onSubmit={(event) => { event.preventDefault(); advice.onAsk(cleanMealPrefs(prefs)); }}>
+      <h4 id={`shiori-advice-title-${slot}`}>{t.aiFormTitle}</h4>
+      <p className="shiori-quiet">{t.aiFormLead(advice.openSlots)}</p>
+      <label>
+        <span>{t.aiParty}</span>
+        <select onChange={(event) => setPrefs({ ...prefs, party: (event.target.value || null) as MealParty | null })} value={prefs.party ?? ""}>
+          <option value="">{t.aiUnset}</option>
+          {MEAL_PARTIES.map((party) => <option key={party} value={party}>{t.aiParties[party]}</option>)}
+        </select>
+      </label>
+      <label>
+        <span>{t.aiBudget}</span>
+        <select onChange={(event) => setPrefs({ ...prefs, budget: (event.target.value || null) as MealBudgetFeel | null })} value={prefs.budget ?? ""}>
+          <option value="">{t.aiUnset}</option>
+          {MEAL_BUDGET_FEELS.map((budget) => <option key={budget} value={budget}>{t.aiBudgets[budget]}</option>)}
+        </select>
+      </label>
+      <label className="is-wide">
+        <span>{t.aiWish}</span>
+        <input maxLength={MEAL_ADVICE_LIMITS.wishChars} onChange={(event) => setPrefs({ ...prefs, wish: event.target.value })} placeholder={t.aiWishPlaceholder} type="text" value={prefs.wish} />
+      </label>
+      <p className="shiori-quiet shiori-advice-notice"><Icon name="info" /> {t.aiNotice}</p>
+      <div className="shiori-advice-actions">
+        <button className="is-primary" type="submit">{t.aiSend}</button>
+        <button onClick={() => advice.onForm(false)} type="button">{t.aiCancel}</button>
+      </div>
+    </form>
+  );
+}
+
+/**
+ * The AI's options for one meal, each with the shops its search conditions
+ * find. The sentence and the conditions are the AI's and are marked so; every
+ * shop, budget, photo and distance is the shop guide's own answer, which is
+ * held only as long as this row is on screen.
+ */
+function MealAdviceOptions({ advice, entry, meal, locale, onAdd }: { advice: MealRowAdvice; entry: MealAdviceEntry; meal: ShioriMeal; locale: Locale; onAdd: (shop: HotpepperShop, kind: "lunch" | "dinner") => void }) {
+  const t = text[locale];
+  const [found, setFound] = useState<{ entry: MealAdviceEntry; lists: Array<{ shops: HotpepperShop[]; withinMeters: number }> } | null>(null);
+  const [wish, setWish] = useState("");
+  const { active } = advice;
+  const { kind } = meal;
+  const { latitude, longitude } = meal.near;
+  const searched = found?.entry === entry;
+  useEffect(() => {
+    if (!active || searched) return;
+    const controller = new AbortController();
+    void (async () => {
+      const lists: Array<{ shops: HotpepperShop[]; withinMeters: number }> = [];
+      const taken = new Set<string>();
+      for (const option of entry.options) {
+        const query = mealOptionQuery(option, { latitude, longitude }, kind);
+        const listed = await fetchHotpepperShops({ ...query, signal: controller.signal });
+        if (controller.signal.aborted) return;
+        let result = { shops: shopsForOption(listed, option, kind, taken), withinMeters: option.withinMeters as number };
+        const wider = result.shops.length === 0 ? widerMealMeters(option) : null;
+        if (wider !== null) {
+          // Nothing that close: one wider look, and the screen says how far it looked.
+          const further = await fetchHotpepperShops({ ...query, withinMeters: wider, signal: controller.signal });
+          if (controller.signal.aborted) return;
+          result = shopsWithinWider(further, option, kind, taken) ?? result;
+        }
+        for (const shop of result.shops) taken.add(shop.id);
+        lists.push(result);
+      }
+      setFound({ entry, lists });
+    })();
+    return () => controller.abort();
+  }, [active, searched, entry, kind, latitude, longitude]);
+  if (!searched) return active ? <p aria-live="polite" className="shiori-quiet">{t.aiSearching}</p> : null;
+  const shown = entry.options.map((option, index) => ({ option, shops: found.lists[index]?.shops ?? [], withinMeters: found.lists[index]?.withinMeters ?? option.withinMeters })).filter((row) => row.shops.length > 0);
+  const refine = (
+    <div className="shiori-advice-refine">
+      <h4>{t.aiRefine}</h4>
+      <ul className="shiori-chips">
+        {MEAL_QUICK_ASKS.map((ask) => <li key={ask}><button disabled={advice.busy} onClick={() => advice.onRefine(ask, "")} type="button">{t.aiAsks[ask]}</button></li>)}
+      </ul>
+      <form className="shiori-advice-wish" onSubmit={(event) => { event.preventDefault(); const words = cleanMealWish(wish); if (words && !advice.busy) advice.onRefine("wish", words); }}>
+        <label>
+          <span>{t.aiRefineWish}</span>
+          <input maxLength={MEAL_ADVICE_LIMITS.wishChars} onChange={(event) => setWish(event.target.value)} placeholder={t.aiWishPlaceholder} type="text" value={wish} />
+        </label>
+        <button disabled={advice.busy || !cleanMealWish(wish)} type="submit">{t.aiRefineSend}</button>
+      </form>
+    </div>
+  );
+  if (shown.length === 0) return <><p aria-live="polite" className="shiori-quiet">{t.aiNoShops}</p>{refine}</>;
+  return (
+    <>
+      {shown.map(({ option, shops, withinMeters }) => (
+        <section className="shiori-advice-option" key={option.role}>
+          <p className="shiori-advice-reason"><b>{MEAL_ROLE_LABELS[locale][option.role]}</b> <i className="shiori-ai-tag">{t.aiTag}</i> <span>{option.reason}</span></p>
+          {/* The distance in this line is the one the page really searched within. */}
+          <p className="shiori-quiet">{t.aiSearched(mealConditionsText({ ...option, withinMeters: withinMeters as MealWithinMeters }, locale))}{withinMeters !== option.withinMeters ? <> {t.aiWidened(option.withinMeters)}</> : null}{option.keyword ? <> {t.aiKeywordNote}</> : null}</p>
+          <ul className="shiori-food is-shops">
+            {shops.map((shop) => <ShopItem key={shop.id} kind={kind} locale={locale} onAdd={onAdd} shop={shop} />)}
+          </ul>
+        </section>
+      ))}
+      <p className="shiori-quiet">{t.aiNote}</p>
+      {/* The provider's credit, in its own wording and markup (its guideline forbids altering either). */}
+      <p className="shiori-quiet shiori-credit">【画像提供：ホットペッパー グルメ】 Powered by <a href="http://webservice.recruit.co.jp/">ホットペッパーグルメ Webサービス</a></p>
+      {refine}
+    </>
+  );
+}
+
+function MealRow({ meal, locale, onAdd, advice, slot }: { meal: ShioriMeal; locale: Locale; onAdd: (shop: HotpepperShop, kind: "lunch" | "dinner") => void; advice?: MealRowAdvice | null; slot?: string }) {
   const t = text[locale];
   const [state, setState] = useState<"closed" | "loading" | "ready" | "failed">("closed");
   const [candidates, setCandidates] = useState<FoodCandidate[]>([]);
@@ -882,25 +1086,22 @@ function MealRow({ meal, locale, onAdd }: { meal: ShioriMeal; locale: Locale; on
         </span>
         <button aria-expanded={state !== "closed"} onClick={() => void open()} type="button">{state === "closed" ? t.showFood : t.hideFood}</button>
       </div>
+      {/* The meal advisor: nothing is sent until the button is pressed and the form confirmed. Never on paper. */}
+      {advice && slot ? (
+        <div className="shiori-advice shiori-screen-only">
+          {!advice.formOpen && !advice.busy ? <button aria-expanded={false} className="shiori-advice-ask" onClick={() => advice.onForm(true)} type="button"><Icon name="spark" />{t.aiAsk}</button> : null}
+          {advice.formOpen && !advice.busy ? <MealAdviceForm advice={advice} locale={locale} slot={slot} /> : null}
+          {advice.busy ? <p aria-live="polite" className="shiori-quiet">{t.aiBusy}</p> : null}
+          {advice.failed && !advice.busy ? <p aria-live="polite" className="shiori-quiet">{t.aiFailed}</p> : null}
+          {advice.entry ? <MealAdviceOptions advice={advice} entry={advice.entry} locale={locale} meal={meal} onAdd={onAdd} /> : null}
+        </div>
+      ) : null}
       {state === "loading" ? <p className="shiori-quiet">{t.foodLoading}</p> : null}
       {state === "failed" ? <p className="shiori-quiet">{t.foodNone} <a href={mapsSearch} rel="noreferrer" target="_blank">Google Maps ↗</a></p> : null}
       {state === "ready" && shops.length > 0 ? (
         <>
           <ul className="shiori-food is-shops">
-            {shops.map((shop) => (
-              <li className="has-action" key={shop.id}>
-                <a href={shop.url ?? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${shop.name} ${shop.address ?? ""}`)}`} rel="noreferrer" target="_blank">
-                  {/* eslint-disable-next-line @next/next/no-img-element -- a static export has no image optimiser */}
-                  {shop.photo ? <img alt="" decoding="async" height={72} loading="lazy" src={shop.photo} width={72} /> : null}
-                  <span>
-                    <b>{shop.name}</b>
-                    <small>{[shop.genre, meal.kind === "lunch" && lunchPrice(shop.budgetAverage) ? t.shopLunch(lunchPrice(shop.budgetAverage)!) : budgetLabel(shop.budget) ? t.shopBudget(budgetLabel(shop.budget)!) : null].filter(Boolean).join(" ・ ")}</small>
-                    <small>{t.walkAbout(Math.max(1, Math.round(shop.distanceMeters * 1.3 / 75)))} <i className="shiori-est">{t.estimate}</i></small>
-                  </span>
-                </a>
-                <button onClick={() => onAdd(shop, meal.kind)} type="button">{t.shopAdd}</button>
-              </li>
-            ))}
+            {shops.map((shop) => <ShopItem key={shop.id} kind={meal.kind} locale={locale} onAdd={onAdd} shop={shop} />)}
           </ul>
           <p className="shiori-quiet">{meal.kind === "lunch" ? t.shopNoteLunch : t.shopNote}</p>
           {/* The provider's credit, in its own wording and markup (its guideline forbids altering either). */}
@@ -1156,6 +1357,8 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
   const [bulkText, setBulkText] = useState("");
   const [bulkReview, setBulk] = useState<{ cityId: string | null; lines: BulkLine[]; leftOut: string[]; busy: boolean; stopped: "budget" | null; over: number; added: number; edits: Record<number, string> } | null>(null);
   const [copied, setCopied] = useState(false);
+  // What the traveller told the meal advisor last time, on this device.
+  const [mealPrefs, setMealPrefs] = useState<MealBriefPrefs>(EMPTY_MEAL_PREFS);
   // Street paths looked up so far, keyed "walk|<leg>" / "drive|<leg>". Null
   // means the map service had no answer; it is not asked twice.
   const [routes, setRoutes] = useState<ReadonlyMap<string, ShioriRoute | null>>(() => new Map());
@@ -1199,6 +1402,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
     const stored = readTrip(STORAGE_KEY);
     const kept = readTrip(PREVIOUS_KEY);
     const known = readRoutes();
+    try { setMealPrefs(cleanMealPrefs(JSON.parse(window.localStorage.getItem(MEAL_PREFS_KEY) ?? "null"))); } catch { /* ignore */ }
     if (known.size > 0) {
       setRoutes(known);
       for (const key of known.keys()) askedRoutes.current.add(key);
@@ -1309,6 +1513,75 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
   // A plan made on an earlier visit to this screen is another trip's plan.
   const plan = screen === "plan" && planned && planned.visit === planVisit ? planned.plan : null;
   const planning = screen === "plan" && planned?.key !== planKey;
+  // The meal advisor. One answer covers every open meal of the trip and is
+  // held here, above the rows, for as long as the page is open: it is never
+  // stored, and neither are the shops found with it. Each slot's answer
+  // carries the key of the slot it was made for (its time and place), and is
+  // shown only while the plan still has that slot unchanged.
+  const adviceOn = useMemo(() => mealAdviceAvailable(), []);
+  const [adviceForm, setAdviceForm] = useState<string | null>(null);
+  const [adviceEntries, setAdviceEntries] = useState<Record<string, MealAdviceEntry>>({});
+  /** "all" while the whole trip is being asked about, a slot id while one slot is being refined. */
+  const [adviceBusy, setAdviceBusy] = useState<string | null>(null);
+  const [adviceFailed, setAdviceFailed] = useState<Record<string, string>>({});
+  const adviceRun = useRef<{ controller: AbortController; keys: Record<string, string> } | null>(null);
+  const slotKeys = useMemo(() => (adviceOn ? mealSlotKeys(plan) : {}), [adviceOn, plan]);
+  const slotKeysNow = useRef(slotKeys);
+  useEffect(() => {
+    slotKeysNow.current = slotKeys;
+    // A question whose every slot has since moved or gone has nothing left to answer: it is dropped.
+    const run = adviceRun.current;
+    if (run && !Object.entries(run.keys).some(([slot, key]) => slotKeys[slot] === key)) run.controller.abort();
+  }, [slotKeys]);
+  useEffect(() => () => adviceRun.current?.controller.abort(), []);
+  const askAdvice = async (prefs: MealBriefPrefs, refine: { slot: string; ask: MealRefineAsk; wish: string } | null) => {
+    if (!plan || !adviceOn) return;
+    const brief = buildMealBrief({ plan, city: city ? (locale === "ja" ? city.ja : city.en) : null, startDate: startDate ?? null, weatherByIndex: weather?.byIndex ?? null, prefs });
+    const keys = slotKeysNow.current;
+    const asked = refine ? [refine.slot] : Object.keys(keys);
+    const previous = refine ? liveMealEntry(adviceEntries, refine.slot, keys[refine.slot] ?? "") : null;
+    adviceRun.current?.controller.abort();
+    const run = { controller: new AbortController(), keys: Object.fromEntries(asked.flatMap((slot) => (keys[slot] ? [[slot, keys[slot]]] : []))) };
+    adviceRun.current = run;
+    setAdviceForm(null);
+    setAdviceBusy(refine ? refine.slot : "all");
+    setAdviceFailed((current) => Object.fromEntries(Object.entries(current).filter(([slot]) => !asked.includes(slot))));
+    const answer = !brief ? null : await askMealAdvice(
+      refine
+        ? { task: "meal-refine", locale, brief, refine: { slot: refine.slot, previous: (previous?.options ?? []).map(mealConditionsOf), ask: refine.ask, wish: refine.wish } }
+        : { task: "meals", locale, brief },
+      { signal: run.controller.signal },
+    );
+    if (adviceRun.current !== run) return;
+    adviceRun.current = null;
+    setAdviceBusy(null);
+    if (run.controller.signal.aborted) return;
+    // Only what was asked for the plan as it still stands is kept; the rest is treated as no answer.
+    const entries = answer ? entriesFromAnswer(answer, run.keys, slotKeysNow.current) : {};
+    setAdviceEntries((current) => ({ ...current, ...entries }));
+    setAdviceFailed((current) => ({ ...current, ...Object.fromEntries(asked.flatMap((slot) => (entries[slot] || !run.keys[slot] ? [] : [[slot, run.keys[slot]]]))) }));
+  };
+  const rowAdvice = (dayIndex: number, meal: ShioriMeal): MealRowAdvice | null => {
+    const slot = mealSlotId(dayIndex, meal.kind);
+    const key = slotKeys[slot];
+    if (!adviceOn || !key || key !== mealSlotKey(dayIndex, meal)) return null;
+    return {
+      entry: liveMealEntry(adviceEntries, slot, key),
+      busy: adviceBusy === "all" || adviceBusy === slot,
+      failed: adviceFailed[slot] === key,
+      formOpen: adviceForm === slot,
+      active: dayIndex === activeDay,
+      prefs: mealPrefs,
+      openSlots: Object.keys(slotKeys).length,
+      onForm: (open) => setAdviceForm(open ? slot : null),
+      onAsk: (prefs) => {
+        setMealPrefs(prefs);
+        try { window.localStorage.setItem(MEAL_PREFS_KEY, JSON.stringify(prefs)); } catch { /* ignore */ }
+        void askAdvice(prefs, null);
+      },
+      onRefine: (ask, wish) => void askAdvice(mealPrefs, { slot, ask, wish }),
+    };
+  };
   // The Toei lines' published departures. The file is asked for (from this
   // site) only once a plan with a start date has a ride on a Toei line.
   // Toei runs only in Tokyo: a same-named line elsewhere (Kobe's 三田線) must not fetch the timetable or show its hint.
@@ -2263,6 +2536,8 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
                           </article>
                           {day.meals.filter((meal) => meal.afterStop === index).map((meal) => <MealRow
                             key={`${meal.kind}-${day.index}-${trip.places.length}`}
+                            advice={rowAdvice(day.index, meal)}
+                            slot={mealSlotId(day.index, meal.kind)}
                             locale={locale}
                             meal={meal}
                             onAdd={(shop, kind) => {

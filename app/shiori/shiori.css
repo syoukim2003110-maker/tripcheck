@@ -465,6 +465,29 @@
 /* A café the guide has no photo of, in a list where others have one. */
 .shiori-food-blank { align-items: center; background: var(--tile, #edf0f3); border-radius: var(--r-sm); color: var(--muted); display: flex; flex: 0 0 auto; height: 72px; justify-content: center; width: 72px; }
 .shiori-credit { font-size: 12px; }
+/* The meal advisor inside a meal row: the AI's sentence is marked as a suggestion, the shops below it are the shop guide's. */
+.shiori-advice { display: grid; gap: 8px; margin-top: 8px; min-width: 0; }
+.shiori-advice-ask, .shiori-advice-actions button, .shiori-advice-wish button { align-items: center; background: var(--card); border: 1px solid var(--edge); border-radius: var(--r-md); color: var(--ink); display: inline-flex; font-size: 14px; font-weight: 700; gap: 6px; justify-content: center; justify-self: start; line-height: 1.2; min-height: 44px; padding: 0 14px; }
+.shiori-advice-actions button.is-primary { background: var(--ink); border-color: var(--ink); color: #fff; }
+.shiori-advice button:disabled { opacity: 0.55; }
+.shiori-advice h4 { font: 700 14px/1.4 var(--gothic); margin: 0; }
+.shiori-advice-form { background: var(--card); border: 1px solid var(--edge); border-radius: var(--r-sm); display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); min-width: 0; padding: 12px; }
+.shiori-advice-form > h4, .shiori-advice-form > p, .shiori-advice-form > .is-wide, .shiori-advice-actions { grid-column: 1 / -1; }
+.shiori-advice-form label, .shiori-advice-wish label { display: grid; font-size: 13px; gap: 4px; min-width: 0; }
+.shiori-advice-form select { width: 100%; }
+.shiori-advice input { background: #f7f8fa; border: 1px solid #c5c9ce; border-radius: var(--r-sm); font-size: 16px; min-height: 44px; min-width: 0; padding: 0 12px; width: 100%; }
+.shiori-advice-notice .shiori-icon { height: 14px; width: 14px; }
+.shiori-advice-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.shiori-advice-option { border-top: 1px dashed var(--rule); min-width: 0; padding-top: 10px; }
+.shiori-advice-option .shiori-food { margin-top: 6px; }
+.shiori-advice-reason { font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
+.shiori-advice-reason b { font: 700 15px/1.4 var(--gothic); }
+/* AIの提案: like 目安, a suggestion is always marked and always dashed. */
+.shiori-ai-tag { background: var(--est-bg); border: 1px dashed var(--est-ink); border-radius: var(--r-sm); color: var(--est-ink); display: inline-block; font: 700 12px/1.5 var(--gothic); font-style: normal; letter-spacing: 0; padding: 0 6px; vertical-align: 1px; white-space: nowrap; }
+.shiori-advice-refine { border-top: 1px dashed var(--rule); display: grid; gap: 8px; padding-top: 10px; }
+.shiori-advice-refine .shiori-chips { margin-top: 0; }
+.shiori-advice-wish { align-items: end; display: flex; flex-wrap: wrap; gap: 8px; }
+.shiori-advice-wish label { flex: 1 1 200px; }
 .shiori-credit a { color: inherit; }
 .shiori-foot .shiori-credit a { display: inline; min-height: 0; }
 
