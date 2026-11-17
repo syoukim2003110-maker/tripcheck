@@ -35,8 +35,9 @@ import type { ShioriDay, ShioriPlace, ShioriPlan } from "./plan.ts";
  *
  * What goes out is the shape of the days — kinds of stops, times, walking,
  * weather, the traveller's own wish — and the names of sights from the
- * bundled list only. A shop or a place that came from a search (HotPepper,
- * Apple, a map lookup) or that the traveller typed goes without its name,
+ * bundled list only, under the name the list itself gives them. A shop or a
+ * place that came from a search (HotPepper, Apple, a map or Wikidata lookup),
+ * from a shared link or from what the traveller typed goes without its name,
  * and no position is sent at all. What comes back is search conditions and a
  * sentence; every shop on screen comes from the HotPepper search itself.
  */
@@ -45,20 +46,45 @@ function minutesOf(clock: string) {
   return Number(clock.slice(0, 2)) * 60 + Number(clock.slice(3));
 }
 
-/** What a stop is, said without its name. */
-export function mealStopKind(place: Pick<ShioriPlace, "id" | "kind" | "meal">): MealStopKind {
+/** The bundled sights: place id ("wikidata-Q…") → the names the bundled list gives that sight. */
+export type MealSights = ReadonlyMap<string, readonly string[]>;
+
+/**
+ * The sights of the bundled list, by the id a place made from one carries.
+ * The id's prefix alone proves nothing: a place found by the open lookup, or
+ * carried by a shared link, has a "wikidata-" id as well.
+ */
+export function mealSights(cities: ReadonlyArray<{ sights: ReadonlyArray<{ q: string; ja: string; en: string }> }>): MealSights {
+  const sights = new Map<string, string[]>();
+  for (const city of cities) {
+    for (const sight of city.sights) {
+      const names = sights.get(`wikidata-${sight.q}`) ?? [];
+      for (const name of [sight.ja.trim(), sight.en.trim()]) if (name && !names.includes(name)) names.push(name);
+      sights.set(`wikidata-${sight.q}`, names);
+    }
+  }
+  return sights;
+}
+
+/** What a stop is, said without its name. Only a sight of the bundled list is a "sight". */
+export function mealStopKind(place: Pick<ShioriPlace, "id" | "kind" | "meal">, sights: MealSights): MealStopKind {
   const kind = (place.kind ?? "").toLowerCase();
   if (place.meal || /restaurant/.test(kind)) return "restaurant";
   if (/cafe|café|bakery|coffee/.test(kind)) return "cafe";
   if (/hotel|ryokan|hostel|lodging/.test(kind)) return "hotel";
-  return place.id.startsWith("wikidata-") ? "sight" : "other";
+  return sights.has(place.id) ? "sight" : "other";
 }
 
-/** Only a sight from the bundled list may be named; a name that does not fit is left out, not cut. */
-function sendableName(place: Pick<ShioriPlace, "id" | "name">): string | null {
-  if (!place.id.startsWith("wikidata-")) return null;
+/**
+ * Only a sight of the bundled list may be named, and only by the name the
+ * list gives it: a place that merely carries such an id under other words
+ * (typed, renamed, from a link) is left unnamed. A name that does not fit is
+ * left out, not cut.
+ */
+function sendableName(place: Pick<ShioriPlace, "id" | "name" | "kind" | "meal">, sights: MealSights): string | null {
+  if (mealStopKind(place, sights) !== "sight") return null;
   const name = cleanMealText(place.name, MEAL_ADVICE_LIMITS.nameChars);
-  return name ? name : null;
+  return name && sights.get(place.id)?.includes(name) ? name : null;
 }
 
 const WEEKDAYS: readonly MealWeekday[] = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
@@ -120,6 +146,8 @@ export function mealSlotKeys(plan: Pick<ShioriPlan, "days"> | null): Record<stri
 
 export type MealBriefInput = {
   plan: Pick<ShioriPlan, "days">;
+  /** The bundled sights (mealSights): the only places whose name is sent. */
+  sights: MealSights;
   /** The destination's name from the bundled list, or null: a name typed or carried by a link is not sent. */
   city: string | null;
   /** The trip's first day ("2026-11-20"), when the traveller gave one. */
@@ -148,11 +176,11 @@ export function buildMealBrief(input: MealBriefInput): MealBrief | null {
       // A visit that runs past midnight has no time of this day to give.
       if (stop.arriveNextDay) continue;
       const entry: MealBriefStop = {
-        kind: mealStopKind(stop.place),
+        kind: mealStopKind(stop.place, input.sights),
         start: stop.arrive,
         stayMinutes: Math.max(0, Math.min(MEAL_ADVICE_LIMITS.minutes, Math.round(stop.stayMinutes))),
       };
-      const name = sendableName(stop.place);
+      const name = sendableName(stop.place, input.sights);
       if (name) entry.name = name;
       if (stop.place.meal) entry.meal = stop.place.meal;
       if (stop.reserved) entry.booked = true;
@@ -183,8 +211,8 @@ export function buildMealBrief(input: MealBriefInput): MealBrief | null {
       meal: meal.kind,
       time: meal.start,
       minutesUntilNext,
-      afterKind: after ? mealStopKind(after.place) : null,
-      beforeKind: next ? mealStopKind(next.place) : day.toHotel ? "hotel" : null,
+      afterKind: after ? mealStopKind(after.place, input.sights) : null,
+      beforeKind: next ? mealStopKind(next.place, input.sights) : day.toHotel ? "hotel" : null,
     };
   });
 

@@ -21,7 +21,7 @@ import { BulkBudgetError, bulkAfterTripChange, bulkLeftover, bulkProgress, bulkS
 import { findCafes, withListedCafes, type CafeBreak, type CafePick } from "../../lib/shiori/cafes";
 import { fetchedStamp, forecastCentre, loadForecast, wetDaysOf, type DayForecast, type ForecastAnswer, type ForecastCache } from "../../lib/shiori/forecast";
 import { lineColor } from "../../lib/shiori/line-colors";
-import { EMPTY_MEAL_PREFS, MEAL_QUICK_ASKS, MEAL_ROLE_LABELS, buildMealBrief, cleanMealPrefs, cleanMealWish, entriesFromAnswer, liveMealEntry, mealConditionsOf, mealConditionsText, mealOptionQuery, mealSlotId, mealSlotKey, mealSlotKeys, shopsForOption, shopsWithinWider, widerMealMeters, type MealAdviceEntry } from "../../lib/shiori/meal-advice";
+import { EMPTY_MEAL_PREFS, MEAL_QUICK_ASKS, MEAL_ROLE_LABELS, buildMealBrief, cleanMealPrefs, cleanMealWish, entriesFromAnswer, liveMealEntry, mealConditionsOf, mealConditionsText, mealOptionQuery, mealSights, mealSlotId, mealSlotKey, mealSlotKeys, shopsForOption, shopsWithinWider, widerMealMeters, type MealAdviceEntry } from "../../lib/shiori/meal-advice";
 import { askMealAdvice, mealAdviceAvailable } from "../../lib/shiori/meal-advice-client";
 import { MEAL_ADVICE_LIMITS, MEAL_BUDGET_FEELS, MEAL_PARTIES, type MealBriefPrefs, type MealBudgetFeel, type MealParty, type MealRefineAsk, type MealWithinMeters } from "../../lib/shiori/meal-advice-contract";
 import { clockOf, hasToeiRide, legTimetables, type RideTimetable, type ServiceCalendar, type TimetableTrain, type ToeiTimetableData } from "../../lib/shiori/timetable";
@@ -1519,6 +1519,8 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
   // carries the key of the slot it was made for (its time and place), and is
   // shown only while the plan still has that slot unchanged.
   const adviceOn = useMemo(() => mealAdviceAvailable(), []);
+  // The only places whose name may be sent: the bundled sights, under the bundled list's own names.
+  const sights = useMemo(() => mealSights(cities), [cities]);
   const [adviceForm, setAdviceForm] = useState<string | null>(null);
   const [adviceEntries, setAdviceEntries] = useState<Record<string, MealAdviceEntry>>({});
   /** "all" while the whole trip is being asked about, a slot id while one slot is being refined. */
@@ -1536,7 +1538,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
   useEffect(() => () => adviceRun.current?.controller.abort(), []);
   const askAdvice = async (prefs: MealBriefPrefs, refine: { slot: string; ask: MealRefineAsk; wish: string } | null) => {
     if (!plan || !adviceOn) return;
-    const brief = buildMealBrief({ plan, city: city ? (locale === "ja" ? city.ja : city.en) : null, startDate: startDate ?? null, weatherByIndex: weather?.byIndex ?? null, prefs });
+    const brief = buildMealBrief({ plan, sights, city: city ? (locale === "ja" ? city.ja : city.en) : null, startDate: startDate ?? null, weatherByIndex: weather?.byIndex ?? null, prefs });
     const keys = slotKeysNow.current;
     const asked = refine ? [refine.slot] : Object.keys(keys);
     const previous = refine ? liveMealEntry(adviceEntries, refine.slot, keys[refine.slot] ?? "") : null;

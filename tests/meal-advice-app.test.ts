@@ -21,6 +21,7 @@ import {
   mealConditionsText,
   mealOptionQuery,
   mealSlotKeys,
+  mealSights,
   mealStopKind,
   mealWeather,
   mealWeekday,
@@ -41,6 +42,7 @@ import { placeFromSight } from "../lib/shiori/state.ts";
 const cities = (JSON.parse(readFileSync(new URL("../lib/popular-sights-data.json", import.meta.url), "utf8")) as { cities: PopularDestination[] }).cities;
 const tokyoRail = new RailNetwork(JSON.parse(readFileSync(new URL("../public/rail/tokyo.json", import.meta.url), "utf8")));
 const tokyo = cities.find((entry) => entry.id === "tokyo")!;
+const SIGHTS = mealSights(cities);
 
 const SHOP: ShioriPlace = { id: "hotpepper-J001234567", name: "ないしょの蕎麦屋 本店", lat: 35.7101, lon: 139.8107, stayMinutes: 60, kind: "restaurant", meal: "lunch", day: 1 };
 const FOUND: ShioriPlace = { id: "apple-I7C250D2CDCB364A", name: "検索で見つけた場所", lat: 35.6595, lon: 139.7005, stayMinutes: 45, kind: "place", day: 2 };
@@ -53,7 +55,7 @@ function tokyoPlan(more: ShioriPlace[] = [], days = 2): ShioriPlan {
 
 test("the brief names bundled sights only; a shop, a searched place and a typed place go without a name, and nothing carries a position", () => {
   const plan = tokyoPlan([SHOP, FOUND, TYPED]);
-  const brief = buildMealBrief({ plan, city: "東京", startDate: "2026-11-20", weatherByIndex: { 0: { kind: "rain" }, 1: { kind: "partly" } }, prefs: { party: "couple", budget: "mid", wish: "地元の魚を少しずつ食べたい" } })!;
+  const brief = buildMealBrief({ sights: SIGHTS, plan, city: "東京", startDate: "2026-11-20", weatherByIndex: { 0: { kind: "rain" }, 1: { kind: "partly" } }, prefs: { party: "couple", budget: "mid", wish: "地元の魚を少しずつ食べたい" } })!;
   assert.ok(brief, "a brief is built");
   const sent = JSON.stringify(brief);
   for (const secret of [SHOP.name, FOUND.name, TYPED.name, "ひみつのホテル", "hotpepper-", "apple-", "J001234567", "35.", "139.", "lat", "lon"]) {
@@ -81,17 +83,17 @@ test("the brief names bundled sights only; a shop, a searched place and a typed 
 
 test("the brief without a date, a city or a wish, and a plan with nothing to ask about", () => {
   const plan = tokyoPlan();
-  const brief = buildMealBrief({ plan, city: null, prefs: EMPTY_MEAL_PREFS })!;
+  const brief = buildMealBrief({ sights: SIGHTS, plan, city: null, prefs: EMPTY_MEAL_PREFS })!;
   assert.equal(brief.city, null);
   for (const day of brief.days) { assert.equal(day.weekday, null); assert.equal(day.weather, null); assert.ok(Number.isInteger(day.walkMinutes)); }
   assert.deepEqual(brief.prefs, { party: null, budget: null, wish: "" });
   // Outside Japan the shop guide lists nothing, so there is nothing to ask.
   const abroad = { days: plan.days.map((day) => ({ ...day, meals: day.meals.map((meal) => ({ ...meal, near: { latitude: 48.86, longitude: 2.35 } })) })) };
-  assert.equal(buildMealBrief({ plan: abroad, city: null, prefs: EMPTY_MEAL_PREFS }), null);
+  assert.equal(buildMealBrief({ sights: SIGHTS, plan: abroad, city: null, prefs: EMPTY_MEAL_PREFS }), null);
   assert.deepEqual(openMealSlots(abroad), []);
   // A slot that starts after midnight is not this day's meal.
   const late = { days: plan.days.map((day) => ({ ...day, meals: day.meals.map((meal) => ({ ...meal, nextDay: true })) })) };
-  assert.equal(buildMealBrief({ plan: late, city: null, prefs: EMPTY_MEAL_PREFS }), null);
+  assert.equal(buildMealBrief({ sights: SIGHTS, plan: late, city: null, prefs: EMPTY_MEAL_PREFS }), null);
 });
 
 test("Seoul and Busan are inside the box around Japan but not in Japan: the advisor is not offered there", () => {
@@ -111,7 +113,7 @@ test("Seoul and Busan are inside the box around Japan but not in Japan: the advi
 test("a full trip stays inside the relay's limits", () => {
   const many = curateSights(tokyo.sights).slice(6, 24).map((sight) => placeFromSight(sight, "ja"));
   const plan = tokyoPlan(many, 7);
-  const brief = buildMealBrief({ plan, city: "東京", prefs: { party: null, budget: null, wish: "あ".repeat(200) } })!;
+  const brief = buildMealBrief({ sights: SIGHTS, plan, city: "東京", prefs: { party: null, budget: null, wish: "あ".repeat(200) } })!;
   assert.ok(brief);
   assert.ok(brief.days.length <= 7 && brief.slots.length <= 14);
   assert.ok(brief.days.reduce((sum, day) => sum + day.stops.length, 0) <= 24);
@@ -124,23 +126,25 @@ test("minutesUntilNext is given only before a booked stop, less the ride to it",
   const day = plan.days.find((entry) => entry.meals.some((meal) => meal.kind === "lunch" && entry.stops[meal.afterStop + 1]))!;
   const lunch = day.meals.find((meal) => meal.kind === "lunch")!;
   const slot = `d${day.index + 1}-lunch`;
-  assert.equal(buildMealBrief({ plan, city: null, prefs: EMPTY_MEAL_PREFS })!.slots.find((entry) => entry.slot === slot)!.minutesUntilNext, null);
+  assert.equal(buildMealBrief({ sights: SIGHTS, plan, city: null, prefs: EMPTY_MEAL_PREFS })!.slots.find((entry) => entry.slot === slot)!.minutesUntilNext, null);
   const booked = { days: plan.days.map((entry) => entry !== day ? entry : { ...entry, stops: entry.stops.map((stop, index) => index === lunch.afterStop + 1 ? { ...stop, reserved: true } : stop) }) };
   const next = day.stops[lunch.afterStop + 1];
   const minutes = (clock: string) => Number(clock.slice(0, 2)) * 60 + Number(clock.slice(3));
   const expected = Math.max(0, minutes(next.arrive) - day.legs[lunch.afterStop].minutes - minutes(lunch.start));
-  const built = buildMealBrief({ plan: booked, city: null, prefs: EMPTY_MEAL_PREFS })!;
+  const built = buildMealBrief({ sights: SIGHTS, plan: booked, city: null, prefs: EMPTY_MEAL_PREFS })!;
   assert.equal(built.slots.find((entry) => entry.slot === slot)!.minutesUntilNext, expected);
   assert.equal(built.days.find((entry) => entry.day === day.index + 1)!.stops[lunch.afterStop + 1].booked, true);
 });
 
 test("kinds, weekdays, weather and what the form may hold", () => {
-  assert.equal(mealStopKind({ id: "wikidata-Q1", kind: "temple" }), "sight");
-  assert.equal(mealStopKind({ id: "hotpepper-J1", kind: "restaurant", meal: "dinner" }), "restaurant");
-  assert.equal(mealStopKind({ id: "hotpepper-J1", kind: "cafe" }), "cafe");
-  assert.equal(mealStopKind({ id: "apple-1", kind: "bakery cafe" }), "cafe");
-  assert.equal(mealStopKind({ id: "apple-1", kind: "Hotel" }), "hotel");
-  assert.equal(mealStopKind({ id: "apple-1", kind: "museum" }), "other");
+  assert.equal(mealStopKind({ id: `wikidata-${tokyo.sights[0].q}`, kind: "temple" }, SIGHTS), "sight");
+  // The id's prefix proves nothing: only a sight of the bundled list is one.
+  assert.equal(mealStopKind({ id: "wikidata-Q999999999", kind: "temple" }, SIGHTS), "other");
+  assert.equal(mealStopKind({ id: "hotpepper-J1", kind: "restaurant", meal: "dinner" }, SIGHTS), "restaurant");
+  assert.equal(mealStopKind({ id: "hotpepper-J1", kind: "cafe" }, SIGHTS), "cafe");
+  assert.equal(mealStopKind({ id: "apple-1", kind: "bakery cafe" }, SIGHTS), "cafe");
+  assert.equal(mealStopKind({ id: "apple-1", kind: "Hotel" }, SIGHTS), "hotel");
+  assert.equal(mealStopKind({ id: "apple-1", kind: "museum" }, SIGHTS), "other");
   assert.equal(mealWeekday("2026-11-20", 0), "fri");
   assert.equal(mealWeekday("2026-11-20", 3), "mon");
   assert.equal(mealWeekday("not a date", 0), null);
@@ -255,7 +259,7 @@ test("an answer is kept only for the slots it was asked for, as the plan still h
   assert.equal(keys[`d${day.index + 1}-${meal.kind}`], `d${day.index + 1}-${meal.kind}|${meal.start}|${meal.near.latitude.toFixed(4)},${meal.near.longitude.toFixed(4)}`);
 });
 
-const request = (): MealAdviceRequest => ({ task: "meals", locale: "ja", brief: buildMealBrief({ plan: tokyoPlan(), city: "東京", prefs: EMPTY_MEAL_PREFS })! });
+const request = (): MealAdviceRequest => ({ task: "meals", locale: "ja", brief: buildMealBrief({ sights: SIGHTS, plan: tokyoPlan(), city: "東京", prefs: EMPTY_MEAL_PREFS })! });
 const good = () => ({ slots: request().brief.slots.map((slot) => ({ slot: slot.slot, options: [option(), option({ role: "near", reason: "すぐ近くで済ませる。" })] })) });
 const answering = (status: number, body: unknown, seen: Array<{ url: string; init: RequestInit }> = []): typeof fetch => async (input, init) => {
   seen.push({ url: String(input), init: init ?? {} });
@@ -378,4 +382,38 @@ test("the screen: marked as a suggestion, credited, never printed, never stored,
   // The form's answers are not part of the trip, so not of a share link.
   const state = readFileSync(new URL("../lib/shiori/state.ts", import.meta.url), "utf8");
   assert.equal(/party|wish|mealPrefs/i.test(state), false);
+});
+
+test("a place that only looks bundled goes without its name: a live lookup, a shared link, a renamed sight", () => {
+  const bundled = curateSights(tokyo.sights)[0];
+  // What the open lookup returns when the map search finds nothing: a Wikidata id, and the name as typed.
+  const LOOKED_UP: ShioriPlace = { id: "wikidata-Q987654321", name: "おばあちゃんの家の近くの神社", lat: 35.7005, lon: 139.7720, stayMinutes: 40, kind: "shrine", day: 2 };
+  // The same from a restaurant found that way and chosen as dinner.
+  const LOOKED_UP_SHOP: ShioriPlace = { id: "wikidata-Q987654322", name: "ないしょの寿司屋", lat: 35.6655, lon: 139.7707, stayMinutes: 60, kind: "restaurant", meal: "dinner", day: 2 };
+  assert.equal(SIGHTS.has(LOOKED_UP.id), false);
+  const plan = tokyoPlan([LOOKED_UP, LOOKED_UP_SHOP]);
+  const brief = buildMealBrief({ sights: SIGHTS, plan, city: "東京", prefs: EMPTY_MEAL_PREFS })!;
+  const sent = JSON.stringify(brief);
+  assert.equal(sent.includes(LOOKED_UP.name), false, "a looked-up place's name is sent");
+  assert.equal(sent.includes(LOOKED_UP_SHOP.name), false, "a looked-up restaurant's name is sent");
+  const allowed = new Set([...SIGHTS.values()].flat());
+  const named = brief.days.flatMap((day) => day.stops).filter((stop) => stop.name !== undefined);
+  assert.ok(named.length >= 6);
+  for (const stop of named) assert.ok(allowed.has(stop.name!), `${stop.name} is not a bundled name`);
+  // The looked-up place is there as a stop of an unknown kind, not as a sight.
+  assert.ok(brief.days.flatMap((day) => day.stops).some((stop) => stop.kind === "other" && stop.name === undefined));
+
+  // A bundled id under other words (a link edited by hand, a renamed stop): the id is not enough.
+  const renamed = { ...placeFromSight(bundled, "ja"), name: "山田さんと待ち合わせ" };
+  const others = curateSights(tokyo.sights).slice(1, 6).map((sight) => placeFromSight(sight, "ja"));
+  const edited = buildShioriPlan({ places: [renamed, ...others], days: 2, hotel: null, locale: "ja" }, { rail: tokyoRail, cities });
+  const second = JSON.stringify(buildMealBrief({ sights: SIGHTS, plan: edited, city: null, prefs: EMPTY_MEAL_PREFS }));
+  assert.equal(second.includes("山田さん"), false);
+  assert.equal(second.includes(bundled.ja), false);
+  // Either of the bundled list's two names is the sight's own.
+  const english = buildShioriPlan({ places: [placeFromSight(bundled, "en"), ...others], days: 2, hotel: null, locale: "en" }, { rail: tokyoRail, cities });
+  assert.ok(JSON.stringify(buildMealBrief({ sights: SIGHTS, plan: english, city: null, prefs: EMPTY_MEAL_PREFS })).includes(JSON.stringify(bundled.en.trim()).slice(1, -1)));
+  // With no bundled list at hand nothing is named at all.
+  const bare = buildMealBrief({ sights: new Map(), plan, city: null, prefs: EMPTY_MEAL_PREFS })!;
+  assert.equal(bare.days.flatMap((day) => day.stops).some((stop) => stop.name !== undefined || stop.kind === "sight"), false);
 });
