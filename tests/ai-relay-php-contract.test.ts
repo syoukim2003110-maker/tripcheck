@@ -36,8 +36,8 @@ test("both relays take prompts, schema, models and limits from the one ai-spec.j
   for (const [name, source] of [["ai.php", php], ["meal-advice-relay.ts", relay], ["apple-relay-dev.ts", twin]] as const) {
     assert.doesNotMatch(source, /claude-opus|gpt-\d|claude-sonnet|claude-fable/, `${name} names a model`);
   }
-  assert.doesNotMatch(php, /\b(?:150|8192)\b/, "ai.php repeats a limit instead of reading it");
-  for (const key of ["dailyCalls", "perClientPerDay", "perClientPerMinute", "closeRoleMeters", "bodyBytes", "optionsPerSlot", "featuresPerOption", "keywordChars", "reasonChars", "wishChars", "nameChars", "cityChars", "minutes", "days", "stops", "slots"]) {
+  assert.doesNotMatch(php, /\b(?:150|80|8192)\b/, "ai.php repeats a limit instead of reading it");
+  for (const key of ["dailyCalls", "perClientPerDay", "perClientPerMinute", "totalSeconds", "slotsPerCall", "closeRoleMeters", "bodyBytes", "optionsPerSlot", "featuresPerOption", "keywordChars", "reasonChars", "wishChars", "nameChars", "cityChars", "minutes", "days", "stops", "slots"]) {
     assert.ok(php.includes(`['${key}']`), `ai.php does not read limits.${key}`);
     assert.ok(Number.isInteger(spec.limits[key]) || key === "reasonChars", `ai-spec.json has no limits.${key}`);
   }
@@ -49,10 +49,10 @@ test("both relays take prompts, schema, models and limits from the one ai-spec.j
 
 test("the spec names the models and settings that were decided", () => {
   assert.deepEqual(spec.providers.anthropic, {
-    url: "https://api.anthropic.com/v1/messages", version: "2026-10-21", model: "claude-opus-5-5", maxTokens: 4000, effort: "low", timeoutSeconds: 20,
+    url: "https://api.anthropic.com/v1/messages", version: "2026-10-21", model: "claude-opus-5-5", maxTokens: 3000, effort: "low", timeoutSeconds: 18,
     beta: "server-side-fallback-2026-07-01", fallbacks: "default",
   });
-  assert.deepEqual(spec.providers.openai, { url: "https://api.openai.com/v1/responses", model: "gpt-6.1-terra", maxOutputTokens: 4000, reasoningEffort: "low", timeoutSeconds: 20 });
+  assert.deepEqual(spec.providers.openai, { url: "https://api.openai.com/v1/responses", model: "gpt-6.1-terra", maxOutputTokens: 3000, reasoningEffort: "low", timeoutSeconds: 15, minSeconds: 8 });
   assert.deepEqual(Object.keys(spec.system).sort(), ["common", "meal-refine", "meals"]);
 });
 
@@ -139,8 +139,14 @@ test("ai.php asks OpenAI with the same prompt and schema, stores nothing there, 
 
 test("ai.php falls back once, validates what comes back, and passes on a code and nothing else", () => {
   const tail = php.slice(php.indexOf("$slotIds = $request['task']"));
-  assert.match(tail, /\$answer = clean_answer\(ask_anthropic\(\$spec, \$request, \$anthropicKey\), \$slotIds, \$request\['locale'\], \$spec\);/);
-  assert.match(tail, /if \(\$answer === null && \$openaiKey !== null\) \{\s*\$answer = clean_answer\(ask_openai\(/);
+  assert.match(tail, /\$answer = clean_answer\(ask_anthropic\(\$spec, \$request, \$anthropicKey, \$timeout\), \$slotIds, \$request\['locale'\], \$spec\);/);
+  // OpenAI is asked only while enough of the shared time is left to answer in:
+  // after a Claude call that ran out the clock the page has stopped waiting.
+  assert.match(php, /\$total = \(int\) \$spec\['limits'\]\['totalSeconds'\];\s*\$begun = microtime\(true\);/);
+  assert.match(tail, /\$timeout = min\(\(int\) \$spec\['providers'\]\['anthropic'\]\['timeoutSeconds'\], \$total\);/);
+  assert.match(tail, /\$left = \(int\) floor\(\$total - \(microtime\(true\) - \$begun\)\);/);
+  assert.match(tail, /if \(\$answer === null && \$openaiKey !== null && \$left >= \(int\) \$spec\['providers'\]\['openai'\]\['minSeconds'\]\) \{\s*\$timeout = min\(\(int\) \$spec\['providers'\]\['openai'\]\['timeoutSeconds'\], \$left\);\s*\$answer = clean_answer\(ask_openai\(\$spec, \$request, \$openaiKey, \$timeout\),/);
+  assert.doesNotMatch(php, /\(int\) \$provider\['timeoutSeconds'\]/, "a provider is given its full time whatever is left");
   assert.match(tail, /if \(\$answer === null\) respond\(502, \['code' => 'unavailable'\]\);\s*respond\(200, \$answer\);\s*$/);
   // Every answer the relay gives is a cleaned answer or a bare code.
   for (const match of php.matchAll(/respond\((\d+), ([^;]*)\);/g)) {
@@ -244,4 +250,24 @@ test("a shop search accepts the advisor's genre codes and filters, and only thos
 test("ai.php refuses a 'least walking' or 'quick' option that looks further than the limit, as the page does", () => {
   const conditions = between(php, "function clean_conditions(", "function clean_option(");
   assert.match(conditions, /if \(in_array\(\$role, \$enums\['closeRoles'\], true\) && \$withinMeters > \$limits\['closeRoleMeters'\]\) return null;/);
+});
+
+test("ai.php answers at most slotsPerCall slots a call, for the slots named", () => {
+  const only = between(php, "function clean_only(", "function clean_given(");
+  assert.match(only, /\$listed = \$input === null \? \$slotIds : \$input;/);
+  assert.match(only, /count\(\$listed\) < 1 \|\| count\(\$listed\) > \$spec\['limits'\]\['slotsPerCall'\]\) return null;/);
+  assert.match(only, /!is_string\(\$entry\) \|\| in_array\(\$entry, \$only, true\) \|\| !in_array\(\$entry, \$slotIds, true\)\) return null;/);
+  const given = between(php, "function clean_given(", "/** The whole request, rebuilt clean");
+  assert.match(given, /count\(\$listed\) > \$spec\['limits'\]\['slots'\]\) return null;/);
+  assert.match(given, /in_array\(\$genre, \$spec\['enums'\]\['genres'\], true\)/);
+  assert.match(given, /clean_keyword\(\$entry\['keyword'\] \?\? null,/);
+  assert.match(given, /in_array\(\$slot, \$only, true\) \|\| in_array\(\$slot, \$seen, true\) \|\| !in_array\(\$slot, \$slotIds, true\)\) return null;/);
+  // Only slot, genre and keyword are copied.
+  assert.match(given, /\$given\[\] = \['slot' => \$slot, 'genre' => \$genre, 'keyword' => \$keyword\];/);
+  const request = between(php, "function clean_request(", "function clean_answer(");
+  assert.match(request, /return \['task' => \$task, 'locale' => \$locale, 'brief' => \$brief, 'only' => \$only, 'given' => \$given\];/);
+  // The answer is held to the slots of this call, and the model is told which they are.
+  assert.match(php, /\$slotIds = \$request\['task'\] === 'meal-refine' \? \[\$request\['refine'\]\['slot'\]\] : \$request\['only'\];/);
+  const message = between(php, "function user_message(", "function ask_anthropic(");
+  assert.match(message, /\$message\['only'\] = \$request\['only'\];\s*\$message\['given'\] = \$request\['given'\];/);
 });

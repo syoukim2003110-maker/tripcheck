@@ -469,7 +469,10 @@
 .shiori-advice { display: grid; gap: 8px; margin-top: 8px; min-width: 0; }
 .shiori-advice-ask, .shiori-advice-actions button, .shiori-advice-wish button { align-items: center; background: var(--card); border: 1px solid var(--edge); border-radius: var(--r-md); color: var(--ink); display: inline-flex; font-size: 14px; font-weight: 700; gap: 6px; justify-content: center; justify-self: start; line-height: 1.2; min-height: 44px; padding: 0 14px; }
 .shiori-advice-actions button.is-primary { background: var(--ink); border-color: var(--ink); color: #fff; }
-.shiori-advice button:disabled { opacity: 0.55; }
+.shiori-advice button:disabled, .shiori-advice button[aria-disabled="true"] { cursor: default; opacity: 0.55; }
+.shiori-advice-retry { align-items: center; background: var(--card); border: 1px solid var(--edge); border-radius: var(--r-md); color: var(--ink); display: inline-flex; font-size: 14px; font-weight: 700; justify-self: start; line-height: 1.2; min-height: 44px; padding: 0 14px; }
+/* The status line is always in the page (a screen reader hears its words change); empty, it is taken out of the grid so it adds no row or gap. */
+.shiori-advice-status:empty { position: absolute; }
 .shiori-advice h4 { font: 700 14px/1.4 var(--gothic); margin: 0; }
 .shiori-advice-form { background: var(--card); border: 1px solid var(--edge); border-radius: var(--r-sm); display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); min-width: 0; padding: 12px; }
 .shiori-advice-form > h4, .shiori-advice-form > p, .shiori-advice-form > .is-wide, .shiori-advice-actions { grid-column: 1 / -1; }

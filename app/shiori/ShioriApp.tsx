@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
 import { fetchAppleFoodCandidates } from "../../lib/apple-food";
-import { budgetLabel, fetchHotpepperShops, inJapan, lunchPrice, shopsForMeal, type HotpepperShop } from "../../lib/hotpepper-client";
+import { budgetLabel, fetchHotpepperShops, inJapan, lunchPrice, searchHotpepperShops, shopsForMeal, type HotpepperShop } from "../../lib/hotpepper-client";
 import { placeCardsAvailable } from "../../lib/apple-place-card";
 import { AppleRelayError, appleRelayClient, appleRelaySearch } from "../../lib/apple-relay-client";
 import { defaultFoodDiscoveryQuery, type FoodCandidate } from "../../lib/google-food";
@@ -21,9 +21,9 @@ import { BulkBudgetError, bulkAfterTripChange, bulkLeftover, bulkProgress, bulkS
 import { findCafes, withListedCafes, type CafeBreak, type CafePick } from "../../lib/shiori/cafes";
 import { fetchedStamp, forecastCentre, loadForecast, wetDaysOf, type DayForecast, type ForecastAnswer, type ForecastCache } from "../../lib/shiori/forecast";
 import { lineColor } from "../../lib/shiori/line-colors";
-import { EMPTY_MEAL_PREFS, MEAL_QUICK_ASKS, MEAL_ROLE_LABELS, buildMealBrief, cleanMealPrefs, cleanMealWish, entriesFromAnswer, liveMealEntry, mealConditionsOf, mealConditionsText, mealOptionQuery, mealSights, mealSlotId, mealSlotKey, mealSlotKeys, shopsForOption, shopsWithinWider, widerMealMeters, type MealAdviceEntry } from "../../lib/shiori/meal-advice";
+import { EMPTY_MEAL_PREFS, MEAL_QUICK_ASKS, MEAL_ROLE_LABELS, askMealAdviceInTurns, buildMealBrief, cleanMealPrefs, cleanMealWish, entriesFromAnswer, findMealOptionShops, liveMealEntry, mealConditionsOf, mealConditionsText, mealSights, mealSlotId, mealSlotKey, mealSlotKeys, type MealAdviceEntry, type MealOptionShops } from "../../lib/shiori/meal-advice";
 import { askMealAdvice, mealAdviceAvailable } from "../../lib/shiori/meal-advice-client";
-import { MEAL_ADVICE_LIMITS, MEAL_BUDGET_FEELS, MEAL_PARTIES, type MealBriefPrefs, type MealBudgetFeel, type MealParty, type MealRefineAsk, type MealWithinMeters } from "../../lib/shiori/meal-advice-contract";
+import { MEAL_ADVICE_LIMITS, MEAL_BUDGET_FEELS, MEAL_PARTIES, type MealAdviceAnswer, type MealAdviceRequest, type MealBriefPrefs, type MealBudgetFeel, type MealParty, type MealRefineAsk, type MealWithinMeters } from "../../lib/shiori/meal-advice-contract";
 import { clockOf, hasToeiRide, legTimetables, type RideTimetable, type ServiceCalendar, type TimetableTrain, type ToeiTimetableData } from "../../lib/shiori/timetable";
 import { buildShioriPlan, departureAfterStop, type ShioriLeg, type ShioriMeal, type ShioriNotice, type ShioriPlace, type ShioriPlan, type ShioriReservation, type ShioriRoute, type ShioriStop, type ShioriUnplaced } from "../../lib/shiori/plan";
 import {
@@ -320,10 +320,12 @@ const text = {
     aiNotice: "相談すると、この旅の行程（有名スポットの名前、時刻、滞在と徒歩の長さ、天気、都市名）と、ここに入力した内容が、外部のAIサービス（Anthropic または OpenAI）に送られます。検索や入力で追加した店・場所の名前と、位置は送りません。",
     aiSend: "この内容で相談する",
     aiCancel: "やめる",
-    aiBusy: "AIに相談しています…（20秒ほどかかることがあります）",
+    aiBusy: "AIに相談しています…（20秒ほどかかることがあります。食事の多い旅は数食ずつ順に相談するので、後の日は1分ほどかかります）",
     aiFailed: "いまはAIに相談できませんでした。近くのお店はこれまでどおり見られます。",
     aiNoShops: "AIの提案に合う店が近くに見つかりませんでした。近くのお店はこれまでどおり見られます。",
     aiSearching: "提案に合う店を探しています…",
+    aiSearchFailed: "いまは店を探せませんでした（通信できなかったか、混み合っています）。合う店が無いという意味ではありません。",
+    aiSearchRetry: "もう一度探す",
     aiSearched: (conditions: string) => `検索条件：${conditions}`,
     aiWidened: (meters: number) => `${meters}m以内には無かったため、範囲を広げて探しました。`,
     aiKeywordNote: "この言葉は店の掲載文との一致で探しています。その料理があるかは確認していません。",
@@ -602,10 +604,12 @@ const text = {
     aiNotice: "Asking sends this trip's outline (names of well-known sights, times, how long you stay and walk, the weather, the city) and what you type here to an outside AI service (Anthropic or OpenAI). Names of restaurants and places you added by search or by typing, and all positions, are not sent.",
     aiSend: "Ask with this",
     aiCancel: "Cancel",
-    aiBusy: "Asking the AI… (this can take about 20 seconds)",
+    aiBusy: "Asking the AI… (this can take about 20 seconds; a trip with many meals is asked a few meals at a time, so later days can take about a minute)",
     aiFailed: "The AI could not answer just now. Places nearby can be seen as before.",
     aiNoShops: "No restaurant nearby matched the AI's suggestions. Places nearby can be seen as before.",
     aiSearching: "Looking for restaurants that match…",
+    aiSearchFailed: "Could not look for restaurants just now (no connection, or the service is busy). This does not mean that nothing matches.",
+    aiSearchRetry: "Look again",
     aiSearched: (conditions: string) => `Searched: ${conditions}`,
     aiWidened: (meters: number) => `Nothing within ${meters} m, so the search was widened.`,
     aiKeywordNote: "This word is matched against the restaurant's listing text; the dish itself is not verified.",
@@ -914,7 +918,10 @@ function ShopItem({ shop, kind, locale, onAdd }: { shop: HotpepperShop; kind: "l
 /** What the page above a meal row holds for it: the AI's answer for this slot, and the ways to ask. */
 type MealRowAdvice = {
   entry: MealAdviceEntry | null;
+  /** This row's own answer is on its way. */
   busy: boolean;
+  /** A question is in flight for some row: nothing else is asked until it is back (one question at a time, none thrown away). */
+  locked: boolean;
   failed: boolean;
   formOpen: boolean;
   /** The row is on the day being looked at: shops are searched for only then. */
@@ -927,11 +934,11 @@ type MealRowAdvice = {
 };
 
 /** Who, what budget, what wish — all optional — and what asking sends, said before anything is sent. */
-function MealAdviceForm({ advice, locale, slot }: { advice: MealRowAdvice; locale: Locale; slot: string }) {
+function MealAdviceForm({ advice, id, locale, slot, onDone }: { advice: MealRowAdvice; id: string; locale: Locale; slot: string; onDone: () => void }) {
   const t = text[locale];
   const [prefs, setPrefs] = useState<MealBriefPrefs>(advice.prefs);
   return (
-    <form aria-labelledby={`shiori-advice-title-${slot}`} className="shiori-advice-form" onSubmit={(event) => { event.preventDefault(); advice.onAsk(cleanMealPrefs(prefs)); }}>
+    <form aria-labelledby={`shiori-advice-title-${slot}`} className="shiori-advice-form" id={id} onSubmit={(event) => { event.preventDefault(); advice.onAsk(cleanMealPrefs(prefs)); onDone(); }}>
       <h4 id={`shiori-advice-title-${slot}`}>{t.aiFormTitle}</h4>
       <p className="shiori-quiet">{t.aiFormLead(advice.openSlots)}</p>
       <label>
@@ -955,69 +962,55 @@ function MealAdviceForm({ advice, locale, slot }: { advice: MealRowAdvice; local
       <p className="shiori-quiet shiori-advice-notice"><Icon name="info" /> {t.aiNotice}</p>
       <div className="shiori-advice-actions">
         <button className="is-primary" type="submit">{t.aiSend}</button>
-        <button onClick={() => advice.onForm(false)} type="button">{t.aiCancel}</button>
+        <button onClick={() => { advice.onForm(false); onDone(); }} type="button">{t.aiCancel}</button>
       </div>
     </form>
   );
 }
 
+/** Where the shop search for an answer stands. "none": the guide answered, and no shop matched any option. */
+type MealShopSearch = "idle" | "searching" | "failed" | "none" | "shown";
+
 /**
- * The AI's options for one meal, each with the shops its search conditions
- * find. The sentence and the conditions are the AI's and are marked so; every
- * shop, budget, photo and distance is the shop guide's own answer, which is
- * held only as long as this row is on screen.
+ * The shops for the options of one answer, searched for while the row is on
+ * the day being looked at. Every shop, budget, photo and distance is the shop
+ * guide's own answer, held only as long as the row is on screen. A search
+ * that got no answer (no connection, a limit) is not kept and is not read as
+ * "no shop matched": the row says it could not look, and `retry` looks again.
  */
-function MealAdviceOptions({ advice, entry, meal, locale, onAdd }: { advice: MealRowAdvice; entry: MealAdviceEntry; meal: ShioriMeal; locale: Locale; onAdd: (shop: HotpepperShop, kind: "lunch" | "dinner") => void }) {
-  const t = text[locale];
-  const [found, setFound] = useState<{ entry: MealAdviceEntry; lists: Array<{ shops: HotpepperShop[]; withinMeters: number }> } | null>(null);
-  const [wish, setWish] = useState("");
-  const { active } = advice;
+function useMealOptionShops(entry: MealAdviceEntry | null, meal: ShioriMeal, active: boolean): { state: MealShopSearch; lists: MealOptionShops[] | null; retry: () => void } {
+  const [found, setFound] = useState<{ entry: MealAdviceEntry; lists: MealOptionShops[] } | null>(null);
+  const [failedFor, setFailedFor] = useState<MealAdviceEntry | null>(null);
   const { kind } = meal;
   const { latitude, longitude } = meal.near;
-  const searched = found?.entry === entry;
+  const lists = entry && found?.entry === entry ? found.lists : null;
+  const failed = entry !== null && failedFor === entry;
+  const wanted = entry !== null && active && lists === null && !failed;
   useEffect(() => {
-    if (!active || searched) return;
+    if (!entry || !wanted) return;
     const controller = new AbortController();
-    void (async () => {
-      const lists: Array<{ shops: HotpepperShop[]; withinMeters: number }> = [];
-      const taken = new Set<string>();
-      for (const option of entry.options) {
-        const query = mealOptionQuery(option, { latitude, longitude }, kind);
-        const listed = await fetchHotpepperShops({ ...query, signal: controller.signal });
-        if (controller.signal.aborted) return;
-        let result = { shops: shopsForOption(listed, option, kind, taken), withinMeters: option.withinMeters as number };
-        const wider = result.shops.length === 0 ? widerMealMeters(option) : null;
-        if (wider !== null) {
-          // Nothing that close: one wider look, and the screen says how far it looked.
-          const further = await fetchHotpepperShops({ ...query, withinMeters: wider, signal: controller.signal });
-          if (controller.signal.aborted) return;
-          result = shopsWithinWider(further, option, kind, taken) ?? result;
-        }
-        for (const shop of result.shops) taken.add(shop.id);
-        lists.push(result);
-      }
-      setFound({ entry, lists });
-    })();
+    void findMealOptionShops(entry.options, { latitude, longitude }, kind, (query) => searchHotpepperShops({ ...query, signal: controller.signal }), () => controller.signal.aborted).then((answered) => {
+      if (controller.signal.aborted) return;
+      if (answered) setFound({ entry, lists: answered });
+      else setFailedFor(entry);
+    });
     return () => controller.abort();
-  }, [active, searched, entry, kind, latitude, longitude]);
-  if (!searched) return active ? <p aria-live="polite" className="shiori-quiet">{t.aiSearching}</p> : null;
-  const shown = entry.options.map((option, index) => ({ option, shops: found.lists[index]?.shops ?? [], withinMeters: found.lists[index]?.withinMeters ?? option.withinMeters })).filter((row) => row.shops.length > 0);
-  const refine = (
-    <div className="shiori-advice-refine">
-      <h4>{t.aiRefine}</h4>
-      <ul className="shiori-chips">
-        {MEAL_QUICK_ASKS.map((ask) => <li key={ask}><button disabled={advice.busy} onClick={() => advice.onRefine(ask, "")} type="button">{t.aiAsks[ask]}</button></li>)}
-      </ul>
-      <form className="shiori-advice-wish" onSubmit={(event) => { event.preventDefault(); const words = cleanMealWish(wish); if (words && !advice.busy) advice.onRefine("wish", words); }}>
-        <label>
-          <span>{t.aiRefineWish}</span>
-          <input maxLength={MEAL_ADVICE_LIMITS.wishChars} onChange={(event) => setWish(event.target.value)} placeholder={t.aiWishPlaceholder} type="text" value={wish} />
-        </label>
-        <button disabled={advice.busy || !cleanMealWish(wish)} type="submit">{t.aiRefineSend}</button>
-      </form>
-    </div>
-  );
-  if (shown.length === 0) return <><p aria-live="polite" className="shiori-quiet">{t.aiNoShops}</p>{refine}</>;
+  }, [wanted, entry, kind, latitude, longitude]);
+  const state: MealShopSearch = !entry ? "idle" : failed ? "failed" : lists === null ? (active ? "searching" : "idle") : lists.some((list) => list.shops.length > 0) ? "shown" : "none";
+  return { state, lists, retry: () => setFailedFor(null) };
+}
+
+/**
+ * The AI's options for one meal, each with the shops its search conditions
+ * found. The sentence and the conditions are the AI's and are marked so; the
+ * shops are the shop guide's. An option whose search found no shop is not
+ * shown. The ways to ask again stay in place whatever the search is doing,
+ * so a keyboard does not lose its place when an answer arrives.
+ */
+function MealAdviceOptions({ advice, entry, lists, kind, locale, onAdd }: { advice: MealRowAdvice; entry: MealAdviceEntry; lists: MealOptionShops[] | null; kind: "lunch" | "dinner"; locale: Locale; onAdd: (shop: HotpepperShop, kind: "lunch" | "dinner") => void }) {
+  const t = text[locale];
+  const [wish, setWish] = useState("");
+  const shown = lists === null ? [] : entry.options.map((option, index) => ({ option, shops: lists[index]?.shops ?? [], withinMeters: lists[index]?.withinMeters ?? option.withinMeters })).filter((row) => row.shops.length > 0);
   return (
     <>
       {shown.map(({ option, shops, withinMeters }) => (
@@ -1030,10 +1023,27 @@ function MealAdviceOptions({ advice, entry, meal, locale, onAdd }: { advice: Mea
           </ul>
         </section>
       ))}
-      <p className="shiori-quiet">{t.aiNote}</p>
-      {/* The provider's credit, in its own wording and markup (its guideline forbids altering either). */}
-      <p className="shiori-quiet shiori-credit">【画像提供：ホットペッパー グルメ】 Powered by <a href="http://webservice.recruit.co.jp/">ホットペッパーグルメ Webサービス</a></p>
-      {refine}
+      {shown.length > 0 ? (
+        <>
+          <p className="shiori-quiet">{t.aiNote}</p>
+          {/* The provider's credit, in its own wording and markup (its guideline forbids altering either). */}
+          <p className="shiori-quiet shiori-credit">【画像提供：ホットペッパー グルメ】 Powered by <a href="http://webservice.recruit.co.jp/">ホットペッパーグルメ Webサービス</a></p>
+        </>
+      ) : null}
+      {/* While a question is in flight these stay focusable but do nothing (aria-disabled, not disabled): a button that is switched off under the keyboard drops its focus. */}
+      <div className="shiori-advice-refine">
+        <h4>{t.aiRefine}</h4>
+        <ul className="shiori-chips">
+          {MEAL_QUICK_ASKS.map((ask) => <li key={ask}><button aria-disabled={advice.locked} onClick={() => { if (!advice.locked) advice.onRefine(ask, ""); }} type="button">{t.aiAsks[ask]}</button></li>)}
+        </ul>
+        <form className="shiori-advice-wish" onSubmit={(event) => { event.preventDefault(); const words = cleanMealWish(wish); if (words && !advice.locked) advice.onRefine("wish", words); }}>
+          <label>
+            <span>{t.aiRefineWish}</span>
+            <input maxLength={MEAL_ADVICE_LIMITS.wishChars} onChange={(event) => setWish(event.target.value)} placeholder={t.aiWishPlaceholder} type="text" value={wish} />
+          </label>
+          <button aria-disabled={advice.locked || !cleanMealWish(wish)} type="submit">{t.aiRefineSend}</button>
+        </form>
+      </div>
     </>
   );
 }
@@ -1045,6 +1055,11 @@ function MealRow({ meal, locale, onAdd, advice, slot }: { meal: ShioriMeal; loca
   // In Japan the list comes with a photo and a budget when the shop guide has the area.
   const [shops, setShops] = useState<HotpepperShop[]>([]);
   const relay = useMemo(() => appleRelayClient(), []);
+  // The meal advisor's shops for this row, and where the keyboard goes when its form closes.
+  const search = useMealOptionShops(advice?.entry ?? null, meal, advice?.active ?? false);
+  const askButton = useRef<HTMLButtonElement>(null);
+  const adviceStatus = useRef<HTMLParagraphElement>(null);
+  const adviceLine = !advice ? "" : advice.busy ? t.aiBusy : advice.failed ? t.aiFailed : search.state === "searching" ? t.aiSearching : search.state === "failed" ? t.aiSearchFailed : search.state === "none" ? t.aiNoShops : "";
   const open = async () => {
     if (state !== "closed") { setState("closed"); return; }
     if (!relay) { setState("failed"); return; }
@@ -1089,11 +1104,13 @@ function MealRow({ meal, locale, onAdd, advice, slot }: { meal: ShioriMeal; loca
       {/* The meal advisor: nothing is sent until the button is pressed and the form confirmed. Never on paper. */}
       {advice && slot ? (
         <div className="shiori-advice shiori-screen-only">
-          {!advice.formOpen && !advice.busy ? <button aria-expanded={false} className="shiori-advice-ask" onClick={() => advice.onForm(true)} type="button"><Icon name="spark" />{t.aiAsk}</button> : null}
-          {advice.formOpen && !advice.busy ? <MealAdviceForm advice={advice} locale={locale} slot={slot} /> : null}
-          {advice.busy ? <p aria-live="polite" className="shiori-quiet">{t.aiBusy}</p> : null}
-          {advice.failed && !advice.busy ? <p aria-live="polite" className="shiori-quiet">{t.aiFailed}</p> : null}
-          {advice.entry ? <MealAdviceOptions advice={advice} entry={advice.entry} locale={locale} meal={meal} onAdd={onAdd} /> : null}
+          {/* Always there, so the keyboard keeps its place: it opens and closes the form, and while a question is in flight it stays focusable but does nothing. */}
+          <button aria-controls={advice.formOpen ? `shiori-advice-form-${slot}` : undefined} aria-disabled={advice.locked} aria-expanded={advice.formOpen} className="shiori-advice-ask" onClick={() => { if (!advice.locked) advice.onForm(!advice.formOpen); }} ref={askButton} type="button"><Icon name="spark" />{t.aiAsk}</button>
+          {advice.formOpen && !advice.locked ? <MealAdviceForm advice={advice} id={`shiori-advice-form-${slot}`} locale={locale} onDone={() => askButton.current?.focus()} slot={slot} /> : null}
+          {/* One line that is always there and only changes its words, so a screen reader hears each change. */}
+          <p aria-live="polite" className="shiori-quiet shiori-advice-status" ref={adviceStatus} role="status" tabIndex={-1}>{adviceLine}</p>
+          {search.state === "failed" && !advice.busy ? <button className="shiori-advice-retry" onClick={() => { adviceStatus.current?.focus(); search.retry(); }} type="button">{t.aiSearchRetry}</button> : null}
+          {advice.entry ? <MealAdviceOptions advice={advice} entry={advice.entry} kind={meal.kind} lists={search.lists} locale={locale} onAdd={onAdd} /> : null}
         </div>
       ) : null}
       {state === "loading" ? <p className="shiori-quiet">{t.foodLoading}</p> : null}
@@ -1523,8 +1540,8 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
   const sights = useMemo(() => mealSights(cities), [cities]);
   const [adviceForm, setAdviceForm] = useState<string | null>(null);
   const [adviceEntries, setAdviceEntries] = useState<Record<string, MealAdviceEntry>>({});
-  /** "all" while the whole trip is being asked about, a slot id while one slot is being refined. */
-  const [adviceBusy, setAdviceBusy] = useState<string | null>(null);
+  /** The slots whose answer is on its way; null when no question is in flight. */
+  const [adviceBusy, setAdviceBusy] = useState<string[] | null>(null);
   const [adviceFailed, setAdviceFailed] = useState<Record<string, string>>({});
   const adviceRun = useRef<{ controller: AbortController; keys: Record<string, string> } | null>(null);
   const slotKeys = useMemo(() => (adviceOn ? mealSlotKeys(plan) : {}), [adviceOn, plan]);
@@ -1536,32 +1553,41 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
     if (run && !Object.entries(run.keys).some(([slot, key]) => slotKeys[slot] === key)) run.controller.abort();
   }, [slotKeys]);
   useEffect(() => () => adviceRun.current?.controller.abort(), []);
-  const askAdvice = async (prefs: MealBriefPrefs, refine: { slot: string; ask: MealRefineAsk; wish: string } | null) => {
-    if (!plan || !adviceOn) return;
+  const askAdvice = async (prefs: MealBriefPrefs, from: string, refine: { ask: MealRefineAsk; wish: string } | null) => {
+    // One question at a time: a second one waits for the first (every control
+    // that asks is switched off meanwhile), so no answer on its way — already
+    // counted by the relay — is thrown away for another row's.
+    if (!plan || !adviceOn || adviceRun.current) return;
     const brief = buildMealBrief({ plan, sights, city: city ? (locale === "ja" ? city.ja : city.en) : null, startDate: startDate ?? null, weatherByIndex: weather?.byIndex ?? null, prefs });
     const keys = slotKeysNow.current;
-    const asked = refine ? [refine.slot] : Object.keys(keys);
-    const previous = refine ? liveMealEntry(adviceEntries, refine.slot, keys[refine.slot] ?? "") : null;
-    adviceRun.current?.controller.abort();
+    const asked = refine ? [from] : Object.keys(keys);
+    const previous = refine ? liveMealEntry(adviceEntries, from, keys[from] ?? "") : null;
     const run = { controller: new AbortController(), keys: Object.fromEntries(asked.flatMap((slot) => (keys[slot] ? [[slot, keys[slot]]] : []))) };
     adviceRun.current = run;
     setAdviceForm(null);
-    setAdviceBusy(refine ? refine.slot : "all");
+    setAdviceBusy(asked);
     setAdviceFailed((current) => Object.fromEntries(Object.entries(current).filter(([slot]) => !asked.includes(slot))));
-    const answer = !brief ? null : await askMealAdvice(
-      refine
-        ? { task: "meal-refine", locale, brief, refine: { slot: refine.slot, previous: (previous?.options ?? []).map(mealConditionsOf), ask: refine.ask, wish: refine.wish } }
-        : { task: "meals", locale, brief },
-      { signal: run.controller.signal },
-    );
+    const stopped = () => adviceRun.current !== run || run.controller.signal.aborted;
+    const ask = (request: MealAdviceRequest) => askMealAdvice(request, { signal: run.controller.signal });
+    // Only what was asked for the plan as it still stands is kept; the rest is treated as no answer.
+    const settle = (slots: string[], answer: MealAdviceAnswer | null) => {
+      const entries = answer ? entriesFromAnswer(answer, run.keys, slotKeysNow.current) : {};
+      setAdviceEntries((current) => ({ ...current, ...entries }));
+      setAdviceFailed((current) => ({ ...current, ...Object.fromEntries(slots.flatMap((slot) => (entries[slot] || !run.keys[slot] ? [] : [[slot, run.keys[slot]]]))) }));
+      setAdviceBusy((current) => current?.filter((slot) => !slots.includes(slot)) ?? null);
+    };
+    if (!brief) {
+      settle(asked, null);
+    } else if (refine) {
+      const answer = await ask({ task: "meal-refine", locale, brief, refine: { slot: from, previous: (previous?.options ?? []).map(mealConditionsOf), ask: refine.ask, wish: refine.wish } });
+      if (!stopped()) settle(asked, answer);
+    } else {
+      // A few meals at a time, the pressed row's first: each part is shown as soon as it is there.
+      await askMealAdviceInTurns({ locale, brief, first: from, ask, stopped, onPart: ({ slots, answer }) => settle(slots, answer) });
+    }
     if (adviceRun.current !== run) return;
     adviceRun.current = null;
     setAdviceBusy(null);
-    if (run.controller.signal.aborted) return;
-    // Only what was asked for the plan as it still stands is kept; the rest is treated as no answer.
-    const entries = answer ? entriesFromAnswer(answer, run.keys, slotKeysNow.current) : {};
-    setAdviceEntries((current) => ({ ...current, ...entries }));
-    setAdviceFailed((current) => ({ ...current, ...Object.fromEntries(asked.flatMap((slot) => (entries[slot] || !run.keys[slot] ? [] : [[slot, run.keys[slot]]]))) }));
   };
   const rowAdvice = (dayIndex: number, meal: ShioriMeal): MealRowAdvice | null => {
     const slot = mealSlotId(dayIndex, meal.kind);
@@ -1569,7 +1595,8 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
     if (!adviceOn || !key || key !== mealSlotKey(dayIndex, meal)) return null;
     return {
       entry: liveMealEntry(adviceEntries, slot, key),
-      busy: adviceBusy === "all" || adviceBusy === slot,
+      busy: adviceBusy?.includes(slot) ?? false,
+      locked: adviceBusy !== null,
       failed: adviceFailed[slot] === key,
       formOpen: adviceForm === slot,
       active: dayIndex === activeDay,
@@ -1579,9 +1606,9 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
       onAsk: (prefs) => {
         setMealPrefs(prefs);
         try { window.localStorage.setItem(MEAL_PREFS_KEY, JSON.stringify(prefs)); } catch { /* ignore */ }
-        void askAdvice(prefs, null);
+        void askAdvice(prefs, slot, null);
       },
-      onRefine: (ask, wish) => void askAdvice(mealPrefs, { slot, ask, wish }),
+      onRefine: (ask, wish) => void askAdvice(mealPrefs, slot, { ask, wish }),
     };
   };
   // The Toei lines' published departures. The file is asked for (from this

@@ -7,7 +7,9 @@ import {
   MEAL_WITHIN_METERS,
   cleanMealBrief,
   cleanMealText,
+  type MealAdviceAnswer,
   type MealAdviceLocale,
+  type MealAdviceRequest,
   type MealBrief,
   type MealBriefDay,
   type MealBriefPrefs,
@@ -17,6 +19,7 @@ import {
   type MealConditions,
   type MealFeature,
   type MealGenre,
+  type MealGiven,
   type MealKind,
   type MealOption,
   type MealParty,
@@ -330,6 +333,90 @@ export function shopsWithinWider(
     if (found.length > 0) return { shops: found, withinMeters };
   }
   return null;
+}
+
+export type MealOptionShops = { shops: HotpepperShop[]; withinMeters: number };
+
+/**
+ * The shops for every option of one answer, in the options' order: one search
+ * per option, and one wider look where the first finds nothing. An option
+ * whose search answered with no shop has an empty list. Null when any search
+ * got no answer at all (no connection, a refusal, a limit) or the work was
+ * stopped: "the guide did not answer" must never be read as "no shop matched",
+ * and a result with a hole in it is not kept.
+ */
+export async function findMealOptionShops(
+  options: readonly MealOption[],
+  near: { latitude: number; longitude: number },
+  meal: MealKind,
+  search: (query: HotpepperQuery) => Promise<HotpepperShop[] | null>,
+  stopped: () => boolean = () => false,
+): Promise<MealOptionShops[] | null> {
+  const lists: MealOptionShops[] = [];
+  const taken = new Set<string>();
+  for (const option of options) {
+    const query = mealOptionQuery(option, near, meal);
+    const listed = await search(query);
+    if (listed === null || stopped()) return null;
+    let result: MealOptionShops = { shops: shopsForOption(listed, option, meal, taken), withinMeters: option.withinMeters };
+    const wider = result.shops.length === 0 ? widerMealMeters(option) : null;
+    if (wider !== null) {
+      // Nothing that close: one wider look, and the screen says how far it looked.
+      const further = await search({ ...query, withinMeters: wider });
+      if (further === null || stopped()) return null;
+      result = shopsWithinWider(further, option, meal, taken) ?? result;
+    }
+    for (const shop of result.shops) taken.add(shop.id);
+    lists.push(result);
+  }
+  return lists;
+}
+
+/**
+ * The open slots in the turns they are asked in: at most slotsPerCall at a
+ * time, so that each answer comes inside the time the page waits, starting
+ * with the turn that holds the row the traveller pressed.
+ */
+export function mealAdviceTurns(slots: readonly string[], first: string | null = null, size: number = MEAL_ADVICE_LIMITS.slotsPerCall): string[][] {
+  const turns: string[][] = [];
+  for (let at = 0; at < slots.length; at += size) turns.push(slots.slice(at, at + size));
+  const start = first === null ? -1 : turns.findIndex((turn) => turn.includes(first));
+  return start > 0 ? [...turns.slice(start), ...turns.slice(0, start)] : turns;
+}
+
+/**
+ * Every open meal of the trip, asked about turn by turn. Each turn's answer
+ * is handed over as soon as it is there (`onPart`); what it put first for
+ * each slot goes along with the next turn, so the trip is not offered the
+ * same cuisine twice. A turn without an answer ends the asking: the turns
+ * after it are reported as unanswered without being sent (a relay that is
+ * down or over its limit is not asked again and again).
+ */
+export async function askMealAdviceInTurns(input: {
+  locale: MealAdviceLocale;
+  brief: MealBrief;
+  /** The slot of the row the traveller pressed: its turn is asked first. */
+  first?: string | null;
+  ask: (request: MealAdviceRequest) => Promise<MealAdviceAnswer | null>;
+  onPart: (part: { slots: string[]; answer: MealAdviceAnswer | null }) => void;
+  stopped?: () => boolean;
+}): Promise<void> {
+  const turns = mealAdviceTurns(input.brief.slots.map((slot) => slot.slot), input.first ?? null);
+  const given: MealGiven[] = [];
+  for (const [index, only] of turns.entries()) {
+    if (input.stopped?.()) return;
+    const answer = await input.ask({ task: "meals", locale: input.locale, brief: input.brief, only, given: [...given] });
+    if (input.stopped?.()) return;
+    input.onPart({ slots: only, answer });
+    if (!answer) {
+      const rest = turns.slice(index + 1).flat();
+      if (rest.length > 0) input.onPart({ slots: rest, answer: null });
+      return;
+    }
+    for (const { slot, options } of answer.slots) {
+      if (options[0] && only.includes(slot)) given.push({ slot, genre: options[0].genre, keyword: options[0].keyword });
+    }
+  }
 }
 
 /** The fixed name of each kind of reason; the model picks the kind, never the words. */

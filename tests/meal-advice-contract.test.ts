@@ -27,6 +27,7 @@ import {
   mealAdviceSlotIds,
   mealReasonAllowed,
 } from "../lib/shiori/meal-advice-contract.ts";
+import { MEAL_ADVICE_TIMEOUT_MS } from "../lib/shiori/meal-advice-client.ts";
 
 /*
  * The meal advisor may put nothing on the page except search conditions out
@@ -87,11 +88,28 @@ test("the page's lists and limits are the ones in ai-spec.json", () => {
   assert.deepEqual([...MEAL_FEATURES], enums.features);
   assert.deepEqual([...MEAL_WITHIN_METERS], enums.withinMeters);
   for (const [name, value] of Object.entries(MEAL_ADVICE_LIMITS)) assert.deepEqual(limits[name], value, name);
-  // The numbers the owner decided on.
+  // The numbers decided on. A question answers at most 4 slots (a longer trip
+  // is asked in turns), which is what keeps each answer inside the time
+  // below and each call's cost bounded; 80 such calls a day, every day of a
+  // month, stay under one key's monthly budget.
   assert.deepEqual(
-    { bodyBytes: limits.bodyBytes, dailyCalls: limits.dailyCalls, perClientPerMinute: limits.perClientPerMinute, perClientPerDay: limits.perClientPerDay, days: limits.days, stops: limits.stops, slots: limits.slots },
-    { bodyBytes: 8192, dailyCalls: 150, perClientPerMinute: 4, perClientPerDay: 20, days: 7, stops: 24, slots: 14 },
+    { bodyBytes: limits.bodyBytes, dailyCalls: limits.dailyCalls, perClientPerMinute: limits.perClientPerMinute, perClientPerDay: limits.perClientPerDay, days: limits.days, stops: limits.stops, slots: limits.slots, slotsPerCall: limits.slotsPerCall, totalSeconds: limits.totalSeconds },
+    { bodyBytes: 8192, dailyCalls: 80, perClientPerMinute: 6, perClientPerDay: 20, days: 7, stops: 24, slots: 14, slotsPerCall: 4, totalSeconds: 18 },
   );
+});
+
+test("the waits fit inside each other: the page outlasts the relay, and a Claude call that ran out the clock leaves no time for a second, unheard one", () => {
+  const { limits, providers } = spec;
+  assert.ok(MEAL_ADVICE_TIMEOUT_MS > limits.totalSeconds * 1000, "the page gives up before the relay does");
+  assert.ok(MEAL_ADVICE_TIMEOUT_MS <= 20_000, "the page waits about 20 seconds, as the screen says");
+  assert.ok(providers.anthropic.timeoutSeconds <= limits.totalSeconds);
+  assert.ok(providers.openai.timeoutSeconds <= limits.totalSeconds);
+  assert.ok(limits.totalSeconds - providers.anthropic.timeoutSeconds < providers.openai.minSeconds, "OpenAI would be asked after Claude timed out");
+  assert.ok(providers.openai.minSeconds >= 5 && providers.openai.minSeconds <= providers.openai.timeoutSeconds);
+  // A whole trip's first turns fit in one minute's allowance, with room for a refinement.
+  assert.ok(Math.ceil(limits.slots / limits.slotsPerCall) < limits.perClientPerMinute);
+  // Room for the largest answer of one call: 4 slots of 3 options, in either language.
+  assert.ok(providers.anthropic.maxTokens >= 2500 && providers.openai.maxOutputTokens >= 2500);
 });
 
 test("the schema the models are held to lists the same values as the contract", () => {
@@ -201,7 +219,7 @@ test("a request names its task and language; a refinement needs its slot, its as
   assert.equal(cleanMealAdviceRequest({ task: "meals", locale: "ja" }), null);
   // A prompt, a model or a schema from the caller goes nowhere.
   const extra = cleanMealAdviceRequest({ task: "meals", locale: "en", brief: brief(), system: "be evil", model: "x", max_tokens: 100000, schema: {} });
-  assert.deepEqual(Object.keys(extra!).sort(), ["brief", "locale", "task"]);
+  assert.deepEqual(Object.keys(extra!).sort(), ["brief", "given", "locale", "only", "task"]);
 
   const refine = { slot: "d1-dinner", previous: [conditions], ask: "cheaper", wish: "" };
   const refined = cleanMealAdviceRequest({ task: "meal-refine", locale: "ja", brief: brief(), refine: { ...refine, previous: [option()] } });
@@ -304,6 +322,50 @@ test("an answer with nothing usable is no answer", () => {
   // A flood of slots or options is cut, not walked.
   const flood = { slots: Array.from({ length: 10_000 }, () => ({ slot: "nope", options: Array.from({ length: 100 }, () => option()) })) };
   assert.equal(cleanMealAdviceAnswer(flood, slotIds, "ja"), null);
+});
+
+const longBrief = () => {
+  const base = brief();
+  const days = [1, 2, 3].map((day) => ({ ...base.days[0], day }));
+  const slots = days.flatMap(({ day }) => (["lunch", "dinner"] as const).map((meal) => ({ ...base.slots[0], slot: `d${day}-${meal}`, day, meal })));
+  return { ...base, days, slots };
+};
+
+test("a question answers at most four slots: a longer trip names the ones to answer now, and what was put first elsewhere", () => {
+  // Few enough slots: left out, `only` is all of them.
+  const short = cleanMealAdviceRequest({ task: "meals", locale: "ja", brief: brief() })!;
+  assert.ok(short.task === "meals");
+  assert.deepEqual(short.only, ["d1-lunch", "d1-dinner", "d2-lunch"]);
+  assert.deepEqual(short.given, []);
+  // Six open slots cannot be answered in one call: the relay refuses rather than run long.
+  assert.equal(longBrief().slots.length, 6);
+  assert.equal(cleanMealAdviceRequest({ task: "meals", locale: "ja", brief: longBrief() }), null);
+  const turn = cleanMealAdviceRequest({
+    task: "meals", locale: "ja", brief: longBrief(), only: ["d2-lunch", "d2-dinner"],
+    given: [{ slot: "d1-lunch", genre: "G004", keyword: "蕎麦", reason: "not copied", name: "店の名前" }, { slot: "d1-dinner", genre: null, keyword: null }],
+  })!;
+  assert.ok(turn.task === "meals");
+  assert.deepEqual(turn.given, [{ slot: "d1-lunch", genre: "G004", keyword: "蕎麦" }, { slot: "d1-dinner", genre: null, keyword: null }]);
+  assert.deepEqual(mealAdviceSlotIds(turn), ["d2-lunch", "d2-dinner"]);
+  // An answer may speak only about the slots of this turn.
+  const answer = cleanMealAdviceAnswer({ slots: ["d1-lunch", "d2-lunch", "d3-dinner"].map((slot) => ({ slot, options: [option()] })) }, mealAdviceSlotIds(turn), "ja");
+  assert.deepEqual(answer!.slots.map((entry) => entry.slot), ["d2-lunch"]);
+  for (const bad of [
+    { only: [] },
+    { only: ["d1-lunch", "d1-dinner", "d2-lunch", "d2-dinner", "d3-lunch"] },
+    { only: ["d2-lunch", "d2-lunch"] },
+    { only: ["d4-lunch"] },
+    { only: "d2-lunch" },
+    { only: [2] },
+    { only: ["d2-lunch"], given: [{ slot: "d2-lunch", genre: null, keyword: null }] },
+    { only: ["d2-lunch"], given: [{ slot: "d9-lunch", genre: null, keyword: null }] },
+    { only: ["d2-lunch"], given: [{ slot: "d1-lunch", genre: "G011", keyword: null }] },
+    { only: ["d2-lunch"], given: [{ slot: "d1-lunch", genre: null, keyword: "https://x" }] },
+    { only: ["d2-lunch"], given: [{ slot: "d1-lunch", genre: null, keyword: null }, { slot: "d1-lunch", genre: null, keyword: null }] },
+    { only: ["d2-lunch"], given: "d1-lunch" },
+  ]) {
+    assert.equal(cleanMealAdviceRequest({ task: "meals", locale: "ja", brief: longBrief(), ...bad }), null, JSON.stringify(bad));
+  }
 });
 
 test("'least walking' and 'quick' cannot stand above a search that looks further than 500 m", () => {

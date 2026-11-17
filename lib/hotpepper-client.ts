@@ -94,7 +94,20 @@ export async function fetchHotpepperShops(
   relayUrl: string | null = appleRelayUrl(),
   fetcher: typeof fetch = (input, init) => globalThis.fetch(input, init),
 ): Promise<HotpepperShop[]> {
-  if (!relayUrl || unavailable) return [];
+  return await searchHotpepperShops(query, relayUrl, fetcher) ?? [];
+}
+
+/**
+ * The same search, for a caller that must not mistake "no answer" for "no
+ * shop": null when the relay has no key, refused, failed or could not be
+ * reached; a list (possibly empty) only when the guide really answered.
+ */
+export async function searchHotpepperShops(
+  query: HotpepperQuery,
+  relayUrl: string | null = appleRelayUrl(),
+  fetcher: typeof fetch = (input, init) => globalThis.fetch(input, init),
+): Promise<HotpepperShop[] | null> {
+  if (!relayUrl || unavailable) return null;
   const base = typeof window !== "undefined" ? window.location.href : "http://localhost/";
   const url = new URL(relayUrl, base);
   url.searchParams.set("op", "food");
@@ -109,11 +122,13 @@ export async function fetchHotpepperShops(
     const payload = await response.json().catch(() => null) as { code?: unknown } | null;
     if (!response.ok) {
       if (payload?.code === "not_configured") unavailable = true;
-      return [];
+      return null;
     }
+    // A 200 whose body is not a list of results is not an answer either.
+    if (!payload || !Array.isArray((payload as { results?: unknown }).results)) return null;
     return parseHotpepperShops(payload, query.near);
   } catch {
-    return [];
+    return null;
   }
 }
 

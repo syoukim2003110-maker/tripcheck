@@ -116,8 +116,10 @@ Claude fails). With a key present the build writes `api/ai-config.php` and
 sets `NEXT_PUBLIC_TRIPCHECK_AI=1`; without one the button does not exist.
 Locally, `pnpm relay:dev` also serves `POST http://localhost:8792/ai.php`;
 add `NEXT_PUBLIC_TRIPCHECK_AI=1` to `.env.local` to see the button. Prompts,
-the answer's schema, model names and limits (150 requests a day for the
-site, 20 a day and 4 a minute per visitor) live in
+the answer's schema, model names and limits (80 requests a day for the
+site, 20 a day and 6 a minute per visitor, an IPv6 /64 counting as one
+visitor; at most 4 meals answered per request, so a long trip is asked in
+turns; 18 seconds for both providers together) live in
 `deploy/xserver/api/ai-spec.json`, read by both `ai.php` and the local relay.
 
 `pnpm sights:generate` refreshes `lib/popular-sights-data.json`, the bundled

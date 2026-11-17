@@ -9,7 +9,8 @@
  * stand-in, lib/server/meal-advice-relay.ts in scripts/apple-relay-dev.ts):
  *
  *   POST ai.php   Content-Type: application/json, at most 8 KB
- *        {"task":"meals","locale":"ja"|"en","brief":{…}}
+ *        {"task":"meals","locale":"ja"|"en","brief":{…},
+ *         "only":["d1-lunch",…],"given":[{"slot","genre","keyword"}]}
  *        {"task":"meal-refine","locale":…,"brief":{…},
  *         "refine":{"slot":"d1-lunch","previous":[…],"ask":"cheaper","wish":""}}
  *   200  {"slots":[{"slot":"d1-lunch","options":[{"role","genre","keyword",
@@ -21,8 +22,9 @@
  * lists every value is checked against and the limits live in ai-spec.json
  * next to this file (blocked from the web by .htaccess, like ai-config.php).
  * The brief is validated and rebuilt before it is sent on; the model's answer
- * is validated before it is sent back. Claude is asked first; if it fails in
- * any way OpenAI is asked once. A provider's error text is never passed on.
+ * is validated before it is sent back. Claude is asked first; if it fails
+ * while there is still time to answer in, OpenAI is asked once. A provider's
+ * error text is never passed on.
  *
  * Nothing is stored except the counters in .state/ai-quota.json. If that
  * file cannot be written the relay answers 503 rather than run unlimited.
@@ -347,6 +349,41 @@ function clean_refine($input, array $brief, array $spec): ?array
     return ['slot' => $slot, 'previous' => $previous, 'ask' => $ask, 'wish' => $wish];
 }
 
+/** The slots to answer now: some of the brief's, each once, at most slotsPerCall. Left out, it is all of them. */
+function clean_only($input, array $brief, array $spec): ?array
+{
+    $slotIds = array_column($brief['slots'], 'slot');
+    $listed = $input === null ? $slotIds : $input;
+    if (!is_list_array($listed) || count($listed) < 1 || count($listed) > $spec['limits']['slotsPerCall']) return null;
+    $only = [];
+    foreach ($listed as $entry) {
+        if (!is_string($entry) || in_array($entry, $only, true) || !in_array($entry, $slotIds, true)) return null;
+        $only[] = $entry;
+    }
+    return $only;
+}
+
+/** What earlier turns put first, for other slots of the brief than the ones asked now. */
+function clean_given($input, array $brief, array $only, array $spec): ?array
+{
+    $listed = $input === null ? [] : $input;
+    if (!is_list_array($listed) || count($listed) > $spec['limits']['slots']) return null;
+    $slotIds = array_column($brief['slots'], 'slot');
+    $given = [];
+    $seen = [];
+    foreach ($listed as $entry) {
+        if (!is_record($entry) || !is_string($entry['slot'] ?? null)) return null;
+        $slot = $entry['slot'];
+        $genre = $entry['genre'] ?? null;
+        [$keywordOk, $keyword] = clean_keyword($entry['keyword'] ?? null, $spec['limits']['keywordChars']);
+        if ($genre !== null && (!is_string($genre) || !in_array($genre, $spec['enums']['genres'], true))) return null;
+        if (!$keywordOk || in_array($slot, $only, true) || in_array($slot, $seen, true) || !in_array($slot, $slotIds, true)) return null;
+        $seen[] = $slot;
+        $given[] = ['slot' => $slot, 'genre' => $genre, 'keyword' => $keyword];
+    }
+    return $given;
+}
+
 /** The whole request, rebuilt clean: task, locale, brief and (for a refinement) refine. */
 function clean_request($body, array $spec): ?array
 {
@@ -357,7 +394,12 @@ function clean_request($body, array $spec): ?array
     if (!is_string($locale) || !in_array($locale, $spec['enums']['locales'], true)) return null;
     $brief = clean_brief($body['brief'] ?? null, $spec);
     if ($brief === null) return null;
-    if ($task === 'meals') return ['task' => $task, 'locale' => $locale, 'brief' => $brief];
+    if ($task === 'meals') {
+        $only = clean_only($body['only'] ?? null, $brief, $spec);
+        $given = $only === null ? null : clean_given($body['given'] ?? null, $brief, $only, $spec);
+        if ($only === null || $given === null) return null;
+        return ['task' => $task, 'locale' => $locale, 'brief' => $brief, 'only' => $only, 'given' => $given];
+    }
     $refine = clean_refine($body['refine'] ?? null, $brief, $spec);
     if ($refine === null) return null;
     return ['task' => $task, 'locale' => $locale, 'brief' => $brief, 'refine' => $refine];
@@ -430,7 +472,12 @@ function system_prompt(array $spec, string $task): string
 function user_message(array $request): string
 {
     $message = ['locale' => $request['locale'], 'brief' => $request['brief']];
-    if ($request['task'] === 'meal-refine') $message['refine'] = $request['refine'];
+    if ($request['task'] === 'meal-refine') {
+        $message['refine'] = $request['refine'];
+    } else {
+        $message['only'] = $request['only'];
+        $message['given'] = $request['given'];
+    }
     return (string) json_encode($message, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 }
 
@@ -439,7 +486,7 @@ function user_message(array $request): string
  * by effort; the answer's shape is guaranteed by a JSON schema (this model
  * refuses a forced tool call). Returns the decoded JSON of the answer or null.
  */
-function ask_anthropic(array $spec, array $request, string $key)
+function ask_anthropic(array $spec, array $request, string $key, int $timeoutSeconds)
 {
     $provider = $spec['providers']['anthropic'];
     $headers = ['Content-Type: application/json', 'x-api-key: ' . $key, 'anthropic-version: ' . $provider['version']];
@@ -452,7 +499,7 @@ function ask_anthropic(array $spec, array $request, string $key)
         'messages' => [['role' => 'user', 'content' => user_message($request)]],
     ];
     if (is_string($provider['fallbacks'] ?? null)) $payload['fallbacks'] = $provider['fallbacks'];
-    [$status, $body] = post_json($provider['url'], $headers, $payload, (int) $provider['timeoutSeconds']);
+    [$status, $body] = post_json($provider['url'], $headers, $payload, $timeoutSeconds);
     if ($status !== 200 || !is_array($body)) return null;
     // Checked before the content is read: on a refusal or at the token limit
     // the content is empty or partial.
@@ -465,7 +512,7 @@ function ask_anthropic(array $spec, array $request, string $key)
 }
 
 /** OpenAI Responses API with the same prompt and schema; nothing is stored there. */
-function ask_openai(array $spec, array $request, string $key)
+function ask_openai(array $spec, array $request, string $key, int $timeoutSeconds)
 {
     $provider = $spec['providers']['openai'];
     $payload = [
@@ -479,7 +526,7 @@ function ask_openai(array $spec, array $request, string $key)
         ],
         'text' => ['format' => ['type' => 'json_schema', 'name' => 'meal_advice', 'schema' => $spec['answerSchema'], 'strict' => true]],
     ];
-    [$status, $body] = post_json($provider['url'], ['Content-Type: application/json', 'Authorization: Bearer ' . $key], $payload, (int) $provider['timeoutSeconds']);
+    [$status, $body] = post_json($provider['url'], ['Content-Type: application/json', 'Authorization: Bearer ' . $key], $payload, $timeoutSeconds);
     if ($status !== 200 || !is_array($body)) return null;
     if (($body['status'] ?? null) !== 'completed' || !is_array($body['output'] ?? null)) return null;
     $text = '';
@@ -539,17 +586,25 @@ if ($request === null) respond(400, ['code' => 'invalid_request']);
 
 admit($spec['limits']);
 
-// Both providers may take their full time one after the other.
-@set_time_limit(90);
+// The two providers share one length of time, shorter than the page waits.
+$total = (int) $spec['limits']['totalSeconds'];
+$begun = microtime(true);
+@set_time_limit($total + 20);
 
-$slotIds = $request['task'] === 'meal-refine' ? [$request['refine']['slot']] : array_column($request['brief']['slots'], 'slot');
+$slotIds = $request['task'] === 'meal-refine' ? [$request['refine']['slot']] : $request['only'];
 $answer = null;
 try {
     if ($anthropicKey !== null) {
-        $answer = clean_answer(ask_anthropic($spec, $request, $anthropicKey), $slotIds, $request['locale'], $spec);
+        $timeout = min((int) $spec['providers']['anthropic']['timeoutSeconds'], $total);
+        $answer = clean_answer(ask_anthropic($spec, $request, $anthropicKey, $timeout), $slotIds, $request['locale'], $spec);
     }
-    if ($answer === null && $openaiKey !== null) {
-        $answer = clean_answer(ask_openai($spec, $request, $openaiKey), $slotIds, $request['locale'], $spec);
+    // OpenAI is asked only while enough time is left to answer in: after a
+    // Claude call that ran out the clock the page has stopped listening, and
+    // a second call would be paid for and answer nobody.
+    $left = (int) floor($total - (microtime(true) - $begun));
+    if ($answer === null && $openaiKey !== null && $left >= (int) $spec['providers']['openai']['minSeconds']) {
+        $timeout = min((int) $spec['providers']['openai']['timeoutSeconds'], $left);
+        $answer = clean_answer(ask_openai($spec, $request, $openaiKey, $timeout), $slotIds, $request['locale'], $spec);
     }
 } catch (Throwable $error) {
     $answer = null;

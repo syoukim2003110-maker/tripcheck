@@ -80,17 +80,17 @@ test("the Claude request: fixed model and prompt, schema-bound JSON, low effort,
   assert.equal(outgoing.url, "https://api.anthropic.com/v1/messages");
   assert.equal(outgoing.headers["x-api-key"], CLAUDE_KEY);
   assert.equal(outgoing.headers["anthropic-version"], "2026-10-21");
-  assert.equal(outgoing.timeoutMs, 20_000);
+  assert.equal(outgoing.timeoutMs, 18_000);
   const sent = outgoing.body as Sent;
   assert.equal(sent.model, "claude-opus-5-5");
-  assert.equal(sent.max_tokens, 4000);
+  assert.equal(sent.max_tokens, 3000);
   assert.deepEqual(sent.output_config, { effort: "low", format: { type: "json_schema", schema: spec.answerSchema } });
   // Thinking is always on for this model and a forced tool call is refused by it.
   for (const absent of ["thinking", "temperature", "top_p", "top_k", "tool_choice", "tools", "stream"]) assert.equal(absent in sent, false, absent);
   // The fixed prompt comes first and is marked for caching; the brief is the user message.
   assert.deepEqual(sent.system, [{ type: "text", text: mealAdviceSystemPrompt(spec, "meals"), cache_control: { type: "ephemeral" } }]);
   assert.equal(sent.messages.length, 1);
-  assert.deepEqual(JSON.parse(sent.messages[0].content), { locale: "ja", brief: request.brief });
+  assert.deepEqual(JSON.parse(sent.messages[0].content), { locale: "ja", brief: request.brief, only: request.brief.slots.map((slot) => slot.slot), given: [] });
   // A policy decline is retried on Anthropic's own fallback model inside the same call.
   assert.equal(sent.fallbacks, "default");
   assert.equal(outgoing.headers["anthropic-beta"], "server-side-fallback-2026-07-01");
@@ -104,7 +104,7 @@ test("the OpenAI request: same prompt and schema, nothing stored", () => {
   assert.equal(sent.model, "gpt-6.1-terra");
   assert.equal(sent.store, false);
   assert.deepEqual(sent.reasoning, { effort: "low" });
-  assert.equal(sent.max_output_tokens, 4000);
+  assert.equal(sent.max_output_tokens, 3000);
   assert.deepEqual(sent.text, { format: { type: "json_schema", name: "meal_advice", schema: spec.answerSchema, strict: true } });
   assert.deepEqual(sent.input.map((entry: { role: string }) => entry.role), ["system", "user"]);
   assert.equal(sent.input[0].content, mealAdviceSystemPrompt(spec, "meals"));
@@ -240,19 +240,19 @@ test("over the limit is 429 and no provider is asked", async () => {
   assert.equal(none.asked.length, 0);
 });
 
-test("the limiter: 4 a minute and 20 a day per client, 150 a day for the site", () => {
+test("the limiter: 6 a minute and 20 a day per client, 80 a day for the site", () => {
   let now = Date.UTC(2026, 10, 17, 3, 0, 0);
   const admit = createMealAdviceLimiter(spec, () => now);
-  assert.deepEqual([1, 2, 3, 4, 5].map(() => admit("a")), [true, true, true, true, false]);
+  assert.deepEqual([1, 2, 3, 4, 5, 6, 7].map(() => admit("a")), [true, true, true, true, true, true, false]);
   // Another client is not held back by the first.
   assert.equal(admit("b"), true);
-  // A refused request is not counted: a minute later the first client has 16 left today.
+  // A refused request is not counted: a minute later the first client has 14 left today.
   let allowed = 0;
   for (let minute = 1; minute <= 10; minute += 1) {
     now += 60_000;
-    for (let attempt = 0; attempt < 4; attempt += 1) if (admit("a")) allowed += 1;
+    for (let attempt = 0; attempt < 6; attempt += 1) if (admit("a")) allowed += 1;
   }
-  assert.equal(allowed, 16);
+  assert.equal(allowed, 14);
   now += 60_000;
   assert.equal(admit("a"), false);
 
@@ -260,7 +260,7 @@ test("the limiter: 4 a minute and 20 a day per client, 150 a day for the site", 
   const site = createMealAdviceLimiter(spec, () => now);
   let served = 0;
   for (let client = 0; client < 200; client += 1) if (site(`client-${client}`)) served += 1;
-  assert.equal(served, 150);
+  assert.equal(served, 80);
   // A new day starts again.
   now += 24 * 60 * 60_000;
   assert.equal(site("client-0"), true);
@@ -311,4 +311,47 @@ test("ai-config.php is written only when there is a key, and holds only the keys
   assert.match(one, /'openai_key' => /);
   // Executed by a browser request it prints nothing: there is no output statement in it.
   assert.doesNotMatch(both, /echo|print|\?>/);
+});
+
+test("a Claude call that ran out the clock is not followed by an OpenAI call nobody is waiting for", async () => {
+  // Claude takes the whole time allowed and gives nothing.
+  let clock = 0;
+  const slow = providers({ claude: () => { clock += spec.providers.anthropic.timeoutSeconds * 1000; throw new DOMException("The operation timed out.", "TimeoutError"); }, openai: () => openaiReply(goodAnswer) });
+  assert.deepEqual(await run(slow.fetcher, { now: () => clock }), { status: 502, body: { code: "unavailable" } });
+  assert.deepEqual(slow.asked.map((call) => call.host), ["api.anthropic.com"]);
+
+  // Claude fails at once: OpenAI is asked, inside what is left of the time.
+  clock = 0;
+  const fast = providers({ claude: () => { clock += 1500; return new Response("{}", { status: 529 }); }, openai: () => openaiReply(goodAnswer) });
+  assert.deepEqual(await run(fast.fetcher, { now: () => clock }), { status: 200, body: goodAnswer });
+  assert.deepEqual(fast.asked.map((call) => call.host), ["api.anthropic.com", "api.openai.com"]);
+
+  // Claude fails late, with less left than OpenAI needs to answer in.
+  clock = 0;
+  const late = providers({ claude: () => { clock += (spec.limits.totalSeconds - spec.providers.openai.minSeconds + 1) * 1000; return new Response("{}", { status: 500 }); }, openai: () => openaiReply(goodAnswer) });
+  assert.deepEqual(await run(late.fetcher, { now: () => clock }), { status: 502, body: { code: "unavailable" } });
+  assert.deepEqual(late.asked.map((call) => call.host), ["api.anthropic.com"]);
+});
+
+test("a turn of a long trip is sent with the slots to answer and what the earlier turns put first", async () => {
+  const base = body().brief as { days: Array<Record<string, unknown>>; slots: Array<Record<string, unknown>> };
+  const days = [1, 2, 3].map((day) => ({ ...base.days[0], day }));
+  const slots = days.flatMap(({ day }) => ["lunch", "dinner"].map((meal) => ({ ...base.slots[0], slot: `d${day}-${meal}`, day, meal })));
+  const turn = body({ brief: { ...base, days, slots }, only: ["d2-lunch", "d2-dinner"], given: [{ slot: "d1-lunch", genre: "G013", keyword: null }] });
+  const answer = { slots: ["d1-lunch", "d2-lunch", "d2-dinner"].map((slot) => ({ slot, options: goodAnswer.slots[0].options })) };
+  const { asked, fetcher } = providers({ claude: () => claudeReply(answer) });
+  const reply = await run(fetcher, { rawBody: JSON.stringify(turn) });
+  assert.equal(reply.status, 200);
+  // Only the slots of this turn come back, whatever the model added.
+  assert.deepEqual((reply.body as { slots: Array<{ slot: string }> }).slots.map((entry) => entry.slot), ["d2-lunch", "d2-dinner"]);
+  const message = JSON.parse((asked[0].body as Sent).messages[0].content);
+  assert.deepEqual(message.only, ["d2-lunch", "d2-dinner"]);
+  assert.deepEqual(message.given, [{ slot: "d1-lunch", genre: "G013", keyword: null }]);
+  assert.match(mealAdviceSystemPrompt(spec, "meals"), /Answer for every slot id in "only"/);
+  // All six at once is refused before it is counted or sent.
+  let counted = 0;
+  const all = await run(fetcher, { rawBody: JSON.stringify(body({ brief: { ...base, days, slots } })), admit: () => { counted += 1; return true; } });
+  assert.deepEqual(all, { status: 400, body: { code: "invalid_request" } });
+  assert.equal(counted, 0);
+  assert.equal(asked.length, 1);
 });

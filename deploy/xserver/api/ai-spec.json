@@ -3,12 +3,14 @@
   "about": "One source for the meal advisor relay: api/ai.php and scripts/apple-relay-dev.ts both read this file, and tests/meal-advice-contract.test.ts pins lib/shiori/meal-advice-contract.ts to it. Blocked from the web by .htaccess.",
   "limits": {
     "bodyBytes": 8192,
-    "dailyCalls": 150,
-    "perClientPerMinute": 4,
+    "dailyCalls": 80,
+    "perClientPerMinute": 6,
     "perClientPerDay": 20,
+    "totalSeconds": 18,
     "days": 7,
     "stops": 24,
     "slots": 14,
+    "slotsPerCall": 4,
     "optionsPerSlot": 3,
     "featuresPerOption": 2,
     "closeRoleMeters": 500,
@@ -41,18 +43,19 @@
       "url": "https://api.anthropic.com/v1/messages",
       "version": "2026-10-21",
       "model": "claude-opus-5-5",
-      "maxTokens": 4000,
+      "maxTokens": 3000,
       "effort": "low",
-      "timeoutSeconds": 20,
+      "timeoutSeconds": 18,
       "beta": "server-side-fallback-2026-07-01",
       "fallbacks": "default"
     },
     "openai": {
       "url": "https://api.openai.com/v1/responses",
       "model": "gpt-6.1-terra",
-      "maxOutputTokens": 4000,
+      "maxOutputTokens": 3000,
       "reasoningEffort": "low",
-      "timeoutSeconds": 20
+      "timeoutSeconds": 15,
+      "minSeconds": 8
     }
   },
   "system": {
@@ -73,7 +76,8 @@
       "Look at the whole trip, not one slot at a time. A traveller who is offered ramen at every meal has been given no advice, so vary the first options across the slots: across the trip the cuisines of the first options should differ, and lunch and dinner on the same day should not share a genre or keyword. If a day already contains a restaurant stop as its other meal, lean the open slot the other way (a lighter lunch before a booked dinner, a simple dinner after a long booked lunch). When the city is known and has a well-known speciality, offer it once or twice in the trip under the role \"local\", not at every slot."
     ],
     "meals": [
-      "THIS REQUEST. Answer for every slot in brief.slots, each exactly once, using its slot id unchanged, in the same order."
+      "THIS REQUEST. The user message carries \"only\": the ids of the slots to answer now. Answer for every slot id in \"only\", each exactly once, using the id unchanged, in that order, and for no other slot. A long trip is asked about a few slots at a time so that each answer comes quickly; the other slots in brief.slots are context, so that you still judge each meal against the whole trip.",
+      "The user message may also carry \"given\": for slots answered a moment ago, the genre and keyword of the option that was put first (slot, genre, keyword). Treat those as meals the trip already has: the first options you give now should be other cuisines, and a \"local\" speciality already given is not offered again."
     ],
     "meal-refine": [
       "THIS REQUEST. The traveller has already seen options for one slot and asks for something else. The user message carries \"refine\": the slot id, \"previous\" (the conditions of the options shown before), \"ask\" and \"wish\". Answer for that one slot only, with up to three new options that differ from the previous ones in the direction asked, and still fit the plan as described above. The other slots in the brief are context so that you do not repeat what the rest of the trip already eats.",

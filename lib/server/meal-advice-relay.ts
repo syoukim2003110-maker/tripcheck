@@ -22,10 +22,10 @@ import {
  */
 
 export type MealAdviceSpec = {
-  limits: { bodyBytes: number; dailyCalls: number; perClientPerMinute: number; perClientPerDay: number; featuresPerOption: number };
+  limits: { bodyBytes: number; dailyCalls: number; perClientPerMinute: number; perClientPerDay: number; totalSeconds: number; featuresPerOption: number };
   providers: {
     anthropic: { url: string; version: string; model: string; maxTokens: number; effort: string; timeoutSeconds: number; beta?: string; fallbacks?: string };
-    openai: { url: string; model: string; maxOutputTokens: number; reasoningEffort: string; timeoutSeconds: number };
+    openai: { url: string; model: string; maxOutputTokens: number; reasoningEffort: string; timeoutSeconds: number; minSeconds: number };
   };
   system: Record<"common" | MealAdviceTask, string[]>;
   answerSchema: Record<string, unknown>;
@@ -72,7 +72,7 @@ export function mealAdviceSystemPrompt(spec: MealAdviceSpec, task: MealAdviceTas
 export function mealAdviceUserMessage(request: MealAdviceRequest) {
   return JSON.stringify(request.task === "meal-refine"
     ? { locale: request.locale, brief: request.brief, refine: request.refine }
-    : { locale: request.locale, brief: request.brief });
+    : { locale: request.locale, brief: request.brief, only: mealAdviceSlotIds(request), given: request.given ?? [] });
 }
 
 type Outgoing = { url: string; headers: Record<string, string>; body: Record<string, unknown>; timeoutMs: number };
@@ -226,8 +226,13 @@ export function createMealAdviceLimiter(spec: MealAdviceSpec, now: () => number 
 export type MealAdviceReply = { status: 200; body: MealAdviceAnswer } | { status: number; body: { code: MealAdviceErrorCode } };
 
 /**
- * One request through the relay: validate, count, ask Claude, on any failure
+ * One request through the relay: validate, count, ask Claude, on a failure
  * ask OpenAI once, validate the answer. A provider with no key is skipped.
+ *
+ * The two share one length of time (limits.totalSeconds), which is shorter
+ * than the page waits. OpenAI is asked only while enough of it is left to
+ * answer in: after a Claude call that ran out the clock the page has stopped
+ * listening, and a second call would be paid for and answer nobody.
  */
 export async function answerMealAdvice(input: {
   /** The request body as text, exactly as received. */
@@ -237,6 +242,7 @@ export async function answerMealAdvice(input: {
   admit: () => boolean;
   fetcher?: typeof fetch;
   onUsage?: (usage: MealAdviceUsage) => void;
+  now?: () => number;
 }): Promise<MealAdviceReply> {
   const { spec, keys } = input;
   const fetcher = input.fetcher ?? ((url, init) => globalThis.fetch(url, init));
@@ -247,9 +253,12 @@ export async function answerMealAdvice(input: {
   if (!request) return refuse(400, "invalid_request");
   if (!input.admit()) return refuse(429, "budget_exhausted");
 
+  const now = input.now ?? Date.now;
+  const begun = now();
+  const secondsLeft = () => spec.limits.totalSeconds - (now() - begun) / 1000;
   const slotIds = mealAdviceSlotIds(request);
   const ask = async (provider: "anthropic" | "openai", outgoing: Outgoing, read: (status: number, body: unknown) => unknown) => {
-    const started = Date.now();
+    const started = now();
     let body: unknown = null;
     let status = 0;
     try {
@@ -257,7 +266,7 @@ export async function answerMealAdvice(input: {
         method: "POST",
         headers: outgoing.headers,
         body: JSON.stringify(outgoing.body),
-        signal: AbortSignal.timeout(outgoing.timeoutMs),
+        signal: AbortSignal.timeout(Math.max(1, Math.min(outgoing.timeoutMs, Math.floor(secondsLeft() * 1000)))),
       });
       status = response.status;
       body = await response.json().catch(() => null);
@@ -273,13 +282,13 @@ export async function answerMealAdvice(input: {
       outputTokens: tokenCount(usage.output_tokens),
       cacheReadTokens: tokenCount(usage.cache_read_input_tokens),
       cacheWriteTokens: tokenCount(usage.cache_creation_input_tokens),
-      milliseconds: Date.now() - started,
+      milliseconds: now() - started,
     });
     return answer;
   };
 
   let answer: MealAdviceAnswer | null = null;
   if (keys.anthropic) answer = await ask("anthropic", anthropicRequest(spec, request, keys.anthropic), readAnthropicReply);
-  if (!answer && keys.openai) answer = await ask("openai", openaiRequest(spec, request, keys.openai), readOpenaiReply);
+  if (!answer && keys.openai && secondsLeft() >= spec.providers.openai.minSeconds) answer = await ask("openai", openaiRequest(spec, request, keys.openai), readOpenaiReply);
   return answer ? { status: 200, body: answer } : refuse(502, "unavailable");
 }

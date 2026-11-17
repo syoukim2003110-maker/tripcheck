@@ -20,6 +20,8 @@ export const MEAL_ADVICE_LIMITS = {
   days: 7,
   stops: 24,
   slots: 14,
+  /** How many slots one question may be answered for: a longer trip is asked in turns, so each answer comes in time. */
+  slotsPerCall: 4,
   optionsPerSlot: 3,
   featuresPerOption: 2,
   /** The furthest a "least walking" or "quick" option may look: its heading stands above the walk to each shop. */
@@ -130,8 +132,12 @@ export type MealRefine = {
   wish: string;
 };
 
+/** What was put first for a slot answered a moment ago: conditions only, so the next turn can offer something else. */
+export type MealGiven = { slot: string; genre: MealGenre | null; keyword: string | null };
+
 export type MealAdviceRequest =
-  | { task: "meals"; locale: MealAdviceLocale; brief: MealBrief }
+  /** `only`: the slots to answer now (at most slotsPerCall; every slot of the brief when left out and that few). */
+  | { task: "meals"; locale: MealAdviceLocale; brief: MealBrief; only?: string[]; given?: MealGiven[] }
   | { task: "meal-refine"; locale: MealAdviceLocale; brief: MealBrief; refine: MealRefine };
 
 export type MealAdviceSlotAnswer = { slot: string; options: MealOption[] };
@@ -338,6 +344,35 @@ function cleanRefine(input: unknown, brief: MealBrief): MealRefine | null {
   return { slot: raw.slot, previous, ask, wish };
 }
 
+/** The slots to answer now: some of the brief's, each once, at most slotsPerCall. Left out, it is all of them. */
+function cleanOnly(input: unknown, brief: MealBrief): string[] | null {
+  const listed = input === undefined || input === null ? brief.slots.map((slot) => slot.slot) : input;
+  if (!Array.isArray(listed) || listed.length < 1 || listed.length > MEAL_ADVICE_LIMITS.slotsPerCall) return null;
+  const only: string[] = [];
+  for (const entry of listed) {
+    if (typeof entry !== "string" || only.includes(entry) || !brief.slots.some((slot) => slot.slot === entry)) return null;
+    only.push(entry);
+  }
+  return only;
+}
+
+/** What earlier turns put first, for other slots of the brief than the ones asked now. */
+function cleanGiven(input: unknown, brief: MealBrief, only: readonly string[]): MealGiven[] | null {
+  const listed = input === undefined || input === null ? [] : input;
+  if (!Array.isArray(listed) || listed.length > MEAL_ADVICE_LIMITS.slots) return null;
+  const given: MealGiven[] = [];
+  for (const entry of listed) {
+    const raw = record(entry);
+    const genre = nullableOneOf(MEAL_GENRES, raw?.genre);
+    const keyword = cleanMealKeyword(raw?.keyword);
+    if (!raw || typeof raw.slot !== "string" || genre === undefined || keyword === undefined) return null;
+    const slot = raw.slot;
+    if (only.includes(slot) || given.some((known) => known.slot === slot) || !brief.slots.some((known) => known.slot === slot)) return null;
+    given.push({ slot, genre, keyword });
+  }
+  return given;
+}
+
 /** The whole request body as the relay accepts it, rebuilt clean; null when it must be refused. */
 export function cleanMealAdviceRequest(body: unknown): MealAdviceRequest | null {
   const raw = record(body);
@@ -346,14 +381,18 @@ export function cleanMealAdviceRequest(body: unknown): MealAdviceRequest | null 
   const locale = oneOf(MEAL_ADVICE_LOCALES, raw.locale);
   const brief = cleanMealBrief(raw.brief);
   if (task === undefined || locale === undefined || !brief) return null;
-  if (task === "meals") return { task, locale, brief };
+  if (task === "meals") {
+    const only = cleanOnly(raw.only, brief);
+    const given = only ? cleanGiven(raw.given, brief, only) : null;
+    return only && given ? { task, locale, brief, only, given } : null;
+  }
   const refine = cleanRefine(raw.refine, brief);
   return refine ? { task, locale, brief, refine } : null;
 }
 
 /** The slots an answer to this request may speak about. */
 export function mealAdviceSlotIds(request: MealAdviceRequest): string[] {
-  return request.task === "meal-refine" ? [request.refine.slot] : request.brief.slots.map((slot) => slot.slot);
+  return request.task === "meal-refine" ? [request.refine.slot] : request.only ?? request.brief.slots.map((slot) => slot.slot);
 }
 
 /**

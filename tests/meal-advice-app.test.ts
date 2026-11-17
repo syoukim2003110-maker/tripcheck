@@ -2,23 +2,26 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import type { HotpepperShop } from "../lib/hotpepper-client.ts";
+import { searchHotpepperShops, type HotpepperQuery, type HotpepperShop } from "../lib/hotpepper-client.ts";
 import { curateSights, type PopularDestination } from "../lib/popular-sights.ts";
 import { RailNetwork } from "../lib/rail-router.ts";
 import { askMealAdvice, mealAdviceAvailable, mealAdviceUrl } from "../lib/shiori/meal-advice-client.ts";
-import { MEAL_FEATURES, MEAL_GENRES, MEAL_ROLES, cleanMealAdviceRequest, cleanMealBrief, type MealAdviceRequest, type MealOption } from "../lib/shiori/meal-advice-contract.ts";
+import { MEAL_FEATURES, MEAL_GENRES, MEAL_ROLES, cleanMealAdviceRequest, cleanMealBrief, type MealAdviceAnswer, type MealAdviceRequest, type MealOption } from "../lib/shiori/meal-advice-contract.ts";
 import {
   EMPTY_MEAL_PREFS,
   MEAL_FEATURE_LABELS,
   MEAL_GENRE_LABELS,
   MEAL_ROLE_LABELS,
+  askMealAdviceInTurns,
   buildMealBrief,
   cleanMealPrefs,
   cleanMealWish,
   entriesFromAnswer,
+  findMealOptionShops,
   liveMealEntry,
   mealConditionsOf,
   mealConditionsText,
+  mealAdviceTurns,
   mealOptionQuery,
   mealSlotKeys,
   mealSights,
@@ -278,7 +281,7 @@ test("the relay is asked once, by POST, with the cleaned request and nothing els
   assert.equal(seen[0].url, "/api/ai.php");
   assert.equal(seen[0].init.method, "POST");
   assert.equal((seen[0].init.headers as Record<string, string>)["Content-Type"], "application/json");
-  assert.deepEqual(Object.keys(JSON.parse(String(seen[0].init.body))).sort(), ["brief", "locale", "task"]);
+  assert.deepEqual(Object.keys(JSON.parse(String(seen[0].init.body))).sort(), ["brief", "given", "locale", "only", "task"]);
 });
 
 test("every way of failing is the same quiet 'no answer'", async () => {
@@ -419,4 +422,160 @@ test("a place that only looks bundled goes without its name: a live lookup, a sh
   // With no bundled list at hand nothing is named at all.
   const bare = buildMealBrief({ sights: new Map(), plan, city: null, prefs: EMPTY_MEAL_PREFS })!;
   assert.equal(bare.days.flatMap((day) => day.stops).some((stop) => stop.name !== undefined || stop.kind === "sight"), false);
+});
+
+test("a shop search that got no answer is not an empty answer", async () => {
+  const near = { latitude: 35.6638, longitude: 139.7812 };
+  const found = { id: "J1", name: "店", latitude: 35.664, longitude: 139.7813, address: null, budget: null, photo: null, url: null };
+  assert.deepEqual(await searchHotpepperShops({ near }, "/api/apple.php", async () => Response.json({ results: [] })), []);
+  assert.equal((await searchHotpepperShops({ near }, "/api/apple.php", async () => Response.json({ results: [found] })))!.length, 1);
+  for (const [name, fetcher] of [
+    ["offline", async () => { throw new TypeError("Failed to fetch"); }],
+    ["over the limit", async () => Response.json({ code: "budget_exhausted" }, { status: 429 })],
+    ["the guide is down", async () => Response.json({ code: "unavailable" }, { status: 502 })],
+    ["refused", async () => Response.json({ code: "invalid_request" }, { status: 400 })],
+    ["not JSON", async () => new Response("<html>", { status: 200 })],
+    ["no list", async () => Response.json({ ok: true })],
+  ] as Array<[string, typeof fetch]>) {
+    assert.equal(await searchHotpepperShops({ near }, "/api/apple.php", fetcher), null, name);
+  }
+  assert.equal(await searchHotpepperShops({ near }, null), null);
+});
+
+test("shops under the AI's options: an empty answer drops the option, no answer keeps nothing and is not read as 'no shop'", async () => {
+  const near = { latitude: 35.6638, longitude: 139.7812 };
+  const options = [option({ role: "fits-day", keyword: "蕎麦", withinMeters: 500 }), option({ role: "near", genre: "G013", withinMeters: 300 }), option({ role: "treat", withinMeters: 1000 })];
+  const asked: HotpepperQuery[] = [];
+  const answering = (reply: (query: HotpepperQuery) => HotpepperShop[] | null) => async (query: HotpepperQuery) => { asked.push(query); return reply(query); };
+
+  // The guide answers: soba has shops, ramen has none even after the wider look, the treat has one.
+  const lists = await findMealOptionShops(options, near, "lunch", answering((query) => query.name === "蕎麦" ? [shop("soba-1", 200), shop("soba-2", 400)] : query.genre === "G013" ? [] : [shop("soba-1", 200), shop("treat-1", 700)]));
+  assert.deepEqual(lists!.map((list) => list.shops.map((entry) => entry.id)), [["soba-1", "soba-2"], [], ["treat-1"]]);
+  // The empty option was looked for once more, a little wider, and no further than 500 m.
+  assert.deepEqual(asked.filter((query) => query.genre === "G013").map((query) => query.withinMeters), [300, 500]);
+
+  // Every search answers "nothing": that is a real "no shop matched".
+  assert.deepEqual((await findMealOptionShops(options, near, "lunch", answering(() => [])))!.map((list) => list.shops.length), [0, 0, 0]);
+
+  // The connection drops: no list at all, whichever search it was.
+  assert.equal(await findMealOptionShops(options, near, "lunch", answering(() => null)), null);
+  assert.equal(await findMealOptionShops(options, near, "lunch", answering((query) => query.genre === "G013" ? null : [shop("a", 100)])), null);
+  let calls = 0;
+  assert.equal(await findMealOptionShops(options, near, "lunch", answering((query) => { calls += 1; return query.genre === "G013" && calls > 2 ? null : []; })), null, "the wider look failing is a failure too");
+  // Stopped on the way (the row left the screen): nothing is kept.
+  assert.equal(await findMealOptionShops(options, near, "lunch", answering(() => [shop("a", 100)]), () => true), null);
+});
+
+test("a long trip is asked a few meals at a time, the pressed row's turn first", () => {
+  const slots = Array.from({ length: 7 }, (_, day) => [`d${day + 1}-lunch`, `d${day + 1}-dinner`]).flat();
+  const turns = mealAdviceTurns(slots);
+  assert.deepEqual(turns.map((turn) => turn.length), [4, 4, 4, 2]);
+  assert.deepEqual(turns.flat(), slots);
+  assert.deepEqual(mealAdviceTurns(slots, "d4-dinner").map((turn) => turn[0]), ["d3-lunch", "d5-lunch", "d7-lunch", "d1-lunch"]);
+  assert.deepEqual(mealAdviceTurns(slots, "d1-lunch"), turns);
+  assert.deepEqual(mealAdviceTurns(slots, "d9-lunch"), turns);
+  assert.deepEqual(mealAdviceTurns(["d1-lunch", "d1-dinner"], "d1-dinner"), [["d1-lunch", "d1-dinner"]]);
+  assert.deepEqual(mealAdviceTurns([]), []);
+});
+
+test("each turn is a request the relay accepts, carries what the earlier turns put first, and is shown as it arrives", async () => {
+  const many = curateSights(tokyo.sights).slice(6, 24).map((sight) => placeFromSight(sight, "ja"));
+  const brief = buildMealBrief({ sights: SIGHTS, plan: tokyoPlan(many, 7), city: "東京", prefs: EMPTY_MEAL_PREFS })!;
+  assert.ok(brief.slots.length > 8, `${brief.slots.length} open slots`);
+  const ids = brief.slots.map((slot) => slot.slot);
+  const genres = ["G004", "G013", "G007", "G005", "G006", "G008", "G009", "G016", "G017", "G001", "G002", "G003", "G010", "G014"] as const;
+  const requests: MealAdviceRequest[] = [];
+  const parts: Array<{ slots: string[]; answer: MealAdviceAnswer | null }> = [];
+  const answerFor = (request: MealAdviceRequest): MealAdviceAnswer => ({ slots: (request.task === "meals" ? request.only ?? [] : []).map((slot) => ({ slot, options: [option({ genre: genres[ids.indexOf(slot)], keyword: null })] })) });
+  await askMealAdviceInTurns({ locale: "ja", brief, first: ids[5], ask: async (request) => { requests.push(request); return answerFor(request); }, onPart: (part) => parts.push(part) });
+
+  assert.equal(requests.length, Math.ceil(ids.length / 4));
+  for (const request of requests) {
+    assert.ok(cleanMealAdviceRequest(request), "the relay would refuse a turn");
+    assert.ok(new TextEncoder().encode(JSON.stringify(cleanMealAdviceRequest(request))).length < 8192);
+  }
+  // The turn with the pressed row goes first; together the turns cover every slot once.
+  assert.ok(requests[0].task === "meals" && requests[0].only!.includes(ids[5]));
+  assert.deepEqual(requests.flatMap((request) => (request.task === "meals" ? request.only! : [])).sort(), [...ids].sort());
+  // What a turn put first travels with the next ones, as conditions only.
+  assert.ok(requests[0].task === "meals" && requests[1].task === "meals");
+  assert.deepEqual(requests[0].given, []);
+  assert.deepEqual(requests[1].given, requests[0].only!.map((slot) => ({ slot, genre: genres[ids.indexOf(slot)], keyword: null })));
+  assert.deepEqual(parts.map((part) => part.slots), requests.map((request) => (request.task === "meals" ? request.only : [])));
+  assert.ok(parts.every((part) => part.answer !== null));
+});
+
+test("a turn without an answer ends the asking: the rest is reported unanswered and not sent", async () => {
+  const many = curateSights(tokyo.sights).slice(6, 24).map((sight) => placeFromSight(sight, "ja"));
+  const brief = buildMealBrief({ sights: SIGHTS, plan: tokyoPlan(many, 7), city: "東京", prefs: EMPTY_MEAL_PREFS })!;
+  const ids = brief.slots.map((slot) => slot.slot);
+  let calls = 0;
+  const parts: Array<{ slots: string[]; answer: MealAdviceAnswer | null }> = [];
+  await askMealAdviceInTurns({
+    locale: "ja", brief,
+    ask: async (request) => { calls += 1; return calls === 1 && request.task === "meals" ? { slots: request.only!.map((slot) => ({ slot, options: [option()] })) } : null; },
+    onPart: (part) => parts.push(part),
+  });
+  assert.equal(calls, 2, "after a turn without an answer the relay is asked no further");
+  assert.deepEqual(parts.map((part) => part.answer !== null), [true, false, ...(ids.length > 8 ? [false] : [])]);
+  assert.deepEqual(parts.flatMap((part) => part.slots), ids);
+
+  // Stopped (the plan changed, the page closed): nothing more is asked or reported.
+  calls = 0;
+  const after: unknown[] = [];
+  let stopped = false;
+  await askMealAdviceInTurns({ locale: "ja", brief, ask: async () => { calls += 1; stopped = true; return null; }, onPart: (part) => after.push(part), stopped: () => stopped });
+  assert.equal(calls, 1);
+  assert.deepEqual(after, []);
+});
+
+test("the screen: one question at a time, a status line that is always there, and a keyboard that keeps its place", () => {
+  const source = readFileSync(new URL("../app/shiori/ShioriApp.tsx", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../app/shiori/shiori.css", import.meta.url), "utf8");
+  const asking = source.slice(source.indexOf("const askAdvice = async"), source.indexOf("const rowAdvice = "));
+  // A question in flight is never thrown away for another row's: the second one is not started.
+  assert.match(asking, /if \(!plan \|\| !adviceOn \|\| adviceRun\.current\) return;/);
+  assert.doesNotMatch(asking, /\.abort\(\)/, "asking aborts a question in flight");
+  assert.match(asking, /askMealAdviceInTurns\(\{ locale, brief, first: from, ask, stopped,/);
+  const rows = source.slice(source.indexOf("const rowAdvice = "), source.indexOf("// The Toei lines"));
+  assert.match(rows, /busy: adviceBusy\?\.includes\(slot\) \?\? false,/);
+  assert.match(rows, /locked: adviceBusy !== null,/);
+
+  const options = source.slice(source.indexOf("function MealAdviceOptions("), source.indexOf("function MealRow("));
+  const row = source.slice(source.indexOf("function MealRow("), source.indexOf("function CafeRow("));
+  // Every control that asks is switched off for every row while any question is in flight,
+  // without being disabled (a disabled button drops the keyboard's focus).
+  assert.match(options, /<button aria-disabled=\{advice\.locked\} onClick=\{\(\) => \{ if \(!advice\.locked\) advice\.onRefine\(ask, ""\); \}\}/);
+  assert.match(options, /if \(words && !advice\.locked\) advice\.onRefine\("wish", words\);/);
+  assert.match(options, /<button aria-disabled=\{advice\.locked \|\| !cleanMealWish\(wish\)\} type="submit">/);
+  assert.doesNotMatch(options + row.slice(row.indexOf("shiori-advice shiori-screen-only"), row.indexOf("state === \"loading\"")), /\sdisabled=/);
+  assert.match(css, /\.shiori-advice button\[aria-disabled="true"\]/);
+  // The ways to ask again are not taken away while shops are searched for.
+  assert.doesNotMatch(options, /return [^;]*aiSearching/);
+
+  // The ask button is always there, says truthfully whether the form is open, and gets the focus back when the form goes.
+  assert.match(row, /\n {10}<button aria-controls=\{advice\.formOpen \? `shiori-advice-form-\$\{slot\}` : undefined\} aria-disabled=\{advice\.locked\} aria-expanded=\{advice\.formOpen\} className="shiori-advice-ask" onClick=\{\(\) => \{ if \(!advice\.locked\) advice\.onForm\(!advice\.formOpen\); \}\} ref=\{askButton\}/);
+  assert.doesNotMatch(row, /aria-expanded=\{false\}/);
+  assert.match(row, /onDone=\{\(\) => askButton\.current\?\.focus\(\)\}/);
+  const form = source.slice(source.indexOf("function MealAdviceForm("), source.indexOf("type MealShopSearch"));
+  assert.match(form, /advice\.onAsk\(cleanMealPrefs\(prefs\)\); onDone\(\); \}\}/);
+  assert.match(form, /onClick=\{\(\) => \{ advice\.onForm\(false\); onDone\(\); \}\}/);
+  // One live line per row, always in the page; only its words change.
+  assert.equal(row.split("aria-live=").length - 1, 1);
+  assert.match(row, /\n {10}<p aria-live="polite" className="shiori-quiet shiori-advice-status" ref=\{adviceStatus\} role="status" tabIndex=\{-1\}>\{adviceLine\}<\/p>/);
+  assert.equal(options.includes("aria-live"), false);
+  assert.match(row, /advice\.busy \? t\.aiBusy : advice\.failed \? t\.aiFailed : search\.state === "searching" \? t\.aiSearching : search\.state === "failed" \? t\.aiSearchFailed : search\.state === "none" \? t\.aiNoShops : ""/);
+
+  // "No shop matched" is said only when the guide answered; no answer is said as such, with a way to look again, and is not kept.
+  const hook = source.slice(source.indexOf("function useMealOptionShops("), source.indexOf("function MealAdviceOptions("));
+  assert.match(hook, /findMealOptionShops\(entry\.options, \{ latitude, longitude \}, kind, \(query\) => searchHotpepperShops\(/);
+  assert.match(hook, /if \(answered\) setFound\(\{ entry, lists: answered \}\);\s*else setFailedFor\(entry\);/);
+  assert.match(hook, /retry: \(\) => setFailedFor\(null\)/);
+  assert.match(row, /search\.state === "failed" && !advice\.busy \? <button className="shiori-advice-retry" onClick=\{\(\) => \{ adviceStatus\.current\?\.focus\(\); search\.retry\(\); \}\} type="button">\{t\.aiSearchRetry\}<\/button>/);
+  const table = source.slice(source.indexOf("const text = {"), source.indexOf("\n};", source.indexOf("const text = {")));
+  assert.match(table, /aiSearchFailed: "いまは店を探せませんでした/);
+  assert.match(table, /aiSearchFailed: "Could not look for restaurants just now/);
+  // The brief is built with the bundled list, so only its sights are named.
+  assert.match(source, /const sights = useMemo\(\(\) => mealSights\(cities\), \[cities\]\);/);
+  assert.match(asking, /buildMealBrief\(\{ plan, sights, /);
 });
