@@ -110,6 +110,16 @@ pnpm relay:dev      # Node stand-in for apple.php on http://localhost:8792
 with `NEXT_PUBLIC_APPLE_RELAY_URL=http://localhost:8792/apple.php` in
 `.env.local`.
 
+The meal advisor ("AIに相談") needs `ANTHROPIC_API_KEY` and/or
+`OPENAI_API_KEY` in `.env.local` (Claude is asked first, OpenAI only when
+Claude fails). With a key present the build writes `api/ai-config.php` and
+sets `NEXT_PUBLIC_TRIPCHECK_AI=1`; without one the button does not exist.
+Locally, `pnpm relay:dev` also serves `POST http://localhost:8792/ai.php`;
+add `NEXT_PUBLIC_TRIPCHECK_AI=1` to `.env.local` to see the button. Prompts,
+the answer's schema, model names and limits (150 requests a day for the
+site, 20 a day and 4 a minute per visitor) live in
+`deploy/xserver/api/ai-spec.json`, read by both `ai.php` and the local relay.
+
 `pnpm sights:generate` refreshes `lib/popular-sights-data.json`, the bundled
 "pick from a destination" list (Wikidata, CC0).
 

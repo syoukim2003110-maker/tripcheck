@@ -22,7 +22,11 @@
  *   200 {"minutes":<int>|null,"distanceMeters":<int>|null,"path":[[lat,lon],…]}
  *       (the way along the streets; at most 160 points)
  *
- *   GET apple.php?op=food&near=<lat>,<lon>[&within=<metres>][&name=<words>][&meal=lunch][&genre=cafe]
+ *   GET apple.php?op=food&near=<lat>,<lon>[&within=<metres>][&name=<words>][&meal=lunch]
+ *                 [&genre=cafe|G001…G017][&features=child,non_smoking]
+ *       (genre: "cafe" or a genre code of the guide; features: at most two
+ *        yes/no filters; both are checked against the lists in ai-spec.json,
+ *        the meal advisor's contract, and anything else is refused)
  *   200 {"results":[{id,name,latitude,longitude,address,genre,budget,
  *                    budgetAverage,catch,open,photo,url}]}
  *   GET apple.php?op=maptoken
@@ -56,6 +60,23 @@ const APPLE_ORIGIN = 'https://maps-api.apple.com';
 const DAILY_CALL_CEILING = 15000;      // stay inside Apple's daily quota
 const PER_CLIENT_PER_MINUTE = 180;     // one trip build is ~20 searches + ~80 travel times
 const ALLOWED_CATEGORIES = ['Restaurant', 'Cafe', 'Bakery', 'Hotel'];
+
+/**
+ * The genre codes and yes/no filters a food search may carry: the meal
+ * advisor's lists in ai-spec.json, so the relay and the advisor cannot
+ * disagree. With the file missing or unreadable only "cafe" is left.
+ */
+function food_search_lists(): array
+{
+    $raw = @file_get_contents(__DIR__ . '/ai-spec.json');
+    $spec = is_string($raw) ? json_decode($raw, true) : null;
+    $strings = fn ($list): array => is_array($list) ? array_values(array_filter($list, fn ($entry): bool => is_string($entry) && preg_match('/^[A-Za-z0-9_]{1,24}$/D', $entry) === 1)) : [];
+    return [
+        'genres' => $strings($spec['enums']['genres'] ?? null),
+        'features' => $strings($spec['enums']['features'] ?? null),
+        'featuresPerSearch' => is_int($spec['limits']['featuresPerOption'] ?? null) ? $spec['limits']['featuresPerOption'] : 0,
+    ];
+}
 
 function respond(int $status, array $body): void
 {
@@ -388,14 +409,27 @@ if (($_GET['op'] ?? '') === 'food') {
     ) {
         respond(400, ['code' => 'invalid_request']);
     }
+    // The meal advisor's conditions: a genre code and yes/no filters, each
+    // out of its fixed list. Anything else is refused, not passed on.
+    $lists = food_search_lists();
+    $genre = (string) ($_GET['genre'] ?? '');
+    $features = array_values(array_filter(explode(',', (string) ($_GET['features'] ?? '')), fn ($entry): bool => $entry !== ''));
+    if (
+        ($genre !== '' && $genre !== 'cafe' && !in_array($genre, $lists['genres'], true))
+        || count($features) > $lists['featuresPerSearch']
+        || array_diff($features, $lists['features']) !== []
+    ) {
+        respond(400, ['code' => 'invalid_request']);
+    }
     admit();
     // HotPepper takes one of five radii; the smallest that covers the ask.
     $range = $within <= 300 ? 1 : ($within <= 500 ? 2 : ($within <= 1000 ? 3 : ($within <= 2000 ? 4 : 5)));
     $params = ['key' => $key, 'lat' => $at[1], 'lng' => $at[2], 'range' => $range, 'order' => 4, 'count' => 100, 'format' => 'json'];
     if ($name !== '') $params['keyword'] = $name;
     if (($_GET['meal'] ?? '') === 'lunch') $params['lunch'] = 1;
-    // Cafés and sweets only (the guide's genre G014), for the coffee break.
-    if (($_GET['genre'] ?? '') === 'cafe') $params['genre'] = 'G014';
+    // "cafe" is cafés and sweets only (the guide's genre G014), for the coffee break.
+    if ($genre !== '') $params['genre'] = $genre === 'cafe' ? 'G014' : $genre;
+    foreach ($features as $feature) $params[$feature] = 1;
     try {
         [$status, $body] = apple_get('https://webservice.recruit.co.jp/hotpepper/gourmet/v1/?' . http_build_query($params, '', '&', PHP_QUERY_RFC3986), '');
     } catch (Throwable $error) {

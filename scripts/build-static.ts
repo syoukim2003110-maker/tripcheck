@@ -6,9 +6,10 @@
  * Output: dist-static/site/ — upload its contents to the site's public folder.
  *
  * The planner, its feasibility engine and the keyless place lookup all run in
- * the browser, so the only server-side piece is api/apple.php, a small relay
- * that keeps the Apple Maps key off the page. The server routes under
- * app/api/ belong to the Workers deployment and are left out of this build.
+ * the browser, so the only server-side pieces are api/apple.php, a small
+ * relay that keeps the Apple Maps key off the page, and api/ai.php, the same
+ * for the meal advisor's AI keys. The server routes under app/api/ belong to
+ * the Workers deployment and are left out of this build.
  */
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
@@ -18,6 +19,7 @@ import { fileURLToPath } from "node:url";
 
 import { productionContentSecurityPolicy } from "../lib/security-headers.ts";
 import { appleMapsCredentialsFromEnvironment } from "../lib/server/apple-maps.ts";
+import { aiConfigPhp, aiKeysFromEnvironment } from "../lib/server/meal-advice-relay.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const work = join(root, ".static-build");
@@ -44,11 +46,17 @@ function localEnvironment() {
   const environment: Record<string, string> = {};
   const path = join(root, ".env.local");
   if (!existsSync(path)) return environment;
-  for (const match of readFileSync(path, "utf8").matchAll(/^([A-Z_][A-Z0-9_]*)=(?:"([\s\S]*?)"|'([\s\S]*?)'|(.*))$/gm)) {
+  // Names in any case: the owner's file spells one key Claude_API_KEY.
+  for (const match of readFileSync(path, "utf8").matchAll(/^([A-Za-z_][A-Za-z0-9_]*)=(?:"([\s\S]*?)"|'([\s\S]*?)'|(.*))$/gm)) {
     environment[match[1]] = (match[2] ?? match[3] ?? match[4] ?? "").trim();
   }
   return environment;
 }
+
+const environment = localEnvironment();
+// The meal advisor's keys (Claude and/or OpenAI); optional, and server-side
+// only. The page shows its AI button only when this build carries a key.
+const aiConfig = aiConfigPhp(aiKeysFromEnvironment(environment));
 
 rmSync(work, { recursive: true, force: true });
 mkdirSync(work, { recursive: true });
@@ -83,6 +91,8 @@ const build = spawnSync(process.execPath, [join(root, "node_modules", "next", "d
     NEXT_PUBLIC_APPLE_RELAY_URL: "/api/apple.php",
     NEXT_PUBLIC_TRIPCHECK_STATIC_HOSTING: "1",
     NEXT_PUBLIC_MAPLIBRE_WORKER_URL: "/maplibre/maplibre-gl-worker.mjs",
+    // A flag only, never a key: whether api/ai-config.php is written below.
+    ...(aiConfig ? { NEXT_PUBLIC_TRIPCHECK_AI: "1" } : {}),
   },
 });
 if (build.status !== 0) process.exit(build.status ?? 1);
@@ -132,7 +142,6 @@ writeFileSync(join(output, "_next", "static", ".htaccess"), `<IfModule mod_heade
 </IfModule>
 `);
 
-const environment = localEnvironment();
 const credentials = appleMapsCredentialsFromEnvironment(environment);
 // Restaurant photos and budgets (HotPepper Gourmet); optional, and server-side only like the Apple key.
 const hotpepperKey = /^[0-9A-Za-z]{8,64}$/.test(environment.HOTPEPPER_API_KEY ?? "") ? environment.HOTPEPPER_API_KEY! : null;
@@ -141,6 +150,11 @@ if (credentials) {
   const quote = (value: string) => `'${value.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
   writeFileSync(configPath, `<?php\n// Generated from .env.local. Keep private; blocked from the web by .htaccess.\nreturn [\n  'team_id' => ${quote(credentials.teamId)},\n  'key_id' => ${quote(credentials.keyId)},\n  'private_key' => ${quote(credentials.privateKey)},\n  'site_origin' => ${quote(origin)},\n${hotpepperKey ? `  'hotpepper_key' => ${quote(hotpepperKey)},\n` : ""}];\n`);
   chmodSync(configPath, 0o600);
+}
+if (aiConfig) {
+  const aiConfigPath = join(output, "api", "ai-config.php");
+  writeFileSync(aiConfigPath, aiConfig);
+  chmodSync(aiConfigPath, 0o600);
 }
 // The deploy token lets api/deploy.php unpack an uploaded build. It is made
 // once, kept in .env.local, and written next to the script on the server.
@@ -172,3 +186,6 @@ if (zipped.status === 0) {
 console.log(credentials
   ? "Apple Maps relay: keys included (api/apple-config.php). Do not share this folder."
   : "Apple Maps relay: no keys in .env.local — meals and shop lookup stay off until api/apple-config.php is added.");
+console.log(aiConfig
+  ? "Meal advisor (AI): keys included (api/ai-config.php). Do not share this folder."
+  : "Meal advisor (AI): no ANTHROPIC_API_KEY / OPENAI_API_KEY in .env.local — the AI button is left out of this build.");

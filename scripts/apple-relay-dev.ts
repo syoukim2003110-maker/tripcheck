@@ -9,12 +9,23 @@
  *
  * Reads APPLE_MAPS_TEAM_ID / APPLE_MAPS_KEY_ID / APPLE_MAPS_PRIVATE_KEY from
  * .env.local. Never deployed.
+ *
+ * It also stands in for the meal advisor's relay (deploy/xserver/api/ai.php):
+ *
+ *   POST http://localhost:8792/ai.php
+ *   NEXT_PUBLIC_TRIPCHECK_AI=1                                     (.env.local)
+ *
+ * with ANTHROPIC_API_KEY (or Claude_API_KEY) and/or OPENAI_API_KEY in
+ * .env.local. Prompts, schema, models and limits come from the same
+ * deploy/xserver/api/ai-spec.json that ai.php reads. Token counts of each
+ * call are printed here; keys and provider replies never are.
  */
 import { createSign } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
 
 import { AppleMapsClient, AppleMapsError, appleMapsCredentialsFromEnvironment } from "../lib/server/apple-maps.ts";
+import { aiKeysFromEnvironment, answerMealAdvice, createMealAdviceLimiter, type MealAdviceSpec } from "../lib/server/meal-advice-relay.ts";
 
 const PORT = Number(process.env.APPLE_RELAY_PORT ?? 8792);
 
@@ -22,7 +33,7 @@ function localEnvironment() {
   const environment: Record<string, string | undefined> = { ...process.env };
   try {
     const raw = readFileSync(new URL("../.env.local", import.meta.url), "utf8");
-    for (const match of raw.matchAll(/^([A-Z_][A-Z0-9_]*)=(?:"([\s\S]*?)"|'([\s\S]*?)'|(.*))$/gm)) {
+    for (const match of raw.matchAll(/^([A-Za-z_][A-Za-z0-9_]*)=(?:"([\s\S]*?)"|'([\s\S]*?)'|(.*))$/gm)) {
       environment[match[1]] ??= (match[2] ?? match[3] ?? match[4] ?? "").trim();
     }
   } catch {
@@ -36,17 +47,49 @@ const client = credentials ? new AppleMapsClient(credentials) : null;
 
 const ALLOWED_CATEGORIES = new Set(["Restaurant", "Cafe", "Bakery", "Hotel"]);
 
+// The meal advisor: one spec file shared with ai.php.
+const aiSpec = JSON.parse(readFileSync(new URL("../deploy/xserver/api/ai-spec.json", import.meta.url), "utf8")) as MealAdviceSpec & { enums: { genres: string[]; features: string[] } };
+const aiKeys = aiKeysFromEnvironment(localEnvironment());
+const admitMealAdvice = createMealAdviceLimiter(aiSpec);
+const FOOD_GENRES = new Set(aiSpec.enums.genres);
+const FOOD_FEATURES = new Set(aiSpec.enums.features);
+
 createServer(async (request, response) => {
   const origin = request.headers.origin ?? "";
   const send = (status: number, body: unknown) => {
     response.writeHead(status, {
       "Content-Type": "application/json; charset=utf-8",
       "Cache-Control": "no-store",
-      ...(/^http:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/.test(origin) ? { "Access-Control-Allow-Origin": origin, Vary: "Origin" } : {}),
+      ...(/^http:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/.test(origin)
+        ? { "Access-Control-Allow-Origin": origin, "Access-Control-Allow-Methods": "GET, POST", "Access-Control-Allow-Headers": "Content-Type", Vary: "Origin" }
+        : {}),
     });
     response.end(JSON.stringify(body));
   };
   const url = new URL(request.url ?? "/", `http://localhost:${PORT}`);
+  if (url.pathname === "/ai.php") {
+    // The page is on another port here, so a JSON POST is preceded by a preflight.
+    if (request.method === "OPTIONS") return send(200, {});
+    if (request.method !== "POST") return send(405, { code: "method_not_allowed" });
+    // Only the local page may ask, as only the site's own pages may ask ai.php.
+    if (origin !== "" && !/^http:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/.test(origin)) return send(403, { code: "forbidden" });
+    if (!/^application\/json\b/i.test(String(request.headers["content-type"] ?? ""))) return send(400, { code: "invalid_request" });
+    const chunks: Buffer[] = [];
+    let size = 0;
+    for await (const chunk of request) {
+      size += (chunk as Buffer).length;
+      if (size > aiSpec.limits.bodyBytes) return send(400, { code: "invalid_request" });
+      chunks.push(chunk as Buffer);
+    }
+    const reply = await answerMealAdvice({
+      rawBody: Buffer.concat(chunks).toString("utf8"),
+      spec: aiSpec,
+      keys: aiKeys,
+      admit: () => admitMealAdvice(request.socket.remoteAddress ?? "unknown"),
+      onUsage: (usage) => console.log(`ai ${usage.provider} ${usage.ok ? "ok" : "no answer"} in=${usage.inputTokens} out=${usage.outputTokens} cacheRead=${usage.cacheReadTokens} cacheWrite=${usage.cacheWriteTokens} ${usage.milliseconds}ms`),
+    });
+    return send(reply.status, reply.body);
+  }
   if (request.method !== "GET" || url.pathname !== "/apple.php") return send(404, { code: "not_found" });
   if (!client) return send(503, { code: "not_configured" });
 
@@ -58,12 +101,20 @@ createServer(async (request, response) => {
     const at = (url.searchParams.get("near") ?? "").match(coordinate);
     const name = (url.searchParams.get("name") ?? "").trim();
     const within = Number(url.searchParams.get("within") ?? "1000");
-    if (!at || name.length > 60 || !Number.isInteger(within) || within < 1 || within > 3000) return send(400, { code: "invalid_request" });
+    // The meal advisor's search conditions: a genre code and yes/no filters, each out of the fixed list.
+    const genre = url.searchParams.get("genre") ?? "";
+    const features = (url.searchParams.get("features") ?? "").split(",").filter(Boolean);
+    if (
+      !at || name.length > 60 || !Number.isInteger(within) || within < 1 || within > 3000
+      || (genre !== "" && genre !== "cafe" && !FOOD_GENRES.has(genre))
+      || features.length > aiSpec.limits.featuresPerOption || features.some((feature) => !FOOD_FEATURES.has(feature))
+    ) return send(400, { code: "invalid_request" });
     const range = within <= 300 ? 1 : within <= 500 ? 2 : within <= 1000 ? 3 : within <= 2000 ? 4 : 5;
     const query = new URLSearchParams({ key, lat: at[1], lng: at[2], range: String(range), order: "4", count: "100", format: "json" });
     if (name) query.set("keyword", name);
     if (url.searchParams.get("meal") === "lunch") query.set("lunch", "1");
-    if (url.searchParams.get("genre") === "cafe") query.set("genre", "G014");
+    if (genre !== "") query.set("genre", genre === "cafe" ? "G014" : genre);
+    for (const feature of features) query.set(feature, "1");
     try {
       const answer = await fetch(`https://webservice.recruit.co.jp/hotpepper/gourmet/v1/?${query}`, { signal: AbortSignal.timeout(8000) });
       const body = await answer.json() as { results?: { shop?: Record<string, unknown>[] } };
@@ -180,4 +231,5 @@ createServer(async (request, response) => {
   }
 }).listen(PORT, "127.0.0.1", () => {
   console.log(`Apple Maps dev relay on http://localhost:${PORT}/apple.php (${client ? "configured" : "NOT configured"})`);
+  console.log(`Meal advisor on http://localhost:${PORT}/ai.php (Claude: ${aiKeys.anthropic ? "key found" : "no key"}, OpenAI: ${aiKeys.openai ? "key found" : "no key"})`);
 });

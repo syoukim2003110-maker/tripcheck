@@ -1,4 +1,5 @@
 import { appleRelayUrl } from "./apple-relay-client.ts";
+import type { MealFeature, MealGenre } from "./shiori/meal-advice-contract.ts";
 
 /*
  * Restaurants with a photo and a budget, from HotPepper Gourmet through the
@@ -33,8 +34,10 @@ export type HotpepperQuery = Readonly<{
   withinMeters?: number;
   name?: string;
   meal?: "lunch" | "dinner";
-  /** Cafés and sweets only. */
-  genre?: "cafe";
+  /** "cafe": cafés and sweets only. A genre code of the guide: that genre only (the meal advisor's conditions). */
+  genre?: "cafe" | MealGenre;
+  /** Yes/no filters of the guide (children welcome, non-smoking, …); at most two. */
+  features?: readonly MealFeature[];
   signal?: AbortSignal;
 }>;
 
@@ -100,6 +103,7 @@ export async function fetchHotpepperShops(
   if (query.name) url.searchParams.set("name", query.name.slice(0, 60));
   if (query.meal === "lunch") url.searchParams.set("meal", "lunch");
   if (query.genre) url.searchParams.set("genre", query.genre);
+  if (query.features?.length) url.searchParams.set("features", query.features.slice(0, 2).join(","));
   try {
     const response = await fetcher(url, { method: "GET", headers: { Accept: "application/json" }, signal: query.signal });
     const payload = await response.json().catch(() => null) as { code?: unknown } | null;

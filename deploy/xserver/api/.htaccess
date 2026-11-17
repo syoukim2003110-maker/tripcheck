@@ -1,7 +1,8 @@
-# The Apple keys and the deploy token are never served. (Both files also
-# print nothing when executed, so this is a second lock, written for both
-# Apache syntaxes.)
-<FilesMatch "^(apple|deploy)-config\.php$">
+# The Apple keys, the AI keys and the deploy token are never served. (Those
+# files also print nothing when executed, so this is a second lock, written
+# for both Apache syntaxes.) ai-spec.json holds the meal advisor's prompts
+# and limits; only ai.php reads it.
+<FilesMatch "^((apple|deploy|ai)-config\.php|ai-spec\.json)$">
   <IfModule mod_authz_core.c>
     Require all denied
   </IfModule>
