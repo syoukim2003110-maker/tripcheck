@@ -37,11 +37,11 @@ test("both relays take prompts, schema, models and limits from the one ai-spec.j
     assert.doesNotMatch(source, /claude-opus|gpt-\d|claude-sonnet|claude-fable/, `${name} names a model`);
   }
   assert.doesNotMatch(php, /\b(?:150|8192)\b/, "ai.php repeats a limit instead of reading it");
-  for (const key of ["dailyCalls", "perClientPerDay", "perClientPerMinute", "bodyBytes", "optionsPerSlot", "featuresPerOption", "keywordChars", "reasonChars", "wishChars", "nameChars", "cityChars", "minutes", "days", "stops", "slots"]) {
+  for (const key of ["dailyCalls", "perClientPerDay", "perClientPerMinute", "closeRoleMeters", "bodyBytes", "optionsPerSlot", "featuresPerOption", "keywordChars", "reasonChars", "wishChars", "nameChars", "cityChars", "minutes", "days", "stops", "slots"]) {
     assert.ok(php.includes(`['${key}']`), `ai.php does not read limits.${key}`);
     assert.ok(Number.isInteger(spec.limits[key]) || key === "reasonChars", `ai-spec.json has no limits.${key}`);
   }
-  for (const list of ["tasks", "locales", "weekdays", "weather", "kinds", "meals", "party", "budget", "asks", "roles", "genres", "budgetMax", "features", "withinMeters"]) {
+  for (const list of ["tasks", "locales", "weekdays", "weather", "kinds", "meals", "party", "budget", "asks", "roles", "closeRoles", "genres", "budgetMax", "features", "withinMeters"]) {
     assert.ok(php.includes(`['${list}']`), `ai.php does not read enums.${list}`);
     assert.ok(Array.isArray(spec.enums[list]) && spec.enums[list].length > 0, `ai-spec.json has no enums.${list}`);
   }
@@ -239,4 +239,9 @@ test("a shop search accepts the advisor's genre codes and filters, and only thos
   const plain = new URL(asked[1]);
   assert.equal(plain.searchParams.get("genre"), "cafe");
   assert.equal(plain.searchParams.has("features"), false);
+});
+
+test("ai.php refuses a 'least walking' or 'quick' option that looks further than the limit, as the page does", () => {
+  const conditions = between(php, "function clean_conditions(", "function clean_option(");
+  assert.match(conditions, /if \(in_array\(\$role, \$enums\['closeRoles'\], true\) && \$withinMeters > \$limits\['closeRoleMeters'\]\) return null;/);
 });

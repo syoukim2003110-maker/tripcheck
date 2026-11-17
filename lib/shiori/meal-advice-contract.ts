@@ -22,6 +22,8 @@ export const MEAL_ADVICE_LIMITS = {
   slots: 14,
   optionsPerSlot: 3,
   featuresPerOption: 2,
+  /** The furthest a "least walking" or "quick" option may look: its heading stands above the walk to each shop. */
+  closeRoleMeters: 500,
   minutes: 1440,
   cityChars: 40,
   nameChars: 40,
@@ -40,6 +42,8 @@ export const MEAL_PARTIES = ["solo", "couple", "friends", "family-kids", "family
 export const MEAL_BUDGET_FEELS = ["low", "mid", "high"] as const;
 export const MEAL_REFINE_ASKS = ["casual", "quiet", "nearer", "cheaper", "different", "wish"] as const;
 export const MEAL_ROLES = ["fits-day", "near", "relaxed", "quick", "treat", "local", "light", "hearty"] as const;
+/** The roles whose name is a promise about the distance (see MEAL_ADVICE_LIMITS.closeRoleMeters). */
+export const MEAL_CLOSE_ROLES = ["near", "quick"] as const;
 /** HotPepper Gourmet's genre master, less karaoke (G011) and bars (G012), which are not meals. */
 export const MEAL_GENRES = ["G001", "G002", "G003", "G004", "G005", "G006", "G007", "G008", "G009", "G010", "G013", "G014", "G015", "G016", "G017"] as const;
 export const MEAL_BUDGET_CEILINGS = [1000, 1500, 2000, 3000, 4000, 5000, 7000, 10000] as const;
@@ -206,6 +210,8 @@ function cleanConditions(input: unknown): MealConditions | null {
   const withinMeters = oneOf(MEAL_WITHIN_METERS, raw.withinMeters);
   const listed = raw.features === undefined || raw.features === null ? [] : raw.features;
   if (role === undefined || genre === undefined || keyword === undefined || budgetMax === undefined || withinMeters === undefined) return null;
+  // "Least walking" over shops a long walk away would be the page contradicting itself.
+  if ((MEAL_CLOSE_ROLES as readonly string[]).includes(role) && withinMeters > MEAL_ADVICE_LIMITS.closeRoleMeters) return null;
   if (!Array.isArray(listed) || listed.length > MEAL_ADVICE_LIMITS.featuresPerOption) return null;
   const features: MealFeature[] = [];
   for (const entry of listed) {

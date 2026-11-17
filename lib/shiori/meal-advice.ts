@@ -2,6 +2,7 @@ import { budgetLabel, inJapan, lunchPrice, shopsForMeal, type HotpepperQuery, ty
 import {
   MEAL_ADVICE_LIMITS,
   MEAL_BUDGET_FEELS,
+  MEAL_CLOSE_ROLES,
   MEAL_PARTIES,
   MEAL_WITHIN_METERS,
   cleanMealBrief,
@@ -301,11 +302,12 @@ export function shopsForOption(
 /**
  * How far the page may look when an option's own distance finds no shop: a
  * search word within 300 m is often nothing at all. Up to 1 km (what the plain
- * list of a meal row uses), and 500 m for "least walking", whose whole point
- * is the distance. Null when the option already looks that far.
+ * list of a meal row uses), and 500 m for "least walking" and "quick", whose
+ * heading is a promise about the distance (the contract refuses such an
+ * option that asks for more). Null when the option already looks that far.
  */
 export function widerMealMeters(option: Pick<MealConditions, "role" | "withinMeters">): MealWithinMeters | null {
-  const limit = option.role === "near" ? 500 : 1000;
+  const limit = (MEAL_CLOSE_ROLES as readonly string[]).includes(option.role) ? MEAL_ADVICE_LIMITS.closeRoleMeters : 1000;
   return option.withinMeters < limit ? limit : null;
 }
 

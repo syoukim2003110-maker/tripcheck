@@ -205,6 +205,8 @@ function clean_conditions($input, array $spec): ?array
     if ($genre !== null && (!is_string($genre) || !in_array($genre, $enums['genres'], true))) return null;
     if ($budgetMax !== null && (!is_int($budgetMax) || !in_array($budgetMax, $enums['budgetMax'], true))) return null;
     if (!is_int($withinMeters) || !in_array($withinMeters, $enums['withinMeters'], true)) return null;
+    // "Least walking" over shops a long walk away would be the page contradicting itself.
+    if (in_array($role, $enums['closeRoles'], true) && $withinMeters > $limits['closeRoleMeters']) return null;
     if (!$keywordOk) return null;
     if (!is_list_array($features) || count($features) > $limits['featuresPerOption']) return null;
     $kept = [];

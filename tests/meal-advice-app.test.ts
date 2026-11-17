@@ -222,6 +222,9 @@ test("when nothing is as close as the option asked, the page looks a little furt
   // "Least walking" is about the distance: it never looks past 500 m.
   assert.equal(widerMealMeters({ role: "near", withinMeters: 300 }), 500);
   assert.equal(widerMealMeters({ role: "near", withinMeters: 500 }), null);
+  // So is "quick": its heading is not put above a longer walk either.
+  assert.equal(widerMealMeters({ role: "quick", withinMeters: 300 }), 500);
+  assert.equal(widerMealMeters({ role: "quick", withinMeters: 500 }), null);
   const listed = [shop("at-450", 450), shop("at-800", 800), shop("at-950", 950, { budget: "5001～7000円" })];
   // The smallest step that has a shop, not the widest.
   assert.deepEqual(shopsWithinWider(listed, { role: "light", budgetMax: null, withinMeters: 300 }, "dinner")!.withinMeters, 500);

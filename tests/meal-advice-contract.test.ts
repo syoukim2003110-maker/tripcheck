@@ -13,6 +13,7 @@ import {
   MEAL_ADVICE_TASKS,
   MEAL_BUDGET_CEILINGS,
   MEAL_BUDGET_FEELS,
+  MEAL_CLOSE_ROLES,
   MEAL_FEATURES,
   MEAL_GENRES,
   MEAL_MEALS,
@@ -80,6 +81,7 @@ test("the page's lists and limits are the ones in ai-spec.json", () => {
   assert.deepEqual([...MEAL_BUDGET_FEELS], enums.budget);
   assert.deepEqual([...MEAL_REFINE_ASKS], enums.asks);
   assert.deepEqual([...MEAL_ROLES], enums.roles);
+  assert.deepEqual([...MEAL_CLOSE_ROLES], enums.closeRoles);
   assert.deepEqual([...MEAL_GENRES], enums.genres);
   assert.deepEqual([...MEAL_BUDGET_CEILINGS], enums.budgetMax);
   assert.deepEqual([...MEAL_FEATURES], enums.features);
@@ -302,4 +304,20 @@ test("an answer with nothing usable is no answer", () => {
   // A flood of slots or options is cut, not walked.
   const flood = { slots: Array.from({ length: 10_000 }, () => ({ slot: "nope", options: Array.from({ length: 100 }, () => option()) })) };
   assert.equal(cleanMealAdviceAnswer(flood, slotIds, "ja"), null);
+});
+
+test("'least walking' and 'quick' cannot stand above a search that looks further than 500 m", () => {
+  for (const role of MEAL_CLOSE_ROLES) {
+    assert.ok(cleanMealOption(option({ role, withinMeters: 300 }), "ja"), `${role} 300`);
+    assert.ok(cleanMealOption(option({ role, withinMeters: 500 }), "ja"), `${role} 500`);
+    assert.equal(cleanMealOption(option({ role, withinMeters: 1000 }), "ja"), null, `${role} 1000`);
+    assert.equal(cleanMealOption(option({ role, withinMeters: 2000 }), "ja"), null, `${role} 2000`);
+  }
+  // Other roles may look further.
+  assert.ok(cleanMealOption(option({ role: "treat", withinMeters: 2000 }), "ja"));
+  // In an answer such an option is left out and the rest is kept.
+  const answer = cleanMealAdviceAnswer({ slots: [{ slot: "d1-lunch", options: [option({ role: "near", withinMeters: 2000 }), option({ role: "local", withinMeters: 2000 })] }] }, ["d1-lunch"], "ja");
+  assert.deepEqual(answer!.slots[0].options.map((entry) => entry.role), ["local"]);
+  // The models are told, so that they do not spend an option on it.
+  assert.match(spec.system.common.join("\n"), /A \"near\" or \"quick\" option uses 300 or 500 and nothing larger/);
 });
