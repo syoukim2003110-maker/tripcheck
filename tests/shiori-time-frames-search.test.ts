@@ -75,6 +75,9 @@ function oldDayClock(stays: readonly number[], meals: readonly Meal[], rides: re
     // The one rule added since: no stop ends at lunchtime, and a visit begun by 13:00 runs past 14:00
     // (not a stay of five hours or more) — the lunch hour is spent during it.
     if (lunchAt < 0) lunchAt = stays.findIndex((stay, position) => !meals[position] && stay < 300 && before.arrive[position] <= 780 && before.leave[position] > 840);
+    // And one more: neither is so because a ride runs across lunchtime — left between 10:30 and 11:30,
+    // the next stop's door reached after 13:00 — and the lunch hour follows the stop the ride leaves from.
+    if (lunchAt < 0) lunchAt = stays.findIndex((_, position) => position < stays.length - 1 && !meals[position] && before.leave[position] >= 630 && before.leave[position] < 690 && before.arrive[position + 1] - before.wait[position + 1] > 780);
   }
   return { ...(lunchAt >= 0 ? oldClockPass(stays, meals, rides, first, lunchAt) : before), lunchAt };
 }
@@ -95,7 +98,7 @@ function oldScheduleDay(stays: readonly number[], meals: readonly Meal[], rides:
   return { ...base, start: usual - door };
 }
 
-test("with nothing entered the day clock answers as it did before, and a day whose one long visit runs across lunchtime now has its lunch hour during that visit", () => {
+test("with nothing entered the day clock answers as it did before, a day whose one long visit runs across lunchtime has its lunch hour during that visit, and a day whose long ride does has it before setting off", () => {
   const random = generator(11);
   for (let round = 0; round < 2_000; round += 1) {
     const count = 1 + random(7);

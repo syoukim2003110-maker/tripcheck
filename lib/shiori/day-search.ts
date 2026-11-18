@@ -144,6 +144,8 @@ const LONG_DAY = 450;
 const PACKED_SPAN = 480;
 /** A day that starts late so as not to wait for its dinner still sits down to a chosen lunch by 13:00; a lunch during a long visit starts by then too. */
 export const LATE_LUNCH = 13 * 60;
+/** The earliest a lunch is eaten before a long ride: not before half past ten. */
+export const EARLY_LUNCH = 10 * 60 + 30;
 /**
  * A stay this long claims the day (a theme park): it opens it. On a day that
  * cannot be kept in any order it still does — the park at opening and the
@@ -330,6 +332,11 @@ function clockPass(stays: readonly number[], meals: readonly Meal[], rides: read
  * theme park of five hours or more): its hours are a day out, with eating
  * in it, and it gets no separate hour.
  *
+ * A day where neither is so because a long ride runs across lunchtime (a
+ * waterfall left at 11:20, the next sight reached at 13:05) eats before
+ * setting off: the hour follows the stop the ride leaves from, when that
+ * stop is over by half past ten at the earliest.
+ *
  * With a `frame` the lunch hour never breaks what the traveller entered: a
  * lunch that would make a booking late, or carry the day past its finish, is
  * not put there. The next nearest stop is tried; when none will do the day
@@ -348,6 +355,15 @@ export function dayClock(stays: readonly number[], meals: readonly Meal[], rides
       }
       return -1;
     };
+    /** The stop a ride across lunchtime leaves from, when no stop ends in it and no visit runs across it. */
+    const beforeRide = () => {
+      for (let position = 0; position < stays.length - 1; position += 1) {
+        const end = before.leave[position];
+        // (The ride itself, not a wait at the next door, is what runs across lunchtime.)
+        if (!meals[position] && end >= EARLY_LUNCH && end < open && before.arrive[position + 1] - before.wait[position + 1] > LATE_LUNCH) return position;
+      }
+      return -1;
+    };
     if (!frame) {
       let nearest = Infinity;
       for (let position = 0; position < stays.length; position += 1) {
@@ -359,6 +375,7 @@ export function dayClock(stays: readonly number[], meals: readonly Meal[], rides
         }
       }
       if (lunchAt < 0) lunchAt = across();
+      if (lunchAt < 0) lunchAt = beforeRide();
     } else {
       const candidates: number[] = [];
       for (let position = 0; position < stays.length; position += 1) {
@@ -369,6 +386,10 @@ export function dayClock(stays: readonly number[], meals: readonly Meal[], rides
       if (candidates.length === 0) {
         const inside = across();
         if (inside >= 0) candidates.push(inside);
+      }
+      if (candidates.length === 0) {
+        const early = beforeRide();
+        if (early >= 0) candidates.push(early);
       }
       // Nearest 12:30 first; the earlier stop on a tie, as without a frame.
       candidates.sort((left, right) => Math.abs(before.leave[left] - 750) - Math.abs(before.leave[right] - 750) || left - right);
@@ -1259,6 +1280,17 @@ export function daySearch(
               }
             }
           }
+          if (tried === 0) {
+            // Nor does a visit run across it: before a ride that does, the hour follows the stop it leaves from.
+            for (let position = 0; position < total - 1; position += 1) {
+              const end = plainEnds[position];
+              if (stops[order[position]].meal || end < EARLY_LUNCH || end >= lunchHours.open || arrive[position + 1] - held[position + 1] <= LATE_LUNCH) continue;
+              tried = 1;
+              pass(position);
+              lunched = late <= lateBefore && (hardOver === 0 || hardBefore > 0);
+              break;
+            }
+          }
           if (!lunched && tried !== 0) pass(-1);
         }
         let overrun = 0;
@@ -1496,6 +1528,11 @@ export function daySearch(
               const stop = order[position];
               if (stops[stop].meal || stops[stop].stay >= DAY_FILLING_STAY) continue;
               if (arrivals[position] <= LATE_LUNCH && ends[position] > DAY_CLOCK.meals.lunch.lastSeat) lunchAt = position;
+            }
+            // Nor does a visit run across it: before a ride that does, the hour follows the stop it leaves from.
+            for (let position = 0; lunchAt < 0 && position < total - 1; position += 1) {
+              if (stops[order[position]].meal || ends[position] < EARLY_LUNCH || ends[position] >= DAY_CLOCK.meals.lunch.open || ends[position] + problem.minutes[order[position]][order[position + 1]] + DAY_CLOCK.legBuffer <= LATE_LUNCH) continue;
+              lunchAt = position;
             }
             if (lunchAt >= 0) continue;
           }

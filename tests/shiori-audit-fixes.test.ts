@@ -354,6 +354,34 @@ test("the lunch hour of a visit across lunchtime is on the clock the search and 
   assert.deepEqual([tight.lunchAt, tight.leave[1], tight.hardOver, tight.noLunchRoom], [-1, at("14:00"), 0, true]);
 });
 
+test("a day whose long ride runs across lunchtime has its lunch before setting off: not a day out from 10:05 to 16:31 with no lunch at all", () => {
+  const at = (clock: string) => minutesOfClock(clock);
+  // Was (once a long leg is a bus and not a taxi): 10:05–11:20 華厳滝, 13:05–15:05 鬼怒川温泉, 15:31–16:31 東武ワールドスクウェア — no stop ends
+  // between 11:30 and 14:00 and no visit runs across it, so no lunch.
+  const falls = dayClock([75, 120, 60], [null, null, null], [95, 16], at("10:05"));
+  assert.deepEqual([falls.lunchAt, falls.leave[0], falls.arrive[1], falls.noLunchRoom], [0, at("12:20"), at("14:05"), false]);
+  // Left before half past ten, nobody eats lunch yet: that day has none.
+  assert.equal(dayClock([75, 120], [null, null], [170], at("09:00")).lunchAt, -1);
+  // The ride is what runs across lunchtime, not a wait at a restaurant's door in the evening.
+  assert.equal(dayClock([105, 60], [null, "dinner"], [20], at("09:07")).lunchAt, -1);
+  // A stop that ends at lunchtime, or a visit that runs across it, comes first, as ever.
+  assert.equal(dayClock([75, 30, 120], [null, null, null], [20, 95], at("10:05")).lunchAt, 1);
+  assert.equal(dayClock([75, 150], [null, null], [80], at("10:05")).lunchAt, 1);
+  // A booking the hour would make late is kept: the day says it has no room for lunch.
+  const booked = dayClock([75, 120], [null, null], [95], at("10:05"), { fixed: [null, at("13:30")] });
+  assert.deepEqual([booked.lunchAt, booked.arrive[1], booked.late, booked.noLunchRoom], [-1, at("13:30"), 0, true]);
+  // In a plan: two hours at a place from nine, then a ride of well over two hours.
+  const place = (id: string, lat: number, lon: number) => ({ id, name: id, lat, lon, stayMinutes: 120 });
+  const plan = buildShioriPlan({ places: [place("near", 35.0, 135.0), place("far", 35.9, 135.0)], days: 1, hotel: null, locale: "ja" });
+  const [day] = plan.days;
+  assert.equal(day.stops.length, 2);
+  assert.ok(day.legs[0].minutes >= 110, `${day.legs[0].minutes} minutes`);
+  const lunch = day.meals.find((meal) => meal.kind === "lunch")!;
+  assert.deepEqual([lunch.afterStop, lunch.start, lunch.end, lunch.during ?? false, lunch.nearName], [0, "11:00", "12:00", false, day.stops[0].place.name]);
+  assert.deepEqual([day.stops[0].arrive, day.stops[0].leave, day.stops[0].stayMinutes], ["09:00", "11:00", 120]);
+  assert.equal(minutesOfClock(day.stops[1].arrive), at("12:00") + day.legs[0].minutes + 10);
+});
+
 test("the meal advisor is told how long a lunch during a visit has before a booked stop: what is left of the visit is not free time", () => {
   const island = dayWith("hiroshima-2", /^厳島$/);
   const plan = auditPlan("hiroshima-2").plan;
