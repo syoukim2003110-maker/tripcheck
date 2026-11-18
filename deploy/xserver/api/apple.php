@@ -34,6 +34,11 @@
  *   200 {"results":[…same fields as a search result…],"notFound":[<id>…]}
  *       (an id in neither list could not be looked up this time)
  *
+ *   GET apple.php?op=snapshot&lang=ja-JP|en-US&spec=<base64url JSON>
+ *       (one printed day's Apple map; spec {"p":[[lat,lon,glyph,kind]…],
+ *        "l":[[kind,"<encoded polyline>"]…]}, see lib/server/apple-snapshot.ts)
+ *   200 {"url":"https://snapshot.apple-mapkit.com/api/v1/snapshot?…&signature=…","expiresAt":<unix seconds>}
+ *
  *   GET apple.php?op=maptoken
  *   200 {"token":"<jwt>","expiresAt":<unix seconds>,"expiresIn":<seconds>}
  *       (a 20-minute MapKit JS token for the place card showing opening
@@ -297,6 +302,99 @@ if (($_GET['op'] ?? '') === 'maptoken') {
         respond(502, ['code' => 'unavailable']);
     }
     respond(200, ['token' => $token, 'expiresAt' => $expires, 'expiresIn' => 1200]);
+}
+
+if (($_GET['op'] ?? '') === 'snapshot') {
+    // One printed day's Apple map, as a signed Maps Web Snapshot URL: on
+    // paper the booklet still shows what Apple said only on Apple's map.
+    // The page describes the picture; everything else (size, style,
+    // colours, a quarter-hour expiry) is fixed here, and the URL is signed
+    // with the key that never leaves this file. Like op=maptoken, only this
+    // site's own page may ask. The same contract as lib/server/apple-snapshot.ts.
+    $siteOrigin = (string) ($config['site_origin'] ?? '');
+    if (!preg_match('#^https://[a-z0-9.-]{1,253}$#', $siteOrigin)) respond(503, ['code' => 'not_configured']);
+    $host = strtolower(explode(':', (string) ($_SERVER['HTTP_HOST'] ?? ''))[0]);
+    if (!hash_equals(substr($siteOrigin, 8), $host)) respond(403, ['code' => 'forbidden']);
+    if (($_SERVER['HTTP_SEC_FETCH_SITE'] ?? '') !== 'same-origin') respond(403, ['code' => 'forbidden']);
+    $language = (string) ($_GET['lang'] ?? '');
+    $raw = (string) ($_GET['spec'] ?? '');
+    if (!in_array($language, ['ja-JP', 'en-US'], true) || $raw === '' || strlen($raw) > 8100 || !preg_match('/^[A-Za-z0-9_-]+$/D', $raw)) {
+        respond(400, ['code' => 'invalid_request']);
+    }
+    $json = base64_decode(strtr($raw, '-_', '+/'), true);
+    $spec = is_string($json) && strlen($json) <= 6000 ? json_decode($json, true) : null;
+    $pins = is_array($spec) ? ($spec['p'] ?? null) : null;
+    $lines = is_array($spec) ? ($spec['l'] ?? null) : null;
+    if (!is_array($pins) || count($pins) < 1 || count($pins) > 30 || !is_array($lines) || count($lines) > 40) respond(400, ['code' => 'invalid_request']);
+    $number = fn ($value): bool => is_int($value) || is_float($value);
+    $pinColors = ['stop' => '1967D2', 'hotel' => '1F2937'];
+    $lineStyles = [
+        'rail' => ['strokeColor' => '1967D2', 'lineWidth' => 5],
+        'street' => ['strokeColor' => '1967D2', 'lineWidth' => 4],
+        'hotel' => ['strokeColor' => '1967D2', 'lineWidth' => 2, 'strokeOpacity' => 0.5],
+        // A way that could not be looked up: grey, dashed, never mistaken for a route.
+        'straight' => ['strokeColor' => '6B7280', 'lineWidth' => 2, 'lineDash' => [5, 5]],
+    ];
+    $annotations = [];
+    $latitudes = [];
+    $longitudes = [];
+    foreach ($pins as $pin) {
+        if (
+            !is_array($pin) || count($pin) !== 4 || !$number($pin[0] ?? null) || !$number($pin[1] ?? null)
+            || abs((float) $pin[0]) >= 90 || abs((float) $pin[1]) >= 180
+            || !is_string($pin[2] ?? null) || !preg_match('/^[1-9H]?$/D', $pin[2])
+            || !is_string($pin[3] ?? null) || !isset($pinColors[$pin[3]])
+        ) {
+            respond(400, ['code' => 'invalid_request']);
+        }
+        $latitudes[] = (float) $pin[0];
+        $longitudes[] = (float) $pin[1];
+        $annotation = ['point' => $pin[0] . ',' . $pin[1], 'color' => $pinColors[$pin[3]], 'markerStyle' => 'balloon'];
+        if ($pin[2] !== '') $annotation['glyphText'] = $pin[2];
+        $annotations[] = $annotation;
+    }
+    $overlays = [];
+    foreach ($lines as $line) {
+        if (
+            !is_array($line) || count($line) !== 2 || !is_string($line[0] ?? null) || !isset($lineStyles[$line[0]])
+            || !is_string($line[1] ?? null) || !preg_match('/^[\x3f-\x7e]{2,2000}$/D', $line[1])
+        ) {
+            respond(400, ['code' => 'invalid_request']);
+        }
+        $overlays[] = array_merge(['points' => $line[1]], $lineStyles[$line[0]]);
+    }
+    admit();
+    // Framed on the pins, with room for their heads above and Apple's logo at the foot.
+    [$south, $north, $west, $east] = [min($latitudes), max($latitudes), min($longitudes), max($longitudes)];
+    $center = sprintf('%.5F,%.5F', ($north + $south) / 2 + ($north - $south) * 0.06, ($east + $west) / 2);
+    $span = sprintf('%.5F,%.5F', max(($north - $south) * 1.6, 0.006), max(($east - $west) * 1.35, 0.009));
+    $expires = time() + 900;
+    $params = [
+        'center' => $center,
+        'spn' => $span,
+        'size' => '600x400',
+        'scale' => '2',
+        't' => 'mutedStandard',
+        'colorScheme' => 'light',
+        'poi' => '0',
+        'lang' => $language,
+        'annotations' => json_encode($annotations, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+    ];
+    if ($overlays !== []) $params['overlays'] = json_encode($overlays, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    $params['expires'] = (string) $expires;
+    $params['teamId'] = $config['team_id'];
+    $params['keyId'] = $config['key_id'];
+    $path = '/api/v1/snapshot?' . http_build_query($params, '', '&', PHP_QUERY_RFC3986);
+    // Apple answers 414 for too long a URL; a picture that long is refused here.
+    if (strlen($path) > 8000) respond(400, ['code' => 'invalid_request']);
+    try {
+        $key = openssl_pkey_get_private($config['private_key']);
+        if ($key === false || !openssl_sign($path, $der, $key, OPENSSL_ALGO_SHA256)) throw new RuntimeException('signing failed');
+        $signature = base64url(der_to_raw_signature($der));
+    } catch (Throwable $error) {
+        respond(502, ['code' => 'unavailable']);
+    }
+    respond(200, ['url' => 'https://snapshot.apple-mapkit.com' . $path . '&signature=' . $signature, 'expiresAt' => $expires]);
 }
 
 if (($_GET['op'] ?? '') === 'eta') {

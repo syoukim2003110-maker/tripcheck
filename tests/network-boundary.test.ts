@@ -41,6 +41,9 @@ const BROWSER_TRANSPORT = [
   // The meal advisor: one POST to the site's own AI relay (api/ai.php), only
   // after the traveller confirms the form; the keys stay on the server.
   "lib/shiori/meal-advice-client.ts",
+  // The printed booklet's Apple maps: a signed snapshot URL per day, asked of
+  // the same relay only when the traveller prints (the key stays on the server).
+  "lib/shiori/print-map.ts",
   // The booklet's street paths: Apple through the relay while the booklet's
   // Apple map is shown, the OpenStreetMap community router otherwise.
   "lib/street-route-client.ts",

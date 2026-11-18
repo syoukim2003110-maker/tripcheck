@@ -54,6 +54,9 @@ const SIGHT_PHOTO_HOSTS = [
  *   api: the place card's place lookup.
  * - img-src cdn: Apple's logo on the map (/mk/<version>/images/logos/…),
  *   which must stay visible. Nothing else of the map is an <img>.
+ *   img-src snapshot: each printed day's Apple map, a Maps Web Snapshot
+ *   image whose URL the relay signs (op=snapshot) when the booklet is
+ *   printed (seen under this policy, 2026-11-19).
  * - frame-src cdn: the frame Apple draws the place card in; the card's own
  *   images and fonts load inside it.
  * MapKit's tile worker runs from a blob: URL (worker-src blob:), so no worker
@@ -63,7 +66,7 @@ const SIGHT_PHOTO_HOSTS = [
  */
 const APPLE_MAPKIT_SCRIPT_HOSTS = ["https://cdn.apple-mapkit.com"] as const;
 const APPLE_MAPKIT_CONNECT_HOSTS = ["https://cdn.apple-mapkit.com", "https://api.apple-mapkit.com"] as const;
-const APPLE_MAPKIT_IMAGE_HOSTS = ["https://cdn.apple-mapkit.com"] as const;
+const APPLE_MAPKIT_IMAGE_HOSTS = ["https://cdn.apple-mapkit.com", "https://snapshot.apple-mapkit.com"] as const;
 const APPLE_MAPKIT_FRAME_HOSTS = ["https://cdn.apple-mapkit.com"] as const;
 
 /** Tiles, markers, Street View and the photo redirect's destination. */

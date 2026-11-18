@@ -55,7 +55,10 @@ test("only named map providers are allowed, on the directives they need", () => 
   // (img-src, the one image the map shows as an <img>) and the frame the
   // place card is drawn in. Seen under this policy; see security-headers.ts.
   const mapKitHost = "https://cdn.apple-mapkit.com";
-  assert.deepEqual(remote("img-src").filter((value) => !/google|gstatic|ggpht/.test(value)), [...photoHosts, mapKitHost]);
+  // Each printed day's Apple map is a Maps Web Snapshot, an image from its own host.
+  const snapshotHost = "https://snapshot.apple-mapkit.com";
+  assert.deepEqual(remote("img-src").filter((value) => !/google|gstatic|ggpht/.test(value)), [...photoHosts, mapKitHost, snapshotHost]);
+  assert.equal(remote("connect-src").includes(snapshotHost), false, "the snapshot is an image, never fetched by script");
   assert.ok(remote("script-src").includes(mapKitHost));
   assert.ok(remote("frame-src").includes(mapKitHost));
   // No wildcard over Apple's hosts: its usage report (gsp10) stays blocked.
@@ -63,7 +66,7 @@ test("only named map providers are allowed, on the directives they need", () => 
     assert.equal(remote(name).some((value) => value.includes("*.apple-mapkit.com")), false, `${name} allows every Apple map host`);
   }
   for (const name of ["script-src", "img-src", "frame-src"]) {
-    for (const value of remote(name).filter((entry) => !photoHosts.includes(entry) && entry !== mapKitHost)) {
+    for (const value of remote(name).filter((entry) => !photoHosts.includes(entry) && entry !== mapKitHost && entry !== snapshotHost)) {
       assert.match(
         value,
         /^https:\/\/(\*\.)?(googleapis|gstatic|google|googleusercontent|ggpht)\.com$|^https:\/\/(www|maps)\.google\.com$/,

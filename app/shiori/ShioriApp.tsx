@@ -17,6 +17,7 @@ import { loadRailNetwork, loadToeiTimetable } from "../../lib/rail-network-clien
 import type { RailNetwork } from "../../lib/rail-router";
 import { fetchStreetRoute } from "../../lib/street-route-client";
 import { RETIRED_ROUTE_KEYS, ROUTES_KEY, parseStoredRoutes, serializeRoutes } from "../../lib/shiori/route-store";
+import { daySnapshotSpec, requestSnapshotUrl } from "../../lib/shiori/print-map";
 import { addAnchor, openCandidate, openLookupHit, placeOfCandidate, putPlace, searchAddCandidates, type AddCandidate } from "../../lib/shiori/add-search";
 import { BulkBudgetError, bulkAfterTripChange, bulkLeftover, bulkProgress, bulkSummary, bundledMatches, chooseBulk, confirmBulk, mergeBulk, requeueBulk, resolveBulk, startBulk, tripChange, type BulkLine, type BulkStatus } from "../../lib/shiori/bulk-add";
 import { findCafes, withListedCafes, type CafeBreak, type CafePick } from "../../lib/shiori/cafes";
@@ -416,6 +417,8 @@ const text = {
     candidateMapLabel: "見つかった場所の地図",
     candidateMapFailed: "地図を表示できないため、Apple マップで見つけた場所は表示していません。",
     appleMapsLink: "Apple マップ",
+    printMapAlt: (dayIndex: number) => `${dayIndex + 1}日目の地図（Apple マップ）`,
+    printMapNone: "この日の地図（Apple マップ）を印刷用に用意できませんでした。",
     appleFailed: (count: number) => `Apple マップで見つけた場所${count}件を読み込めませんでした。読み込めるまで、その場所を外して予定を作っています（場所は消えていません）。`,
     appleRetry: "もう一度読み込む",
     appleGone: (count: number) => `Apple マップで見つからなくなった場所が${count}件あります。`,
@@ -725,6 +728,8 @@ const text = {
     candidateMapLabel: "Map of the places found",
     candidateMapFailed: "The map could not be shown, so places found on Apple Maps are not listed.",
     appleMapsLink: "Apple Maps",
+    printMapAlt: (dayIndex: number) => `Map of day ${dayIndex + 1} (Apple Maps)`,
+    printMapNone: "The Apple map of this day could not be prepared for printing.",
     appleFailed: (count: number) => `${count === 1 ? "1 place" : `${count} places`} found on Apple Maps could not be loaded. Until they load, the plan is made without them (they are still in your list).`,
     appleRetry: "Try again",
     appleGone: (count: number) => `${count === 1 ? "1 place is" : `${count} places are`} no longer on Apple Maps.`,
@@ -2096,6 +2101,39 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
     setBulk({ ...bulk, lines: done.lines, over: done.over, added: bulk.added + done.add.length });
   };
 
+  // On paper there is no MapKit map, yet a printed day carries what Apple
+  // said (its places' names, its walking and driving minutes): each printed
+  // day carries a still Apple map of that day instead (Apple Maps Web
+  // Snapshots, see print-map.ts). The signed URLs are asked for only when the
+  // booklet is printed, and expire within a quarter of an hour.
+  const [printMaps, setPrintMaps] = useState<{ key: string; until: number; urls: Record<number, string | null> } | null>(null);
+  const printMapsRef = useRef(printMaps);
+  useEffect(() => { printMapsRef.current = printMaps; }, [printMaps]);
+  const preparePrintMaps = useCallback(async () => {
+    if (!plan || !planKey) return;
+    const kept = printMapsRef.current;
+    if (kept && kept.key === planKey && kept.until > Date.now()) return;
+    const language = locale === "ja" ? "ja-JP" : "en-US";
+    const entries = await Promise.all(plan.days.map(async (day) => {
+      const spec = daySnapshotSpec(day, usable.hotel);
+      return [day.index, spec ? await requestSnapshotUrl(spec, language) : null] as const;
+    }));
+    const urls = Object.fromEntries(entries) as Record<number, string | null>;
+    setPrintMaps({ key: planKey, until: Date.now() + 12 * 60_000, urls });
+    // Paper takes what is loaded: the pictures are waited for, a few seconds at most.
+    await Promise.all(Object.values(urls).flatMap((src) => (src ? [new Promise<void>((resolve) => {
+      const image = new Image();
+      image.onload = () => resolve();
+      image.onerror = () => resolve();
+      image.src = src;
+      window.setTimeout(resolve, 6_000);
+    })] : [])));
+  }, [plan, planKey, locale, usable.hotel]);
+  const printBooklet = async () => {
+    await preparePrintMaps();
+    window.print();
+  };
+
   // Paper cannot be unfolded: before printing, every folded part is opened
   // (older Safari and Firefox print a closed <details> closed) and put back after.
   useEffect(() => {
@@ -2103,12 +2141,14 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
     const before = () => {
       opened = [...document.querySelectorAll<HTMLDetailsElement>(".shiori-days details:not([open])")];
       for (const part of opened) part.open = true;
+      // Printed from the browser's own menu: the day maps are asked for now (the print button waits for them).
+      void preparePrintMaps();
     };
     const after = () => { for (const part of opened) part.open = false; opened = []; };
     window.addEventListener("beforeprint", before);
     window.addEventListener("afterprint", after);
     return () => { window.removeEventListener("beforeprint", before); window.removeEventListener("afterprint", after); };
-  }, []);
+  }, [preparePrintMaps]);
 
   const share = async () => {
     const link = `${window.location.origin}${window.location.pathname}#s=${encodeTrip(trip)}`;
@@ -2598,7 +2638,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
             <button onClick={() => go(city ? "pick" : "home")} type="button"><Icon name="back" /><span className="shiori-act-long">{t.editPlaces}</span><span aria-hidden="true" className="shiori-act-short">{t.short.edit}</span></button>
             <button onClick={() => void share()} type="button"><Icon name="link" /><span aria-live="polite" className="shiori-act-long">{copied ? t.shared : t.share}</span><span aria-hidden="true" className="shiori-act-short">{copied ? t.short.shared : t.short.share}</span></button>
             <a className="shiori-action-link" href={`https://line.me/R/share?text=${encodeURIComponent(`${planTitle} ${shareLink}`)}`} rel="noreferrer" target="_blank"><Icon name="send" /><span className="shiori-act-long">{t.shareLine}</span><span aria-hidden="true" className="shiori-act-short">{t.short.line}</span></a>
-            <button onClick={() => window.print()} type="button"><Icon name="printer" /><span className="shiori-act-long">{t.print}</span><span aria-hidden="true" className="shiori-act-short">{t.short.print}</span></button>
+            <button onClick={() => void printBooklet()} type="button"><Icon name="printer" /><span className="shiori-act-long">{t.print}</span><span aria-hidden="true" className="shiori-act-short">{t.short.print}</span></button>
             <label className="shiori-plan-days">
               <span>{t.days}</span>
               <select onChange={(event) => update((current) => ({ ...current, days: Number(event.target.value) }))} value={trip.days}>
@@ -2704,6 +2744,18 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
                       </p>
                     ) : null}
                   </header>
+                  {/* On paper only: the day's Apple map, a still image of it with the day's pins and lines. */}
+                  {printMaps && printMaps.key === planKey ? (
+                    <figure className="shiori-print-map">
+                      {printMaps.urls[day.index] ? (
+                        <>
+                          {/* eslint-disable-next-line @next/next/no-img-element -- Apple's signed image, shown as it is */}
+                          <img alt={t.printMapAlt(day.index)} height={400} src={printMaps.urls[day.index]!} width={600} />
+                          <figcaption>{t.mapRailCredit}{locale === "ja" ? " ・ " : " · "}{t.mapStreetCredit}</figcaption>
+                        </>
+                      ) : <figcaption>{t.printMapNone}</figcaption>}
+                    </figure>
+                  ) : null}
                   <details className="shiori-day-summary">
                     <summary>{t.daySummary}</summary>
                   <dl className="shiori-facts">

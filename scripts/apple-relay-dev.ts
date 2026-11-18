@@ -25,6 +25,7 @@ import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
 
 import { AppleMapsClient, AppleMapsError, appleMapsCredentialsFromEnvironment } from "../lib/server/apple-maps.ts";
+import { SNAPSHOT_LIFETIME_SECONDS, SNAPSHOT_MAX_URL, readSnapshotSpec, signSnapshotPath, snapshotPath } from "../lib/server/apple-snapshot.ts";
 import { aiKeysFromEnvironment, answerMealAdvice, createMealAdviceLimiter, type MealAdviceSpec } from "../lib/server/meal-advice-relay.ts";
 
 const PORT = Number(process.env.APPLE_RELAY_PORT ?? 8792);
@@ -162,6 +163,23 @@ createServer(async (request, response) => {
     try {
       const signature = createSign("SHA256").update(`${head}.${body}`).sign({ key: credentials.privateKey, dsaEncoding: "ieee-p1363" });
       return send(200, { token: `${head}.${body}.${b64(signature)}`, expiresAt, expiresIn: 1200 });
+    } catch {
+      return send(502, { code: "unavailable" });
+    }
+  }
+  if (url.searchParams.get("op") === "snapshot") {
+    // The same contract as apple.php's op=snapshot: one printed day's Apple
+    // map, as a signed Maps Web Snapshot URL. Only the local page may ask.
+    const page = origin || (() => { try { return new URL(String(request.headers.referer ?? "")).origin; } catch { return ""; } })();
+    if (!credentials || !/^http:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/.test(page)) return send(403, { code: "forbidden" });
+    const language = url.searchParams.get("lang") ?? "";
+    const spec = readSnapshotSpec(url.searchParams.get("spec"));
+    if (!spec || (language !== "ja-JP" && language !== "en-US")) return send(400, { code: "invalid_request" });
+    const expiresAt = Math.floor(Date.now() / 1000) + SNAPSHOT_LIFETIME_SECONDS;
+    const path = snapshotPath(spec, language, expiresAt, credentials.teamId, credentials.keyId);
+    if (path.length > SNAPSHOT_MAX_URL) return send(400, { code: "invalid_request" });
+    try {
+      return send(200, { url: signSnapshotPath(path, credentials.privateKey), expiresAt });
     } catch {
       return send(502, { code: "unavailable" });
     }
