@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { applePlaceIdFor, applePlaceIdOfStop, createMapTokenSource, matchApplePlace, placeNamesMatch, readMapToken } from "../lib/apple-place-card.ts";
+import { PLACE_DETAIL_OPTIONS, applePlaceIdFor, applePlaceIdOfStop, createMapTokenSource, matchApplePlace, placeNamesMatch, readMapToken } from "../lib/apple-place-card.ts";
 import type { AppleRelayPlace } from "../lib/apple-relay-client.ts";
 
 const place = (id: string | null, name: string, latitude: number, longitude: number): AppleRelayPlace => ({
@@ -111,4 +111,12 @@ test("a searched stop asks the relay once, near itself, and a map-search stop no
   assert.equal(asked.length, 1);
   // A made-up place: the search finds nothing that is certainly it.
   assert.equal(await applePlaceIdFor({ id: "custom-nowhere", name: "ぽんぽこ秘密基地", lat: skytree.lat, lon: skytree.lon }, "ja", search as never), null);
+});
+
+test("Apple's place card is always drawn with its Apple map", async () => {
+  assert.equal(PLACE_DETAIL_OPTIONS.displaysMap, true);
+  const { readFileSync } = await import("node:fs");
+  const source = readFileSync(new URL("../lib/apple-place-card.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /displaysMap: false/);
+  assert.match(source, /new mapkit\.PlaceDetail\(host, place, PLACE_DETAIL_OPTIONS\)/);
 });

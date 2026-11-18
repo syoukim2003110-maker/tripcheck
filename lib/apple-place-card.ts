@@ -167,6 +167,9 @@ type MapKit = {
   PlaceDetail: new (host: HTMLElement, place: MapKitPlace, options: { colorScheme?: string; displaysMap?: boolean }) => MapKitPlaceDetail;
 };
 
+/** How Apple's card is drawn: always with its Apple map. */
+export const PLACE_DETAIL_OPTIONS = Object.freeze({ colorScheme: "light", displaysMap: true });
+
 export const MAPKIT_SCRIPT_URL = "https://cdn.apple-mapkit.com/mk/5.x.x/mapkit.js";
 
 async function fetchMapToken(): Promise<MapToken> {
@@ -230,5 +233,8 @@ export async function showPlaceCard(host: HTMLElement, stop: PlaceCardStop, lang
     new mapkit.PlaceLookup().getPlace(id, (error, found) => { if (error) reject(new Error("apple_place_lookup_failed")); else resolve(found); });
   });
   if (!place) return "none";
-  return new mapkit.PlaceDetail(host, place, { colorScheme: "light", displaysMap: false });
+  // Apple's terms let its place data be shown only together with an Apple
+  // map, so the card carries its own. The map is drawn inside Apple's frame:
+  // checked under the production policy, it needs no host beyond the card's.
+  return new mapkit.PlaceDetail(host, place, PLACE_DETAIL_OPTIONS);
 }
