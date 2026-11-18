@@ -50,16 +50,20 @@ test("only named map providers are allowed, on the directives they need", () => 
   // (upload → thumb) and a host-by-host list broke every photo when it did.
   // HotPepper Gourmet serves the restaurant photos shown (with its credit) in the meal list.
   const photoHosts = ["https://*.wikimedia.org", "https://imgfp.hotp.jp"];
-  assert.deepEqual(remote("img-src").filter((value) => !/google|gstatic|ggpht/.test(value)), photoHosts);
-  // Apple's place card (opening hours and phone in an opened stop) is Apple's
-  // own script drawing into Apple's own frame, both from one host, fetched
-  // only when a traveller asks for a card. It needs no image or font host.
-  const placeCardHost = "https://cdn.apple-mapkit.com";
-  assert.ok(remote("script-src").includes(placeCardHost));
-  assert.ok(remote("frame-src").includes(placeCardHost));
-  assert.equal(remote("img-src").some((value) => value.includes("apple")), false);
+  // MapKit JS (the booklet's Apple map and Apple's place card) is one host:
+  // its script, the map's tiles (connect-src), Apple's logo on the map
+  // (img-src, the one image the map shows as an <img>) and the frame the
+  // place card is drawn in. Seen under this policy; see security-headers.ts.
+  const mapKitHost = "https://cdn.apple-mapkit.com";
+  assert.deepEqual(remote("img-src").filter((value) => !/google|gstatic|ggpht/.test(value)), [...photoHosts, mapKitHost]);
+  assert.ok(remote("script-src").includes(mapKitHost));
+  assert.ok(remote("frame-src").includes(mapKitHost));
+  // No wildcard over Apple's hosts: its usage report (gsp10) stays blocked.
+  for (const name of directives.keys()) {
+    assert.equal(remote(name).some((value) => value.includes("*.apple-mapkit.com")), false, `${name} allows every Apple map host`);
+  }
   for (const name of ["script-src", "img-src", "frame-src"]) {
-    for (const value of remote(name).filter((entry) => !photoHosts.includes(entry) && entry !== placeCardHost)) {
+    for (const value of remote(name).filter((entry) => !photoHosts.includes(entry) && entry !== mapKitHost)) {
       assert.match(
         value,
         /^https:\/\/(\*\.)?(googleapis|gstatic|google|googleusercontent|ggpht)\.com$|^https:\/\/(www|maps)\.google\.com$/,
@@ -67,11 +71,10 @@ test("only named map providers are allowed, on the directives they need", () => 
       );
     }
   }
-  // connect-src is the one directive with non-Google hosts: the key-free map,
-  // and the public data services the in-page place lookup asks directly.
+  // connect-src: the public data services the in-page place lookup asks
+  // directly, and Apple's map. OpenFreeMap is gone with the MapLibre map.
   const keyFreeHosts = remote("connect-src").filter((value) => !/google|gstatic/.test(value));
   assert.deepEqual(keyFreeHosts, [
-    "https://tiles.openfreemap.org",
     "https://*.wikipedia.org",
     "https://www.wikidata.org",
     "https://query.wikidata.org",
@@ -80,23 +83,26 @@ test("only named map providers are allowed, on the directives they need", () => 
     "https://routing.openstreetmap.de",
     "https://api.open-meteo.com",
     "https://date.nager.at",
-    // The place card's strings and start-up call, and its place lookup.
-    // Apple's usage report (gsp10.apple-mapkit.com) is deliberately absent.
+    // MapKit JS: start-up call, strings and the map's tiles (cdn), and the
+    // place card's place lookup (api). Apple's usage report
+    // (gsp10.apple-mapkit.com) is deliberately absent.
     "https://cdn.apple-mapkit.com",
     "https://api.apple-mapkit.com",
   ]);
-  assert.equal(remote("script-src").includes("https://tiles.openfreemap.org"), false, "MapLibre is bundled, not remotely scripted");
-  assert.equal(remote("img-src").includes("https://tiles.openfreemap.org"), false, "MapLibre fetches vector tiles through connect-src");
+  assert.equal(contentSecurityPolicy().includes("openfreemap"), false, "the MapLibre map and its tiles are gone");
   assert.deepEqual(remote("default-src"), []);
   assert.deepEqual(remote("style-src"), []);
   assert.deepEqual(remote("font-src"), []);
 });
 
-test("the key-free map uses the CSP-pinned OpenFreeMap style host", () => {
-  const source = readFileSync(new URL("../app/components/planner/map/ZeroCostMap.tsx", import.meta.url), "utf8");
-  const styleUrl = /OPEN_FREE_MAP_STYLE\s*=\s*"([^"]+)"/.exec(source)?.[1];
-  assert.equal(styleUrl, "https://tiles.openfreemap.org/styles/liberty");
-  assert.ok(sourceList("connect-src").includes(new URL(styleUrl).origin));
+test("the booklet's map loads MapKit JS from the CSP-pinned Apple host", () => {
+  const loader = readFileSync(new URL("../lib/mapkit-loader.ts", import.meta.url), "utf8");
+  const scriptUrl = /MAPKIT_SCRIPT_URL\s*=\s*"([^"]+)"/.exec(loader)?.[1];
+  assert.ok(scriptUrl, "the MapKit JS address moved");
+  assert.ok(sourceList("script-src").includes(new URL(scriptUrl).origin));
+  const map = readFileSync(new URL("../app/shiori/ShioriMap.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(map, /maplibre|openfreemap/i, "the booklet draws on Apple's map only");
+  assert.match(map, /loadMapKit\(/);
 });
 
 test("the image hosts cover what the app actually renders", () => {

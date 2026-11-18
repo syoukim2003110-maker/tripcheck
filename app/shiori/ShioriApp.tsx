@@ -353,7 +353,7 @@ const text = {
     searchBooking: "Booking.comで探す",
     hotelDistance: (meters: number) => `各日の行き先まで平均 約${meters >= 1000 ? `${(meters / 1000).toFixed(1)}km` : `${Math.round(meters / 10) * 10}m`}`,
     note: "所要時間は目安です。電車の区間は駅と路線のつながりから計算しており、時刻表ではありません。出発前に地図アプリで確認してください。",
-    credits: "地図 © OpenStreetMap contributors / OpenFreeMap ・ スポットと駅のデータ Wikidata ・ 写真 Wikimedia Commons",
+    credits: "地図 Apple マップ ・ スポットと駅のデータ Wikidata ・ 道のりの一部 © OpenStreetMap contributors ・ 写真 Wikimedia Commons",
     photo: "写真",
     mapLabel: "旅程の地図",
     legendRail: "電車（駅をつないだ線）",
@@ -396,7 +396,9 @@ const text = {
     mapCollapse: "地図をたたむ",
     mapView: "予定で見る",
     close: "閉じる",
-    mapFailed: "地図を読み込めませんでした。予定は引き続き確認できます。",
+    mapFailed: "地図を表示できませんでした。予定は引き続き確認できます。",
+    mapRailCredit: "地図上の線路と駅 Wikidata",
+    mapStreetCredit: "一部の道のり © OpenStreetMap contributors",
     pinLabel: (dayIndex: number, position: number, name: string) => `${dayIndex + 1}日目 ${position + 1}番 ${name}`,
     hotelMark: "泊",
     dayNav: "前後の日",
@@ -652,7 +654,7 @@ const text = {
     searchBooking: "Booking.com",
     hotelDistance: (meters: number) => `~${meters >= 1000 ? `${(meters / 1000).toFixed(1)} km` : `${Math.round(meters / 10) * 10} m`} on average from each day's places`,
     note: "Durations are estimates. Train legs come from how stations and lines connect, not from a timetable. Check a maps app before you go.",
-    credits: "Map © OpenStreetMap contributors / OpenFreeMap · Sights and stations: Wikidata · Photos: Wikimedia Commons",
+    credits: "Map: Apple Maps · Sights and stations: Wikidata · Some street routes © OpenStreetMap contributors · Photos: Wikimedia Commons",
     photo: "Photo",
     mapLabel: "Trip map",
     legendRail: "Train (through its stations)",
@@ -693,7 +695,9 @@ const text = {
     mapCollapse: "Collapse map",
     mapView: "Show in itinerary",
     close: "Close",
-    mapFailed: "The map could not be loaded. Your itinerary is still available.",
+    mapFailed: "The map could not be shown. Your itinerary is still available.",
+    mapRailCredit: "Rail lines and stations on the map: Wikidata",
+    mapStreetCredit: "Some street routes © OpenStreetMap contributors",
     pinLabel: (dayIndex: number, position: number, name: string) => `Day ${dayIndex + 1}, stop ${position + 1}: ${name}`,
     hotelMark: "H",
     dayNav: "Other days",
@@ -2656,6 +2660,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
                 hotel={trip.hotel}
                 label={t.mapLabel}
                 legend={{ rail: t.legendRail, street: t.legendWalk, straight: t.legendOther }}
+                locale={locale}
                 onSelectStop={showStop}
                 selectedDay={activeDay}
                 text={{
@@ -2666,6 +2671,8 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
                   hotel: t.hotelChip,
                   hotelMark: t.hotelMark,
                   failed: t.mapFailed,
+                  railCredit: t.mapRailCredit,
+                  streetCredit: t.mapStreetCredit,
                   pinLabel: t.pinLabel,
                   legTag: (minutes: number) => `${t.about}${minutes}${t.minute}`,
                   modes: { walk: t.walk, rail: t.rail, transit: t.transit, taxi: t.taxi },

@@ -1,4 +1,3 @@
-@import "maplibre-gl/dist/maplibre-gl.css";
 
 /*
  * White surfaces, neutral supporting text and one blue accent.
@@ -281,7 +280,6 @@
 .shiori-map-frame { background: #f1f3f4; border: 1px solid var(--rule); border-radius: var(--r-lg); height: 180px; overflow: hidden; position: relative; }
 .shiori-map.is-expanded .shiori-map-frame { height: 56vh; height: 56dvh; }
 .shiori .shiori-map-canvas { inset: 0; position: absolute; }
-.shiori .maplibregl-ctrl-group button { height: 44px; width: 44px; }
 .shiori-map-creases { display: none; }
 .shiori-map-note { background: var(--card); border: 1px solid var(--rule); border-radius: var(--r-sm); font-size: 12px; left: 10px; margin: 0; padding: 6px 10px; position: absolute; right: 56px; top: 10px; z-index: 2; }
 .shiori-map-foot { align-items: flex-start; display: flex; gap: 8px 12px; justify-content: space-between; margin-top: 8px; }
@@ -292,6 +290,13 @@
 .shiori-map-legend i.is-straight { border-top: 2px dashed var(--unknown); }
 .shiori-map-legend i.is-hotel { align-items: center; background: var(--ink); border: 0; border-radius: 3px; color: var(--card); display: inline-flex; font: 600 10px/1 var(--gothic); font-style: normal; height: 16px; justify-content: center; width: 16px; }
 .shiori-map-toggle { flex: 0 0 auto; font-size: 13px; }
+.shiori-map-credit { color: var(--muted); font-size: 11px; line-height: 1.5; margin: 4px 0 0; }
+.shiori-map-credit a { color: inherit; }
+/* A fixed square holds each map pin: the 44px tap target, and an anchor that does not move when the pin grows. */
+.shiori-pin-holder { align-items: center; display: flex; height: 44px; justify-content: center; pointer-events: none; width: 44px; }
+.shiori-pin-holder > * { pointer-events: auto; position: relative; }
+/* Where a train is boarded or left. */
+.shiori-station { background: #fff; border: 2px solid var(--pin, var(--shu)); border-radius: 50%; box-sizing: border-box; height: 10px; width: 10px; }
 .shiori-pin { align-items: center; background: var(--pin, var(--shu)); border: 2px solid #fff; border-radius: 50%; box-shadow: var(--sh-print); color: #fff; cursor: pointer; display: flex; font: 700 14px/1 var(--gothic); font-size: 0; height: 24px; justify-content: center; opacity: 0.55; padding: 0; width: 24px; }
 /* Invisible padding gives each small map pin a 44px tap target. */
 .shiori-pin::after { content: ""; height: 44px; left: 50%; position: absolute; top: 50%; transform: translate(-50%, -50%); width: 44px; }

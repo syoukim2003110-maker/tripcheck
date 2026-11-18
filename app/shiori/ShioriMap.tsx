@@ -1,24 +1,35 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { GeoJSONSource, Map as MapLibreMap, Marker } from "maplibre-gl";
 
+import { appleRelayUrl } from "../../lib/apple-relay-client";
+import { loadMapKit, mapToken, onMapKitState, type MapKit, type MapKitAnnotation, type MapKitEvent, type MapKitMap, type MapKitOverlay } from "../../lib/mapkit-loader";
 import type { ShioriDay, ShioriHotel, ShioriLeg, ShioriStop } from "../../lib/shiori/plan";
 import { photoUrl } from "../../lib/shiori/state";
 
 /*
- * The itinerary's map: numbered pins for the day being read, small dots for the
- * other days, and one solid line per leg drawn the way it is travelled — a
- * train leg follows its stations, a walk or a drive follows its streets. Only
- * a leg whose way could not be looked up is a straight line, and that one is
- * dashed so it is never mistaken for a route.
+ * The itinerary's map: an Apple map (MapKit JS) with numbered pins for the
+ * day being read, small dots for the other days, and one solid line per leg
+ * drawn the way it is travelled — a train leg follows its stations, a walk or
+ * a drive follows its streets. Only a leg whose way could not be looked up is
+ * a straight line, and that one is dashed so it is never mistaken for a route.
+ *
+ * The map is Apple's, so Apple's walking and driving answers may be drawn on
+ * it (Apple's terms allow Apple map data on an Apple map only). The train
+ * lines and stations are TripCheck's own (Wikidata), and so are the street
+ * lines the OpenStreetMap router drew; both are laid over the Apple map and
+ * credited beside it. Apple's logo and legal link, drawn by
+ * MapKit JS inside the frame, are never covered.
  */
 
-const STYLE = "https://tiles.openfreemap.org/styles/positron";
 /** One theme blue; size, numbering and opacity distinguish the active day. */
 export const DAY_COLORS = ["#1967D2"];
 const UNKNOWN_WAY = "#6b7280";
 const CARD = "#ffffff";
+/** Roughly zoom 15 and zoom 11 on a phone-sized frame: closer than the first is too close; wider than the second hides the station rings. */
+const CLOSEST_SPAN = 0.008;
+const STATIONS_WITHIN_SPAN = 0.25;
+
 
 export type ShioriMapText = {
   expand: string;
@@ -30,6 +41,9 @@ export type ShioriMapText = {
   /** One or two characters for the hotel's square pin. */
   hotelMark: string;
   failed: string;
+  /** The credits for TripCheck's own lines on the Apple map: rail from Wikidata, street routes from OpenStreetMap. */
+  railCredit: string;
+  streetCredit: string;
   pinLabel: (dayIndex: number, position: number, name: string) => string;
   peekMeta: (stop: ShioriStop) => string;
   /** "約12分" for the tag on a leg, and what each way of travelling is called. */
@@ -91,49 +105,17 @@ type Props = {
   /** The stop that is open in the itinerary; a new token re-centres the map on it. */
   focus: { placeId: string; token: number } | null;
   onSelectStop?: (dayIndex: number, placeId: string) => void;
+  /** Told when the Apple map is shown, or could not be. Apple's routes are asked for only while it is shown. */
+  onMapState?: (state: "ready" | "failed") => void;
+  locale: "ja" | "en";
   label: string;
   /** What each kind of line means; a line with no legend is a riddle. */
   legend: { rail: string; street: string; straight: string };
   text: ShioriMapText;
 };
 
-/**
- * The basemap is OpenFreeMap's quiet grey style, so the day's line and pins
- * are the loudest things on it; its flat areas use neutral surfaces with
- * quiet water and park colours. A layer that is missing or shaped differently is left
- * exactly as it came.
- */
-function tintBasemap(instance: MapLibreMap) {
-  const tints: Array<[RegExp, "background-color" | "fill-color", string]> = [
-    [/^background$/, "background-color", "#f5f7f9"],
-    [/^water$/, "fill-color", "#dfeaf3"],
-    [/^(park|landcover_wood|landcover_grass|landuse_cemetery|landuse_pitch)$/, "fill-color", "#e7eee8"],
-    [/^landuse_residential$/, "fill-color", "#f0f3f5"],
-    [/^building$/, "fill-color", "#e3e8ed"],
-  ];
-  try {
-    for (const layer of instance.getStyle().layers ?? []) {
-      // Place names are for finding one's bearings; they stay quieter than the pins.
-      if (layer.type === "symbol" && /^label_/.test(layer.id)) {
-        instance.setPaintProperty(layer.id, "text-color", "#59636e");
-        instance.setPaintProperty(layer.id, "text-halo-color", "#ffffff");
-        continue;
-      }
-      // Road numbers in boxes read like pin numbers; the map is not for driving.
-      if (layer.type === "symbol" && /shield/.test(layer.id)) {
-        instance.setLayoutProperty(layer.id, "visibility", "none");
-        continue;
-      }
-      const tint = tints.find(([pattern]) => pattern.test(layer.id));
-      if (!tint) continue;
-      if ((tint[1] === "background-color") !== (layer.type === "background")) continue;
-      if (tint[1] === "fill-color" && layer.type !== "fill") continue;
-      instance.setPaintProperty(layer.id, tint[1], tint[2]);
-    }
-  } catch {
-    // The untinted basemap is still a correct map.
-  }
-}
+type LineKind = "rail" | "street" | "straight";
+type Line = { kind: LineKind; hotel: boolean; color: string; points: Array<{ latitude: number; longitude: number }> };
 
 /*
  * Only the day being read draws its route: every day's lines at once crossed
@@ -141,7 +123,7 @@ function tintBasemap(instance: MapLibreMap) {
  * small dots. The way to and from the hotel is drawn thin and light — it is
  * the same each day and it is not where the day's sights are.
  */
-function lineFeatures(days: ShioriDay[], selectedDay: number) {
+function dayLines(days: ShioriDay[], selectedDay: number): Line[] {
   return days.filter((day) => day.index === selectedDay).flatMap((day) => {
     const legs: Array<ShioriLeg & { hotelLeg?: boolean }> = [
       ...(day.fromHotel ? [{ ...day.fromHotel, hotelLeg: true }] : []),
@@ -150,39 +132,50 @@ function lineFeatures(days: ShioriDay[], selectedDay: number) {
     ];
     // A leg whose way is still being looked up is not drawn yet: a straight
     // line that turns into a street a second later only reads as a mistake.
-    return legs.filter((leg) => leg.hasPath || leg.noPath).map((leg) => ({
-      type: "Feature" as const,
-      properties: {
-        hotel: Boolean(leg.hotelLeg),
-        // rail: through the stations · street: along the roads · straight: unknown
-        kind: leg.mode === "rail" ? "rail" : leg.hasPath ? "street" : "straight",
-        color: DAY_COLORS[day.index % DAY_COLORS.length],
-        selected: day.index === selectedDay,
-      },
-      geometry: { type: "LineString" as const, coordinates: leg.path.map((point) => [point.longitude, point.latitude]) },
+    return legs.filter((leg) => (leg.hasPath || leg.noPath) && leg.path.length > 1).map((leg) => ({
+      hotel: Boolean(leg.hotelLeg),
+      // rail: through the stations · street: along the roads · straight: unknown
+      kind: leg.mode === "rail" ? "rail" as const : leg.hasPath ? "street" as const : "straight" as const,
+      color: DAY_COLORS[day.index % DAY_COLORS.length],
+      points: leg.path,
     }));
   });
 }
 
-/** The stations a train leg passes, as small rings on the day being read. */
-function stationFeatures(days: ShioriDay[], selectedDay: number) {
+/** The stations a train leg is boarded and left at, as small rings on the day being read. */
+function dayStations(days: ShioriDay[], selectedDay: number) {
   return days.filter((day) => day.index === selectedDay).flatMap((day) => {
     const legs: ShioriLeg[] = [...(day.fromHotel ? [day.fromHotel] : []), ...day.legs, ...(day.toHotel ? [day.toHotel] : [])];
     // Only where one boards and gets off: a ring at every stop passed made the line look like beads.
-    return legs.filter((leg) => leg.mode === "rail" && leg.rail).flatMap((leg) => leg.rail!.rides.flatMap((ride) => (ride.path.length > 1 ? [ride.path[0], ride.path[ride.path.length - 1]] : ride.path).map((point) => ({
-      type: "Feature" as const,
-      properties: { color: DAY_COLORS[day.index % DAY_COLORS.length] },
-      geometry: { type: "Point" as const, coordinates: [point.longitude, point.latitude] },
-    }))));
+    return legs.filter((leg) => leg.mode === "rail" && leg.rail).flatMap((leg) => leg.rail!.rides.flatMap((ride) => (ride.path.length > 1 ? [ride.path[0], ride.path[ride.path.length - 1]] : ride.path)));
   });
 }
 
-export default function ShioriMap({ days, selectedDay, hotel, focus, onSelectStop, label, legend, text }: Props) {
+/** The overlays for the lines, bottom first: the dashed unknown ways, the white edges, then the streets and the rails. */
+function lineOverlays(mapkit: MapKit, lines: Line[]): MapKitOverlay[] {
+  const coordinates = (line: Line) => line.points.map((point) => new mapkit.Coordinate(point.latitude, point.longitude));
+  const style = (options: Record<string, unknown>) => new mapkit.Style({ lineCap: "round", lineJoin: "round", ...options });
+  const overlay = (line: Line, options: Record<string, unknown>) => new mapkit.PolylineOverlay(coordinates(line), { style: style(options), enabled: false });
+  return [
+    ...lines.filter((line) => line.kind === "straight").map((line) => overlay(line, { strokeColor: UNKNOWN_WAY, strokeOpacity: line.hotel ? 0.45 : 0.95, lineWidth: 2.5, lineDash: [5, 5], lineCap: "butt" })),
+    // A white edge keeps the day's line readable over roads and parks.
+    ...lines.filter((line) => line.kind !== "straight" && !line.hotel).map((line) => overlay(line, { strokeColor: CARD, strokeOpacity: 0.9, lineWidth: line.kind === "rail" ? 8.5 : 7 })),
+    ...lines.filter((line) => line.kind === "street").map((line) => overlay(line, { strokeColor: line.color, strokeOpacity: line.hotel ? 0.45 : 0.95, lineWidth: line.hotel ? 2.5 : 4 })),
+    ...lines.filter((line) => line.kind === "rail").map((line) => overlay(line, { strokeColor: line.color, strokeOpacity: line.hotel ? 0.45 : 0.95, lineWidth: line.hotel ? 3 : 5.5 })),
+  ];
+}
+
+function prefersLessMotion() {
+  return typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
+}
+
+export default function ShioriMap({ days, selectedDay, hotel, focus, onSelectStop, onMapState, locale, label, legend, text }: Props) {
   const container = useRef<HTMLDivElement | null>(null);
-  const map = useRef<MapLibreMap | null>(null);
-  const library = useRef<typeof import("maplibre-gl") | null>(null);
-  const markers = useRef<Marker[]>([]);
+  const map = useRef<MapKitMap | null>(null);
+  const library = useRef<MapKit | null>(null);
+  const pinElements = useRef<HTMLElement[]>([]);
   const tagElements = useRef<HTMLElement[]>([]);
+  const stationAnnotations = useRef<MapKitAnnotation[]>([]);
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -219,132 +212,139 @@ export default function ShioriMap({ days, selectedDay, hotel, focus, onSelectSto
   const closePeek = () => {
     // Focus that was in the card goes back to its pin, not to the top of the page.
     const pin = peekId && slot.current?.contains(document.activeElement)
-      ? markers.current.find((marker) => marker.getElement().dataset.place === peekId)?.getElement()
+      ? pinElements.current.find((element) => element.dataset.place === peekId)
       : null;
     setPicked(null);
     pin?.focus();
   };
   const onSelect = useRef(onSelectStop);
   useEffect(() => { onSelect.current = onSelectStop; }, [onSelectStop]);
+  const onState = useRef(onMapState);
+  useEffect(() => { onState.current = onMapState; }, [onMapState]);
   // The legend names only the lines that are on the map right now.
-  const kinds = new Set(lineFeatures(days, selectedDay).filter((feature) => feature.properties.selected).map((feature) => feature.properties.kind));
+  const kinds = new Set(dayLines(days, selectedDay).map((line) => line.kind));
 
   useEffect(() => {
     let cancelled = false;
-    void import("maplibre-gl").then((maplibre) => {
+    let instance: MapKitMap | null = null;
+    let stopListening = () => {};
+    const fail = () => {
+      if (cancelled) return;
+      setFailed(true);
+      onState.current?.("failed");
+    };
+    // The booklet is read first; Apple's script follows once the page is idle.
+    const start = () => {
       if (cancelled || !container.current) return;
-      library.current = maplibre;
-      const workerUrl = process.env.NEXT_PUBLIC_MAPLIBRE_WORKER_URL;
-      if (workerUrl) maplibre.setWorkerUrl(workerUrl);
-      const instance = new maplibre.Map({
-        container: container.current,
-        style: STYLE,
-        center: [139.7671, 35.6812],
-        zoom: 10,
-        attributionControl: { compact: true },
-        // North stays up: nothing on the page says which way a turned map faces.
-        dragRotate: false,
-        pitchWithRotate: false,
-        touchPitch: false,
-      });
-      instance.touchZoomRotate.disableRotation();
-      instance.keyboard.disableRotation();
-      instance.addControl(new maplibre.NavigationControl({ showCompass: false }), "top-right");
-      // Pins and route lines go on as soon as the style is known, not after
-      // every background tile of a large map has arrived: on a wide screen or
-      // a slow line that wait left an empty frame for ten seconds.
-      instance.once("style.load", () => {
-        if (cancelled) return;
-        // On a phone the opened credit line covers a third of the map and the
-        // last pin with it. It starts folded behind its (i) button there, as
-        // MapLibre itself folds it on the first touch.
-        const foldCredit = () => {
-          if (!container.current || container.current.clientWidth >= 520) return;
-          const credit = container.current.querySelector(".maplibregl-ctrl-attrib");
-          credit?.classList.remove("maplibregl-compact-show");
-          credit?.removeAttribute("open");
-        };
-        foldCredit();
-        tintBasemap(instance);
-        // The credit text arrives with the first tiles, after the style: until
-        // the map has settled, each batch of data folds it again, or it sits
-        // open over a pin for the seconds the tiles take.
-        instance.on("sourcedata", foldCredit);
-        instance.once("idle", () => { foldCredit(); instance.off("sourcedata", foldCredit); });
-        instance.addSource("legs", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
-        instance.addSource("stations", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
-        const selected = ["==", ["get", "selected"], true] as unknown as boolean;
-        const opacity = ["case", ["==", ["get", "hotel"], true], 0.45, 0.95] as unknown as number;
-        const color = ["get", "color"] as unknown as string;
-        const round = { "line-cap": "round", "line-join": "round" } as const;
-        instance.addLayer({
-          id: "legs-straight",
-          type: "line",
-          source: "legs",
-          filter: ["==", ["get", "kind"], "straight"],
-          paint: { "line-color": UNKNOWN_WAY, "line-width": ["case", selected, 2.5, 1.5] as unknown as number, "line-opacity": opacity, "line-dasharray": [2, 2] },
+      if (!appleRelayUrl()) { fail(); return; }
+      // Asked for before the script, so a relay that cannot sign fails here rather than as an empty grey frame.
+      void mapToken().then(() => loadMapKit(locale)).then((mapkit) => {
+        if (cancelled || !container.current) return;
+        library.current = mapkit;
+        instance = new mapkit.Map(container.current, {
+          // A quiet map, so the day's line and pins are the loudest things on it.
+          mapType: "mutedStandard",
+          colorScheme: "light",
+          // Apple's own places would read as stops of the trip.
+          pointOfInterestFilter: mapkit.PointOfInterestFilter.excludingAllCategories,
+          // North stays up: nothing on the page says which way a turned map faces.
+          isRotationEnabled: false,
+          showsCompass: mapkit.FeatureVisibility.Hidden,
+          showsMapTypeControl: false,
+          showsUserLocationControl: false,
+          showsZoomControl: true,
+          showsScale: mapkit.FeatureVisibility.Hidden,
+          center: new mapkit.Coordinate(35.6812, 139.7671),
         });
-        // A white edge keeps the day's line readable over roads and parks.
-        instance.addLayer({
-          id: "legs-casing",
-          type: "line",
-          source: "legs",
-          filter: ["all", ["!=", ["get", "kind"], "straight"], ["!=", ["get", "hotel"], true]] as unknown as boolean,
-          layout: round,
-          paint: { "line-color": CARD, "line-width": ["case", ["==", ["get", "kind"], "rail"], 8.5, 7] as unknown as number, "line-opacity": 0.9 },
+        // A tapped pin is told through the map as well as through the button's own click.
+        instance.addEventListener("select", (event: MapKitEvent) => {
+          const place = event.annotation?.data?.place;
+          if (typeof place === "string") setPicked(place);
+          window.setTimeout(() => { if (instance) instance.selectedAnnotation = null; }, 0);
         });
-        instance.addLayer({
-          id: "legs-street",
-          type: "line",
-          source: "legs",
-          filter: ["==", ["get", "kind"], "street"],
-          layout: round,
-          paint: { "line-color": color, "line-width": ["case", ["==", ["get", "hotel"], true], 2.5, 4] as unknown as number, "line-opacity": opacity },
+        map.current = instance;
+        // A map made a moment ago ignores a region set in the same moment, so
+        // the pins and lines wait for its first frame.
+        const firstFrame = new Promise<void>((resolve) => window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve())));
+        stopListening = onMapKitState((state) => {
+          if (cancelled) return;
+          if (state === "ready") void firstFrame.then(() => { if (!cancelled) { setFailed(false); setReady(true); onState.current?.("ready"); } });
+          if (state === "failed") fail();
         });
-        instance.addLayer({
-          id: "legs-rail",
-          type: "line",
-          source: "legs",
-          filter: ["==", ["get", "kind"], "rail"],
-          layout: round,
-          paint: { "line-color": color, "line-width": ["case", ["==", ["get", "hotel"], true], 3, 5.5] as unknown as number, "line-opacity": opacity },
-        });
-        instance.addLayer({
-          id: "legs-stations",
-          type: "circle",
-          source: "stations",
-          minzoom: 11,
-          paint: { "circle-radius": 3, "circle-color": CARD, "circle-stroke-color": color, "circle-stroke-width": 2 },
-        });
-        setReady(true);
-      });
-      instance.on("error", () => { /* A failed tile is not a failed map. */ });
-      map.current = instance;
-    }).catch(() => {
-      if (!cancelled) setFailed(true);
-    });
+      }).catch(fail);
+    };
+    const idle = typeof window.requestIdleCallback === "function"
+      ? window.requestIdleCallback(start, { timeout: 1_500 })
+      : window.setTimeout(start, 300);
     return () => {
       cancelled = true;
-      for (const marker of markers.current) marker.remove();
-      markers.current = [];
-      map.current?.remove();
+      if (typeof window.cancelIdleCallback === "function") window.cancelIdleCallback(idle);
+      window.clearTimeout(idle);
+      stopListening();
+      instance?.destroy();
       map.current = null;
+      setReady(false);
     };
+    // The language is fixed for the page: each language has its own address.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     const instance = map.current;
-    const maplibre = library.current;
-    if (!ready || !instance || !maplibre) return;
-    (instance.getSource("legs") as GeoJSONSource | undefined)?.setData({ type: "FeatureCollection", features: lineFeatures(days, selectedDay) });
-    (instance.getSource("stations") as GeoJSONSource | undefined)?.setData({ type: "FeatureCollection", features: stationFeatures(days, selectedDay) });
-    for (const marker of markers.current) marker.remove();
-    markers.current = [];
-    const bounds = new maplibre.LngLatBounds();
-    let boundsCount = 0;
+    const mapkit = library.current;
+    if (!ready || !instance || !mapkit) return;
+    instance.removeOverlays(instance.overlays);
+    instance.removeAnnotations(instance.annotations);
+    const coordinate = (latitude: number, longitude: number) => new mapkit.Coordinate(latitude, longitude);
+    // Each element is drawn centred on its point: MapKit anchors at the bottom
+    // centre, and a positive offset lifts the element (seen on screen), so it is moved down by half.
+    const centred = (height: number) => ({ anchorOffset: new DOMPoint(0, -height / 2), calloutEnabled: false, collisionMode: "circle" });
+    const lines = lineOverlays(mapkit, dayLines(days, selectedDay));
+    instance.addOverlays(lines);
+
+    const stations = dayStations(days, selectedDay).map((point) => {
+      const element = document.createElement("div");
+      element.className = "shiori-station";
+      element.style.setProperty("--pin", DAY_COLORS[selectedDay % DAY_COLORS.length]);
+      return new mapkit.Annotation(coordinate(point.latitude, point.longitude), () => element, { ...centred(10), enabled: false, displayPriority: 1000 });
+    });
+    stationAnnotations.current = stations;
+
+    // How each leg of the day being read is travelled, said on the line itself.
+    // The hotel legs carry no tag: their minutes are in the list, and their
+    // tags piled up where the two hotel lines meet.
+    const today = days.find((day) => day.index === selectedDay);
+    const tags: HTMLElement[] = [];
+    const tagAnnotations: MapKitAnnotation[] = [];
+    for (const leg of today ? today.legs : []) {
+      // A few minutes on foot between neighbours needs no tag; it would only hide the pins.
+      if (leg.mode === "walk" && leg.minutes < 5) continue;
+      const at = midpoint(leg.path);
+      if (!at) continue;
+      const element = document.createElement("div");
+      element.className = `shiori-legtag is-${leg.mode}`;
+      element.style.setProperty("--pin", DAY_COLORS[today!.index % DAY_COLORS.length]);
+      element.setAttribute("role", "img");
+      element.setAttribute("aria-label", `${text.modes[leg.mode]} ${text.legTag(leg.minutes)}`);
+      element.appendChild(mapIcon(leg.mode, 14));
+      const minutes = document.createElement("span");
+      minutes.textContent = text.legTag(leg.minutes);
+      element.appendChild(minutes);
+      tagAnnotations.push(new mapkit.Annotation(coordinate(at[1], at[0]), () => element, { ...centred(22), enabled: false, displayPriority: 1000 }));
+      tags.push(element);
+    }
+    tagElements.current = tags;
+
+    const pins: HTMLElement[] = [];
+    const others: MapKitAnnotation[] = [];
+    const todays: MapKitAnnotation[] = [];
     for (const day of days) {
       const isSelected = day.index === selectedDay;
       day.stops.forEach((stop, position) => {
+        // A fixed 44px square holds the pin, so the tap target and the anchor
+        // stay put while the pin itself grows when it is ringed.
+        const holder = document.createElement("div");
+        holder.className = "shiori-pin-holder";
         const element = document.createElement("button");
         element.type = "button";
         element.className = `shiori-pin${isSelected ? " is-selected" : ""}`;
@@ -370,101 +370,116 @@ export default function ShioriMap({ days, selectedDay, hotel, focus, onSelectSto
           byKeyboard.current = event.detail === 0;
           setPicked(stop.place.id);
         });
-        // MapLibre writes an inline opacity on every marker, so the other days' dots are dimmed through it, not the stylesheet.
-        markers.current.push(new maplibre.Marker({ element, opacity: isSelected ? "1" : "0.55" }).setLngLat([stop.place.lon, stop.place.lat]).addTo(instance));
-        if (isSelected) {
-          bounds.extend([stop.place.lon, stop.place.lat]);
-          boundsCount += 1;
-        }
+        holder.appendChild(element);
+        pins.push(element);
+        const annotation = new mapkit.Annotation(coordinate(stop.place.lat, stop.place.lon), () => holder, {
+          ...centred(44),
+          title: stop.place.name,
+          accessibilityLabel: text.pinLabel(day.index, position, stop.place.name),
+          data: { place: stop.place.id },
+          displayPriority: 1000,
+        });
+        (isSelected ? todays : others).push(annotation);
       });
     }
+    let hotelAnnotation: MapKitAnnotation | null = null;
     if (hotel) {
+      const holder = document.createElement("div");
+      holder.className = "shiori-pin-holder";
       const element = document.createElement("div");
       element.className = "shiori-pin is-hotel has-mark";
       element.appendChild(mapIcon("bed", 17));
       element.title = hotel.name;
       element.setAttribute("role", "img");
       element.setAttribute("aria-label", hotel.name);
-      markers.current.push(new maplibre.Marker({ element }).setLngLat([hotel.lon, hotel.lat]).addTo(instance));
-      bounds.extend([hotel.lon, hotel.lat]);
-      boundsCount += 1;
+      holder.appendChild(element);
+      pins.push(element);
+      hotelAnnotation = new mapkit.Annotation(coordinate(hotel.lat, hotel.lon), () => holder, { ...centred(44), enabled: false, displayPriority: 1000 });
     }
-    // How each leg of the day being read is travelled, said on the line itself.
-    // The hotel legs carry no tag: their minutes are in the list, and their
-    // tags piled up where the two hotel lines meet.
-    const today = days.find((day) => day.index === selectedDay);
-    const tags: HTMLElement[] = [];
-    for (const leg of today ? today.legs : []) {
-      // A few minutes on foot between neighbours needs no tag; it would only hide the pins.
-      if (leg.mode === "walk" && leg.minutes < 5) continue;
-      const at = midpoint(leg.path);
-      if (!at) continue;
-      const element = document.createElement("div");
-      element.className = `shiori-legtag is-${leg.mode}`;
-      element.style.setProperty("--pin", DAY_COLORS[today!.index % DAY_COLORS.length]);
-      element.setAttribute("role", "img");
-      element.setAttribute("aria-label", `${text.modes[leg.mode]} ${text.legTag(leg.minutes)}`);
-      element.appendChild(mapIcon(leg.mode, 14));
-      const minutes = document.createElement("span");
-      minutes.textContent = text.legTag(leg.minutes);
-      element.appendChild(minutes);
-      markers.current.push(new maplibre.Marker({ element }).setLngLat(at).addTo(instance));
-      tags.push(element);
+    pinElements.current = pins;
+    // Later is higher: rings and tags under the pins, the other days' dots under the day being read.
+    instance.addAnnotations([...stations, ...tagAnnotations, ...others, ...(hotelAnnotation ? [hotelAnnotation] : []), ...todays]);
+
+    // The day being read and the hotel fill the frame; with no day, every stop does.
+    const framed = [
+      ...(days.find((day) => day.index === selectedDay)?.stops ?? []).map((stop) => ({ latitude: stop.place.lat, longitude: stop.place.lon })),
+      ...(hotel ? [{ latitude: hotel.lat, longitude: hotel.lon }] : []),
+    ];
+    const points = framed.length > 0 ? framed : days.flatMap((day) => day.stops).map((stop) => ({ latitude: stop.place.lat, longitude: stop.place.lon }));
+    if (points.length > 0) {
+      // Only the wide layout lays the card over the map; there the pins are kept below it.
+      // The bottom edge keeps clear of Apple's logo and legal link.
+      const height = container.current?.clientHeight ?? 0;
+      const width = container.current?.clientWidth ?? 0;
+      const top = peekShown.current && height >= 420 ? 110 : 44;
+      const [bottom, side] = [56, 44];
+      const latitudes = points.map((point) => point.latitude);
+      const longitudes = points.map((point) => point.longitude);
+      const [south, north, west, east] = [Math.min(...latitudes), Math.max(...latitudes), Math.min(...longitudes), Math.max(...longitudes)];
+      // The region is the whole frame, so the margins are paid for by widening it.
+      const share = (inner: number, whole: number) => (whole > 0 ? Math.max(0.3, (whole - inner) / whole) : 0.7);
+      const latitudeSpan = Math.max(north - south, CLOSEST_SPAN) / share(top + bottom, height);
+      const longitudeSpan = Math.max(east - west, CLOSEST_SPAN) / share(side * 2, width);
+      // The middle of the region moves down by half of what the top margin takes beyond the bottom one.
+      const middle = (north + south) / 2 + latitudeSpan * ((top - bottom) / 2) / Math.max(height, 1);
+      const span = new mapkit.CoordinateSpan(latitudeSpan, longitudeSpan);
+      instance.setRegionAnimated(new mapkit.CoordinateRegion(coordinate(middle, (east + west) / 2), span), !prefersLessMotion());
     }
-    tagElements.current = tags;
-    if (boundsCount === 0) {
-      for (const day of days) for (const stop of day.stops) { bounds.extend([stop.place.lon, stop.place.lat]); boundsCount += 1; }
-    }
-    if (boundsCount === 1) instance.easeTo({ center: bounds.getCenter(), zoom: 14, duration: 500 });
-    // Only the wide layout lays the card over the map; there the pins are kept below it.
-    else if (boundsCount > 1) instance.fitBounds(bounds, { padding: { top: peekShown.current && (container.current?.clientHeight ?? 0) >= 420 ? 110 : 40, right: 40, left: 40, bottom: 40 }, maxZoom: 15, duration: 500 });
     // The pin texts are rebuilt with the days; the wording itself does not change between plans.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [days, selectedDay, hotel, ready]);
 
   // A tag that would cover a pin or another tag is hidden until zooming in
-  // makes room: two labels on top of each other read as neither.
+  // makes room: two labels on top of each other read as neither. The station
+  // rings show only once the map is close enough for them to mean something.
   useEffect(() => {
     const instance = map.current;
     if (!ready || !instance) return;
     const declutter = () => {
-      const pins = markers.current.map((marker) => marker.getElement()).filter((element) => element.classList.contains("shiori-pin") && element.classList.contains("is-selected") || element.classList.contains("is-hotel")).map((element) => element.getBoundingClientRect());
+      const near = instance.region.span.latitudeDelta <= STATIONS_WITHIN_SPAN;
+      for (const station of stationAnnotations.current) station.visible = near;
+      // A pin or tag MapKit has not laid out yet has no size, and hides nothing.
+      const pins = pinElements.current.filter((element) => element.classList.contains("is-selected") || element.classList.contains("is-hotel")).map((element) => element.getBoundingClientRect()).filter((box) => box.width > 0);
       const shown: DOMRect[] = [];
       for (const tag of tagElements.current) {
         tag.style.visibility = "visible";
         const box = tag.getBoundingClientRect();
+        if (box.width === 0) continue;
         const hit = (other: DOMRect) => box.left < other.right + 2 && box.right > other.left - 2 && box.top < other.bottom + 2 && box.bottom > other.top - 2;
         if (pins.some(hit) || shown.some(hit)) tag.style.visibility = "hidden";
         else shown.push(box);
       }
     };
-    declutter();
-    instance.on("moveend", declutter);
-    instance.on("resize", declutter);
-    return () => { instance.off("moveend", declutter); instance.off("resize", declutter); };
+    // MapKit places its annotations a moment after the map stops moving.
+    let later = 0;
+    const soon = () => { window.clearTimeout(later); later = window.setTimeout(declutter, 120); };
+    soon();
+    instance.addEventListener("region-change-end", soon);
+    window.addEventListener("resize", soon);
+    return () => { window.clearTimeout(later); instance.removeEventListener("region-change-end", soon); window.removeEventListener("resize", soon); };
   }, [days, selectedDay, hotel, ready]);
 
   // The stop whose card is open, or that is open in the itinerary, is the larger, ringed pin.
   useEffect(() => {
-    for (const marker of markers.current) {
-      const element = marker.getElement();
+    for (const element of pinElements.current) {
       element.classList.toggle("is-focus", ringId !== null && element.dataset.place === ringId);
     }
   }, [ringId, days, selectedDay, hotel, ready]);
 
   useEffect(() => {
-    if (!focus || !ready || !map.current) return;
+    const instance = map.current;
+    const mapkit = library.current;
+    if (!focus || !ready || !instance || !mapkit) return;
     const stop = days.flatMap((day) => day.stops).find((candidate) => candidate.place.id === focus.placeId);
-    if (stop) map.current.easeTo({ center: [stop.place.lon, stop.place.lat], zoom: Math.max(map.current.getZoom(), 14.5), duration: 450 });
+    if (!stop) return;
+    const at = new mapkit.Coordinate(stop.place.lat, stop.place.lon);
+    const animate = !prefersLessMotion();
+    // Closer only when the map is wider than a few streets; never further out.
+    if (instance.region.span.latitudeDelta > 0.02) instance.setRegionAnimated(new mapkit.CoordinateRegion(at, new mapkit.CoordinateSpan(0.012, 0.012)), animate);
+    else instance.setCenterAnimated(at, animate);
     // `days` is read at focus time only; a re-plan must not re-centre the map.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focus, ready]);
-
-  // The frame opens and folds at once; the canvas follows on the next frame.
-  useEffect(() => {
-    const handle = window.requestAnimationFrame(() => map.current?.resize());
-    return () => window.cancelAnimationFrame(handle);
-  }, [expanded]);
 
   const peekPhoto = peek ? photoUrl(peek.stop.place.img, 160) : null;
   return (
@@ -516,6 +531,8 @@ export default function ShioriMap({ days, selectedDay, hotel, focus, onSelectSto
           {expanded ? text.collapse : text.expand}
         </button>
       </div>
+      {/* TripCheck's own lines on Apple's map, credited to their sources; Apple's own logo and legal link stay inside the frame. */}
+      {failed ? null : <p className="shiori-map-credit">{text.railCredit}{locale === "ja" ? " ・ " : " · "}<a href="https://www.openstreetmap.org/copyright" rel="noreferrer" target="_blank">{text.streetCredit}</a></p>}
     </div>
   );
 }

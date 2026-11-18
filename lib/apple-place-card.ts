@@ -1,4 +1,5 @@
 import { appleRelaySearch, appleRelayUrl, type AppleRelayPlace } from "./apple-relay-client.ts";
+import { loadMapKit, mapToken, type MapKitPlace, type MapKitPlaceDetail } from "./mapkit-loader.ts";
 
 /*
  * Apple's embeddable place card (MapKit JS `PlaceDetail`): opening hours,
@@ -9,40 +10,7 @@ import { appleRelaySearch, appleRelayUrl, type AppleRelayPlace } from "./apple-r
  * signs for this origin; the private key stays on the server.
  */
 
-export type MapToken = Readonly<{ token: string; expiresAt: number }>;
-
-/** A token is replaced this long before it runs out, so a request never leaves with a dying one. */
-const TOKEN_MARGIN_SECONDS = 60;
-
-/**
- * Hands out the current token, asking for a new one only when there is none
- * or it is about to expire. Callers arriving together share one request, and
- * a failed request is not remembered: the next call tries again.
- */
-export function createMapTokenSource(fetchToken: () => Promise<MapToken>, nowSeconds: () => number = () => Date.now() / 1000) {
-  let current: MapToken | null = null;
-  let pending: Promise<MapToken> | null = null;
-  return async function mapToken(): Promise<string> {
-    if (current && current.expiresAt - TOKEN_MARGIN_SECONDS > nowSeconds()) return current.token;
-    pending ??= fetchToken().then(
-      (next) => { current = next; pending = null; return next; },
-      (error) => { pending = null; throw error; },
-    );
-    return (await pending).token;
-  };
-}
-
-/** What the relay's `op=maptoken` answered, or null when it is not a usable token. */
-export function readMapToken(payload: unknown, nowSeconds: () => number = () => Date.now() / 1000): MapToken | null {
-  if (!payload || typeof payload !== "object") return null;
-  const { token, expiresAt, expiresIn } = payload as Record<string, unknown>;
-  if (typeof token !== "string" || !/^[\w-]+\.[\w-]+\.[\w-]+$/.test(token)) return null;
-  // The lifetime is counted on this device's own clock: a phone twenty minutes
-  // slow would otherwise keep handing Apple a token that has already run out.
-  if (typeof expiresIn === "number" && Number.isFinite(expiresIn) && expiresIn > 0) return { token, expiresAt: nowSeconds() + expiresIn };
-  if (typeof expiresAt !== "number" || !Number.isFinite(expiresAt)) return null;
-  return { token, expiresAt };
-}
+export { createMapTokenSource, readMapToken, type MapToken } from "./mapkit-loader.ts";
 
 /**
  * The Apple place id carried by a stop added through the map search
@@ -159,59 +127,11 @@ export async function applePlaceIdFor(
 
 /* ------------------------------------------------------------- MapKit JS */
 
-type MapKitPlace = { name?: string };
-export type MapKitPlaceDetail = { destroy?: () => void };
-type MapKit = {
-  init: (options: { authorizationCallback: (done: (token: string) => void) => void; language?: string }) => void;
-  PlaceLookup: new () => { getPlace: (id: string, callback: (error: unknown, place: MapKitPlace | null) => void) => void };
-  PlaceDetail: new (host: HTMLElement, place: MapKitPlace, options: { colorScheme?: string; displaysMap?: boolean }) => MapKitPlaceDetail;
-};
+export type { MapKitPlaceDetail } from "./mapkit-loader.ts";
+export { MAPKIT_SCRIPT_URL } from "./mapkit-loader.ts";
 
 /** How Apple's card is drawn: always with its Apple map. */
 export const PLACE_DETAIL_OPTIONS = Object.freeze({ colorScheme: "light", displaysMap: true });
-
-export const MAPKIT_SCRIPT_URL = "https://cdn.apple-mapkit.com/mk/5.x.x/mapkit.js";
-
-async function fetchMapToken(): Promise<MapToken> {
-  const relay = appleRelayUrl();
-  if (!relay) throw new Error("apple_relay_not_configured");
-  const url = new URL(relay, window.location.href);
-  url.searchParams.set("op", "maptoken");
-  const response = await globalThis.fetch(url, { method: "GET", headers: { Accept: "application/json" } });
-  const token = response.ok ? readMapToken(await response.json().catch(() => null)) : null;
-  if (!token) throw new Error("apple_map_token_unavailable");
-  return token;
-}
-
-const mapToken = createMapTokenSource(fetchMapToken);
-let mapkitReady: Promise<MapKit> | null = null;
-
-/** Apple's script, added to the page once, on the first card anyone opens. */
-function loadMapKit(language: "ja" | "en"): Promise<MapKit> {
-  mapkitReady ??= new Promise<MapKit>((resolve, reject) => {
-    const script = document.createElement("script");
-    script.src = MAPKIT_SCRIPT_URL;
-    script.crossOrigin = "anonymous";
-    script.async = true;
-    script.onload = () => {
-      const mapkit = (window as unknown as { mapkit?: MapKit }).mapkit;
-      if (!mapkit?.PlaceDetail || !mapkit.PlaceLookup) { script.remove(); reject(new Error("mapkit_without_place_detail")); return; }
-      mapkit.init({
-        // Apple calls this again whenever it wants a fresh token.
-        authorizationCallback: (done) => { mapToken().then(done, () => done("")); },
-        language,
-      });
-      resolve(mapkit);
-    };
-    script.onerror = () => { script.remove(); reject(new Error("mapkit_script_failed")); };
-    document.head.appendChild(script);
-  }).catch((error) => {
-    // A failed load (offline, blocked) may be tried again on the next press.
-    mapkitReady = null;
-    throw error;
-  });
-  return mapkitReady;
-}
 
 /** True when this build can show place cards at all. */
 export function placeCardsAvailable() {

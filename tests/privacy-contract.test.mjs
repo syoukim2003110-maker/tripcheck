@@ -280,11 +280,12 @@ test("every paid client endpoint is disclosed on the privacy page", async () => 
   assert.doesNotMatch(transport, /itinerary|queries|hotelQuery|resolvedStops/);
 });
 
-test("discloses the key-free map and explicit OpenStreetMap lookup", async () => {
+test("discloses the Apple map and explicit OpenStreetMap lookup", async () => {
   const privacySource = await readFile(privacySourceUrl, "utf8");
 
-  assert.match(privacySource, /OpenFreeMap style by default/);
-  assert.match(privacySource, /tiles\.openfreemap\.org/);
+  assert.match(privacySource, /map is an Apple map drawn by Apple&apos;s MapKit JS/);
+  assert.match(privacySource, /cdn\.apple-mapkit\.com/);
+  assert.doesNotMatch(privacySource, /openfreemap/i);
   assert.match(privacySource, /Wikipedia and Wikidata \(operated by the Wikimedia Foundation\)/);
   assert.match(privacySource, /Photon search service operated by komoot/);
   assert.match(privacySource, /public OpenStreetMap Nominatim service/);

@@ -1,16 +1,12 @@
 /**
  * Browser-visible providers stay on an explicit host allowlist. Google powers
- * configured paid maps; the key-free map fetches its public style, glyphs and
- * vector tiles from OpenFreeMap. Everything else remains behind same-origin
- * `/api/` routes.
+ * configured paid maps of the old planner; the booklet's map is Apple's
+ * (MapKit JS, below). Everything else remains behind same-origin `/api/`
+ * routes or the site's own Apple relay.
  */
 const GOOGLE_MAPS_HOSTS = [
   "https://*.googleapis.com",
   "https://*.gstatic.com",
-] as const;
-
-const OPEN_FREE_MAP_HOSTS = [
-  "https://tiles.openfreemap.org",
 ] as const;
 
 /**
@@ -24,7 +20,7 @@ export const OPEN_PLACE_DATA_HOSTS = [
   "https://query.wikidata.org",
   "https://photon.komoot.io",
   "https://nominatim.openstreetmap.org",
-  // The way along the streets for a leg Apple could not route.
+  // The way along the streets for a leg Apple could not route, or when the Apple map is not shown.
   "https://routing.openstreetmap.de",
   // Forecast and public holidays for the trip's own dates, asked for directly
   // when the site is hosted as static files.
@@ -47,18 +43,28 @@ const SIGHT_PHOTO_HOSTS = [
 ] as const;
 
 /**
- * Apple's place card (opening hours, phone, website) in an opened stop of the
- * booklet. Its script is fetched only when a traveller asks for a card. Each
- * list holds only what the card was seen to need under this policy: the
- * script, its strings and start-up call (cdn) and the place lookup (api),
- * and the frame Apple draws the card in. Its images and fonts load inside
- * that frame, so img-src and font-src stay as they were. Apple's usage
- * report from the page (gsp10.apple-mapkit.com) is left blocked on purpose:
- * the card works without it.
+ * Apple's MapKit JS: the booklet's map, and Apple's place card (opening
+ * hours, phone, website) in an opened stop. One script serves both, fetched
+ * once the booklet is on screen. Each list holds only what was seen to be
+ * needed when the page ran under this very policy (as a meta tag, served
+ * from localhost through the dev relay, 2026-11-18):
+ * - script-src cdn: mapkit.js itself.
+ * - connect-src cdn: start-up call, strings, and the map's vector tiles,
+ *   icons and road shields (/md/v1/…, /ti/tile), fetched by the script;
+ *   api: the place card's place lookup.
+ * - img-src cdn: Apple's logo on the map (/mk/<version>/images/logos/…),
+ *   which must stay visible. Nothing else of the map is an <img>.
+ * - frame-src cdn: the frame Apple draws the place card in; the card's own
+ *   images and fonts load inside it.
+ * MapKit's tile worker runs from a blob: URL (worker-src blob:), so no worker
+ * host is listed. Apple's usage report from the page
+ * (gsp10.apple-mapkit.com/mw/v1/reportAnalytics) is left blocked on purpose:
+ * the map and the card work without it.
  */
-const APPLE_PLACE_CARD_SCRIPT_HOSTS = ["https://cdn.apple-mapkit.com"] as const;
-const APPLE_PLACE_CARD_CONNECT_HOSTS = ["https://cdn.apple-mapkit.com", "https://api.apple-mapkit.com"] as const;
-const APPLE_PLACE_CARD_FRAME_HOSTS = ["https://cdn.apple-mapkit.com"] as const;
+const APPLE_MAPKIT_SCRIPT_HOSTS = ["https://cdn.apple-mapkit.com"] as const;
+const APPLE_MAPKIT_CONNECT_HOSTS = ["https://cdn.apple-mapkit.com", "https://api.apple-mapkit.com"] as const;
+const APPLE_MAPKIT_IMAGE_HOSTS = ["https://cdn.apple-mapkit.com"] as const;
+const APPLE_MAPKIT_FRAME_HOSTS = ["https://cdn.apple-mapkit.com"] as const;
 
 /** Tiles, markers, Street View and the photo redirect's destination. */
 const GOOGLE_IMAGE_HOSTS = [
@@ -80,19 +86,19 @@ export const productionContentSecurityPolicy = [
   // to 'wasm-unsafe-eval' is the next step and needs a staged rollout with
   // report-only collection, because a wrong guess breaks the map in
   // production and the QA harness cannot load Maps to tell us.
-  `script-src 'self' 'unsafe-inline' 'unsafe-eval' ${GOOGLE_MAPS_HOSTS.join(" ")} ${APPLE_PLACE_CARD_SCRIPT_HOSTS.join(" ")}`,
+  `script-src 'self' 'unsafe-inline' 'unsafe-eval' ${GOOGLE_MAPS_HOSTS.join(" ")} ${APPLE_MAPKIT_SCRIPT_HOSTS.join(" ")}`,
   "style-src 'self' 'unsafe-inline'",
   "font-src 'self' data:",
   // Was `https:`, which let anything that got script onto the page exfiltrate
   // an itinerary through an <img src>.
-  `img-src 'self' data: blob: ${GOOGLE_IMAGE_HOSTS.join(" ")} ${SIGHT_PHOTO_HOSTS.join(" ")}`,
+  `img-src 'self' data: blob: ${GOOGLE_IMAGE_HOSTS.join(" ")} ${SIGHT_PHOTO_HOSTS.join(" ")} ${APPLE_MAPKIT_IMAGE_HOSTS.join(" ")}`,
   // Was `https: wss:`. Every fetch the app makes is same-origin; the rest is
   // the Maps runtime's own tile and metadata traffic. There are no websockets
   // in production — that allowance existed for local HMR, which never sees
   // this policy.
-  `connect-src 'self' data: blob: ${GOOGLE_MAPS_HOSTS.join(" ")} ${OPEN_FREE_MAP_HOSTS.join(" ")} ${[...OPEN_PLACE_DATA_HOSTS, ...APPLE_PLACE_CARD_CONNECT_HOSTS].join(" ")}`,
+  `connect-src 'self' data: blob: ${GOOGLE_MAPS_HOSTS.join(" ")} ${[...OPEN_PLACE_DATA_HOSTS, ...APPLE_MAPKIT_CONNECT_HOSTS].join(" ")}`,
   "worker-src 'self' blob:",
-  `frame-src ${["'self'", "https://www.google.com", "https://maps.google.com", ...APPLE_PLACE_CARD_FRAME_HOSTS].join(" ")}`,
+  `frame-src ${["'self'", "https://www.google.com", "https://maps.google.com", ...APPLE_MAPKIT_FRAME_HOSTS].join(" ")}`,
 ].join("; ");
 
 function isLocalDevelopment(url: URL) {
