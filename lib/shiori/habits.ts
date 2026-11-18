@@ -27,6 +27,8 @@ export type PlaceHabit = "ticketed" | "daytime" | "daytime-open" | "open" | "eve
 /** Places that belong to the evening, by what they are called. */
 const EVENING_NAME = /夜市|ナイトマーケット|ナイトバザール|ナイトサファリ|night ?market|night ?bazaar|night ?safari|パッポン|patpong|ソイ・?カウボーイ|soi cowboy/i;
 const EVENING_KIND = /night market/;
+/** A hotel, a station, a shop or a café that carries such a name is not the market: only its neighbour. */
+const NAMED_AFTER = /ホテル|ホステル|旅館|hotel|hostel|\binn\b|駅|station|店|ショップ|shop|store|カフェ|喫茶|caf[eé]|レストラン|restaurant|食堂/i;
 
 /*
  * In order: the first rule that matches decides. A square in front of a
@@ -58,7 +60,7 @@ export function placeHabit(kind: string | undefined, name: string): PlaceHabit |
   if (answered !== undefined) return answered;
   const lowered = (kind ?? "").toLowerCase();
   let habit: PlaceHabit | null = null;
-  if (EVENING_KIND.test(lowered) || EVENING_NAME.test(name)) habit = "evening";
+  if (EVENING_KIND.test(lowered) || (EVENING_NAME.test(name) && !NAMED_AFTER.test(name))) habit = "evening";
   else {
     for (const [pattern, found] of rules) {
       if (pattern.test(lowered)) {

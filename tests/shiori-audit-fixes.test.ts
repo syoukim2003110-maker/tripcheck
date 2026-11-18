@@ -1254,6 +1254,9 @@ test("which places belong to the evening: a night market, a night safari, a nigh
   for (const [kind, name] of [["street", "カオサン通り"], ["zoo", "シンガポール動物園"], ["morning market", "朝市"], ["fish market", "築地場外市場"], ["neighborhood", "タイムズスクエア"], ["mountain", "藻岩山"]] as const) {
     assert.notEqual(placeHabit(kind, name), "evening", name);
   }
+  // A hotel, a station, a shop or a café named after one is not the market: it is planned at any hour, like any place added by name.
+  for (const name of ["Night Market Hotel Taipei", "士林夜市駅", "ナイトマーケット前店", "Night Bazaar Café", "夜市ホステル"]) assert.equal(placeHabit(undefined, name), null, name);
+  for (const name of ["寧夏夜市", "Raohe Night Market", "ナイトバザール"]) assert.equal(placeHabit(undefined, name), "evening", name);
   // In the bundled sights: these six and no other.
   const evening = cities.flatMap((city) => city.sights.filter((sight) => placeHabit(sight.kind, `${sight.ja} ${sight.en}`) === "evening").map((sight) => sight.ja));
   assert.deepEqual(evening.sort(), ["Luzhou Miaokou Night Market", "ソイ・カウボーイ", "チェンマイ・ナイトサファリ", "ナイトサファリ", "パッポン通り", "士林夜市"].sort());
