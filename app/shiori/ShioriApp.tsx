@@ -150,7 +150,7 @@ const text = {
     noticeDrop: (name: string, days: number) => `「${name}」を外すと、${days}日のまま収まります。`,
     noticeDropAction: "外す",
     noticeTooMuch: "行きたい場所が多く、1日増やしても収まりません。場所を減らすか、日数を大きく増やしてください。",
-    noticeHotelFar: (oneWay: string, saved: string) => `このホテルは行き先から遠く、毎日片道 約${oneWay}かかります。下の「泊まる場所」のエリアにすると、旅行全体の移動が約${saved}減ります。`,
+    noticeHotelFar: (oneWay: string, saved: string, calmerDays: number) => `このホテルは行き先から遠く、毎日片道 約${oneWay}かかります。下の「泊まる場所」のエリアにすると、旅行全体の移動が約${saved}減ります${calmerDays > 0 ? `。詰まっている日も${calmerDays}日減ります` : ""}。`,
     noticeMealDetour: (name: string, meal: string, minutes: string) => `「${name}」（${meal}）は他の行き先から離れていて、寄るために約${minutes}余計に移動します。`,
     noticeMealTime: (name: string, meal: string) => `「${name}」に${meal}の時間帯に着ける日がありません。日数を増やすか、近くの場所と同じ日にしてください。`,
     noticeMealHotel: (name: string, minutes: string) => `夜ごはんの「${name}」からホテルまで約${minutes}かかります。`,
@@ -441,7 +441,7 @@ const text = {
     noticeDrop: (name: string, days: number) => `Without “${name}” it fits in ${days} day${days === 1 ? "" : "s"}.`,
     noticeDropAction: "Remove",
     noticeTooMuch: "There is too much here even with one more day. Drop some places or add several days.",
-    noticeHotelFar: (oneWay: string, saved: string) => `This hotel is far from your places: about ${oneWay} each way, every day. Staying in the area suggested below saves about ${saved} over the trip.`,
+    noticeHotelFar: (oneWay: string, saved: string, calmerDays: number) => `This hotel is far from your places: about ${oneWay} each way, every day. Staying in the area suggested below saves about ${saved} over the trip${calmerDays > 0 ? ` and leaves ${calmerDays === 1 ? "one packed day fewer" : `${calmerDays} fewer packed days`}` : ""}.`,
     noticeMealDetour: (name: string, meal: string, minutes: string) => `“${name}” (${meal}) is away from everything else; going there adds about ${minutes} of travel.`,
     noticeMealTime: (name: string, meal: string) => `No day reaches “${name}” at ${meal} time. Add a day, or plan places near it on the same day.`,
     noticeMealHotel: (name: string, minutes: string) => `From dinner at “${name}” it is about ${minutes} back to the hotel.`,
@@ -2296,7 +2296,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
       case "too-much":
         return <span>{t.noticeTooMuch}</span>;
       case "hotel-far":
-        return <span>{t.noticeHotelFar(span(notice.oneWayMinutes), span(notice.savedMinutes))}</span>;
+        return <span>{t.noticeHotelFar(span(notice.oneWayMinutes), span(notice.savedMinutes), notice.calmerDays ?? 0)}</span>;
       case "meal-detour":
         return <span>{t.noticeMealDetour(notice.name, t.mealShort[notice.meal], span(notice.minutes))}</span>;
       case "meal-time":

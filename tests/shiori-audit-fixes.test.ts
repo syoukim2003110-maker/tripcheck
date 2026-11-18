@@ -646,3 +646,59 @@ test("a tower, a shop or a hotel that carries a park's name is not planned as th
   assert.equal(shioriStayMinutes(undefined, "東京ディズニーランド"), 480);
   assert.equal(shioriStayMinutes("animal theme park", "香港海洋公園 Ocean Park Hong Kong"), 360);
 });
+
+test("the area to stay is not a place far out that costs hours more of riding to spare one packed day: 国立中正文化中心, not 関渡宮 at the edge of Taipei", () => {
+  // Packed days were counted before any number of minutes. Each pair: the
+  // place now named, the far-out place that was, and the trip planned for
+  // real from both.
+  const cases: Array<[string, string, string]> = [
+    ["taipei-3", "国立中正文化中心", "関渡宮"],
+    ["naha-2", "守礼門", "中城城"],
+    ["sapporo-3", "円山公園", "新琴似神社"],
+  ];
+  for (const [id, named, farOut] of cases) {
+    const { scenario, plan } = auditPlan(id);
+    assert.equal(plan.stayNear?.nearName, named, id);
+    const moving = (name: string) => {
+      const base = scenarioPlaces(scenario).find((place) => place.name === name)!;
+      const from = buildShioriPlan({ places: scenarioPlaces(scenario), days: scenario.days, hotel: { name: "h", lat: base.lat, lon: base.lon }, locale: "ja" }, { rail: railOf(scenario.city.id), cities });
+      return from.days.reduce((sum, day) => sum + day.travelMinutes, 0);
+    };
+    assert.ok(moving(named) + 60 <= moving(farOut), `${id}: ${named} ${moving(named)}, ${farOut} ${moving(farOut)}`);
+  }
+  // The hotel on the volcanoes north of Taipei, 80 to 90 minutes each way, is said to be far.
+  const taipei = auditPlan("taipei-3").plan.notices.find((notice) => notice.kind === "hotel-far");
+  assert.ok(taipei && taipei.kind === "hotel-far" && taipei.oneWayMinutes >= 60 && taipei.savedMinutes >= 120, JSON.stringify(taipei));
+  // A hotel in the middle of Naha is not told that a castle ruin 15 km out is a better base.
+  assert.equal(auditPlan("naha-2").plan.notices.some((notice) => notice.kind === "hotel-far"), false);
+});
+
+test("a hotel that squeezes the trip onto fewer, packed days is said to be far, with the packed days it costs: Nara from the edge, two packed days and one left empty", () => {
+  const { scenario, plan } = auditPlan("nara-3");
+  // What the traveller sees from that hotel …
+  assert.equal(plan.days.filter((day) => day.load === "tight").length, 2);
+  assert.equal(plan.freeDays, 1);
+  // … and what is now said about it. (The minutes alone, 29 over two days, said nothing.)
+  const notice = plan.notices.find((entry) => entry.kind === "hotel-far");
+  assert.ok(notice && notice.kind === "hotel-far", JSON.stringify(plan.notices));
+  assert.equal(notice.calmerDays, 2);
+  assert.ok(notice.savedMinutes >= 20);
+  // It is true of the plan the traveller would get from the area named: no packed day, and less moving.
+  const base = plan.stayNear!;
+  const there = buildShioriPlan({ places: scenarioPlaces(scenario), days: scenario.days, hotel: { name: "h", lat: base.latitude, lon: base.longitude }, locale: "ja" }, { rail: railOf("nara"), cities });
+  assert.equal(there.days.filter((day) => day.load === "tight").length, 0);
+  const moving = (days: readonly ShioriDay[]) => days.reduce((sum, day) => sum + day.travelMinutes, 0);
+  assert.ok(moving(there.days) < moving(plan.days));
+  // A central hotel is not called far for one packed day and twenty minutes (Kyoto's top eight from the centre).
+  assert.equal(auditPlan("kyoto-2").plan.notices.some((entry) => entry.kind === "hotel-far"), false);
+  // Wherever packed days are said, the area named has that many fewer in the plan made from it.
+  for (const entry of scenarios) {
+    const audit = auditPlan(entry.id).plan;
+    const far = audit.notices.find((item) => item.kind === "hotel-far");
+    if (!far || far.kind !== "hotel-far" || !far.calmerDays) continue;
+    const near = audit.stayNear!;
+    const from = buildShioriPlan({ places: scenarioPlaces(entry), days: entry.days, hotel: { name: "h", lat: near.latitude, lon: near.longitude }, locale: "ja" }, { rail: railOf(entry.city.id), cities });
+    const packed = (days: readonly ShioriDay[]) => days.filter((day) => day.load === "tight").length;
+    assert.ok(packed(audit.days) - packed(from.days) >= far.calmerDays, `${entry.id}: ${packed(audit.days)} → ${packed(from.days)}, said ${far.calmerDays}`);
+  }
+});
