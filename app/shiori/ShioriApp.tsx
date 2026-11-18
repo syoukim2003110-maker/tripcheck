@@ -294,6 +294,7 @@ const text = {
     lunch: "昼ごはん",
     dinner: "夜ごはん",
     mealNear: (name: string) => `${name}の近く`,
+    mealNearHotel: (name: string) => `ホテル（${name}）に戻って、その近く`,
     showFood: "近くのお店を見る",
     hideFood: "閉じる",
     foodLoading: "近くのお店を探しています…",
@@ -579,6 +580,7 @@ const text = {
     lunch: "Lunch",
     dinner: "Dinner",
     mealNear: (name: string) => `near ${name}`,
+    mealNearHotel: (name: string) => `back near your hotel (${name})`,
     showFood: "Places to eat nearby",
     hideFood: "Hide",
     foodLoading: "Looking nearby…",
@@ -1097,7 +1099,7 @@ function MealRow({ meal, locale, onAdd, advice, slot }: { meal: ShioriMeal; loca
       <div className="shiori-meal-head">
         <span>
           <b>{meal.kind === "lunch" ? t.lunch : t.dinner}</b> <span className="shiori-meal-time">{meal.nextDay ? <NextDay locale={locale} /> : null}{meal.start}{meal.end ? `–${meal.end}` : locale === "ja" ? "ごろ" : ""}</span>
-          <small><span className="shiori-sep"> ・ </span>{t.mealNear(meal.nearName)}</small>
+          <small><span className="shiori-sep"> ・ </span>{meal.atHotel ? t.mealNearHotel(meal.nearName) : t.mealNear(meal.nearName)}</small>
         </span>
         <button aria-expanded={state !== "closed"} onClick={() => void open()} type="button">{state === "closed" ? t.showFood : t.hideFood}</button>
       </div>

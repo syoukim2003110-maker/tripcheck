@@ -253,6 +253,11 @@ export type ShioriMeal = {
   nearName: string;
   /** The slot starts after midnight, on the next calendar day (a day too full to keep). */
   nextDay?: boolean;
+  /**
+   * The dinner is back near the hotel, not near the stop it is listed after:
+   * `near` is the hotel, and `start` is no earlier than the ride back gets there.
+   */
+  atHotel?: true;
 };
 
 export type ShioriDay = {
@@ -882,6 +887,53 @@ export function shioriPricing(input: ShioriInput, options: { rail?: RailNetwork 
   };
 }
 
+/** A sight with nowhere to sit down to dinner beside it, as far as its kind says: open country, not a town's own park or a park of rides. */
+const NO_TABLE_KIND = /mountain|volcano|waterfall|canyon|\bcave\b|\blake\b|forest|\bpark\b|wildlife|island|beach|ruin|archaeological|cemetery|lighthouse/;
+const TOWN_PARK_KIND = /theme park|amusement|urban park|science park|hi-tech park|exhibition park|miniature park|artificial/;
+/** The last sight is over this long before the dinner hour: nobody waits it out on the spot. */
+const DINNER_WAIT = 30;
+
+/** When the place's country sits down to dinner, in minutes since midnight (lib/destinations.ts); 17:30 where it is not known. */
+export function dinnerHourAt(place: { lat: number; lon: number }): number {
+  return destinationForCoordinate(place.lat, place.lon)?.meals.dinner.start ?? DAY_CLOCK.meals.dinner.open;
+}
+
+/**
+ * Where and when the open dinner of a day is: a slot to look for a table in,
+ * not a stop on the clock. Never before the dinner hour of the place; a day
+ * that is still sightseeing after it eats when its last sight is over.
+ *
+ * Near the last sight, as a rule. Back near the hotel when there is one and
+ * the last sight is over well before dinner (nobody waits an hour beside an
+ * earthwork) or is a place with no table around it (a forest park, a
+ * mountain, ruins): then not before the ride back has got there.
+ */
+export function dinnerSlot(day: {
+  /** When the last stop is left, in minutes since the day's midnight. */
+  lastLeave: number;
+  lastPlace: Pick<ShioriPlace, "name" | "lat" | "lon" | "kind">;
+  /** The hotel the day ends at and the minutes of the ride back to it; null on a trip without one. */
+  hotel: { name: string; lat: number; lon: number; rideBack: number } | null;
+}): { start: number; near: GeoPoint; nearName: string; atHotel: boolean } {
+  const hour = dinnerHourAt(day.lastPlace);
+  const kind = (day.lastPlace.kind ?? "").toLowerCase();
+  const noTable = NO_TABLE_KIND.test(kind) && !TOWN_PARK_KIND.test(kind);
+  if (day.hotel && (noTable || hour - day.lastLeave >= DINNER_WAIT)) {
+    return {
+      start: Math.max(hour, day.lastLeave + day.hotel.rideBack),
+      near: { latitude: day.hotel.lat, longitude: day.hotel.lon },
+      nearName: day.hotel.name,
+      atHotel: true,
+    };
+  }
+  return {
+    start: Math.max(hour, day.lastLeave),
+    near: { latitude: day.lastPlace.lat, longitude: day.lastPlace.lon },
+    nearName: day.lastPlace.name,
+    atHotel: false,
+  };
+}
+
 /** A place to eat or drink is under a roof whatever else is known of it. */
 const TABLE_KIND = /restaurant|caf[eé]/;
 
@@ -1214,9 +1266,6 @@ function planCore(input: ShioriInput, options: PlanOptions, frames: Frames | nul
     const lastPlace = stops.at(-1)!.place;
     // The day the traveller has to be done by a certain time is over by then: no dinner is suggested after it.
     const finish = frames && index === requested - 1 ? frames.finish : null;
-    if (times.at(-1)!.leave >= 16 * 60 + 30 && !stops.some((stop) => stop.place.meal === "dinner") && finish === null) {
-      meals.push({ kind: "dinner", afterStop: stops.length - 1, start: stops.at(-1)!.leave, end: null, near: { latitude: lastPlace.lat, longitude: lastPlace.lon }, nearName: lastPlace.name, ...(times.at(-1)!.leave >= 1_440 ? { nextDay: true } : {}) });
-    }
     const legs = day.legs.map((leg) => legView(leg.from, leg.to, leg, { mode: null, minutes: null }));
     const first = day.stops[0].stop;
     const last = day.stops.at(-1)!.stop;
@@ -1226,6 +1275,18 @@ function planCore(input: ShioriInput, options: PlanOptions, frames: Frames | nul
     const toHotel = day.endBase && day.hotelInboundMinutes !== null
       ? legView(last, day.endBase, null, { mode: day.hotelInboundMode, minutes: day.hotelInboundMinutes })
       : null;
+    if (times.at(-1)!.leave >= 16 * 60 + 30 && !stops.some((stop) => stop.place.meal === "dinner") && finish === null) {
+      const slot = dinnerSlot({
+        lastLeave: times.at(-1)!.leave,
+        lastPlace,
+        hotel: input.hotel && toHotel ? { name: input.hotel.name, lat: input.hotel.lat, lon: input.hotel.lon, rideBack: toHotel.minutes } : null,
+      });
+      meals.push({
+        kind: "dinner", afterStop: stops.length - 1, start: clock(slot.start), end: null, near: slot.near, nearName: slot.nearName,
+        ...(slot.start >= 1_440 ? { nextDay: true } : {}),
+        ...(slot.atHotel ? { atHotel: true as const } : {}),
+      });
+    }
     const allLegs = [...legs, ...(fromHotel ? [fromHotel] : []), ...(toHotel ? [toHotel] : [])];
     const walkMinutes = allLegs.reduce((sum, leg) => sum + (
       leg.mode === "walk" ? leg.minutes : leg.rail ? leg.rail.walkToMinutes + leg.rail.walkFromMinutes + leg.rail.transferMinutes : 0

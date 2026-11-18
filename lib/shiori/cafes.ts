@@ -63,12 +63,16 @@ function meters(from: GeoPoint, to: GeoPoint) {
   return 2 * 6_371_000 * Math.asin(Math.sqrt(h));
 }
 
+/** A break this close before the day's open dinner is not suggested. */
+const DINNER_AHEAD = 90;
+
 /**
  * Where a break fits in a day, or null when the day does not call for one.
  *
  * A day of five hours or more gets one, after the stop that ends nearest
- * 15:00 (between 13:30 and 17:00). Not straight after lunch, and not just
- * before a restaurant the traveller chose. When the next leg is a real walk
+ * 15:00 (between 13:30 and 17:00). Not straight after lunch, not just
+ * before a restaurant the traveller chose, and not after the last stop when
+ * the day's dinner follows within an hour and a half. When the next leg is a real walk
  * the cafés are looked for along it; otherwise around the place just left,
  * before the train.
  */
@@ -97,6 +101,9 @@ export function cafeBreakFor(day: {
     if (leave < 13 * 60 + 30 || leave > 17 * 60 || stop.place.meal) return [];
     if (day.meals.some((meal) => meal.afterStop === index && meal.kind === "lunch")) return [];
     if (lunchEnds.some((end) => leave - end >= 0 && leave - end < 75)) return [];
+    // Nor at the end of a day that sits down to dinner within an hour and a
+    // half: a coffee and a dinner are never the same minute, or nearly.
+    if (day.meals.some((meal) => meal.kind === "dinner" && meal.afterStop === index && !meal.nextDay && minutesOf(meal.start) - leave < DINNER_AHEAD)) return [];
     const next = day.stops[index + 1];
     if (next?.place.meal) return [];
     // A break takes time, and everything after it moves by that much. Where
