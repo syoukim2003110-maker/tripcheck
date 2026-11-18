@@ -5,11 +5,11 @@ import test from "node:test";
 import { curateSights, type PopularDestination } from "../lib/popular-sights.ts";
 import { HABITS, daySearch, daylightEnd, scheduleDay, type SearchProblem } from "../lib/shiori/day-search.ts";
 import { isDaytime, isOpenEarly, placeHabit } from "../lib/shiori/habits.ts";
-import { buildShioriPlan, foldedParts, habitOf } from "../lib/shiori/plan.ts";
+import { SMALL_PART_KM, buildShioriPlan, foldedParts, habitOf } from "../lib/shiori/plan.ts";
 import { isClosedSight, isExteriorSight, sightNote } from "../lib/shiori/sight-notes.ts";
 import { decodeTrip, emptyTrip, encodeTrip, placeFromSight, sightStayMinutes, type ShioriTrip } from "../lib/shiori/state.ts";
 import { EXTERIOR_STAY, namedParkStay, shioriStayMinutes } from "../lib/shiori/stay.ts";
-import { buildNotes, notesText, snapStay, STAYS } from "../scripts/build-sight-notes.ts";
+import { OVERRIDES, buildNotes, notesText, snapStay, STAYS } from "../scripts/build-sight-notes.ts";
 
 const cities = (JSON.parse(readFileSync(new URL("../lib/popular-sights-data.json", import.meta.url), "utf8")) as { cities: PopularDestination[] }).cities;
 const shipped = readFileSync(new URL("../lib/shiori/sight-notes.json", import.meta.url), "utf8");
@@ -17,8 +17,8 @@ const shipped = readFileSync(new URL("../lib/shiori/sight-notes.json", import.me
 test("the sight notes in the repository are exactly what the two kept drafts and the web check give", () => {
   assert.equal(notesText(buildNotes()), shipped);
   const notes = JSON.parse(shipped) as Record<string, Record<string, unknown>>;
-  // 2,225 of the 2,277 bundled sights have at least one value both drafts agree on.
-  assert.equal(Object.keys(notes).length, 2225);
+  // 2,223 of the 2,277 bundled sights have at least one value both drafts agree on and no reviewer struck out.
+  assert.equal(Object.keys(notes).length, 2223);
 });
 
 test("a stay is kept only when both drafts are within half again of each other, as their geometric mean on the list of stays", () => {
@@ -240,6 +240,31 @@ test("a small part of another place on the list is seen during that place's visi
   const statue = placeFromSight(sight("hiroshima", "原爆の子の像"), "ja");
   const park = placeFromSight(sight("hiroshima", "平和記念公園"), "ja");
   assert.deepEqual([...foldedParts([park, statue])], [[statue.id, park.id]]);
+});
+
+test("a place a note wrongly calls part of another, kilometres away, is a stop of its own: no card says it is seen where the traveller never goes", () => {
+  const kanazawa = (name: string) => placeFromSight(sight("kanazawa", name), "ja");
+  const group = kanazawa("卯辰山山麓寺院群");
+  const [far, farther] = [kanazawa("本光寺"), kanazawa("本興寺")];
+  // Both drafts called them temples of the group at the foot of 卯辰山; they stand 3.4 and 4.7 km from it. Struck out, with the reason.
+  assert.deepEqual([sightNote(far.id)?.partOf, sightNote(farther.id)?.partOf], [undefined, undefined]);
+  assert.ok(OVERRIDES.Q29408050.why.length > 0 && OVERRIDES.Q30926295.why.length > 0);
+  const plan = buildShioriPlan({ places: [group, farther, far, kanazawa("兼六園")], days: 1, hotel: null, locale: "ja" }, { cities });
+  assert.equal(plan.days.some((day) => day.stops.some((stop) => stop.within)), false);
+  const stops = plan.days.flatMap((day) => day.stops.map((stop) => stop.place.name));
+  for (const name of ["本興寺", "本光寺"]) assert.ok(stops.includes(name) || plan.leftOut.includes(name), name);
+  // Whatever a note says, a part is seen during a place's visit only when it is near: a temple two kilometres off is a stop.
+  const shrine = nikko("日光東照宮");
+  const cat = nikko("眠り猫");
+  assert.equal(foldedParts([shrine, cat]).size, 1);
+  assert.equal(foldedParts([shrine, { ...cat, lat: shrine.lat + (SMALL_PART_KM + 0.2) / 111 }]).size, 0);
+  // Every small part a note gives is within that distance of its place — a statue across Stanley Park, a funicular up Tibidabo.
+  const byQ = new Map(cities.flatMap((city) => city.sights.map((entry) => [entry.q, entry] as const)));
+  for (const [q, note] of Object.entries(JSON.parse(shipped) as Record<string, { partOf?: string; stay?: number }>)) {
+    if (!note.partOf || (note.stay ?? 99) > 30) continue;
+    const [part, main] = [byQ.get(q)!, byQ.get(note.partOf)!];
+    assert.equal(foldedParts([placeFromSight(main, "ja"), placeFromSight(part, "ja")]).size, 1, part.ja);
+  }
 });
 
 test("a large part of another place is a stop of its own: 東大寺 in 奈良公園, 上野動物園 in 上野公園", () => {

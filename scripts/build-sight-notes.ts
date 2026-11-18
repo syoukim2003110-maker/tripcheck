@@ -31,6 +31,10 @@
  * removes the note. A closed or private place nobody checked keeps no access
  * note at all.
  *
+ * Last, OVERRIDES corrects a note both drafts agreed on and a reviewer found
+ * wrong, each with its reason: a field set to null is removed, any other value
+ * replaces the drafts'.
+ *
  * What the notes are for — and what they are not: they are planning habits
  * and estimates (how long a stop is planned, which part of the day suits it,
  * which places are not offered, which place is seen as part of another). They
@@ -51,6 +55,19 @@ export const STAYS = [15, 30, 45, 60, 75, 90, 120, 150, 180, 240, 300, 360, 480]
 const HOURS = new Set(["morning", "early", "day", "evening", "any"]);
 const ACCESS = new Set(["booking", "tour", "closed", "private"]);
 const STAY_FACTOR = 1.5;
+
+/**
+ * Notes both drafts agreed on that a reviewer found wrong. By Wikidata id: the
+ * fields to change (null removes one) and why. Kept short: a correction here
+ * is for a note that would put something false on screen or in a plan.
+ */
+export const OVERRIDES: Record<string, { set: Partial<Record<keyof SightNote, SightNote[keyof SightNote] | null>>; why: string }> = {
+  // 卯辰山山麓寺院群 is a group of temples at the foot of 卯辰山; these two stand elsewhere in the city.
+  Q29408050: { set: { partOf: null }, why: "本興寺 is 4.7 km from 卯辰山山麓寺院群, not one of its temples" },
+  Q30926295: { set: { partOf: null }, why: "本光寺 is 3.4 km from 卯辰山山麓寺院群, not one of its temples" },
+  Q864752: { set: { partOf: null }, why: "the Hanoi flag tower stands on its own; the military history museum it was part of has moved 9 km away" },
+  Q715264: { set: { partOf: null }, why: "Operation Anthropoid is an event, not a part of the cathedral 5.7 km away where it ended" },
+};
 
 const root = new URL("../", import.meta.url);
 const read = (path: string) => readFileSync(new URL(path, root), "utf8");
@@ -99,6 +116,10 @@ export function buildNotes() {
         }
       }
       if (a.partOf && a.partOf === b.partOf && a.partOf !== q && cityOf.get(a.partOf) === city.id) note.partOf = a.partOf;
+      for (const [field, value] of Object.entries(OVERRIDES[q]?.set ?? {})) {
+        if (value === null) delete note[field as keyof SightNote];
+        else (note as Record<string, unknown>)[field] = value;
+      }
       if (Object.keys(note).length > 0) notes[q] = note;
     }
   }

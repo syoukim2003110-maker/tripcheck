@@ -2223,13 +2223,19 @@ function straightMinutes(from: GeoPoint, to: GeoPoint) {
  */
 /** A part of another place on the list is seen during that place's visit when it is this short (see foldedParts). */
 export const SMALL_PART_STAY = 30;
+/**
+ * …and when it is no farther from that place than this, as the crow flies: a
+ * statue in a large park, a funicular up a mountain, but not a temple across
+ * town that a note wrongly calls part of a temple group.
+ */
+export const SMALL_PART_KM = 2;
 
 /**
  * Which places on the list are seen during another place's visit: a sight
  * whose note says it lies inside another sight (sight-notes.ts: 眠り猫 in
  * 日光東照宮, 守礼門 in 首里城, 原爆の子の像 in 平和記念公園) when that place
  * — or the place that one lies inside — is on the list too, and the part is
- * small: a stay of SMALL_PART_STAY or less. Part id → the id of the stop it
+ * small: a stay of SMALL_PART_STAY or less, within SMALL_PART_KM. Part id → the id of the stop it
  * is seen at.
  *
  * A large part (a temple or a museum in a park: 東大寺 in 奈良公園, 上野動物園
@@ -2250,6 +2256,7 @@ export function foldedParts(places: readonly ShioriPlace[]): Map<string, string>
       main = byQ.get(q);
     }
     if (!main || main.id === part.id || main.meal) continue;
+    if (straightKm(part, main) > SMALL_PART_KM) continue;
     if (typeof part.day === "number" && part.day !== main.day) continue;
     into.set(part.id, main.id);
   }
