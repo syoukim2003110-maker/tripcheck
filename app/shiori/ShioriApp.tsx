@@ -143,6 +143,7 @@ const text = {
     mealLabels: { lunch: "昼ごはん（行きたい店）", dinner: "夜ごはん（行きたい店）" },
     hotelChip: "ホテル",
     wait: (minutes: string) => `ここで約${minutes}の空き時間（店の時間に合わせています）`,
+    waitEvening: (minutes: string) => `ここで約${minutes}の空き時間（夜に楽しむ場所なので、夕方からの予定にしています）`,
     mealMissed: "この店に食事の時間帯に着けません。",
     noticesTitle: "このままだと無理がある点",
     noticeNeedsDays: (asked: number, days: number) => `この内容は${asked}日では回りきれません。${days}日あれば無理なく収まります。`,
@@ -440,6 +441,7 @@ const text = {
     mealLabels: { lunch: "Lunch (your pick)", dinner: "Dinner (your pick)" },
     hotelChip: "Hotel",
     wait: (minutes: string) => `About ${minutes} free here (timed for the restaurant)`,
+    waitEvening: (minutes: string) => `About ${minutes} free here (a place for the evening, so it is planned from early evening)`,
     mealMissed: "This restaurant cannot be reached during the meal.",
     noticesTitle: "What does not work as it stands",
     noticeNeedsDays: (asked: number, days: number) => `This does not fit in ${asked} day${asked === 1 ? "" : "s"}. It fits comfortably in ${days}.`,
@@ -2550,7 +2552,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
                       return (
                         <li key={stop.place.id}>
                           {(index === 0 ? startPart !== part : partOf(day.stops[index - 1].arrive) !== part) ? <p className="shiori-part"><span>{t.parts[part]}</span></p> : null}
-                          {stop.waitMinutes > 0 ? <p className="shiori-wait"><Icon name="clock" />{(stop.reserved ? t.waitReserved : t.wait)(durationText(stop.waitMinutes, locale))}</p> : null}
+                          {stop.waitMinutes > 0 ? <p className="shiori-wait"><Icon name="clock" />{(stop.reserved ? t.waitReserved : stop.evening ? t.waitEvening : t.wait)(durationText(stop.waitMinutes, locale))}</p> : null}
                           <article className={`shiori-stop${isOpen ? " is-open" : ""}`} data-stop={stop.place.id}>
                             <button
                               aria-expanded={isOpen}

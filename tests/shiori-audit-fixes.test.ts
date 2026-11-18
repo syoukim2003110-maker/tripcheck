@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { cafeBreakFor } from "../lib/shiori/cafes.ts";
 import { buildMealBrief, EMPTY_MEAL_PREFS, mealSights, mealSlotKey, mealStopKind, openMealSlots } from "../lib/shiori/meal-advice.ts";
-import { DAY_CLOCK, DAY_FILLING_STAY, HABITS, dayClock, daySearch, pastEnd, type SearchProblem } from "../lib/shiori/day-search.ts";
+import { DAY_CLOCK, DAY_FILLING_STAY, HABITS, dayClock, daySearch, pastEnd, scheduleDay, type SearchProblem } from "../lib/shiori/day-search.ts";
 import { isDaytime, isOpenEarly, placeHabit } from "../lib/shiori/habits.ts";
 import { readdirSync, readFileSync } from "node:fs";
 
@@ -192,6 +192,7 @@ test("the open dinner of a day is at dinner time and where one would eat: back n
 test("in every trip of the audit a dinner is never before the dinner hour, never before the traveller can be there, and never the minute of a coffee break", () => {
   let slots = 0;
   let hotelSlots = 0;
+  let eveningSlots = 0;
   for (const scenario of scenarios) {
     const { plan } = auditPlan(scenario.id);
     for (const day of plan.days) {
@@ -204,6 +205,16 @@ test("in every trip of the audit a dinner is never before the dinner hour, never
       const hour = dinnerHourAt(last.place);
       assert.equal(dinner.meal.afterStop, day.stops.length - 1, where);
       assert.ok(dinner.start >= hour, where);
+      if (dinner.meal.during) {
+        // A day that ends at a place of the evening eats there, during the visit (a night market is the dinner):
+        // the traveller is there, and it is still not before the dinner hour.
+        eveningSlots += 1;
+        assert.equal(last.evening, true, where);
+        assert.deepEqual(dinner.meal.near, { latitude: last.place.lat, longitude: last.place.lon }, where);
+        assert.equal(dinner.start, Math.max(hour, minutesOfClock(last.arrive) + (last.arriveNextDay ? 1_440 : 0)), where);
+        assert.ok(dinner.start < lastLeave, where);
+        continue;
+      }
       assert.ok(dinner.start >= lastLeave, where);
       if (dinner.meal.atHotel) {
         hotelSlots += 1;
@@ -222,7 +233,7 @@ test("in every trip of the audit a dinner is never before the dinner hour, never
       }
     }
   }
-  assert.ok(slots >= 50 && hotelSlots >= 20, `${slots} dinners, ${hotelSlots} near the hotel`);
+  assert.ok(slots >= 50 && hotelSlots >= 20 && eveningSlots >= 2, `${slots} dinners, ${hotelSlots} near the hotel, ${eveningSlots} at a place of the evening`);
 });
 
 test("where the dinner is: near the last sight on a day still out at the dinner hour or without a hotel, near the hotel after a sight that is over before the hour (were it by five minutes: the ride back leaves then) or a place with no table around it, at its true time on a day that runs late", () => {
@@ -791,7 +802,8 @@ test("a dinner near the last sight never starts after the booklet has left that 
   for (const scenario of scenarios) {
     for (const day of auditPlan(scenario.id).plan.days) {
       const dinner = dinnerOf(day);
-      if (!dinner || !day.toHotel) continue;
+      // (A dinner during the visit to a place of the evening is eaten before that place is left: see the test of the evening below.)
+      if (!dinner || !day.toHotel || dinner.meal.during) continue;
       const last = day.stops.at(-1)!;
       const lastLeave = minutesOfClock(last.leave) + (last.leaveNextDay ? 1_440 : 0);
       const where = `${scenario.id} day ${day.index + 1}: left ${last.leave}, dinner ${dinner.meal.start} near ${dinner.meal.nearName}`;
@@ -856,7 +868,8 @@ test("a stop that holds a lunch hour says so beside its stay, and a lunch eaten 
         const where = `${id} day ${day.index + 1}: ${stop.arrive}–${stop.leave} ${stop.place.name}`;
         const span = minutesOfClock(stop.leave) + (stop.leaveNextDay ? 1_440 : 0) - minutesOfClock(stop.arrive) - (stop.arriveNextDay ? 1_440 : 0);
         assert.equal(span, stop.stayMinutes + (stop.lunchMinutes ?? 0), where);
-        const during = day.meals.find((meal) => meal.afterStop === index && meal.during);
+        // (The lunch: a dinner during a visit to a place of the evening adds no hour and is never "on arrival".)
+        const during = day.meals.find((meal) => meal.afterStop === index && meal.during && meal.kind === "lunch");
         if (stop.lunchMinutes) {
           held += 1;
           assert.ok(during, where);
@@ -953,14 +966,14 @@ test("a day that ends a few minutes past 18:00 on estimated legs is not called l
   assert.deepEqual([0, 15, 16, 45].map((over) => pastEnd(DAY_CLOCK.sightsEnd + over, DAY_CLOCK.sightsEnd)), [0, 0, 16, 45]);
   assert.deepEqual([15, 16].map((over) => pastEnd(DAY_CLOCK.dinnerEnd + over, DAY_CLOCK.dinnerEnd)), [0, 16]);
   // In every trip of the audit the booklet and its notices agree with it: a day is called late exactly when a
-  // sight nobody booked ends more than the grace past 18:00, and no advice to add days or drop a place is
+  // sight nobody booked ends more than the grace past 18:00 (21:30 for a place of the evening), and no advice to add days or drop a place is
   // given to a trip without such a day.
   for (const scenario of scenarios) {
     const { plan } = auditPlan(scenario.id);
     for (const day of plan.days) {
-      const last = day.stops.at(-1)!;
-      const over = minutesOfClock(last.leave) + (last.leaveNextDay ? 1_440 : 0) - DAY_CLOCK.sightsEnd;
-      assert.equal(day.runsLate, over > DAY_CLOCK.endGrace, `${scenario.id} day ${day.index + 1} ends ${last.leave}`);
+      // (A place of the evening closes its day like a dinner, by 21:30; the sight before it is held to 18:00.)
+      const over = Math.max(...day.stops.map((stop) => minutesOfClock(stop.leave) + (stop.leaveNextDay ? 1_440 : 0) - (stop.evening ? DAY_CLOCK.dinnerEnd : DAY_CLOCK.sightsEnd)));
+      assert.equal(day.runsLate, over > DAY_CLOCK.endGrace, `${scenario.id} day ${day.index + 1} ends ${day.stops.at(-1)!.leave}`);
     }
     if (!plan.days.some((day) => day.runsLate)) assert.equal(plan.notices.some((notice) => notice.kind === "needs-days" || notice.kind === "drop" || notice.kind === "too-much"), false, scenario.id);
   }
@@ -1186,7 +1199,120 @@ test("over the 63 trips of the audit: fewer temples and museums late in the day,
     }
   }
   // Were 27 and 23 (and 18,638 minutes on the way in all) with the order of least travel alone.
+  // (61 minutes more for the order of the days; 35 more in Taipei, where the night market now closes its day.)
   assert.ok(daytimeLate <= 20, `${daytimeLate} daytime places that start at 16:30 or later`);
   assert.ok(ticketedFirst <= 12, `${ticketedFirst} places with a door first before 09:30 beside a place under the open sky`);
-  assert.ok(total <= 18_638 + 80, `${total} minutes on the way`);
+  assert.ok(total <= 18_638 + 110, `${total} minutes on the way`);
+});
+
+/* ------------------------------------------------------------ places of the evening */
+
+const tripOf = (cityId: string, names: string[], days: number, hotel: { name: string; lat: number; lon: number } | null = null, more: ReturnType<typeof sightOf>[] = []) => (
+  buildShioriPlan({ places: [...names.map((name) => sightOf(cityId, name)), ...more], days, hotel, locale: "ja" }, { rail: railOf(cityId), cities })
+);
+const eveningStops = (plan: ReturnType<typeof buildShioriPlan>) => plan.days.flatMap((day) => day.stops.map((stop, index) => ({ day, stop, index }))).filter((entry) => entry.stop.evening);
+
+test("a night market closes its day in the evening, with the dinner there: 士林夜市 from 17:30, not from 10:19 with a lunch beside it", () => {
+  // Was: taipei-2 day 1, 09:08 中正紀念堂, 10:19–11:34 士林夜市, (lunch 11:34–12:34 near 士林夜市), 故宮博物院, Ciyou Temple.
+  const { plan } = auditPlan("taipei-2");
+  const [market] = eveningStops(plan);
+  assert.equal(market.stop.place.name, "士林夜市");
+  assert.deepEqual([market.index, market.stop.arrive, market.stop.leave, market.stop.stayMinutes], [market.day.stops.length - 1, "17:30", "18:45", 75]);
+  // The day is not called late for it, and nobody is told to add a day: the evening is part of the day.
+  assert.equal(market.day.runsLate, false);
+  assert.deepEqual(plan.notices.filter((notice) => notice.kind === "needs-days" || notice.kind === "drop" || notice.kind === "too-much"), []);
+  // The sights before it are over by 17:00 (the museum until 16:50), and the day starts later, not with three hours to kill.
+  assert.ok(market.day.stops.slice(0, -1).every((stop) => stop.leave <= "17:00"), market.day.stops.map((stop) => stop.leave).join(" "));
+  assert.equal(market.stop.waitMinutes, 0);
+  assert.ok(market.day.start > "08:30", market.day.start);
+  // The dinner is there, during the visit; the lunch of the day is somewhere else.
+  const dinner = dinnerOf(market.day)!;
+  assert.deepEqual([dinner.meal.start, dinner.meal.nearName, dinner.meal.during, dinner.meal.afterStop, dinner.meal.atHotel], ["17:30", "士林夜市", true, market.index, undefined]);
+  assert.notEqual(lunchOf(market.day)?.afterStop, market.index);
+  assert.ok(lunchOf(market.day));
+  // A list too long for its day still ends at the market: taipei-1, 19:02–20:17 after the museum (was 16:20, before it).
+  const full = eveningStops(auditPlan("taipei-1").plan)[0];
+  assert.deepEqual([full.index, full.stop.place.name], [full.day.stops.length - 1, "士林夜市"]);
+  assert.ok(full.stop.arrive >= "17:30");
+});
+
+test("which places belong to the evening: a night market, a night safari, a night-life street by its name — not a street, a zoo or a morning market as such", () => {
+  for (const [kind, name] of [["night markets in taiwan", "士林夜市"], ["night markets in taiwan", "Luzhou Miaokou Night Market"], ["street", "パッポン通り"], ["street", "ソイ・カウボーイ"], ["zoo", "ナイトサファリ"], ["zoo", "チェンマイ・ナイトサファリ"], ["market", "ナイトバザール"], [undefined, "饒河街観光夜市"]] as const) {
+    assert.equal(placeHabit(kind, name), "evening", name);
+  }
+  for (const [kind, name] of [["street", "カオサン通り"], ["zoo", "シンガポール動物園"], ["morning market", "朝市"], ["fish market", "築地場外市場"], ["neighborhood", "タイムズスクエア"], ["mountain", "藻岩山"]] as const) {
+    assert.notEqual(placeHabit(kind, name), "evening", name);
+  }
+  // In the bundled sights: these six and no other.
+  const evening = cities.flatMap((city) => city.sights.filter((sight) => placeHabit(sight.kind, `${sight.ja} ${sight.en}`) === "evening").map((sight) => sight.ja));
+  assert.deepEqual(evening.sort(), ["Luzhou Miaokou Night Market", "ソイ・カウボーイ", "チェンマイ・ナイトサファリ", "ナイトサファリ", "パッポン通り", "士林夜市"].sort());
+  // A restaurant chosen for a meal, or a place whose hour the traveller booked, is not moved to the evening by its name.
+  assert.equal(habitOf({ kind: "restaurant", name: "夜市の店", meal: "lunch" }), null);
+});
+
+test("a place of the evening is never reached before 17:30, never has the day's lunch, is the last stop nobody chose a table at, and may run to 21:30: on short days, full days, alone, with a hotel, beside a chosen dinner", () => {
+  const centre = { name: "中心部のホテル", lat: 25.033, lon: 121.5654 };
+  const dinner = { id: "r-dinner", name: "夕食の店", lat: 25.04, lon: 121.55, stayMinutes: 90, kind: "restaurant", meal: "dinner" as const };
+  const plans = [
+    ...scenarios.map((scenario) => auditPlan(scenario.id).plan),
+    // Alone on its day; with one short sight; with a hotel; two night markets on one day and on two; beside a chosen dinner.
+    tripOf("taipei", ["士林夜市"], 1),
+    tripOf("taipei", ["士林夜市", "中正紀念堂"], 1),
+    tripOf("taipei", ["士林夜市", "中正紀念堂", "故宮博物院"], 1, centre),
+    tripOf("taipei", ["士林夜市", "Luzhou Miaokou Night Market", "中正紀念堂"], 1, centre),
+    tripOf("taipei", ["士林夜市", "Luzhou Miaokou Night Market", "中正紀念堂", "故宮博物院"], 2, centre),
+    tripOf("taipei", ["士林夜市", "中正紀念堂", "故宮博物院"], 1, centre, [dinner]),
+    tripOf("bangkok", ["王宮", "カオサン通り", "パッポン通り", "ソイ・カウボーイ"], 2),
+    tripOf("singapore", ["ナイトサファリ", "マリーナ・ベイ"], 1),
+  ];
+  let seen = 0;
+  for (const plan of plans) {
+    for (const { day, stop, index } of eveningStops(plan)) {
+      seen += 1;
+      const where = `${day.stops.map((entry) => `${entry.arrive} ${entry.place.name}`).join(" > ")}`;
+      assert.ok(!stop.arriveNextDay && stop.arrive >= "17:30", where);
+      // Nothing nobody chose a table at comes after it.
+      assert.ok(day.stops.slice(index + 1).every((later) => later.evening || later.place.meal === "dinner"), where);
+      assert.ok(!day.meals.some((meal) => meal.kind === "lunch" && meal.afterStop === index), where);
+      // Over by 21:30 (and the grace) it is not a late day; the sights before it are held to 18:00 as ever.
+      const sightsOver = Math.max(0, ...day.stops.filter((entry) => !entry.evening && entry.place.meal !== "dinner").map((entry) => minutesOfClock(entry.leave) + (entry.leaveNextDay ? 1_440 : 0)));
+      const eveningOver = Math.max(...day.stops.filter((entry) => entry.evening || entry.place.meal === "dinner").map((entry) => minutesOfClock(entry.leave) + (entry.leaveNextDay ? 1_440 : 0)));
+      assert.equal(day.runsLate, pastEnd(sightsOver, DAY_CLOCK.sightsEnd) > 0 || pastEnd(eveningOver, DAY_CLOCK.dinnerEnd) > 0, where);
+      // The open dinner of a day that ends there is there.
+      const open = dinnerOf(day);
+      if (index === day.stops.length - 1 && open) assert.deepEqual([open.meal.nearName, open.meal.during, open.meal.atHotel], [stop.place.name, true, undefined], where);
+    }
+  }
+  assert.ok(seen >= 12, `${seen} stops of the evening looked at`);
+  // Two night markets are two evenings when the trip has two days, like two chosen dinners.
+  const two = tripOf("taipei", ["士林夜市", "Luzhou Miaokou Night Market", "中正紀念堂", "故宮博物院"], 2, centre);
+  assert.deepEqual(two.days.map((day) => day.stops.filter((stop) => stop.evening).length), [1, 1]);
+  // Alone, the day begins with it: nobody is sent out at nine to wait for the evening.
+  const alone = tripOf("taipei", ["士林夜市"], 1);
+  assert.deepEqual([alone.days[0].start, alone.days[0].stops[0].arrive, alone.days[0].stops[0].waitMinutes, alone.days[0].runsLate], ["17:30", "17:30", 0, false]);
+  // A booked hour is the traveller's own: the market at 14:00 because they said so.
+  const market = sightOf("taipei", "士林夜市");
+  const booked = buildShioriPlan({ places: [{ ...market, reserve: { day: 1, time: "14:00" } }, sightOf("taipei", "中正紀念堂")], days: 1, hotel: null, locale: "ja" }, { rail: railOf("taipei"), cities });
+  const kept = booked.days[0].stops.find((stop) => stop.place.name === "士林夜市")!;
+  assert.deepEqual([kept.arrive, kept.reserved, kept.evening], ["14:00", true, undefined]);
+});
+
+test("a day that starts later for its evening does not push a temple past five, and the free time before a place of the evening is said as that — in both languages, with no hour of any place in the words", () => {
+  // A temple of fifty minutes, ten minutes from a place of the evening (kept like a dinner: from 17:30), no hotel.
+  // Started as late as can be the temple would be 16:20–17:10; as a daytime place it is over at 17:00 and ten minutes are free.
+  const late = scheduleDay([50, 75], [null, "dinner"], [10], null);
+  assert.deepEqual([late.start, late.leave[0], late.arrive[1], late.wait[1]], [16 * 60 + 20, 17 * 60 + 10, 17 * 60 + 30, 0]);
+  const daylight = scheduleDay([50, 75], [null, "dinner"], [10], null, undefined, [true, false]);
+  assert.deepEqual([daylight.start, daylight.leave[0], daylight.arrive[1], daylight.wait[1]], [16 * 60 + 10, 17 * 60, 17 * 60 + 30, 10]);
+  // A place with nothing to say about its hours is not held back: only the daytime one is.
+  assert.deepEqual(scheduleDay([50, 75], [null, "dinner"], [10], null, undefined, [false, false]).leave[0], 17 * 60 + 10);
+  // The words: one line per language, shown for a wait at a stop of the evening, and nothing in them about when a place opens.
+  const source = readFileSync(new URL("../app/shiori/ShioriApp.tsx", import.meta.url), "utf8");
+  const lines = source.match(/^    waitEvening: .*$/gm) ?? [];
+  assert.equal(lines.length, 2);
+  for (const line of lines) assert.equal(/営業|開店|閉店|開場|開く|閉ま|\bopens?\b|\bcloses?\b|\bshuts?\b|\d{1,2}:\d{2}|\d時/i.test(line), false, line);
+  assert.equal(source.match(/stop\.reserved \? t\.waitReserved : stop\.evening \? t\.waitEvening : t\.wait/g)?.length, 1);
+  // Nor does the planner's table of habits hold an hour of any place: kinds and names only.
+  const habits = readFileSync(new URL("../lib/shiori/habits.ts", import.meta.url), "utf8");
+  assert.equal(/\d{1,2}:\d{2}|\d+ \* 60/.test(habits.replace(/\/\*[\s\S]*?\*\//g, "")), false);
 });

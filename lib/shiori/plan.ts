@@ -182,6 +182,12 @@ export type ShioriStop = {
    * that would begin with a wait begins later instead: see `start`.)
    */
   waitMinutes: number;
+  /**
+   * A place that belongs to the evening (a night market): the planner keeps
+   * it for the end of the day, from early evening — its own habit, not the
+   * hours of the place. A wait in front of it is free time before the evening.
+   */
+  evening?: true;
   /** The restaurant could not be reached inside its meal hours on this day. */
   mealMissed: boolean;
   /**
@@ -294,7 +300,8 @@ export type ShioriMeal = {
   /**
    * The lunch is during the visit it is listed under, at the place or beside
    * it, not after it: one long visit runs across lunchtime. `start`–`end` lie
-   * inside the stop's own times.
+   * inside the stop's own times. Or the dinner of a day that ends at a place
+   * of the evening (a night market): eaten there, `start` inside the visit.
    */
   during?: true;
   /**
@@ -492,8 +499,9 @@ function dayLate(day: EngineDay, dayEnd: string, dinnerIds: ReadonlySet<string>,
   return overrunOf(day, dayEnd, dinnerIds, bookedIds) > 0;
 }
 
+/** The places that close their day and may run to 21:30: a chosen dinner, and a place that belongs to the evening (see clockMeal). */
 function dinnerIdsOf(input: ShioriInput) {
-  return new Set(input.places.filter((place) => place.meal === "dinner").map((place) => place.id));
+  return new Set(input.places.filter((place) => clockMeal(place) === "dinner").map((place) => place.id));
 }
 
 /**
@@ -603,6 +611,18 @@ const stayOf = (place: ShioriPlace) => Math.max(15, Math.round(place.stayMinutes
  */
 export const habitOf = (place: Pick<ShioriPlace, "kind" | "name" | "meal">): PlaceHabit | null => (place.meal ? null : placeHabit(place.kind, place.name));
 /**
+ * What a place is to the day's clock. A place that belongs to the evening (a
+ * night market, a night-life street) is kept like a chosen dinner: it closes
+ * its day, the day reaches it from 17:30 — never in the morning, never with
+ * a lunch — and it may run to 21:30 without the day being called late. Those
+ * are the hours the booklet already keeps for a dinner, a habit of the
+ * planner and not the hours of any place; nothing is said or implied about
+ * when a market opens. (The place is still a sight: no table is booked, and
+ * the day's open dinner is suggested there.)
+ */
+const clockMeal = (place: Pick<ShioriPlace, "kind" | "name" | "meal">): "lunch" | "dinner" | null => place.meal ?? (habitOf(place) === "evening" ? "dinner" : null);
+
+/**
  * The same, as the search is told it. (Every stop is handed over with the
  * same fields in the same order: the search reads them millions of times,
  * and stops of several shapes made it a third slower.)
@@ -654,12 +674,14 @@ function buildWithEngine(input: ShioriInput, extra: Partial<TripPlannerContext>,
     // open and will not seat anyone after the kitchen's last order.
     openingWindowsByDay: Object.fromEntries(input.places.flatMap((place) => {
       const booked = frames?.booked.get(place.id);
-      if (!place.meal && !booked) return [];
+      const meal = clockMeal(place);
+      if (!meal && !booked) return [];
       // A booked time is a door that opens at that minute and lets nobody in
       // after it: reached early the engine waits, reached late it says so
       // and keeps the clock running — never an earlier or a later start that
       // looks kept. (Room is left for the lunch hour its stay may carry.)
-      const hours = place.meal ? DAY_CLOCK.meals[place.meal] : null;
+      // (A place of the evening is held to the dinner's hours too: a habit of the planner, see clockMeal.)
+      const hours = meal ? DAY_CLOCK.meals[meal] : null;
       const window = booked
         ? { openMinutes: booked.at, closeMinutes: booked.at + stayOf(place) + LUNCH_MINUTES + 1, lastEntryMinutes: booked.at, ...(slackFree.has(place.id) ? { slackFreeEntry: true } : {}) }
         : { openMinutes: hours!.open, closeMinutes: hours!.lastSeat + Math.max(15, Math.round(place.stayMinutes)) };
@@ -1006,7 +1028,7 @@ function searchProblem(input: ShioriInput, pricing: TripPrices, frames: Frames |
       // (A booked stop has no habit: its hour is the traveller's own.)
       return booked
         ? { stay: stayOf(place), meal: place.meal ?? null, day: booked.day, fixed: booked.at }
-        : { stay: stayOf(place), meal: place.meal ?? null, day: typeof place.day === "number" ? place.day : null, ...hoursOf(place) };
+        : { stay: stayOf(place), meal: clockMeal(place), day: typeof place.day === "number" ? place.day : null, ...hoursOf(place) };
     }),
     minutes: pricing.minutes,
     km: input.places.map((from) => input.places.map((to) => straightKm(from, to))),
@@ -1257,12 +1279,14 @@ function planCore(input: ShioriInput, options: PlanOptions, frames: Frames | nul
       // (On a trip with an entered time every day keeps that clock: see describe() in day-search.ts.)
       const schedule = scheduleDay(
         places.map(stayOf),
-        places.map((place) => place.meal ?? null),
+        places.map((place) => (frames?.booked.has(place.id) ? place.meal ?? null : clockMeal(place))),
         day.legs.map((leg) => leg.comparison.recommended.minutes),
         day.startBase && day.hotelOutboundMinutes !== null ? day.hotelOutboundMinutes : null,
         frames !== null
           ? { fixed: places.map((place) => frames.booked.get(place.id)?.at ?? null), open, close, homeward: day.endBase && day.hotelInboundMinutes !== null ? day.hotelInboundMinutes : 0, night: DAY_CLOCK.lastMinute }
           : undefined,
+        // (As the search is told: a later start does not carry a daytime place past 17:00.)
+        places.map((place) => !frames?.booked.has(place.id) && isDaytime(habitOf(place))),
       );
       if (schedule.noLunchRoom) timing.noLunchRoom.add(index);
       timing.dayStartTimes[index] = clock(schedule.start);
@@ -1477,6 +1501,7 @@ function planCore(input: ShioriInput, options: PlanOptions, frames: Frames | nul
         arriveNextDay: times[stopIndex].arrive >= 1_440,
         leaveNextDay: leaveMinutes >= 1_440,
         reserved: bookedIds.has(place.id),
+        ...(!bookedIds.has(place.id) && habitOf(place) === "evening" ? { evening: true as const } : {}),
       }];
     });
     if (stops.length === 0) return [];
@@ -1508,7 +1533,12 @@ function planCore(input: ShioriInput, options: PlanOptions, frames: Frames | nul
     const toHotel = day.endBase && day.hotelInboundMinutes !== null
       ? legView(last, day.endBase, null, { mode: day.hotelInboundMode, minutes: day.hotelInboundMinutes })
       : null;
-    if (times.at(-1)!.leave >= 16 * 60 + 30 && !stops.some((stop) => stop.place.meal === "dinner") && finish === null) {
+    // A day that ends at a place of the evening eats there: the dinner is during that visit, from the dinner
+    // hour of the place (a night market is the dinner). Where that hour comes after the visit, as after any sight.
+    const eveningDinner = stops.at(-1)!.evening ? Math.max(dinnerHourAt(lastPlace), times.at(-1)!.arrive) : null;
+    if (eveningDinner !== null && eveningDinner < times.at(-1)!.leave && !stops.some((stop) => stop.place.meal === "dinner") && finish === null) {
+      meals.push({ kind: "dinner", afterStop: stops.length - 1, start: clock(eveningDinner), end: null, near: { latitude: lastPlace.lat, longitude: lastPlace.lon }, nearName: lastPlace.name, during: true, ...(eveningDinner >= 1_440 ? { nextDay: true } : {}) });
+    } else if (times.at(-1)!.leave >= 16 * 60 + 30 && !stops.some((stop) => stop.place.meal === "dinner") && finish === null) {
       const slot = dinnerSlot({
         lastLeave: times.at(-1)!.leave,
         lastPlace,
@@ -1546,10 +1576,12 @@ function planCore(input: ShioriInput, options: PlanOptions, frames: Frames | nul
     // half hours or two long hauls between places — never a single visit,
     // never the rides to and from the hotel), or an hour and a half on foot.
     // The label and the way the days were split follow one rule.
-    const lastSight = stops.findLastIndex((stop) => stop.place.meal !== "dinner");
+    // (As the search counts them: a place of the evening closes the day like a dinner, unless its hour was booked.)
+    const closes = (stop: ShioriStop) => stop.place.meal === "dinner" || stop.evening === true;
+    const lastSight = stops.findLastIndex((stop) => !closes(stop));
     const packed = packedDay({
       stops: stops.length,
-      sights: stops.filter((stop) => stop.place.meal !== "dinner").length,
+      sights: stops.filter((stop) => !closes(stop)).length,
       // (The idle time in front of a booked hour is not sightseeing.)
       span: times[Math.max(0, lastSight)].leave - times[0].arrive
         - stops.reduce((sum, stop, position) => sum + (stop.reserved && position >= 1 && position <= lastSight ? stop.waitMinutes : 0), 0),
@@ -1951,7 +1983,7 @@ export function buildShioriPlan(input: ShioriInput, options: PlanOptions = {}): 
 
   if (runsLate || otherLeftOut || plan.unplaced.some(curable)) {
     // No day holds more than its nine and a half hours of stays: fewer days than that are not worth planning.
-    const least = Math.ceil(input.places.reduce((sum, place) => sum + (place.meal === "dinner" ? 0 : stayOf(place) + DAY_CLOCK.legBuffer), 0) / (DAY_CLOCK.sightsEnd - DAY_CLOCK.hotelStart + DAY_CLOCK.legBuffer));
+    const least = Math.ceil(input.places.reduce((sum, place) => sum + (clockMeal(place) === "dinner" ? 0 : stayOf(place) + DAY_CLOCK.legBuffer), 0) / (DAY_CLOCK.sightsEnd - DAY_CLOCK.hotelStart + DAY_CLOCK.legBuffer));
     let found = false;
     // Never past the longest trip that can be kept: a length that cannot be
     // saved must not be offered.

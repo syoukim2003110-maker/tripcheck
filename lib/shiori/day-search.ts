@@ -490,6 +490,11 @@ export function dayClock(stays: readonly number[], meals: readonly Meal[], rides
  * early, and a later start is only taken when it breaks nothing entered and
  * does not carry sightseeing further past 18:00. Before a booking the later
  * start that still leaves an hour for lunch is preferred to the latest one.
+ *
+ * `daytime` (per position): places the planner visits in the daytime (see
+ * HABITS). A later start never carries one of them past 17:00 — the day
+ * that waits for its evening starts later, but not so late that the temple
+ * before the night market is seen at dusk.
  */
 export function scheduleDay(
   stays: readonly number[],
@@ -497,8 +502,13 @@ export function scheduleDay(
   rides: readonly number[],
   hotelOut: number | null,
   frame?: ClockFrame & { /** The day does not begin before this minute. */ open?: number | null },
+  daytime?: readonly (boolean | undefined)[],
 ) {
   const door = hotelOut === null ? 0 : hotelOut + DAY_CLOCK.legBuffer;
+  /** No daytime place is over later than it was, where that is after 17:00. */
+  const inDaylight = (clock: { leave: number[] }, base: { leave: number[] }) => !daytime || daytime.every((flag, position) => (
+    !flag || meals[position] || (frame?.fixed?.[position] ?? null) !== null || clock.leave[position] <= Math.max(base.leave[position], HABITS.daytimeEnd)
+  ));
   if (!frame) {
     const usual = (hotelOut === null ? DAY_CLOCK.start : DAY_CLOCK.hotelStart) + door;
     const base = dayClock(stays, meals, rides, usual);
@@ -513,7 +523,7 @@ export function scheduleDay(
       ));
       for (let shift = base.wait[held]; shift > 0; shift -= shift % 5 || 5) {
         const later = dayClock(stays, meals, rides, usual + shift);
-        if (later.missed === base.missed && later.arrive[held] === base.arrive[held] && lunchBy(later)) return { ...later, start: usual + shift - door };
+        if (later.missed === base.missed && later.arrive[held] === base.arrive[held] && lunchBy(later) && inDaylight(later, base)) return { ...later, start: usual + shift - door };
       }
     }
     return { ...base, start: usual - door };
@@ -547,7 +557,7 @@ export function scheduleDay(
     for (let shift = base.wait[held]; shift > 0; shift -= shift % 5 || 5) {
       const later = dayClock(stays, meals, rides, usual + shift, full);
       if (
-        later.missed !== base.missed || later.arrive[held] !== base.arrive[held] || !lunchBy(later)
+        later.missed !== base.missed || later.arrive[held] !== base.arrive[held] || !lunchBy(later) || !inDaylight(later, base)
         || later.late !== base.late || later.hardOver > base.hardOver || softOver(later) > Math.max(0, baseOver)
       ) continue;
       // Without a booking: as late as the clock allows, as ever.
@@ -2282,6 +2292,7 @@ export function daySearch(
           night: DAY_CLOCK.lastMinute,
         }
         : undefined,
+      habitsOn ? order.map((stop) => stops[stop].daytime) : undefined,
     );
     return {
       order,
