@@ -19,7 +19,7 @@ test("on load the page deletes the old route store before reading the new one", 
   assert.match(reader, /for \(const key of RETIRED_ROUTE_KEYS\) window\.localStorage\.removeItem\(key\)/);
   assert.ok(reader.indexOf("removeItem") < reader.indexOf("getItem"));
   // Every path the page keeps goes through the store's serializer.
-  assert.match(page, /localStorage\.setItem\(ROUTES_KEY, serializeRoutes\(routes\)\)/);
+  assert.match(page, /localStorage\.setItem\(ROUTES_KEY, serializeRoutes\(routes, appleHotel\)\)/);
 });
 
 test("only OpenStreetMap paths are written, each tagged with its source", () => {
@@ -47,4 +47,22 @@ test("an entry without the OpenStreetMap tag is not read back, whatever it holds
   assert.deepEqual([...parseStoredRoutes(raw).keys()], ["walk|e-f"]);
   assert.equal(parseStoredRoutes("not json").size, 0);
   assert.equal(parseStoredRoutes(null).size, 0);
+});
+
+test("a path with an end at a place found through Apple is never kept: its ends are Apple's position of the place", () => {
+  const routes = new Map<string, ShioriRoute | null>([
+    ["walk|wikidata-Q1::wikidata-Q2", { minutes: 12, path, source: "osm" }],
+    ["walk|wikidata-Q1::apple-I7EA0EDCABFD8E819", { minutes: 8, path, source: "osm" }],
+    ["drive|apple-I7EA0EDCABFD8E819::osm-node-1", { minutes: 5, path, source: "osm" }],
+    ["walk|maps-I7EA0EDCABFD8E819::wikidata-Q2", { minutes: 5, path, source: "osm" }],
+    ["walk|base-shiori-hotel@34.3853,132.4553::wikidata-Q1", { minutes: 6, path, source: "osm" }],
+    ["walk|wikidata-Q2::shiori-hotel@34.3853,132.4553", { minutes: 6, path, source: "osm" }],
+  ]);
+  const keys = (text: string) => (JSON.parse(text) as Array<[string]>).map((entry) => entry[0]);
+  // The hotel's legs are kept while the hotel is not Apple's.
+  assert.deepEqual(keys(serializeRoutes(routes)), ["walk|wikidata-Q1::wikidata-Q2", "walk|base-shiori-hotel@34.3853,132.4553::wikidata-Q1", "walk|wikidata-Q2::shiori-hotel@34.3853,132.4553"]);
+  assert.deepEqual(keys(serializeRoutes(routes, true)), ["walk|wikidata-Q1::wikidata-Q2"]);
+  // One kept before this rule is dropped when read.
+  const older = JSON.stringify([["walk|wikidata-Q1::apple-I7EA0EDCABFD8E819", 8, [[35.68, 139.76], [35.69, 139.77]], "osm"], ["walk|a::b", 8, [[35.68, 139.76], [35.69, 139.77]], "osm"]]);
+  assert.deepEqual([...parseStoredRoutes(older).keys()], ["walk|a::b"]);
 });

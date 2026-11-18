@@ -101,9 +101,9 @@ function readRoutes(): Map<string, ShioriRoute> {
   }
 }
 
-function writeRoutes(routes: ReadonlyMap<string, ShioriRoute | null>) {
+function writeRoutes(routes: ReadonlyMap<string, ShioriRoute | null>, appleHotel: boolean) {
   try {
-    window.localStorage.setItem(ROUTES_KEY, serializeRoutes(routes));
+    window.localStorage.setItem(ROUTES_KEY, serializeRoutes(routes, appleHotel));
   } catch {
     // Full or private storage: the paths are looked up again next time.
   }
@@ -1929,7 +1929,9 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, []);
-  useEffect(() => { if (hydrated.current) writeRoutes(routes); }, [routes]);
+  // (The legs to and from a hotel found through Apple start at Apple's position of it: they are not kept.)
+  const appleHotel = Boolean(trip.hotel && (trip.hotel.pending || placeSource(trip.hotel.id) === "apple"));
+  useEffect(() => { if (hydrated.current) writeRoutes(routes, appleHotel); }, [routes, appleHotel]);
   // A pasted list under review was checked against the trip in hand. When
   // another trip takes its place (a new one, a saved one, another
   // destination) the running check is cancelled and the review dropped; what
