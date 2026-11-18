@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, 
 import { fetchAppleFoodCandidates } from "../../lib/apple-food";
 import { budgetLabel, fetchHotpepperShops, inJapan, lunchPrice, searchHotpepperShops, shopsForMeal, type HotpepperShop } from "../../lib/hotpepper-client";
 import { placeCardsAvailable } from "../../lib/apple-place-card";
-import { AppleRelayError, appleRelayClient, appleRelaySearch } from "../../lib/apple-relay-client";
+import { AppleRelayError, appleRelayClient, appleRelaySearch, appleRelayUrl } from "../../lib/apple-relay-client";
 import { defaultFoodDiscoveryQuery, type FoodCandidate } from "../../lib/google-food";
 import { rerankHotelCandidates } from "../../lib/apple-hotels";
 import type { HotelCandidate } from "../../lib/google-hotels";
@@ -1399,6 +1399,10 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
   const [routes, setRoutes] = useState<ReadonlyMap<string, ShioriRoute | null>>(() => new Map());
   const askedRoutes = useRef(new Set<string>());
   const routeAttempts = useRef(new Map<string, number>());
+  // Whether the booklet's Apple map is on screen. Apple's walking and driving
+  // routes are asked for only while it is (Apple's terms allow Apple map data
+  // on an Apple map only); until it has answered, the streets wait for it.
+  const [appleMap, setAppleMap] = useState<"pending" | "ready" | "failed">("pending");
   const hydrated = useRef(false);
   // Whether this visit has saved the trip in hand (see storageStep).
   const wrote = useRef(false);
@@ -1677,7 +1681,9 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
   // real walking time. Each leg is asked about once per visit, and a batch
   // of answers arrives together: one redraw, not twenty.
   useEffect(() => {
-    if (!plan || !railSettled) return;
+    if (!plan || !railSettled || appleMap === "pending") return;
+    // Apple first while its map is shown; the OpenStreetMap router otherwise, and wherever Apple has no way.
+    const relayUrl = appleMap === "ready" ? appleRelayUrl() : null;
     const wanted: Array<[string, ShioriLeg]> = [];
     for (const day of plan.days) {
       for (const leg of [day.fromHotel, ...day.legs, day.toHotel]) {
@@ -1703,7 +1709,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
     const worker = async () => {
       for (let next = wanted.shift(); next; next = wanted.shift()) {
         const [routeKey, leg] = next;
-        const answer = await fetchStreetRoute({ origin: leg.from, destination: leg.to, mode: routeKey.startsWith("walk|") ? "walk" : "drive" });
+        const answer = await fetchStreetRoute({ origin: leg.from, destination: leg.to, mode: routeKey.startsWith("walk|") ? "walk" : "drive" }, { relayUrl });
         if (answer.status === "failed") {
           // Offline or busy is not "no route": the leg may be asked about
           // once more when the plan next changes.
@@ -1716,7 +1722,28 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
       }
     };
     void Promise.all([worker(), worker(), worker(), worker()]).then(flush);
-  }, [plan, railSettled]);
+  }, [plan, railSettled, appleMap]);
+
+  // A map that has not answered in a while is not waited for: the streets are
+  // asked of the open router, and Apple again if its map turns up later.
+  useEffect(() => {
+    if (!plan || appleMap !== "pending") return;
+    const wait = window.setTimeout(() => setAppleMap((current) => current === "pending" ? "failed" : current), 8_000);
+    return () => window.clearTimeout(wait);
+  }, [plan, appleMap]);
+
+  // The Apple map went away (its token refused, its quota spent): Apple's
+  // lines and minutes go with it, and those legs are asked of the open router.
+  const onMapState = useCallback((state: "ready" | "failed") => {
+    setAppleMap(state);
+    if (state !== "failed") return;
+    setRoutes((current) => {
+      const apple = [...current].filter(([, route]) => route?.source === "apple").map(([key]) => key);
+      if (apple.length === 0) return current;
+      for (const key of apple) askedRoutes.current.delete(key);
+      return new Map([...current].filter(([key]) => !apple.includes(key)));
+    });
+  }, []);
   // A re-plan can leave fewer days than the one being read.
   // The stop being edited decides the day on screen: lengthening a stay or
   // moving it can put it on another day, and its card must not vanish.
@@ -2661,6 +2688,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
                 label={t.mapLabel}
                 legend={{ rail: t.legendRail, street: t.legendWalk, straight: t.legendOther }}
                 locale={locale}
+                onMapState={onMapState}
                 onSelectStop={showStop}
                 selectedDay={activeDay}
                 text={{

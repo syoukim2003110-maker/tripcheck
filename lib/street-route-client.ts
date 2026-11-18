@@ -1,15 +1,19 @@
+import { appleRelayRoute, appleRelayUrl } from "./apple-relay-client.ts";
+
 /*
  * The way along the streets between two places, for drawing a leg on the map
  * and for the real length of a walk.
  *
- * Only the community routing service run by FOSSGIS on OpenStreetMap data is
- * asked. Apple's routes are not: Apple's terms allow its map data to be shown
- * only on an Apple map, and the booklet's map is not one. Where the open
- * router has no answer the leg keeps its estimate (the dashed "unknown way"
- * and a walking-speed time marked 目安/約).
- *
- * That service is a shared, volunteer-run resource: it is asked one route at
- * a time, and every answer is remembered for the visit.
+ * Apple answers first, but only while the booklet shows an Apple map: Apple's
+ * terms allow its map data to be shown only on an Apple map, so the page
+ * passes `relayUrl: null` when its MapKit JS map could not be shown. Apple's
+ * answers live in this module's memory for the visit and nowhere else; the
+ * browser's route store (lib/shiori/route-store.ts) keeps OpenStreetMap paths
+ * only. Where Apple has no answer — it will not walk anyone into the middle
+ * of the Imperial Palace — or is not asked, the community routing service run
+ * by FOSSGIS on OpenStreetMap data is asked instead. That service is a shared,
+ * volunteer-run resource: it is asked one route at a time, only for legs
+ * nothing else could draw, and every answer is remembered for the visit.
  */
 
 export type StreetPoint = { latitude: number; longitude: number };
@@ -18,13 +22,15 @@ export type StreetRoute = Readonly<{
   /** Null when the source's duration is not one to plan with (a drive without traffic). */
   minutes: number | null;
   path: StreetPoint[];
-  source: "osm";
+  source: "apple" | "osm";
 }>;
 
 export const OPEN_ROUTER_ORIGIN = "https://routing.openstreetmap.de";
 const PATH_POINT_LIMIT = 160;
 
 type Dependencies = {
+  /** Null means "no relay configured"; undefined reads the build's setting. */
+  relayUrl?: string | null;
   fetcher?: typeof fetch;
 };
 
@@ -35,10 +41,14 @@ export type StreetRouteAnswer =
   | { status: "failed" };
 
 const REQUEST_DEADLINE_MS = 9_000;
+const RELAY_REST_MS = 60_000;
 
 const remembered = new Map<string, Promise<StreetRouteAnswer>>();
 // One open-router request at a time, whatever the number of callers.
 let openRouterTurn: Promise<unknown> = Promise.resolve();
+// After the relay fails once it is left alone for a minute, so an outage
+// costs one wait, not one per leg.
+let relayRestsUntil = 0;
 
 function thin(path: StreetPoint[]) {
   if (path.length <= PATH_POINT_LIMIT) return path;
@@ -93,8 +103,18 @@ async function lookUp(
   origin: StreetPoint,
   destination: StreetPoint,
   mode: "walk" | "drive",
+  relayUrl: string | null,
   fetcher: typeof fetch,
 ): Promise<StreetRouteAnswer> {
+  if (relayUrl && Date.now() >= relayRestsUntil) {
+    try {
+      const route = await appleRelayRoute({ origin, destination, mode, signal: AbortSignal.timeout(REQUEST_DEADLINE_MS) }, relayUrl, fetcher);
+      if (route) return { status: "found", route: { minutes: route.minutes, path: route.path, source: "apple" } };
+    } catch {
+      // Down, over budget or too slow: that is what the second source is for.
+      relayRestsUntil = Date.now() + RELAY_REST_MS;
+    }
+  }
   const turn = openRouterTurn.then(() => openRoute(origin, destination, mode, fetcher));
   openRouterTurn = turn.catch(() => undefined);
   return turn.catch((): StreetRouteAnswer => ({ status: "failed" }));
@@ -109,12 +129,13 @@ export function fetchStreetRoute(
   options: Readonly<{ origin: StreetPoint; destination: StreetPoint; mode: "walk" | "drive" }>,
   dependencies: Dependencies = {},
 ): Promise<StreetRouteAnswer> {
+  const relayUrl = dependencies.relayUrl === undefined ? appleRelayUrl() : dependencies.relayUrl;
   const fetcher = dependencies.fetcher ?? ((input, init) => globalThis.fetch(input, init));
   const point = (value: StreetPoint) => `${value.latitude.toFixed(5)},${value.longitude.toFixed(5)}`;
-  const key = [options.mode, point(options.origin), point(options.destination)].join("|");
+  const key = [relayUrl ?? "-", options.mode, point(options.origin), point(options.destination)].join("|");
   const known = remembered.get(key);
   if (known) return known;
-  const pending = lookUp(options.origin, options.destination, options.mode, fetcher).then((answer) => {
+  const pending = lookUp(options.origin, options.destination, options.mode, relayUrl, fetcher).then((answer) => {
     if (answer.status === "failed") remembered.delete(key);
     return answer;
   });

@@ -184,9 +184,69 @@ export async function appleRelayEta(
   return remember({ minutes: Math.round(minutes), distanceMeters: Number.isFinite(meters) && meters > 0 ? Math.round(meters) : null });
 }
 
-// No street routes are asked of Apple from the page: its terms allow Apple
-// map data on an Apple map only, and the booklet's map is not one. The
-// relay's op=route stays on the server but nothing here calls it.
+export type AppleRelayRoute = Readonly<{
+  minutes: number;
+  distanceMeters: number | null;
+  path: Array<{ latitude: number; longitude: number }>;
+}>;
+
+const routeCache = new Map<string, AppleRelayRoute | null>();
+
+/**
+ * The way along the streets between two points, on foot or by car. Null when
+ * Apple cannot route the pair. Remembered in memory only, per pair and mode,
+ * for the visit: Apple's answers are never written to the browser's storage,
+ * and they are drawn only on the booklet's Apple map.
+ */
+export async function appleRelayRoute(
+  options: Readonly<{
+    origin: { latitude: number; longitude: number };
+    destination: { latitude: number; longitude: number };
+    mode: "walk" | "drive";
+    signal?: AbortSignal;
+  }>,
+  relayUrl: string | null = appleRelayUrl(),
+  fetcher: typeof fetch = (input, init) => globalThis.fetch(input, init),
+): Promise<AppleRelayRoute | null> {
+  if (!relayUrl) throw new AppleRelayError("not_configured");
+  const point = (value: { latitude: number; longitude: number }) => `${value.latitude.toFixed(5)},${value.longitude.toFixed(5)}`;
+  const cacheKey = [relayUrl, point(options.origin), point(options.destination), options.mode].join("|");
+  const cached = routeCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+  const base = typeof window !== "undefined" ? window.location.href : "http://localhost/";
+  const url = new URL(relayUrl, base);
+  url.searchParams.set("op", "route");
+  url.searchParams.set("from", point(options.origin));
+  url.searchParams.set("to", point(options.destination));
+  url.searchParams.set("mode", options.mode);
+  let response: Response;
+  try {
+    response = await fetcher(url, { method: "GET", headers: { Accept: "application/json" }, signal: options.signal });
+  } catch (error) {
+    if (options.signal?.aborted) throw error;
+    throw new AppleRelayError("unavailable");
+  }
+  const payload = await response.json().catch(() => null) as { code?: unknown; minutes?: unknown; distanceMeters?: unknown; path?: unknown } | null;
+  if (!response.ok || !payload) {
+    if (payload?.code === "not_configured") throw new AppleRelayError("not_configured");
+    if (response.status === 429) throw new AppleRelayError("quota_exhausted");
+    throw new AppleRelayError("unavailable");
+  }
+  const minutes = Number(payload.minutes);
+  const path = (Array.isArray(payload.path) ? payload.path : []).flatMap((raw): Array<{ latitude: number; longitude: number }> => {
+    if (!Array.isArray(raw)) return [];
+    const latitude = Number(raw[0]);
+    const longitude = Number(raw[1]);
+    return Number.isFinite(latitude) && Number.isFinite(longitude) && Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180 ? [{ latitude, longitude }] : [];
+  }).slice(0, 400);
+  const meters = Number(payload.distanceMeters);
+  const route = payload.minutes === null || !Number.isFinite(minutes) || minutes <= 0 || path.length < 2
+    ? null
+    : { minutes: Math.round(minutes), distanceMeters: Number.isFinite(meters) && meters > 0 ? Math.round(meters) : null, path };
+  routeCache.set(cacheKey, route);
+  if (routeCache.size > 400) routeCache.delete(routeCache.keys().next().value as string);
+  return route;
+}
 
 /** The relay as a search client, shaped like the server-side Apple client. */
 export function appleRelayClient(relayUrl: string | null = appleRelayUrl()) {

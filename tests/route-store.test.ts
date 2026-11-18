@@ -27,6 +27,8 @@ test("only OpenStreetMap paths are written, each tagged with its source", () => 
     ["walk|a-b", { minutes: 12, path, source: "osm" }],
     // A path with no source (as the old store held, Apple's among them) is not written.
     ["walk|c-d", { minutes: 9, path }],
+    // Apple's answers live in the page's memory for the visit only.
+    ["walk|g-h", { minutes: 7, path, source: "apple" }],
     ["drive|e-f", null],
   ]);
   const stored = JSON.parse(serializeRoutes(routes)) as unknown[][];

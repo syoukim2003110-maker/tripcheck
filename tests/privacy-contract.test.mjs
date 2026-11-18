@@ -285,6 +285,7 @@ test("discloses the Apple map and explicit OpenStreetMap lookup", async () => {
 
   assert.match(privacySource, /map is an Apple map drawn by Apple&apos;s MapKit JS/);
   assert.match(privacySource, /cdn\.apple-mapkit\.com/);
+  assert.match(privacySource, /paths from Apple are kept only in the open page and are never stored/);
   assert.doesNotMatch(privacySource, /openfreemap/i);
   assert.match(privacySource, /Wikipedia and Wikidata \(operated by the Wikimedia Foundation\)/);
   assert.match(privacySource, /Photon search service operated by komoot/);
