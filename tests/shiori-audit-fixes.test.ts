@@ -852,8 +852,9 @@ test("the meal advisor is told what the meal really follows: a dinner back near 
   const briefOf = (id: string) => {
     const { plan } = auditPlan(id);
     const brief = buildMealBrief({ plan, sights, city: null, prefs: EMPTY_MEAL_PREFS });
-    assert.ok(brief, id);
-    return { plan, slot: (dayIndex: number, meal: "lunch" | "dinner") => brief.slots.find((entry) => entry.slot === `d${dayIndex + 1}-${meal}`)! };
+    // (The advisor is offered where the shop guide has shops: a trip outside Japan has no open slot to ask about.)
+    assert.equal(brief === null, openMealSlots(plan).length === 0, id);
+    return { plan, slot: (dayIndex: number, meal: "lunch" | "dinner") => brief!.slots.find((entry) => entry.slot === `d${dayIndex + 1}-${meal}`)! };
   };
   // Was: fukuoka-2, dinner 17:46 near the hotel sent as { afterKind: "sight", beforeKind: "hotel" } while the last
   // sight is over at 16:40, 66 minutes of riding away.
@@ -889,5 +890,5 @@ test("the meal advisor is told what the meal really follows: a dinner back near 
       }
     }
   }
-  assert.ok(hotel >= 20 && during >= 5, `${hotel} dinners near the hotel, ${during} lunches during a visit`);
+  assert.ok(hotel >= 15 && during >= 5, `${hotel} dinners near the hotel, ${during} lunches during a visit`);
 });
