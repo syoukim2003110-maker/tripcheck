@@ -894,3 +894,14 @@ test("the meal advisor is told what the meal really follows: a dinner back near 
   }
   assert.ok(hotel >= 15 && during >= 5, `${hotel} dinners near the hotel, ${during} lunches during a visit`);
 });
+
+test("a place whose name ends in the name of a city is not an island: ヒルトン広島 is a hotel in Hiroshima", () => {
+  for (const name of ["ヒルトン広島", "リーガロイヤルホテル広島", "ホテル日航福島", "お好み村 広島", "そごう徳島", "城山ホテル鹿児島", "広島", "鹿児島"]) assert.equal(hardToReach({ kind: undefined, name }), null, name);
+  for (const name of ["江の島", "軍艦島", "リバティ島", "竹生島"]) assert.equal(hardToReach({ kind: undefined, name }), "island", name);
+  // No bundled sight changes by this.
+  for (const city of cities) {
+    for (const sight of city.sights) {
+      if (/(広島|福島|徳島|鹿児島)$/.test(sight.ja)) assert.notEqual(hardToReach({ kind: sight.kind, name: sight.ja }), "island", sight.ja);
+    }
+  }
+});

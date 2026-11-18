@@ -537,8 +537,9 @@ export function hardToReach(place: Pick<ShioriPlace, "kind" | "name">): "island"
   const onLand = /artificial|neighbou?rhood|district|quarter|\bgroup\b|archipelago/.test(kind);
   const name = place.name.replace(/\s*[(（][^)）]*[)）]\s*$/, "").trim();
   if (/\bislands?\b|\bislet\b|\batoll\b/.test(kind)) return onLand ? null : "island";
-  // (広島 and 福島 are cities, and so is anything of two characters ending in 島 as often as not.)
-  if ((/^.{2,}島$/.test(name) && !/^(広島|福島|徳島|鹿児島)$/.test(name)) || /\b(island|isle)$/i.test(name)) return onLand ? null : "island";
+  // (広島 and 福島 are cities, and so is anything of two characters ending in 島 as often as not;
+  // a name that ends in a city's name is a place in that city: ヒルトン広島, お好み村 広島.)
+  if ((/^.{2,}島$/.test(name) && !/(広島|福島|徳島|鹿児島)$/.test(name)) || /\b(island|isle)$/i.test(name)) return onLand ? null : "island";
   // (嵐山 is a quarter of Kyoto on level ground at the foot of the hill it is named after; the catalogue calls it a mountain.)
   if (/^(嵐山|arashiyama)$/i.test(name)) return null;
   if (/mountain|volcano|\bsummit\b|\bpeak\b/.test(kind) && !/\bpass\b|\brange\b|artificial|observatory|temple|shrine|castle|museum|resort|village|town|\bpark\b|railway|\bhut\b/.test(kind)) return "summit";
