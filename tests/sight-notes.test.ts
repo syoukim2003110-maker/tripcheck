@@ -5,7 +5,7 @@ import test from "node:test";
 import { curateSights, type PopularDestination } from "../lib/popular-sights.ts";
 import { HABITS, daySearch, daylightEnd, scheduleDay, type SearchProblem } from "../lib/shiori/day-search.ts";
 import { isDaytime, isOpenEarly, placeHabit } from "../lib/shiori/habits.ts";
-import { buildShioriPlan, habitOf } from "../lib/shiori/plan.ts";
+import { buildShioriPlan, foldedParts, habitOf } from "../lib/shiori/plan.ts";
 import { isClosedSight, isExteriorSight, sightNote } from "../lib/shiori/sight-notes.ts";
 import { decodeTrip, emptyTrip, encodeTrip, placeFromSight, sightStayMinutes, type ShioriTrip } from "../lib/shiori/state.ts";
 import { EXTERIOR_STAY, namedParkStay, shioriStayMinutes } from "../lib/shiori/stay.ts";
@@ -206,4 +206,93 @@ test("a place closed for good or gone is not offered among a city's sights, and 
   const free = buildShioriPlan({ places: [placeFromSight(sight("tokyo", "東京タワー"), "ja")], days: 3, hotel: null, locale: "ja" }, { cities: cities.map((city) => ({ ...city, sights: curateSights(city.sights) })) });
   assert.ok(free.freeDayIdeas.length > 0);
   assert.equal(free.freeDayIdeas.some((idea) => isClosedSight(idea.q)), false);
+});
+
+/* ------------------------------------------------------------------ part of another place */
+
+const nikko = (name: string) => placeFromSight(sight("nikko", name), "ja");
+const allNames = (plan: ReturnType<typeof buildShioriPlan>) => plan.days.flatMap((day) => day.stops.flatMap((stop) => [stop.place.name, ...(stop.within ?? []).map((place) => place.name)]));
+
+test("a small part of another place on the list is seen during that place's visit: 眠り猫 on the card of 日光東照宮, one stop, no leg between them, nothing added to the stay", () => {
+  const shrine = nikko("日光東照宮");
+  const cat = nikko("眠り猫");
+  const temple = nikko("輪王寺");
+  assert.deepEqual([shrine.stayMinutes, cat.stayMinutes], [120, 15]);
+  assert.deepEqual([...foldedParts([cat, temple, shrine])], [[cat.id, shrine.id]]);
+  const plan = buildShioriPlan({ places: [cat, temple, shrine], days: 1, hotel: null, locale: "ja" }, { cities });
+  const stops = plan.days[0].stops;
+  assert.equal(stops.length, 2);
+  assert.equal(plan.days[0].legs.length, 1);
+  const visit = stops.find((stop) => stop.place.id === shrine.id)!;
+  assert.deepEqual(visit.within?.map((place) => place.name), ["眠り猫"]);
+  assert.equal(visit.stayMinutes, 120);
+  assert.equal(stops.some((stop) => stop.place.id === cat.id), false);
+  assert.deepEqual([allNames(plan).sort(), plan.leftOut], [["日光東照宮", "眠り猫", "輪王寺"].sort(), []]);
+  // A stop with nothing inside it says nothing of the kind.
+  assert.equal(stops.find((stop) => stop.place.id === temple.id)!.within, undefined);
+  // Without the shrine on the list the carving is a stop of its own.
+  assert.deepEqual(buildShioriPlan({ places: [cat, temple], days: 1, hotel: null, locale: "ja" }, { cities }).days[0].stops.map((stop) => stop.place.name).sort(), ["眠り猫", "輪王寺"].sort());
+  // The same in Okinawa and Hiroshima: the gate of the castle, the statue in the park.
+  const naha = cities.find((city) => city.id === "naha")!;
+  const gate = placeFromSight(naha.sights.find((entry) => entry.ja === "守礼門")!, "ja");
+  const castle = placeFromSight(naha.sights.find((entry) => entry.ja === "首里城")!, "ja");
+  assert.deepEqual([...foldedParts([gate, castle])], [[gate.id, castle.id]]);
+  const statue = placeFromSight(sight("hiroshima", "原爆の子の像"), "ja");
+  const park = placeFromSight(sight("hiroshima", "平和記念公園"), "ja");
+  assert.deepEqual([...foldedParts([park, statue])], [[statue.id, park.id]]);
+});
+
+test("a large part of another place is a stop of its own: 東大寺 in 奈良公園, 上野動物園 in 上野公園", () => {
+  const nara = [placeFromSight(sight("nara", "奈良公園"), "ja"), placeFromSight(sight("nara", "東大寺"), "ja")];
+  assert.equal(foldedParts(nara).size, 0);
+  assert.deepEqual(buildShioriPlan({ places: nara, days: 1, hotel: null, locale: "ja" }, { cities }).days[0].stops.length, 2);
+  assert.equal(foldedParts([placeFromSight(sight("tokyo", "上野公園"), "ja"), placeFromSight(sight("tokyo", "上野動物園"), "ja")]).size, 0);
+});
+
+test("a part the traveller booked, chose as a meal, lengthened or put on another day than its place is a stop of its own", () => {
+  const shrine = nikko("日光東照宮");
+  const cat = nikko("眠り猫");
+  assert.equal(foldedParts([shrine, { ...cat, stayMinutes: 45 }]).size, 0);
+  assert.equal(foldedParts([shrine, { ...cat, day: 2 }]).size, 0);
+  assert.equal(foldedParts([{ ...shrine, day: 2 }, { ...cat, day: 2 }]).size, 1);
+  assert.equal(foldedParts([shrine, { ...cat, reserve: { day: 1, time: "10:00" } }]).size, 0);
+  assert.equal(foldedParts([shrine, { ...cat, meal: "lunch" }]).size, 0);
+  assert.equal(foldedParts([{ ...shrine, meal: "lunch" }, cat]).size, 0);
+});
+
+test("a part of a part is seen at the outermost place on the list; a place is never lost, even when its place is left out", () => {
+  const taipei = (name: string) => placeFromSight(sight("taipei", name), "ja");
+  const theatre = taipei("国家戯劇院");
+  const centre = taipei("国立中正文化中心");
+  const hall = taipei("中正紀念堂");
+  assert.deepEqual(new Map(foldedParts([theatre, centre, hall])), new Map([[theatre.id, hall.id], [centre.id, hall.id]]));
+  assert.deepEqual(new Map(foldedParts([theatre, centre])), new Map([[theatre.id, centre.id]]));
+  const plan = buildShioriPlan({ places: [theatre, centre, hall], days: 1, hotel: null, locale: "ja" }, { cities });
+  assert.deepEqual(plan.days[0].stops.map((stop) => [stop.place.name, stop.within?.map((place) => place.name)]), [["中正紀念堂", ["国家戯劇院", "国立中正文化中心"]]]);
+  // The shrine booked on a day the trip does not have is left out, and the carving seen inside it with it.
+  const shrine = { ...nikko("日光東照宮"), reserve: { day: 3, time: "10:00" } };
+  const left = buildShioriPlan({ places: [nikko("眠り猫"), shrine, nikko("輪王寺")], days: 1, hotel: null, locale: "ja" }, { cities });
+  assert.deepEqual([allNames(left), [...left.leftOut].sort()], [["輪王寺"], ["日光東照宮", "眠り猫"].sort()]);
+  // A place whose own stay is shorter than its part's is visited for as long as the part takes.
+  const short = buildShioriPlan({ places: [{ ...nikko("日光東照宮"), stayMinutes: 15 }, { ...nikko("眠り猫"), stayMinutes: 30 }], days: 1, hotel: null, locale: "ja" }, { cities });
+  assert.deepEqual([short.days[0].stops.length, short.days[0].stops[0].stayMinutes, short.days[0].stops[0].place.stayMinutes], [1, 30, 15]);
+});
+
+test("a trip with a part folded into its place survives the share link, and the part is not suggested back as an idea", () => {
+  const trip: ShioriTrip = { ...emptyTrip, cityId: "nikko", cityName: "日光", days: 3, places: [nikko("眠り猫"), nikko("日光東照宮")] };
+  const opened = decodeTrip(encodeTrip(trip))!;
+  assert.deepEqual(opened.places.map((place) => place.id), trip.places.map((place) => place.id));
+  const plan = buildShioriPlan({ places: opened.places, days: 3, hotel: null, locale: "ja" }, { cities: cities.map((city) => ({ ...city, sights: curateSights(city.sights) })) });
+  assert.deepEqual(plan.days.map((day) => day.stops.map((stop) => [stop.place.name, stop.within?.map((place) => place.name)])), [[["日光東照宮", ["眠り猫"]]]]);
+  const ideas = [...plan.freeDayIdeas, ...plan.days.flatMap((day) => [...day.ideas, ...day.rainIdeas])];
+  assert.ok(plan.freeDayIdeas.length > 0);
+  assert.equal(ideas.some((idea) => idea.ja === "眠り猫" || idea.ja === "日光東照宮"), false);
+});
+
+test("the card of a stop names what is seen within it, in both languages, and says nothing about hours", () => {
+  const source = readFileSync(new URL("../app/shiori/ShioriApp.tsx", import.meta.url), "utf8");
+  const lines = source.match(/^ {4}within: .*$/gm) ?? [];
+  assert.equal(lines.length, 2);
+  for (const line of lines) assert.equal(/営業|開店|閉店|開く|閉ま|\bopens?\b|\bcloses?\b|\d{1,2}:\d{2}|\d時/i.test(line), false, line);
+  assert.equal(source.match(/stop\.within \? <small className="shiori-within">\{t\.within\(/g)?.length, 1);
 });

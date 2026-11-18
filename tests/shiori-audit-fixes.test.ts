@@ -588,7 +588,10 @@ test("a crossing by boat is never beaten by a taxi or a walk drawn over the wate
     const leg = into ?? day.legs[index];
     assert.equal(leg.mode, "rail", id);
     const ferry = into ? leg.rail!.rides.at(-1)! : leg.rail!.rides[0];
-    assert.deepEqual([ferry.boat, ferry.from, ferry.to], into ? [true, "宮島口駅", "宮島桟橋"] : [true, "宮島桟橋", "宮島口駅"], id);
+    // (From the mainland pier: 宮島口駅, or 広電宮島口駅 beside it when the way there is the tram from 原爆ドーム.)
+    const mainland = into ? ferry.from : ferry.to;
+    assert.ok(mainland === "宮島口駅" || mainland === "広電宮島口駅", `${id}: ${mainland}`);
+    assert.deepEqual([ferry.boat, into ? ferry.to : ferry.from], [true, "宮島桟橋"], id);
     assert.ok(/フェリー|汽船|航路/.test(ferry.line ?? ""), ferry.line ?? "");
     assert.ok(leg.rail!.rides.filter((ride) => ride !== ferry).every((ride) => ride.boat === undefined), "a train is not a boat");
   }
@@ -712,7 +715,8 @@ test("the area to stay is not a place far out that costs most of an hour or more
   // real from both.
   const cases: Array<[string, string, string]> = [
     ["taipei-3", "国立中正文化中心", "関渡宮"],
-    ["naha-2", "守礼門", "中城城"],
+    // (守礼門 is seen during the visit to 首里城, as a small part of it, and is no longer a stop to stay near: 玉陵 beside it.)
+    ["naha-2", "玉陵", "中城城"],
     ["sapporo-3", "円山公園", "新琴似神社"],
   ];
   for (const [id, named, farOut] of cases) {
@@ -1446,7 +1450,8 @@ test("in the trips of the audit as first shown, a palace or a large zoo opens it
   assert.deepEqual([shown("kyoto-2")[1][0].name, shown("kyoto-2")[1][0].habit], ["京都御所", "early"]);
   // Over the 63 trips: places of the first half of the day still visited after 16:00, places with a door first before
   // 09:30 beside a place that could open the day, daytime places begun at 16:30 or later, and the minutes on the way
-  // (counted with the notes' hours both times). Were 12, 7, 20 and 17,824.
+  // (counted with the notes' hours both times). Were 12, 7, 20 and 17,824. (Six: nikko-2 now holds 日光の社寺 beside
+  // 日光東照宮, since 逍遥園 is seen during the visit to 輪王寺, and one of the two is still being visited after four.)
   let firstHalfLate = 0;
   let ticketedFirst = 0;
   let daytimeLate = 0;
@@ -1459,8 +1464,9 @@ test("in the trips of the audit as first shown, a palace or a large zoo opens it
       if (day[0].habit === "ticketed" && day[0].arrive < 9 * 60 + 30 && day.some((stop) => isOpenEarly(stop.habit))) ticketedFirst += 1;
     }
   }
-  assert.deepEqual([firstHalfLate, ticketedFirst, daytimeLate], [5, 3, 16]);
-  assert.ok(total <= 17_765, `${total} minutes on the way`);
+  assert.deepEqual([firstHalfLate, ticketedFirst, daytimeLate], [6, 3, 16]);
+  // (17,765 with the notes' hours; 17,805 since nikko-2 holds 日光の社寺 too, which it left out before.)
+  assert.ok(total <= 17_805, `${total} minutes on the way`);
 });
 
 test("the audit's draw is as it was: seven of its trips have a place that is closed or gone by the web check, and plan it as a trip that already had it would", () => {

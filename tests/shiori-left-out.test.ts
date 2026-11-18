@@ -27,7 +27,8 @@ function pastEndOf(day: ShioriDay) {
   return Math.max(0, lastSight ? clock(lastSight.leave, lastSight.leaveNextDay) - 18 * 60 : 0, closes(last) ? clock(last.leave, last.leaveNextDay) - (21 * 60 + 30) : 0);
 }
 const latest = (plan: ShioriPlan) => plan.days.map((day) => `${day.stops.at(-1)!.leaveNextDay ? "+" : ""}${day.stops.at(-1)!.leave}`).join(" ");
-const namesOn = (plan: ShioriPlan) => plan.days.flatMap((day) => day.stops.map((stop) => stop.place.name));
+/** The places on a plan's days: each stop, and what is seen within it (a small part of the place: see foldedParts). */
+const namesOn = (plan: ShioriPlan) => plan.days.flatMap((day) => day.stops.flatMap((stop) => [stop.place.name, ...(stop.within ?? []).map((place) => place.name)]));
 const printed = (plan: ShioriPlan) => plan.days.map((day) => day.stops.map((stop) => `${stop.arrive}-${stop.leave} ${stop.place.name}`));
 const both = (input: Omit<ShioriInput, "locale">, cityId: string | null) => {
   const options = { rail: cityId ? railOf(cityId) : null, cities };
@@ -89,7 +90,8 @@ function assertFitsOrSaysSo(input: Omit<ShioriInput, "locale">, cityId: string |
 const LEFT_OUT: Record<string, { before: string; after: string; out: string[]; days: number }> = {
   // id: the latest stop of each day planned anyway → as first shown, what is left out, the days that hold everything.
   // (With the usual stays of the sight notes — the Louvre four hours, the Statue of Liberty three, 箱根山 four —
-  // nineteen of the 63 trips have more than their days hold; with the stays by kind it was seven.)
+  // eighteen of the 63 trips have more than their days hold; with the stays by kind it was seven. nikko-2 holds all of
+  // its list since 逍遥園 is seen during the visit to 輪王寺, a small part of it: it runs less than an hour late instead.)
   "tokyo-1": { before: "20:13", after: "16:58", out: ["東京国立博物館"], days: 2 },
   "tokyo-2": { before: "20:25 21:01", after: "16:46 16:34", out: ["東京ディズニーランド"], days: 3 },
   "kyoto-1": { before: "19:05", after: "16:25", out: ["伏見稲荷大社"], days: 2 },
@@ -99,8 +101,7 @@ const LEFT_OUT: Record<string, { before: string; after: string; out: string[]; d
   "hakone-1": { before: "22:05", after: "17:40", out: ["箱根山"], days: 2 },
   "hakone-2": { before: "19:06 19:24", after: "17:53 16:07", out: ["箱根山"], days: 3 },
   "nikko-1": { before: "22:52", after: "16:32", out: ["華厳滝", "東武ワールドスクウェア"], days: 2 },
-  "nikko-2": { before: "18:19 19:12", after: "17:57 15:49", out: ["日光の社寺"], days: 3 },
-  "nikko-3": { before: "19:23 19:43 21:10", after: "17:50 17:25 17:53", out: ["女峰山"], days: 4 },
+  "nikko-3": { before: "19:23 19:18 21:10", after: "17:50 17:25 17:28", out: ["女峰山"], days: 4 },
   "paris-1": { before: "22:12", after: "17:47", out: ["ルーヴル美術館"], days: 2 },
   "london-1": { before: "21:33", after: "18:02", out: ["ロンドン塔"], days: 2 },
   "london-2": { before: "19:29 19:04", after: "17:57 17:12", out: ["ロンドン塔"], days: 3 },
@@ -133,7 +134,7 @@ test("the audit's lists too full for their days are shown as the set that fits: 
 
 test("a day that runs less than an hour over keeps everything and says it runs late, as before; a day that closes at its night market ends inside its evening", () => {
   // The ordinary end is 18:00 for sightseeing; a place of the evening may run to 21:30.
-  for (const [id, ends] of [["nara-1", "18:29"], ["yokohama-1", "18:43"], ["kobe-1", "18:16"], ["paris-2", "18:56 17:58"], ["newyork-2", "18:32 18:44"]] as const) {
+  for (const [id, ends] of [["nara-1", "18:29"], ["nikko-2", "18:19 18:30"], ["yokohama-1", "18:43"], ["kobe-1", "18:16"], ["paris-2", "18:56 17:58"], ["newyork-2", "18:32 18:44"]] as const) {
     const shown = auditPlan(id).plan;
     assert.equal(latest(shown), ends, id);
     assert.deepEqual([shown.leftOut, shown.overfull], [[], []], id);

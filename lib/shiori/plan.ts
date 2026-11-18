@@ -7,6 +7,7 @@ import { estimateTravelOptions } from "../time-feasibility.ts";
 import { cafeBreakFor, type CafeBreak } from "./cafes.ts";
 import { DAY_CLOCK, DAY_FILLING_STAY, LATE_LUNCH, daySearch, daylightEnd, packedDay, pastEnd, scheduleDay, type SearchProblem } from "./day-search.ts";
 import { isDaytime, isOpenEarly, placeHabit, type PlaceHabit } from "./habits.ts";
+import { sightNote } from "./sight-notes.ts";
 import { weatherDayOrder } from "./weather-days.ts";
 import {
   buildTripFromWishlist,
@@ -202,6 +203,14 @@ export type ShioriStop = {
    * hours of the place. A wait in front of it is free time before the evening.
    */
   evening?: true;
+  /**
+   * Places on the traveller's list that are seen during this visit: small
+   * parts of this place (a gate of a castle, a statue in a park, a carving in
+   * a shrine), by the sight notes. They are not stops of their own — no leg,
+   * no time of their own; this stop's stay is the visit to the whole place.
+   * In the order of the list. Absent when there are none.
+   */
+  within?: ShioriPlace[];
   /** The restaurant could not be reached inside its meal hours on this day. */
   mealMissed: boolean;
   /**
@@ -2212,7 +2221,99 @@ function straightMinutes(from: GeoPoint, to: GeoPoint) {
  * notice is backed by a second plan that was actually computed — "one more
  * day fits" is only said when the plan with one more day does fit.
  */
+/** A part of another place on the list is seen during that place's visit when it is this short (see foldedParts). */
+export const SMALL_PART_STAY = 30;
+
+/**
+ * Which places on the list are seen during another place's visit: a sight
+ * whose note says it lies inside another sight (sight-notes.ts: 眠り猫 in
+ * 日光東照宮, 守礼門 in 首里城, 原爆の子の像 in 平和記念公園) when that place
+ * — or the place that one lies inside — is on the list too, and the part is
+ * small: a stay of SMALL_PART_STAY or less. Part id → the id of the stop it
+ * is seen at.
+ *
+ * A large part (a temple or a museum in a park: 東大寺 in 奈良公園, 上野動物園
+ * in 上野公園) is a stop of its own, as is a part the traveller booked, chose
+ * as a meal, gave a longer stay or put on another day than its place.
+ */
+export function foldedParts(places: readonly ShioriPlace[]): Map<string, string> {
+  const byQ = new Map<string, ShioriPlace>();
+  for (const place of places) if (place.id.startsWith("wikidata-")) byQ.set(place.id.slice("wikidata-".length), place);
+  const into = new Map<string, string>();
+  for (const part of places) {
+    if (part.meal || part.reserve || stayOf(part) > SMALL_PART_STAY) continue;
+    // The nearest place on the list that this one lies inside.
+    let main: ShioriPlace | undefined;
+    const seen = new Set<string>();
+    for (let q = sightNote(part.id)?.partOf; q && !seen.has(q) && !main; q = sightNote(q)?.partOf) {
+      seen.add(q);
+      main = byQ.get(q);
+    }
+    if (!main || main.id === part.id || main.meal) continue;
+    if (typeof part.day === "number" && part.day !== main.day) continue;
+    into.set(part.id, main.id);
+  }
+  // A place seen inside a place that is itself seen inside a third is seen at the third. (Places said to lie
+  // inside each other in a ring — no note does — are each a stop of their own: none of them is lost.)
+  const resolved = new Map<string, string>();
+  for (const [part, main] of into) {
+    let end = main;
+    const path = new Set([part]);
+    while (into.has(end) && !path.has(end)) {
+      path.add(end);
+      end = into.get(end)!;
+    }
+    if (!path.has(end)) resolved.set(part, end);
+  }
+  return resolved;
+}
+
+/**
+ * The booklet for a list. A small part of another place on the list
+ * (foldedParts) is seen during that place's visit: it is planned as the one
+ * stop it is, and named on that stop (`within`). Every place stays accounted
+ * for: on a day, within a stop of a day, or — when its place is left out —
+ * left out with it.
+ *
+ * The stop's stay is the visit to the whole place, which takes in what is
+ * inside it: nothing is added for a part, unless the place's own stay is
+ * shorter than the part's — then the visit is as long as the part's.
+ */
 export function buildShioriPlan(input: ShioriInput, options: PlanOptions = {}): ShioriPlan {
+  const folds = foldedParts(input.places);
+  if (folds.size === 0) return buildWithoutParts(input, options);
+  const parts = new Map<string, ShioriPlace[]>();
+  for (const place of input.places) {
+    const main = folds.get(place.id);
+    if (main) parts.set(main, [...(parts.get(main) ?? []), place]);
+  }
+  const own = new Map(input.places.map((place) => [place.id, place]));
+  const places = input.places.flatMap((place) => {
+    if (folds.has(place.id)) return [];
+    const within = parts.get(place.id);
+    const longest = within ? Math.max(...within.map(stayOf)) : 0;
+    return [within && stayOf(place) < longest ? { ...place, stayMinutes: longest } : place];
+  });
+  const plan = buildWithoutParts({ ...input, places }, options);
+  const folded = (id: string) => folds.has(id);
+  const scheduled = new Set(plan.days.flatMap((day) => day.stops.map((stop) => stop.place.id)));
+  const unplanned = input.places.filter((place) => folded(place.id) && !scheduled.has(folds.get(place.id)!)).map((place) => place.name);
+  const notFolded = (sight: PopularSight) => !folded(`wikidata-${sight.q}`);
+  return {
+    ...plan,
+    days: plan.days.map((day) => ({
+      ...day,
+      // (The booklet carries the traveller's own places: a stay lengthened for a part is the stop's, not the place's.)
+      stops: day.stops.map((stop) => (parts.has(stop.place.id) ? { ...stop, place: own.get(stop.place.id)!, within: parts.get(stop.place.id)! } : stop)),
+      ideas: day.ideas.filter(notFolded),
+      rainIdeas: day.rainIdeas.filter(notFolded),
+    })),
+    freeDayIdeas: plan.freeDayIdeas.filter(notFolded),
+    leftOut: unplanned.length > 0 ? [...plan.leftOut, ...unplanned] : plan.leftOut,
+  };
+}
+
+function buildWithoutParts(input: ShioriInput, options: PlanOptions): ShioriPlan {
   const plan = planOnce(input, options);
   if (plan.days.length === 0) return plan;
   const rail = options.rail ?? null;

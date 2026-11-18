@@ -146,6 +146,7 @@ const text = {
     wait: (minutes: string) => `ここで約${minutes}の空き時間（店の時間に合わせています）`,
     waitEvening: (minutes: string) => `ここで約${minutes}の空き時間（夜に楽しむ場所なので、夕方からの予定にしています）`,
     mealMissed: "この店に食事の時間帯に着けません。",
+    within: (names: string[]) => `ここで一緒に見る：${names.join("、")}`,
     noticesTitle: "このままだと無理がある点",
     noticeNeedsDays: (asked: number, days: number) => `この内容は${asked}日では回りきれません。${days}日あれば無理なく収まります。`,
     noticeNeedsDaysAction: (days: number) => `${days}日にする`,
@@ -449,6 +450,7 @@ const text = {
     wait: (minutes: string) => `About ${minutes} free here (timed for the restaurant)`,
     waitEvening: (minutes: string) => `About ${minutes} free here (a place for the evening, so it is planned from early evening)`,
     mealMissed: "This restaurant cannot be reached during the meal.",
+    within: (names: string[]) => `Also seen here: ${names.join(", ")}`,
     noticesTitle: "What does not work as it stands",
     noticeNeedsDays: (asked: number, days: number) => `This does not fit in ${asked} day${asked === 1 ? "" : "s"}. It fits comfortably in ${days}.`,
     noticeNeedsDaysAction: (days: number) => `Make it ${days} days`,
@@ -2018,8 +2020,9 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
     </header>
   );
 
-  // Which day the place just added landed on, once the plan has caught up.
-  const addedDay = added?.id && plan ? plan.days.find((day) => day.stops.some((stop) => stop.place.id === added.id))?.index ?? null : null;
+  // Which day the place just added landed on, once the plan has caught up (a part of another place: the day of that place's stop).
+  const addedStop = added?.id && plan ? plan.days.flatMap((day) => day.stops.map((stop) => ({ day: day.index, stop }))).find(({ stop }) => stop.place.id === added.id || stop.within?.some((place) => place.id === added.id)) ?? null : null;
+  const addedDay = addedStop?.day ?? null;
   const showStop = (dayIndex: number, placeId: string) => {
     setSelectedDay(dayIndex);
     setOpenStop(placeId);
@@ -2068,7 +2071,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
       {added ? (
         <p className="shiori-added" role="status">
           <span>{t.addedAs(added.name, added.kind)}{addedDay !== null ? ` ${t.addedWhere(addedDay + 1)}` : ""}</span>
-          {addedDay !== null && screen === "plan" && added.id ? <button onClick={() => showStop(addedDay, added.id!)} type="button">{t.addedSee}</button> : null}
+          {addedStop && screen === "plan" ? <button onClick={() => showStop(addedStop.day, addedStop.stop.place.id)} type="button">{t.addedSee}</button> : null}
         </p>
       ) : null}
       {otherState === "full" ? <p className="shiori-warn" role="alert">{t.addFull}</p> : null}
@@ -2587,6 +2590,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
                                 </span>
                                 <b className="shiori-stop-name">{stop.place.name}</b>
                                 <small>{stop.place.meal ? t.mealLabels[stop.place.meal] : kindLabel(stop.place.kind, locale)} ・ <span className="shiori-nb">{stayText(stop.stayMinutes, stop.lunchMinutes)}</span></small>
+                                {stop.within ? <small className="shiori-within">{t.within(stop.within.map((place) => place.name))}</small> : null}
                                 {stop.mealMissed ? <small className="shiori-warn">{t.mealMissed}</small> : null}
                               </span>
                               <Photo alt="" icon={stop.place.meal ? "meal" : "pin"} img={stop.place.img} width={160} />
