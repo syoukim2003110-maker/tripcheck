@@ -206,7 +206,9 @@ export function buildMealBrief(input: MealBriefInput): MealBrief | null {
     // Only a booked time is one the next stop "must" begin at; the rest are the planner's estimates.
     let minutesUntilNext: number | null = null;
     if (next?.reserved && !next.arriveNextDay) {
-      const free = minutesOf(next.arrive) - (day.legs[meal.afterStop]?.minutes ?? 0) - minutesOf(meal.start);
+      // (A lunch during a visit: what is left of the visit after it is not free either.)
+      const visitLeft = meal.during && meal.end && after ? Math.max(0, minutesOf(after.leave) - minutesOf(meal.end)) : 0;
+      const free = minutesOf(next.arrive) - (day.legs[meal.afterStop]?.minutes ?? 0) - minutesOf(meal.start) - visitLeft;
       if (Number.isFinite(free)) minutesUntilNext = Math.max(0, Math.min(MEAL_ADVICE_LIMITS.minutes, Math.round(free)));
     }
     return {

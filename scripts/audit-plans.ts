@@ -29,7 +29,7 @@ function dayText(day: ShioriDay, hotel: ShioriHotel | null): string {
   if (hotel && day.fromHotel) lines.push(`    leave ${hotel.name} ${day.start}`, legText(day.fromHotel));
   day.stops.forEach((stop, index) => {
     lines.push(`    ${stop.arrive}–${stop.leave} ${stop.place.name} [${kindOf(stop.place.kind)}; stay ${stop.stayMinutes} min${stop.waitMinutes ? `; waits ${stop.waitMinutes} min first` : ""}]`);
-    for (const meal of day.meals.filter((entry) => entry.afterStop === index)) lines.push(`      (${meal.kind} ${meal.start}${meal.end ? `–${meal.end}` : ""} near ${meal.nearName})`);
+    for (const meal of day.meals.filter((entry) => entry.afterStop === index)) lines.push(`      (${meal.kind} ${meal.start}${meal.end ? `–${meal.end}` : ""} ${meal.during ? "during the visit, at or near" : meal.atHotel ? "back near" : "near"} ${meal.nearName})`);
     if (day.cafe && day.cafe.afterStop === index) lines.push(`      (café break ${day.cafe.time}, ${day.cafe.reason})`);
     if (index < day.legs.length) lines.push(legText(day.legs[index]));
   });

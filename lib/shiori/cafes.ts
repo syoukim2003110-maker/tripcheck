@@ -99,7 +99,8 @@ export function cafeBreakFor(day: {
   const candidates = day.stops.flatMap((stop, index) => {
     const leave = minutesOf(stop.leave);
     if (leave < 13 * 60 + 30 || leave > 17 * 60 || stop.place.meal) return [];
-    if (day.meals.some((meal) => meal.afterStop === index && meal.kind === "lunch")) return [];
+    // (A lunch during the visit is long over when the visit is: the hour-and-a-quarter rule below covers it.)
+    if (day.meals.some((meal) => meal.afterStop === index && meal.kind === "lunch" && !meal.during)) return [];
     if (lunchEnds.some((end) => leave - end >= 0 && leave - end < 75)) return [];
     // Nor at the end of a day that sits down to dinner within an hour and a
     // half: a coffee and a dinner are never the same minute, or nearly.

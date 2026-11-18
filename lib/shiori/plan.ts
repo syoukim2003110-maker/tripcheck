@@ -5,7 +5,7 @@ import { RailNetwork, walkMinutes, type GeoPoint, type RailAdvice, type RailJour
 import type { ResolvedInputStop, RouteStop } from "../route-optimizer.ts";
 import { estimateTravelOptions } from "../time-feasibility.ts";
 import { cafeBreakFor, type CafeBreak } from "./cafes.ts";
-import { DAY_CLOCK, daySearch, packedDay, scheduleDay, type SearchProblem } from "./day-search.ts";
+import { DAY_CLOCK, DAY_FILLING_STAY, LATE_LUNCH, daySearch, packedDay, scheduleDay, type SearchProblem } from "./day-search.ts";
 import { weatherDayOrder } from "./weather-days.ts";
 import {
   buildTripFromWishlist,
@@ -48,10 +48,11 @@ export const MAX_TRIP_DAYS = 7;
 /**
  * When the leg out of stops[index] sets off. A lunch hour suggested after a
  * stop is spent before leaving, so the leg — to the next stop or back to the
- * hotel — leaves when lunch ends. (A dinner slot has no end on the clock.)
+ * hotel — leaves when lunch ends. (A dinner slot has no end on the clock, and
+ * a lunch during a visit is over before the visit is.)
  */
 export function departureAfterStop(day: Pick<ShioriDay, "stops" | "meals">, index: number): string | undefined {
-  return day.meals.find((meal) => meal.afterStop === index && meal.kind === "lunch" && meal.end)?.end ?? day.stops[index]?.leave;
+  return day.meals.find((meal) => meal.afterStop === index && meal.kind === "lunch" && meal.end && !meal.during)?.end ?? day.stops[index]?.leave;
 }
 
 /** A time of day as it is typed and printed: "HH:MM", 24-hour, zero-padded. */
@@ -258,6 +259,12 @@ export type ShioriMeal = {
    * `near` is the hotel, and `start` is no earlier than the ride back gets there.
    */
   atHotel?: true;
+  /**
+   * The lunch is during the visit it is listed under, at the place or beside
+   * it, not after it: one long visit runs across lunchtime. `start`–`end` lie
+   * inside the stop's own times.
+   */
+  during?: true;
 };
 
 export type ShioriDay = {
@@ -887,6 +894,9 @@ export function shioriPricing(input: ShioriInput, options: { rail?: RailNetwork 
   };
 }
 
+/** When the lunch of a visit that runs across lunchtime starts: at 12:30, or on arrival when that is later (never after 13:00: see dayClock). */
+const lunchDuringStart = (arrive: number) => Math.max(arrive, 12 * 60 + 30);
+
 /** A sight with nowhere to sit down to dinner beside it, as far as its kind says: open country, not a town's own park or a park of rides. */
 const NO_TABLE_KIND = /mountain|volcano|waterfall|canyon|\bcave\b|\blake\b|forest|\bpark\b|wildlife|island|beach|ruin|archaeological|cemetery|lighthouse/;
 const TOWN_PARK_KIND = /theme park|amusement|urban park|science park|hi-tech park|exhibition park|miniature park|artificial/;
@@ -1237,8 +1247,16 @@ function planCore(input: ShioriInput, options: PlanOptions, frames: Frames | nul
       const place = placeById.get(entry.stop.id);
       if (!place) return [];
       const lunchHere = entry.stop.id === lunchStopId;
-      const leaveMinutes = times[stopIndex].leave - (lunchHere ? LUNCH_MINUTES : 0);
-      if (lunchHere) {
+      // The hour lent to this stop's stay is eaten after the visit — or, when
+      // the visit alone runs past the last lunch seating, during it (see
+      // dayClock): the stop is then printed with the hour in it.
+      const visitOver = times[stopIndex].leave - (lunchHere ? LUNCH_MINUTES : 0);
+      const lunchDuring = lunchHere && visitOver > DAY_CLOCK.meals.lunch.lastSeat;
+      const leaveMinutes = lunchDuring ? times[stopIndex].leave : visitOver;
+      if (lunchDuring) {
+        const start = lunchDuringStart(times[stopIndex].arrive);
+        meals.push({ kind: "lunch", afterStop: stopIndex, start: clock(start), end: clock(start + LUNCH_MINUTES), near: { latitude: place.lat, longitude: place.lon }, nearName: place.name, during: true });
+      } else if (lunchHere) {
         meals.push({ kind: "lunch", afterStop: stopIndex, start: clock(leaveMinutes), end: entry.departure, near: { latitude: place.lat, longitude: place.lon }, nearName: place.name, ...(leaveMinutes >= 1_440 ? { nextDay: true } : {}) });
       }
       // The engine holds a traveller at the door until the restaurant opens;
@@ -1254,7 +1272,8 @@ function planCore(input: ShioriInput, options: PlanOptions, frames: Frames | nul
         arrive: entry.arrival,
         leave: clock(leaveMinutes),
         // From the minutes, not the printed clocks: 23:32 to 01:02 is an hour and a half.
-        stayMinutes: leaveMinutes - times[stopIndex].arrive,
+        // The visit itself: a lunch hour inside it is the lunch row's, not the stay's.
+        stayMinutes: visitOver - times[stopIndex].arrive,
         waitMinutes,
         mealMissed: Boolean(place.meal) && entry.openingStatus !== "verified_open",
         arriveNextDay: times[stopIndex].arrive >= 1_440,
@@ -1263,6 +1282,22 @@ function planCore(input: ShioriInput, options: PlanOptions, frames: Frames | nul
       }];
     });
     if (stops.length === 0) return [];
+    // A stay that fills the day (a theme park of five hours or more) is a day
+    // out with eating in it: when it runs across lunchtime and the day has no
+    // other lunch, the lunch is listed during it, and no hour is added — its
+    // hours already hold it. Not under a time the traveller booked.
+    if (meals.length === 0 && !timing.noLunchRoom.has(index) && !stops.some((stop) => stop.place.meal === "lunch")) {
+      const lastSeat = DAY_CLOCK.meals.lunch.lastSeat;
+      const park = stops.findIndex((stop, stopIndex) => (
+        !stop.place.meal && !stop.reserved && stop.stayMinutes >= DAY_FILLING_STAY
+        && times[stopIndex].arrive <= LATE_LUNCH && times[stopIndex].leave > lastSeat
+      ));
+      if (park >= 0) {
+        const start = lunchDuringStart(times[park].arrive);
+        const place = stops[park].place;
+        meals.push({ kind: "lunch", afterStop: park, start: clock(start), end: clock(start + LUNCH_MINUTES), near: { latitude: place.lat, longitude: place.lon }, nearName: place.name, during: true });
+      }
+    }
     const lastPlace = stops.at(-1)!.place;
     // The day the traveller has to be done by a certain time is over by then: no dinner is suggested after it.
     const finish = frames && index === requested - 1 ? frames.finish : null;

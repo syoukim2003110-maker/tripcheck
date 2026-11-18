@@ -72,6 +72,9 @@ function oldDayClock(stays: readonly number[], meals: readonly Meal[], rides: re
         lunchAt = position;
       }
     }
+    // The one rule added since: no stop ends at lunchtime, and a visit begun by 13:00 runs past 14:00
+    // (not a stay of five hours or more) — the lunch hour is spent during it.
+    if (lunchAt < 0) lunchAt = stays.findIndex((stay, position) => !meals[position] && stay < 300 && before.arrive[position] <= 780 && before.leave[position] > 840);
   }
   return { ...(lunchAt >= 0 ? oldClockPass(stays, meals, rides, first, lunchAt) : before), lunchAt };
 }
@@ -92,7 +95,7 @@ function oldScheduleDay(stays: readonly number[], meals: readonly Meal[], rides:
   return { ...base, start: usual - door };
 }
 
-test("with nothing entered the day clock answers exactly as it did before", () => {
+test("with nothing entered the day clock answers as it did before, and a day whose one long visit runs across lunchtime now has its lunch hour during that visit", () => {
   const random = generator(11);
   for (let round = 0; round < 2_000; round += 1) {
     const count = 1 + random(7);
@@ -261,6 +264,12 @@ function reference(problem: SearchProblem, order: readonly number[], first: bool
     const candidates = order.map((_, position) => position)
       .filter((position) => !stops[order[position]].meal && plain.leave[position] >= 690 && plain.leave[position] <= 840)
       .sort((left, right) => Math.abs(plain.leave[left] - 750) - Math.abs(plain.leave[right] - 750) || left - right);
+    // No stop ends at lunchtime: a visit nobody booked that is begun by 13:00 and runs past 14:00 carries the
+    // hour (lunch during the visit) — unless it fills the day (five hours or more), which has its eating in it.
+    if (candidates.length === 0) {
+      const across = order.findIndex((stop, position) => !stops[stop].meal && typeof stops[stop].fixed !== "number" && stops[stop].stay < 300 && plain.arrive[position] <= 780 && plain.leave[position] > 840);
+      if (across >= 0) candidates.push(across);
+    }
     for (const candidate of candidates) {
       const lunched = run(candidate);
       if (lunched.late <= plain.late && (lunched.over === 0 || plain.over > 0)) {

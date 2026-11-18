@@ -14,19 +14,22 @@ const place = (id: string, lat: number, lon: number, stayMinutes: number): Shior
 const travel = (plan: ReturnType<typeof buildShioriPlan>) => plan.days.reduce((sum, day) => sum + day.travelMinutes, 0);
 
 test("a list that fits one unhurried day stays on one day when two are allowed", () => {
-  // Four places near each other, an hour from the hotel; one is a four-hour
-  // stay. The shortest order runs late, another order fits — and that one
-  // is printed, so it is the one the day count has to be judged on.
+  // Four places near each other, an hour from the hotel; one is a three-hour
+  // stay. (It was a four-hour stay, and that list fitted one day only in the
+  // order that ran the long visit across lunchtime with no lunch hour at
+  // all. A day eats: with its lunch hour that list takes the second day, and
+  // the list that fits one unhurried day is this one.)
   const places = [
     place("A", 35.69517, 139.76418, 15),
     place("B", 35.69095, 139.7865, 90),
     place("C", 35.70635, 139.78045, 30),
-    place("D", 35.69293, 139.75834, 240),
+    place("D", 35.69293, 139.75834, 180),
   ];
   const one = buildShioriPlan({ places, days: 1, hotel, locale: "en" });
   assert.equal(one.days.length, 1);
   assert.equal(one.days[0].runsLate, false);
   assert.equal(one.days[0].load, "normal");
+  assert.equal(one.days[0].meals.filter((meal) => meal.kind === "lunch").length, 1);
 
   const two = buildShioriPlan({ places, days: 2, hotel, locale: "en" });
   assert.equal(two.days.length, 1, "the second day is left free, not filled with a second trip from the hotel");

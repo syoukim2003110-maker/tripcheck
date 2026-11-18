@@ -142,10 +142,10 @@ export const TAXI_SURCHARGE = 15;
 const LONG_DAY = 450;
 /** Eight hours of it — a day from 09:00 still sightseeing at 17:00 — is a packed day. */
 const PACKED_SPAN = 480;
-/** A day that starts late so as not to wait for its dinner still sits down to a chosen lunch by 13:00. */
-const LATE_LUNCH = 13 * 60;
+/** A day that starts late so as not to wait for its dinner still sits down to a chosen lunch by 13:00; a lunch during a long visit starts by then too. */
+export const LATE_LUNCH = 13 * 60;
 /** A stay this long claims the day (a theme park): it opens it, unless that costs a meal or the evening. */
-const DAY_FILLING_STAY = 300;
+export const DAY_FILLING_STAY = 300;
 /** Up to this many ordinary sights a day's order is found exactly; no real day has more. */
 const EXACT_ORDER_STOPS = 9;
 /** Lists up to this long keep one table of routes for all their days (and are exact for any day). */
@@ -313,8 +313,16 @@ function clockPass(stays: readonly number[], meals: readonly Meal[], rides: read
  * i to stop i + 1. Run once without lunch to see where lunch falls (after
  * the stop that ends nearest 12:30, inside 11:30–14:00), then again with
  * that stop an hour longer. A day with a restaurant chosen for lunch has its
- * lunch; a day where no stop ends at lunchtime (one long visit over midday)
- * gets no separate hour.
+ * lunch.
+ *
+ * A day where no stop ends at lunchtime but one visit runs across it (a zoo
+ * from 11:51 to 14:21: begun by 13:00, not over by 14:00) eats during that visit, and the hour is added to it
+ * like any other lunch hour: the stays are an estimate of the visit alone,
+ * on the short side, and nobody sees two and a half hours of a zoo with an
+ * hour of them at a table. That stop is `lunchAt` too. Not a booked visit
+ * (its hours are the traveller's own), and not a stay that fills the day (a
+ * theme park of five hours or more): its hours are a day out, with eating
+ * in it, and it gets no separate hour.
  *
  * With a `frame` the lunch hour never breaks what the traveller entered: a
  * lunch that would make a booking late, or carry the day past its finish, is
@@ -326,6 +334,14 @@ export function dayClock(stays: readonly number[], meals: readonly Meal[], rides
   let lunchAt = -1;
   if (!meals.includes("lunch")) {
     const { open, lastSeat } = DAY_CLOCK.meals.lunch;
+    /** The visit that runs across lunchtime, when no stop ends in it. */
+    const across = () => {
+      for (let position = 0; position < stays.length; position += 1) {
+        if (meals[position] || (frame?.fixed?.[position] ?? null) !== null || stays[position] >= DAY_FILLING_STAY) continue;
+        if (before.arrive[position] <= LATE_LUNCH && before.leave[position] > lastSeat) return position;
+      }
+      return -1;
+    };
     if (!frame) {
       let nearest = Infinity;
       for (let position = 0; position < stays.length; position += 1) {
@@ -336,12 +352,17 @@ export function dayClock(stays: readonly number[], meals: readonly Meal[], rides
           lunchAt = position;
         }
       }
+      if (lunchAt < 0) lunchAt = across();
     } else {
       const candidates: number[] = [];
       for (let position = 0; position < stays.length; position += 1) {
         const end = before.leave[position];
         if (meals[position] || end < open || end > lastSeat) continue;
         candidates.push(position);
+      }
+      if (candidates.length === 0) {
+        const inside = across();
+        if (inside >= 0) candidates.push(inside);
       }
       // Nearest 12:30 first; the earlier stop on a tie, as without a frame.
       candidates.sort((left, right) => Math.abs(before.leave[left] - 750) - Math.abs(before.leave[right] - 750) || left - right);
@@ -1202,6 +1223,19 @@ export function daySearch(
               break;
             }
           }
+          if (tried === 0) {
+            // No stop ends at lunchtime: the visit that runs across it carries the hour (see dayClock).
+            for (let position = 0; position < total; position += 1) {
+              const stop = order[position];
+              if (stops[stop].meal || fixedOf[stop] !== null || stops[stop].stay >= DAY_FILLING_STAY) continue;
+              if (arrive[position] <= LATE_LUNCH && plainEnds[position] > lunchHours.lastSeat) {
+                tried = 1;
+                pass(position);
+                lunched = late <= lateBefore && (hardOver === 0 || hardBefore > 0);
+                break;
+              }
+            }
+          }
           if (!lunched && tried !== 0) pass(-1);
         }
         let overrun = 0;
@@ -1353,7 +1387,7 @@ export function daySearch(
    * Every order of a small day, one by one. The tables above give, for
    * each way a day can end, its shortest route; an order they rule out
    * because its clock runs late can still have a longer cousin that fits —
-   * one that lets a long museum visit cover the lunch hour, or takes a taxi
+   * one whose lunch hour falls after another stop, or that takes a taxi
    * the shortest route avoids. So a day of up to eight stops whose shortest
    * routes did not all fit is tried in every order before it is printed.
    * Dinners come last; a stay that fills the day comes first when such an
@@ -1383,6 +1417,7 @@ export function daySearch(
     const openers = new Set(ids.filter((stop) => !stops[stop].meal && stops[stop].stay >= DAY_FILLING_STAY));
     const lunchChosen = ids.some((stop) => stops[stop].meal === "lunch");
     const ends = new Float64Array(total);
+    const arrivals = new Float64Array(total);
     type Found = { cost: number; over: number; weight: number; order: number[]; keepable: boolean };
     const from = (day: Described): Found => ({ cost: day.orderCost, over: day.sightsOver, weight: day.weight, order: day.order, keepable: day.keepable });
     const search = (openersFirst: boolean, limit: Found | null) => {
@@ -1413,6 +1448,7 @@ export function daySearch(
               }
             }
             const departure = arrival + stops[stop].stay + (position === lunchAt ? DAY_CLOCK.lunchMinutes : 0);
+            arrivals[position] = arrival;
             ends[position] = departure;
             if (meal !== "dinner") sightsOver = departure;
             cursor = departure;
@@ -1427,6 +1463,12 @@ export function daySearch(
                 nearest = Math.abs(end - 750);
                 lunchAt = position;
               }
+            }
+            // No stop ends at lunchtime: the visit that runs across it carries the hour (see dayClock).
+            for (let position = 0; lunchAt < 0 && position < total; position += 1) {
+              const stop = order[position];
+              if (stops[stop].meal || stops[stop].stay >= DAY_FILLING_STAY) continue;
+              if (arrivals[position] <= LATE_LUNCH && ends[position] > DAY_CLOCK.meals.lunch.lastSeat) lunchAt = position;
             }
             if (lunchAt >= 0) continue;
           }
