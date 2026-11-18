@@ -29,6 +29,11 @@
  *        the meal advisor's contract, and anything else is refused)
  *   200 {"results":[{id,name,latitude,longitude,address,genre,budget,
  *                    budgetAverage,catch,open,photo,url}]}
+ *   GET apple.php?op=place&ids=<Place ID>,<Place ID>…&lang=ja-JP|en-US
+ *       (1 to 25 Apple Place IDs, each 4–64 letters and digits)
+ *   200 {"results":[…same fields as a search result…],"notFound":[<id>…]}
+ *       (an id in neither list could not be looked up this time)
+ *
  *   GET apple.php?op=maptoken
  *   200 {"token":"<jwt>","expiresAt":<unix seconds>,"expiresIn":<seconds>}
  *       (a 20-minute MapKit JS token for the place card showing opening
@@ -60,6 +65,7 @@ const APPLE_ORIGIN = 'https://maps-api.apple.com';
 const DAILY_CALL_CEILING = 15000;      // stay inside Apple's daily quota
 const PER_CLIENT_PER_MINUTE = 180;     // one trip build is ~20 searches + ~80 travel times
 const ALLOWED_CATEGORIES = ['Restaurant', 'Cafe', 'Bakery', 'Hotel'];
+const PLACE_IDS_PER_LOOKUP = 25;       // op=place: one trip, 24 places and a hotel
 
 /**
  * The genre codes and yes/no filters a food search may carry: the meal
@@ -461,6 +467,71 @@ if (($_GET['op'] ?? '') === 'food') {
     respond(200, ['results' => $results]);
 }
 
+/** One Apple Place object as the page receives it (search and lookup answer alike); null when it has no name or position. */
+function place_result($place): ?array
+{
+    if (!is_array($place)) return null;
+    $text = fn ($value): ?string => is_string($value) && trim($value) !== '' ? trim($value) : null;
+    $latitude = $place['coordinate']['latitude'] ?? null;
+    $longitude = $place['coordinate']['longitude'] ?? null;
+    $name = $text($place['name'] ?? null);
+    if ($name === null || !is_numeric($latitude) || !is_numeric($longitude)) return null;
+    $lines = array_values(array_filter(array_map($text, is_array($place['formattedAddressLines'] ?? null) ? $place['formattedAddressLines'] : [])));
+    return [
+        'id' => $text($place['id'] ?? null),
+        'name' => $name,
+        'latitude' => (float) $latitude,
+        'longitude' => (float) $longitude,
+        'formattedAddress' => implode(', ', $lines),
+        'locality' => $text($place['structuredAddress']['locality'] ?? null),
+        'subLocality' => $text($place['structuredAddress']['subLocality'] ?? null),
+        'countryCode' => $text($place['countryCode'] ?? null),
+        'poiCategory' => $text($place['poiCategory'] ?? null),
+    ];
+}
+
+if (($_GET['op'] ?? '') === 'place') {
+    // Places by Apple Place ID. A trip keeps a place found through Apple as
+    // its Place ID alone; its name and position are asked for again here
+    // each time the trip is opened, and never kept. One request covers a
+    // whole trip (24 places and a hotel).
+    $ids = explode(',', (string) ($_GET['ids'] ?? ''));
+    $language = (string) ($_GET['lang'] ?? '');
+    if (
+        count($ids) < 1 || count($ids) > PLACE_IDS_PER_LOOKUP || count(array_unique($ids)) !== count($ids)
+        || array_filter($ids, fn ($id): bool => preg_match('/^[A-Za-z0-9]{4,64}$/D', $id) !== 1) !== []
+        || !in_array($language, ['ja-JP', 'en-US'], true)
+    ) {
+        respond(400, ['code' => 'invalid_request']);
+    }
+    admit();
+    $placeUrl = APPLE_ORIGIN . '/v1/place?' . http_build_query(['ids' => implode(',', $ids), 'lang' => $language], '', '&', PHP_QUERY_RFC3986);
+    try {
+        [$status, $body] = apple_get($placeUrl, access_token($config));
+        if ($status === 401) [$status, $body] = apple_get($placeUrl, access_token($config, true));
+    } catch (Throwable $error) {
+        respond(502, ['code' => 'unavailable']);
+    }
+    if ($status === 429) respond(429, ['code' => 'budget_exhausted']);
+    // Anything but a full answer is an outage: the page keeps the places and asks again later.
+    if ($status !== 200 || !is_array($body)) respond(502, ['code' => 'unavailable']);
+    $results = [];
+    foreach (is_array($body['results'] ?? null) ? $body['results'] : [] as $place) {
+        $result = place_result($place);
+        if ($result !== null && in_array($result['id'], $ids, true)) $results[] = $result;
+    }
+    // Apple answers FAILED_NOT_FOUND for an id it does not know (any more)
+    // and FAILED_INVALID_ID for a malformed one; any other error says
+    // nothing about the place, so it is neither found nor gone.
+    $notFound = [];
+    foreach (is_array($body['errors'] ?? null) ? $body['errors'] : [] as $error) {
+        $id = is_array($error) ? ($error['id'] ?? null) : null;
+        $code = is_array($error) ? ($error['errorCode'] ?? null) : null;
+        if (is_string($id) && in_array($id, $ids, true) && in_array($code, ['FAILED_NOT_FOUND', 'FAILED_INVALID_ID'], true)) $notFound[] = $id;
+    }
+    respond(200, ['results' => $results, 'notFound' => $notFound]);
+}
+
 $query = trim((string) ($_GET['q'] ?? ''));
 $language = (string) ($_GET['lang'] ?? '');
 $near = null;
@@ -510,24 +581,9 @@ try {
 if ($status === 429) respond(429, ['code' => 'budget_exhausted']);
 if ($status !== 200 || !is_array($body)) respond(502, ['code' => 'unavailable']);
 
-$text = fn ($value): ?string => is_string($value) && trim($value) !== '' ? trim($value) : null;
 $results = [];
 foreach (array_slice(is_array($body['results'] ?? null) ? $body['results'] : [], 0, 20) as $place) {
-    $latitude = $place['coordinate']['latitude'] ?? null;
-    $longitude = $place['coordinate']['longitude'] ?? null;
-    $name = $text($place['name'] ?? null);
-    if ($name === null || !is_numeric($latitude) || !is_numeric($longitude)) continue;
-    $lines = array_values(array_filter(array_map($text, is_array($place['formattedAddressLines'] ?? null) ? $place['formattedAddressLines'] : [])));
-    $results[] = [
-        'id' => $text($place['id'] ?? null),
-        'name' => $name,
-        'latitude' => (float) $latitude,
-        'longitude' => (float) $longitude,
-        'formattedAddress' => implode(', ', $lines),
-        'locality' => $text($place['structuredAddress']['locality'] ?? null),
-        'subLocality' => $text($place['structuredAddress']['subLocality'] ?? null),
-        'countryCode' => $text($place['countryCode'] ?? null),
-        'poiCategory' => $text($place['poiCategory'] ?? null),
-    ];
+    $result = place_result($place);
+    if ($result !== null) $results[] = $result;
 }
 respond(200, ['results' => $results]);

@@ -84,8 +84,13 @@ export async function appleRelaySearch(
     if (response.status === 429) throw new AppleRelayError("quota_exhausted");
     throw new AppleRelayError("unavailable");
   }
-  if (!Array.isArray(payload.results)) return [];
-  return payload.results.flatMap((raw): AppleRelayPlace[] => {
+  return relayPlaces(payload.results);
+}
+
+/** The places of a relay answer that can be shown; anything malformed is left out. */
+function relayPlaces(results: unknown): AppleRelayPlace[] {
+  if (!Array.isArray(results)) return [];
+  return results.flatMap((raw): AppleRelayPlace[] => {
     if (!raw || typeof raw !== "object") return [];
     const place = raw as Record<string, unknown>;
     const name = text(place.name);
@@ -106,6 +111,64 @@ export async function appleRelaySearch(
       poiCategory: text(place.poiCategory),
     }];
   });
+}
+
+/** How many Place IDs one op=place request carries (the relay refuses more). */
+export const PLACE_IDS_PER_LOOKUP = 25;
+const APPLE_PLACE_ID = /^[A-Za-z0-9]{4,64}$/;
+
+export type AppleRelayLookup = Readonly<{
+  /** By Place ID: what Apple says about the place now, in the language asked for. */
+  found: ReadonlyMap<string, AppleRelayPlace>;
+  /** Ids Apple says it does not know (any more). An id in neither was not answered this time. */
+  notFound: ReadonlySet<string>;
+}>;
+
+/**
+ * Places by their Apple Place IDs (the relay's op=place), as many requests
+ * as the ids need. The answer is for this visit only: nothing of it is
+ * written anywhere by this function, and a trip keeps the ids alone.
+ * Throws AppleRelayError when the relay cannot answer.
+ */
+export async function appleRelayPlaces(
+  ids: readonly string[],
+  language: "ja-JP" | "en-US",
+  relayUrl: string | null = appleRelayUrl(),
+  fetcher: typeof fetch = (input, init) => globalThis.fetch(input, init),
+  signal?: AbortSignal,
+): Promise<AppleRelayLookup> {
+  if (!relayUrl) throw new AppleRelayError("not_configured");
+  const wanted = [...new Set(ids)].filter((id) => APPLE_PLACE_ID.test(id));
+  const found = new Map<string, AppleRelayPlace>();
+  const notFound = new Set<string>(ids.filter((id) => !APPLE_PLACE_ID.test(id)));
+  const base = typeof window !== "undefined" ? window.location.href : "http://localhost/";
+  for (let start = 0; start < wanted.length; start += PLACE_IDS_PER_LOOKUP) {
+    const batch = wanted.slice(start, start + PLACE_IDS_PER_LOOKUP);
+    const url = new URL(relayUrl, base);
+    url.searchParams.set("op", "place");
+    url.searchParams.set("ids", batch.join(","));
+    url.searchParams.set("lang", language);
+    let response: Response;
+    try {
+      response = await fetcher(url, { method: "GET", headers: { Accept: "application/json" }, signal });
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      throw new AppleRelayError("unavailable");
+    }
+    const payload = await response.json().catch(() => null) as { code?: unknown; results?: unknown; notFound?: unknown } | null;
+    if (!response.ok || !payload) {
+      if (payload?.code === "not_configured") throw new AppleRelayError("not_configured");
+      if (response.status === 429) throw new AppleRelayError("quota_exhausted");
+      throw new AppleRelayError("unavailable");
+    }
+    for (const place of relayPlaces(payload.results)) {
+      if (place.id && batch.includes(place.id)) found.set(place.id, place);
+    }
+    for (const id of Array.isArray(payload.notFound) ? payload.notFound : []) {
+      if (typeof id === "string" && batch.includes(id) && !found.has(id)) notFound.add(id);
+    }
+  }
+  return { found, notFound };
 }
 
 export type AppleRelayEta = Readonly<{ minutes: number; distanceMeters: number | null }>;

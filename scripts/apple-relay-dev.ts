@@ -46,6 +46,11 @@ const credentials = appleMapsCredentialsFromEnvironment(localEnvironment());
 const client = credentials ? new AppleMapsClient(credentials) : null;
 
 const ALLOWED_CATEGORIES = new Set(["Restaurant", "Cafe", "Bakery", "Hotel"]);
+// op=place: as many ids as one trip holds (24 places and a hotel).
+const PLACE_IDS_PER_LOOKUP = 25;
+const APPLE_PLACE_ID = /^[A-Za-z0-9]{4,64}$/;
+// Apple answers FAILED_NOT_FOUND for an id it does not know (any more) and FAILED_INVALID_ID for a malformed one.
+const PLACE_NOT_FOUND = /^FAILED_(?:NOT_FOUND|INVALID_ID)$/;
 
 // The meal advisor: one spec file shared with ai.php.
 const aiSpec = JSON.parse(readFileSync(new URL("../deploy/xserver/api/ai-spec.json", import.meta.url), "utf8")) as MealAdviceSpec & { enums: { genres: string[]; features: string[] } };
@@ -197,6 +202,26 @@ createServer(async (request, response) => {
       return send(200, route
         ? { minutes: route.minutes, distanceMeters: route.distanceMeters, path: route.path.map((point) => [Number(point.latitude.toFixed(5)), Number(point.longitude.toFixed(5))]) }
         : { minutes: null, distanceMeters: null, path: [] });
+    } catch (error) {
+      if (error instanceof AppleMapsError && error.code === "quota_exhausted") return send(429, { code: "budget_exhausted" });
+      return send(502, { code: "unavailable" });
+    }
+  }
+
+  if (url.searchParams.get("op") === "place") {
+    // The same contract as apple.php's op=place: places by Apple Place ID.
+    const ids = (url.searchParams.get("ids") ?? "").split(",");
+    const language = url.searchParams.get("lang") ?? "";
+    if (
+      ids.length < 1 || ids.length > PLACE_IDS_PER_LOOKUP || new Set(ids).size !== ids.length
+      || ids.some((id) => !APPLE_PLACE_ID.test(id)) || !["ja-JP", "en-US"].includes(language)
+    ) return send(400, { code: "invalid_request" });
+    try {
+      const answer = await client.places(ids, language);
+      return send(200, {
+        results: answer.places.filter((place) => place.id !== null && ids.includes(place.id)),
+        notFound: answer.missing.filter((entry) => ids.includes(entry.id) && PLACE_NOT_FOUND.test(entry.code)).map((entry) => entry.id),
+      });
     } catch (error) {
       if (error instanceof AppleMapsError && error.code === "quota_exhausted") return send(429, { code: "budget_exhausted" });
       return send(502, { code: "unavailable" });

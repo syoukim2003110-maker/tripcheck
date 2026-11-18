@@ -344,6 +344,24 @@ export class AppleMapsClient {
     };
   }
 
+  /**
+   * Places by their Apple Place IDs, in one request (GET /v1/place?ids=).
+   * `missing` lists the ids Apple answered with an error for (not found,
+   * malformed, or any other lookup error), each with Apple's error code.
+   */
+  async places(ids: readonly string[], language: string, signal?: AbortSignal): Promise<{ places: AppleMapsPlace[]; missing: Array<{ id: string; code: string }> }> {
+    const url = new URL("/v1/place", APPLE_MAPS_ORIGIN);
+    url.searchParams.set("ids", ids.join(","));
+    url.searchParams.set("lang", language);
+    const payload = await this.authorized(url, signal) as { results?: unknown; errors?: unknown };
+    const places = Array.isArray(payload.results) ? payload.results.flatMap((raw) => applePlaceOf(raw)) : [];
+    const missing = Array.isArray(payload.errors) ? payload.errors.flatMap((raw): Array<{ id: string; code: string }> => {
+      const entry = raw as { id?: unknown; errorCode?: unknown } | null;
+      return entry && typeof entry.id === "string" ? [{ id: entry.id, code: typeof entry.errorCode === "string" ? entry.errorCode : "" }] : [];
+    }) : [];
+    return { places, missing };
+  }
+
   async search(options: AppleMapsSearchOptions): Promise<AppleMapsPlace[]> {
     const url = new URL("/v1/search", APPLE_MAPS_ORIGIN);
     url.searchParams.set("q", options.query);
@@ -372,40 +390,43 @@ export class AppleMapsClient {
     }
     const payload = await this.authorized(url, options.signal) as { results?: unknown };
     if (!Array.isArray(payload.results)) return [];
-    return payload.results.flatMap((raw): AppleMapsPlace[] => {
-      if (!raw || typeof raw !== "object") return [];
-      const place = raw as {
-        id?: unknown;
-        name?: unknown;
-        coordinate?: { latitude?: unknown; longitude?: unknown };
-        formattedAddressLines?: unknown;
-        structuredAddress?: { locality?: unknown; subLocality?: unknown };
-        countryCode?: unknown;
-        poiCategory?: unknown;
-      };
-      const latitude = Number(place.coordinate?.latitude);
-      const longitude = Number(place.coordinate?.longitude);
-      const name = typeof place.name === "string" ? place.name.trim() : "";
-      if (!name || !Number.isFinite(latitude) || !Number.isFinite(longitude)) return [];
-      if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return [];
-      const text = (value: unknown) => typeof value === "string" && value.trim() ? value.trim() : null;
-      const lines = Array.isArray(place.formattedAddressLines)
-        ? place.formattedAddressLines.flatMap((line) => text(line) ?? [])
-        : [];
-      const countryCode = text(place.countryCode)?.toUpperCase() ?? null;
-      return [{
-        id: text(place.id),
-        name,
-        latitude,
-        longitude,
-        formattedAddress: lines.join(", "),
-        locality: text(place.structuredAddress?.locality),
-        subLocality: text(place.structuredAddress?.subLocality),
-        countryCode: countryCode && /^[A-Z]{2}$/.test(countryCode) ? countryCode : null,
-        poiCategory: text(place.poiCategory),
-      }];
-    });
+    return payload.results.flatMap((raw) => applePlaceOf(raw));
   }
+}
+
+/** One Place object of Apple's answer, as the relays pass it on; nothing when it has no name or no usable coordinate. */
+export function applePlaceOf(raw: unknown): AppleMapsPlace[] {
+  if (!raw || typeof raw !== "object") return [];
+  const place = raw as {
+    id?: unknown;
+    name?: unknown;
+    coordinate?: { latitude?: unknown; longitude?: unknown };
+    formattedAddressLines?: unknown;
+    structuredAddress?: { locality?: unknown; subLocality?: unknown };
+    countryCode?: unknown;
+    poiCategory?: unknown;
+  };
+  const latitude = Number(place.coordinate?.latitude);
+  const longitude = Number(place.coordinate?.longitude);
+  const name = typeof place.name === "string" ? place.name.trim() : "";
+  if (!name || !Number.isFinite(latitude) || !Number.isFinite(longitude)) return [];
+  if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return [];
+  const text = (value: unknown) => typeof value === "string" && value.trim() ? value.trim() : null;
+  const lines = Array.isArray(place.formattedAddressLines)
+    ? place.formattedAddressLines.flatMap((line) => text(line) ?? [])
+    : [];
+  const countryCode = text(place.countryCode)?.toUpperCase() ?? null;
+  return [{
+    id: text(place.id),
+    name,
+    latitude,
+    longitude,
+    formattedAddress: lines.join(", "),
+    locality: text(place.structuredAddress?.locality),
+    subLocality: text(place.structuredAddress?.subLocality),
+    countryCode: countryCode && /^[A-Z]{2}$/.test(countryCode) ? countryCode : null,
+    poiCategory: text(place.poiCategory),
+  }];
 }
 
 let sharedClient: { key: string; client: AppleMapsClient } | null = null;
