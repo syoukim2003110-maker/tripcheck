@@ -815,9 +815,10 @@ test("a dinner near the last sight never starts after the booklet has left that 
     }
   }
   // (That day then ended at the tower beside the zoo at 17:27; with the hours of the sight notes the zoo is over before
-  // four and the day ends at 住吉大社 at 17:11: the dinner is back near the hotel when the ride is over.)
-  const zoo = dayEndingAt("osaka-3", /住吉大社/);
-  assert.deepEqual([zoo.day.stops.at(-1)!.leave, dinnerOf(zoo.day)!.meal.start, dinnerOf(zoo.day)!.meal.atHotel], ["17:11", zoo.day.end, true]);
+  // four, and the tower — a place that may close the day, whatever its note of the daytime — ends it at 17:36: the
+  // dinner is near the tower from the minute it is left, not after a ride that has already gone.)
+  const zoo = dayEndingAt("osaka-3", /通天閣/);
+  assert.deepEqual([zoo.day.stops.at(-1)!.leave, dinnerOf(zoo.day)!.meal.start, Boolean(dinnerOf(zoo.day)!.meal.atHotel)], ["17:36", "17:36", false]);
   // In every trip of the audit: with a ride back to a hotel, a dinner near the last sight begins the minute the
   // sight is left (the minute the ride is printed from), and a dinner near the hotel not before the ride is over.
   let near = 0;
@@ -1210,8 +1211,9 @@ test("in the trips of the audit a museum or a castle no longer opens the day bes
   assert.equal(hoursIn("kyoto-2")[0][0].arrive, 9 * 60 + 8);
   assert.deepEqual([names("nara-1", 0)[0], names("nara-1", 0).at(-1)], ["春日大社", "平城宮"]);
   // Was: osaka-3 day 2, 通天閣 13:42 then 天王寺動物園 14:55–17:25; then the zoo in the daytime and the tower last. By its
-  // note the zoo is a place of the first half of the day: over before four, the tower before it and a shrine after it.
-  assert.deepEqual(names("osaka-3", 1).slice(-3), ["通天閣", "天王寺動物園", "住吉大社"]);
+  // note the zoo is a place of the first half of the day: over before four, a shrine after it, and the tower — which
+  // its note of the daytime does not keep from the evening — closes the day.
+  assert.deepEqual(names("osaka-3", 1).slice(-3), ["天王寺動物園", "住吉大社", "通天閣"]);
   assert.ok(hoursIn("osaka-3")[1].find((stop) => stop.name === "天王寺動物園")!.leave <= 16 * 60);
   // Was: bangkok-1, 16:59–18:14 王宮 at the end of the day and the market first. The palace before one, and the night-life
   // street that its note keeps for the evening closes the day.
@@ -1464,9 +1466,12 @@ test("in the trips of the audit as first shown, a palace or a large zoo opens it
       if (day[0].habit === "ticketed" && day[0].arrive < 9 * 60 + 30 && day.some((stop) => isOpenEarly(stop.habit))) ticketedFirst += 1;
     }
   }
-  assert.deepEqual([firstHalfLate, ticketedFirst, daytimeLate], [6, 3, 16]);
-  // (17,765 with the notes' hours; 17,805 since nikko-2 holds 日光の社寺 too, which it left out before.)
-  assert.ok(total <= 17_805, `${total} minutes on the way`);
+  // (Daytime places begun at 16:30 or later: 12, not 16, since a tower, a theme park or a mall is no longer a daytime
+  // place by a note of the daytime: the Eiffel Tower and 通天閣 may close their days.)
+  assert.deepEqual([firstHalfLate, ticketedFirst, daytimeLate], [6, 3, 12]);
+  // (17,765 with the notes' hours; 17,805 since nikko-2 holds 日光の社寺 too, which it left out before; 17,815 since a
+  // tower may close its day: ten minutes more in all, three of them for the Eiffel Tower last in paris-1.)
+  assert.ok(total <= 17_815, `${total} minutes on the way`);
 });
 
 test("the audit's draw is as it was: six of its trips have a place that is closed or gone by the web check, and plan it as a trip that already had it would (築地市場's outer market is open)", () => {

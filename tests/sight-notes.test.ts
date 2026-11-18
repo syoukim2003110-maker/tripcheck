@@ -132,7 +132,7 @@ test("of the 2,277 bundled sights 1,826 are added with another stay than the rul
 
 /* ------------------------------------------------------------------ hours */
 
-test("the part of the day a sight's note gives it is the planner's habit for it, before the rule by kind", () => {
+test("the part of the day a sight's note gives it is the planner's habit for it, before the rule by kind — except that a tower, a theme park or a mall is not kept to the daytime by it", () => {
   const habit = (cityId: string, name: string) => {
     const entry = sight(cityId, name);
     return [placeHabit(entry.kind, entry.ja), placeHabit(entry.kind, entry.ja, `wikidata-${entry.q}`)];
@@ -150,7 +150,14 @@ test("the part of the day a sight's note gives it is the planner's habit for it,
   // day: in the daytime — with a door when the kind has one, reachable first thing when the kind is a shrine.
   assert.deepEqual(habit("tokyo", "東京国立博物館"), ["ticketed", "ticketed"]);
   assert.deepEqual(habit("tokyo", "明治神宮"), ["daytime-open", "daytime-open"]);
-  assert.deepEqual(habit("tokyo", "東京タワー"), [null, "daytime"]);
+  // …but a tower, a theme park or a shopping centre keeps no habit by a note of the daytime: it may close the day, for its night view or its evening.
+  assert.deepEqual(habit("tokyo", "東京タワー"), [null, null]);
+  assert.deepEqual(habit("tokyo", "東京スカイツリー"), [null, null]);
+  assert.deepEqual(habit("tokyo", "東京ディズニーランド"), [null, null]);
+  assert.deepEqual(habit("dubai", "ドバイ・モール"), [null, null]);
+  assert.equal(sightNote(sight("tokyo", "東京タワー").q)?.hours, "day");
+  // A note of the first half of the day still keeps one there.
+  assert.equal(placeHabit("observation tower", "x", "wikidata-Q1202239"), "early");
   // A hotel, a shop or a station is not kept for the evening by a note either: only the place itself.
   const safari = sight("singapore", "ナイトサファリ");
   assert.equal(placeHabit(safari.kind, "ナイトサファリ駅", `wikidata-${safari.q}`), "ticketed");

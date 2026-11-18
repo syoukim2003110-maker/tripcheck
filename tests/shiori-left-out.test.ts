@@ -102,7 +102,7 @@ const LEFT_OUT: Record<string, { before: string; after: string; out: string[]; d
   "hakone-2": { before: "19:06 19:24", after: "17:53 16:07", out: ["箱根山"], days: 3 },
   "nikko-1": { before: "22:52", after: "16:32", out: ["華厳滝", "東武ワールドスクウェア"], days: 2 },
   "nikko-3": { before: "19:23 19:18 21:10", after: "17:50 17:25 17:28", out: ["女峰山"], days: 4 },
-  "paris-1": { before: "22:12", after: "17:47", out: ["ルーヴル美術館"], days: 2 },
+  "paris-1": { before: "22:12", after: "17:50", out: ["ルーヴル美術館"], days: 2 },
   "london-1": { before: "21:33", after: "18:02", out: ["ロンドン塔"], days: 2 },
   "london-2": { before: "19:29 19:04", after: "17:57 17:12", out: ["ロンドン塔"], days: 3 },
   "newyork-1": { before: "+00:25", after: "17:07", out: ["自由の女神像", "アメリカ自然史博物館"], days: 2 },

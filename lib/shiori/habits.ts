@@ -12,7 +12,9 @@
  * from the kind the catalogue gives a place (lib/popular-sights-data.json)
  * and, for the few places of the evening or the morning, from the name. A
  * kind that says nothing — a tower, a market, a shopping street, a mountain
- * — has no habit unless its note gives one.
+ * — has no habit unless its note gives one (and a tower, a wheel, a theme
+ * park or a mall not even then, unless the note keeps it to the morning or
+ * the first half of the day: it may close the day).
  */
 import { sightNote } from "./sight-notes.ts";
 
@@ -42,6 +44,13 @@ const EVENING_KIND = /night market/;
 const MORNING_NAME = /朝市|morning ?market/i;
 /** A hotel, a station, a shop or a café that carries such a name is not the market: only its neighbour. */
 const NAMED_AFTER = /ホテル|ホステル|旅館|hotel|hostel|\binn\b|駅|station|店|ショップ|shop|store|カフェ|喫茶|caf[eé]|レストラン|restaurant|食堂/i;
+
+/**
+ * A tower, a wheel, a theme park or a shopping centre: as good after dark as
+ * by day, often better. A note that says "in the daytime" does not keep one
+ * from closing the day: only a note of the morning or the first half does.
+ */
+const AFTER_DARK_TOO = /observation|skyscraper|\btowers?\b|tower block|ferris|theme park|amusement|water park|shopping|department store|\bmall\b/;
 
 /*
  * In order: the first rule that matches decides. A square in front of a
@@ -94,7 +103,9 @@ function habitByNote(id: string | undefined, kind: string | undefined, name: str
     case "evening": return NAMED_AFTER.test(name) ? undefined : "evening";
     case "day": {
       // In the daytime: with a door and a counter when the kind says so, reachable first thing when it says that.
+      // (A tower or a mall keeps the kind's word, which is none: it can close the day.)
       const byKind = habitByKind(kind, name);
+      if (byKind === null && AFTER_DARK_TOO.test((kind ?? "").toLowerCase())) return undefined;
       return byKind === "ticketed" || byKind === "daytime-open" ? byKind : "daytime";
     }
     default: return undefined;
