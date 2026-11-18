@@ -1008,13 +1008,15 @@ test("what kind of place has which habit about its hours: a museum has a door, a
   for (const kind of ["art museum", "national museum", "zoo", "public aquarium", "japanese castle", "royal palace", "art gallery", "fortress", "open-air museum", "historical park museum"]) assert.equal(habit(kind), "ticketed", kind);
   for (const kind of ["buddhist temple", "japanese garden", "botanical garden", "cathedral", "minor basilica", "mosque", "pagoda", "archaeological site", "mausoleum"]) assert.equal(habit(kind), "daytime", kind);
   for (const kind of ["shinto shrine", "inari shrine", "waterfall", "island", "volcano", "stratovolcano", "shield volcano"]) assert.equal(habit(kind), "daytime-open", kind);
-  // (A volcano observatory is no volcano.)
+  // (A volcano observatory is no volcano.) A fish market or a morning market belongs to the morning, by its kind or by its name.
+  for (const [kind, name] of [["fish market", "築地市場"], ["morning market", "函館朝市"], ["market", "輪島朝市"], ["", "Hakodate Morning Market"]] as const) assert.equal(habit(kind, name), "morning", name);
+  assert.equal(habit("market", "朝市前ホテル"), null);
   assert.equal(habit("volcano observatory"), "open");
   for (const kind of ["urban park", "street", "square", "neighborhood", "suspension bridge", "mountain", "monument", "boulevard", "castle park", "cathedral square", "beach"]) assert.equal(habit(kind), "open", kind);
   // Nothing is said of a tower, a market, a shop, a theme park, a stadium, a theatre — or of a kind nobody has heard of.
-  for (const kind of ["observation tower", "skyscraper", "clock tower", "fish market", "flea market", "shopping center", "theme park", "amusement park", "stadium", "opera house", "onsen", "funicular", "something else", ""]) assert.equal(habit(kind), null, kind);
+  for (const kind of ["observation tower", "skyscraper", "clock tower", "market", "flea market", "shopping center", "theme park", "amusement park", "stadium", "opera house", "onsen", "funicular", "something else", ""]) assert.equal(habit(kind), null, kind);
   assert.equal(placeHabit(undefined, "名前だけの場所"), null);
-  assert.deepEqual(["ticketed", "daytime", "daytime-open", "open", null].map((entry) => [isDaytime(entry as never), isOpenEarly(entry as never)]), [[true, false], [true, false], [true, true], [false, true], [false, false]]);
+  assert.deepEqual(["ticketed", "daytime", "daytime-open", "morning", "open", null].map((entry) => [isDaytime(entry as never), isOpenEarly(entry as never)]), [[true, false], [true, false], [true, true], [true, true], [false, true], [false, false]]);
   // A restaurant chosen for a meal has its meal, not a habit.
   assert.equal(habitOf({ kind: "art museum", name: "美術館のレストラン", meal: "lunch" }), null);
   assert.equal(habitOf({ kind: "art museum", name: "美術館" }), "ticketed");
@@ -1033,7 +1035,7 @@ function hourProblem(seed: number, count: number, withHotel: boolean, withDinner
     state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
     return state / 4294967296;
   };
-  const kinds: Array<Partial<HourStop>> = [{ daytime: true, ticketed: true }, { daytime: true }, { daytime: true, early: true }, { early: true }, {}];
+  const kinds: Array<Partial<HourStop>> = [{ daytime: true, ticketed: true }, { daytime: true }, { daytime: true, early: true }, { early: true }, {}, { daytime: true, early: true, morning: true }];
   const stops: HourStop[] = Array.from({ length: count }, (_, index) => (
     withDinner && index === count - 1
       ? { stay: 90, meal: "dinner" as const, day: null }
@@ -1065,7 +1067,9 @@ function hourCost(problem: SearchProblem & { stops: HourStop[] }, order: number[
     const entry = stops[stop];
     over = Math.max(over, clock.leave[position] - (entry.meal === "dinner" ? 21 * 60 + 30 : 18 * 60));
     // A daytime place that ends after 17:00: ten minutes and half of every minute past it, thirty at most.
-    if (!entry.meal && entry.daytime && clock.leave[position] > 17 * 60) hours += Math.min(30, 10 + (clock.leave[position] - 17 * 60) / 2);
+    // A place of the morning (a fish market) that ends after 13:00: the same, counted from 13:00.
+    if (!entry.meal && entry.morning) { if (clock.leave[position] > 13 * 60) hours += Math.min(30, 10 + (clock.leave[position] - 13 * 60) / 2); }
+    else if (!entry.meal && entry.daytime && clock.leave[position] > 17 * 60) hours += Math.min(30, 10 + (clock.leave[position] - 17 * 60) / 2);
   });
   // A place with a door reached before 09:30 as the first of a day that has a place under the open sky to start with: fifteen.
   if (stops[order[0]].ticketed && !stops[order[0]].meal && clock.arrive[0] < 9 * 60 + 30 && order.slice(1).some((stop) => stops[stop].early && !stops[stop].meal)) hours += 15;
@@ -1079,7 +1083,7 @@ function everyHourOrder(count: number, dinnerLast: boolean): number[][] {
 }
 
 test("the order of a day is the one that costs least with its hours counted, of every order there is — with a hotel and without, with a dinner to close it, and on a day that starts late", () => {
-  assert.deepEqual(HABITS, { daytimeEnd: 17 * 60, lateBase: 10, latePerMinute: 0.5, lateCap: 30, firstDoor: 9 * 60 + 30, firstCost: 15 });
+  assert.deepEqual(HABITS, { daytimeEnd: 17 * 60, morningEnd: 13 * 60, lateBase: 10, latePerMinute: 0.5, lateCap: 30, firstDoor: 9 * 60 + 30, firstCost: 15 });
   let moved = 0;
   let spent = 0;
   let days = 0;
@@ -1349,6 +1353,31 @@ test("a volcano is climbed in the daytime, before the hot spring: 女峰山 from
       for (const stop of entry.stops) if (/volcano$/.test(stop.place.kind ?? "")) assert.ok(stop.leave <= "17:00" && !stop.leaveNextDay, `${scenario.id}: ${stop.arrive}-${stop.leave} ${stop.place.name}`);
     }
   }
+});
+
+test("a fish market opens its day instead of closing it: 築地市場 from 09:09, not from 14:08 after the museum and the tower", () => {
+  // Was: tokyo-2 day 1 as first shown, 09:01 東京国立博物館, 11:16 東京スカイツリー, 14:08–15:23 築地市場.
+  const day = auditPlanShown("tokyo-2").plan.days[0];
+  assert.deepEqual(day.stops.map((stop) => `${stop.arrive}-${stop.leave} ${stop.place.name}`), ["09:09-10:24 築地市場", "11:16-12:16 東京スカイツリー", "14:01-15:31 東京国立博物館"]);
+  // The same minutes on the way as before: the day is the same day, the other way round.
+  assert.equal(day.travelMinutes, 127);
+  // In every trip of the audit, as first shown, a fish market or a morning market on a day that can be kept is not begun after 13:00.
+  let seen = 0;
+  for (const scenario of scenarios) {
+    for (const entry of auditPlanShown(scenario.id).plan.days) {
+      for (const stop of entry.stops) {
+        if (habitOf(stop.place) !== "morning") continue;
+        seen += 1;
+        if (!entry.runsLate) assert.ok(stop.arrive < "13:00", `${scenario.id}: ${stop.arrive}-${stop.leave} ${stop.place.name}`);
+      }
+    }
+  }
+  assert.ok(seen >= 1, `${seen} morning places looked at`);
+  // It is a preference with a price, like the others: beside a place twenty-five minutes away it goes first; it does not cross the town for it.
+  const market = { stay: 60, meal: null, day: null, daytime: true, early: true, morning: true };
+  const tower = { stay: 60, meal: null, day: null };
+  const near = daySearch({ stops: [tower, tower, tower, market], minutes: [[0, 10, 10, 25], [10, 0, 10, 15], [10, 10, 0, 10], [25, 15, 10, 0]], km: [[0, 1, 1, 2], [1, 0, 1, 1], [1, 1, 0, 1], [2, 1, 1, 0]], hotel: null }).solveDay([0, 1, 2, 3]);
+  assert.equal(near.order[0], 3);
 });
 
 test("a day that starts later for its evening does not push a temple past five, and the free time before a place of the evening is said as that — in both languages, with no hour of any place in the words", () => {

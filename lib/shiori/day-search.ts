@@ -48,6 +48,8 @@ export type SearchStop = {
   ticketed?: boolean;
   /** A place under the open sky that can open a day. */
   early?: boolean;
+  /** A place of the morning (a fish market, a morning market): better over by about 13:00. */
+  morning?: boolean;
 };
 
 export type SearchProblem = {
@@ -190,7 +192,9 @@ export const TAXI_SURCHARGE = 15;
  * A daytime place (a temple, a garden, a museum) that ends after 17:00 costs
  * ten minutes and half of every minute past it, thirty at most: a street, a
  * tower or a viewpoint takes the end of the day when that costs less than
- * that in rides. A place with a door and a counter (a museum, a zoo, a
+ * that in rides. A place of the morning (a fish market, a morning market)
+ * costs the same counted from 13:00: it opens the day or comes before lunch
+ * when that is no more than half an hour longer. A place with a door and a counter (a museum, a zoo, a
  * castle) reached before 09:30 as the first of a day that has a place under
  * the open sky to start with costs fifteen: the shrine or the park goes
  * first when that is no more than a quarter of an hour longer.
@@ -204,6 +208,7 @@ export const TAXI_SURCHARGE = 15;
  */
 export const HABITS = {
   daytimeEnd: 17 * 60,
+  morningEnd: 13 * 60,
   lateBase: 10,
   latePerMinute: 0.5,
   lateCap: 30,
@@ -644,7 +649,7 @@ export function daySearch(
   );
   const penalty = (overrun: number, missed: number) => (overrun > 0 ? 500 + overrun * 10 + (overrun * overrun) / 6 : 0) + missed * 1000;
   /** Whether any place has a habit about its hours: without one every day is ordered as it always was. */
-  const habitsOn = stops.some((stop, index) => (stop.daytime || stop.ticketed) && !stop.meal && fixedOf[index] === null);
+  const habitsOn = stops.some((stop, index) => (stop.daytime || stop.ticketed || stop.morning) && !stop.meal && fixedOf[index] === null);
   /**
    * What the hours of a day cost in this order (see HABITS), on its clock.
    * One function for every copy of the clock, so that they cannot drift.
@@ -656,7 +661,9 @@ export function daySearch(
       const stop = order[position];
       const entry = stops[stop];
       if (entry.meal || fixedOf[stop] !== null) continue;
-      if (entry.daytime && leave[position] > HABITS.daytimeEnd) cost += Math.min(HABITS.lateCap, HABITS.lateBase + (leave[position] - HABITS.daytimeEnd) * HABITS.latePerMinute);
+      // (A place of the morning is a daytime place with an earlier hour: one fine, counted from 13:00.)
+      const over = entry.morning ? leave[position] - HABITS.morningEnd : entry.daytime ? leave[position] - HABITS.daytimeEnd : 0;
+      if (over > 0) cost += Math.min(HABITS.lateCap, HABITS.lateBase + over * HABITS.latePerMinute);
       if (position > 0 && entry.early) early = true;
     }
     const first = stops[order[0]];

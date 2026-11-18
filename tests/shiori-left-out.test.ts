@@ -87,7 +87,7 @@ function assertFitsOrSaysSo(input: Omit<ShioriInput, "locale">, cityId: string |
 
 const LEFT_OUT: Record<string, { before: string; after: string; out: string[]; days: number }> = {
   // id: the latest stop of each day planned anyway → as first shown, what is left out, the days that hold everything.
-  "tokyo-2": { before: "19:55 19:59", after: "15:23 16:19", out: ["東京ディズニーランド"], days: 3 },
+  "tokyo-2": { before: "19:55 19:59", after: "15:31 16:19", out: ["東京ディズニーランド"], days: 3 },
   "osaka-1": { before: "+00:44", after: "17:18", out: ["ユニバーサル・スタジオ・ジャパン"], days: 2 },
   "osaka-2": { before: "18:19 19:59", after: "12:49 17:05", out: ["ユニバーサル・スタジオ・ジャパン"], days: 3 },
   "hakone-1": { before: "19:40", after: "17:30", out: ["小田原城"], days: 2 },

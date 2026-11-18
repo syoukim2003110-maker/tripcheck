@@ -233,9 +233,11 @@ function hoursCost(order: number[], trip: Checked) {
   let cost = 0;
   habits.forEach((habit, position) => {
     const daytime = habit === "ticketed" || habit === "daytime" || habit === "daytime-open";
-    if (daytime && clock.leave[position] > 17 * 60) cost += Math.min(30, 10 + (clock.leave[position] - 17 * 60) / 2);
+    // (A fish market or a morning market: the same, counted from 13:00.)
+    if (habit === "morning") { if (clock.leave[position] > 13 * 60) cost += Math.min(30, 10 + (clock.leave[position] - 13 * 60) / 2); }
+    else if (daytime && clock.leave[position] > 17 * 60) cost += Math.min(30, 10 + (clock.leave[position] - 17 * 60) / 2);
   });
-  if (habits[0] === "ticketed" && clock.arrive[0] < 9 * 60 + 30 && habits.slice(1).some((habit) => habit === "open" || habit === "daytime-open")) cost += 15;
+  if (habits[0] === "ticketed" && clock.arrive[0] < 9 * 60 + 30 && habits.slice(1).some((habit) => habit === "open" || habit === "daytime-open" || habit === "morning")) cost += 15;
   return cost;
 }
 

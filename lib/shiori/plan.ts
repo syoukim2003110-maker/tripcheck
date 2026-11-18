@@ -664,7 +664,7 @@ const clockMeal = (place: Pick<ShioriPlace, "kind" | "name" | "meal" | "anyHour"
  */
 function hoursOf(place: ShioriPlace) {
   const habit = habitOf(place);
-  return { daytime: isDaytime(habit), ticketed: habit === "ticketed", early: isOpenEarly(habit) };
+  return { daytime: isDaytime(habit), ticketed: habit === "ticketed", early: isOpenEarly(habit), morning: habit === "morning" };
 }
 
 /**
