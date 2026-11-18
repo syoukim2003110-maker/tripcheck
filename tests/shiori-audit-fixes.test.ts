@@ -1308,6 +1308,30 @@ test("a place of the evening is never reached before 17:30, never has the day's 
   assert.deepEqual([kept.arrive, kept.reserved, kept.evening], ["14:00", true, undefined]);
 });
 
+test("the hours the traveller entered come before the planner's evening: a night market on a trip that is over by 16:00 is planned in the daytime, not set aside with an offer to remove it", () => {
+  // Was: day 1 = 09:00–10:30 故宮博物院 alone, 士林夜市 'no room before the finish', 'needs 2 days', 'without 士林夜市 it fits'.
+  const options = { rail: railOf("taipei"), cities };
+  const [museum, market, hall] = ["故宮博物院", "士林夜市", "中正紀念堂"].map((name) => sightOf("taipei", name));
+  const early = buildShioriPlan({ places: [museum, market], days: 1, hotel: null, locale: "ja", lastDayFinish: "16:00" }, options);
+  assert.deepEqual([early.leftOut, early.unplaced, early.overfull, early.notices], [[], [], [], []]);
+  assert.deepEqual(early.days[0].stops.map((stop) => `${stop.arrive}-${stop.leave} ${stop.place.name}`), ["09:00-10:15 士林夜市", "10:55-12:25 故宮博物院"]);
+  // It is a sight like any other on that trip: not marked as the evening's, no dinner 'during the visit' at eleven.
+  assert.equal(early.days[0].stops.some((stop) => stop.evening), false);
+  assert.equal(early.days[0].meals.some((meal) => meal.kind === "dinner" && meal.during), false);
+  // From a hotel, over by 19:00: 17:30–18:45 and the ride back would pass it, so the market is in the day and not dropped.
+  const centre = { name: "台北駅前のホテル", lat: 25.0478, lon: 121.517 };
+  const back = buildShioriPlan({ places: [museum, market, hall], days: 1, hotel: centre, locale: "ja", lastDayFinish: "19:00" }, options);
+  assert.deepEqual([back.leftOut, back.unplaced.length], [[], 0]);
+  assert.ok(back.days[0].stops.some((stop) => stop.place.name === "士林夜市"));
+  assert.ok(back.days[0].end <= "19:00", back.days[0].end);
+  // Where the entered finish leaves the evening its room, the evening is kept: over by 21:30, the market from 17:30.
+  const late = buildShioriPlan({ places: [museum, market, hall], days: 1, hotel: centre, locale: "ja", lastDayFinish: "21:30" }, options);
+  const kept = late.days[0].stops.at(-1)!;
+  assert.deepEqual([kept.place.name, kept.arrive, kept.evening], ["士林夜市", "17:30", true]);
+  // And the mark the planner works with never leaves it: the list handed in is untouched.
+  assert.equal(JSON.stringify([museum, market, hall, early, back]).includes("anyHour"), false);
+});
+
 test("a day that starts later for its evening does not push a temple past five, and the free time before a place of the evening is said as that — in both languages, with no hour of any place in the words", () => {
   // A temple of fifty minutes, ten minutes from a place of the evening (kept like a dinner: from 17:30), no hotel.
   // Started as late as can be the temple would be 16:20–17:10; as a daytime place it is over at 17:00 and ten minutes are free.

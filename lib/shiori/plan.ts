@@ -88,6 +88,13 @@ export type ShioriPlace = {
   meal?: "lunch" | "dinner";
   /** A fixed start the traveller entered. It outranks `day`. */
   reserve?: ShioriReservation;
+  /**
+   * Set by the planner on its own copy of a list, never stored and never
+   * read from a trip: the planner's habit about the hours of this place is
+   * set aside, because the hours the traveller entered leave no room for it
+   * (see planOnce).
+   */
+  anyHour?: true;
 };
 
 export type ShioriHotel = { name: string; lat: number; lon: number };
@@ -637,7 +644,7 @@ const stayOf = (place: ShioriPlace) => Math.max(15, Math.round(place.stayMinutes
  * preference for ordering a day, never printed and never a claim about when
  * the place is open. A restaurant chosen for a meal has its meal instead.
  */
-export const habitOf = (place: Pick<ShioriPlace, "kind" | "name" | "meal">): PlaceHabit | null => (place.meal ? null : placeHabit(place.kind, place.name));
+export const habitOf = (place: Pick<ShioriPlace, "kind" | "name" | "meal" | "anyHour">): PlaceHabit | null => (place.meal || place.anyHour ? null : placeHabit(place.kind, place.name));
 /**
  * What a place is to the day's clock. A place that belongs to the evening (a
  * night market, a night-life street) is kept like a chosen dinner: it closes
@@ -648,7 +655,7 @@ export const habitOf = (place: Pick<ShioriPlace, "kind" | "name" | "meal">): Pla
  * when a market opens. (The place is still a sight: no table is booked, and
  * the day's open dinner is suggested there.)
  */
-const clockMeal = (place: Pick<ShioriPlace, "kind" | "name" | "meal">): "lunch" | "dinner" | null => place.meal ?? (habitOf(place) === "evening" ? "dinner" : null);
+const clockMeal = (place: Pick<ShioriPlace, "kind" | "name" | "meal" | "anyHour">): "lunch" | "dinner" | null => place.meal ?? (habitOf(place) === "evening" ? "dinner" : null);
 
 /**
  * The same, as the search is told it. (Every stop is handed over with the
@@ -1460,7 +1467,23 @@ type PlanOptions = {
 
 function planOnce(input: ShioriInput, options: PlanOptions): ShioriPlan {
   const frames = framesOf(input);
-  if (frames) return planFramed(input, options, frames);
+  if (frames) {
+    const plan = planFramed(input, options, frames);
+    // The evening is the planner's habit for a night market, and the hours the traveller entered come before
+    // it: a place of the evening that those hours leave no room for (a trip that is over by 16:00) is planned
+    // at any hour instead, like any other sight — where the days then hold more of the list.
+    const aside = (from: ShioriPlan) => new Set([...from.unplaced.filter((entry) => entry.reason === "no-room"), ...from.overfull].map((entry) => entry.placeId));
+    const before = aside(plan);
+    const yielding = new Set(input.places.filter((place) => before.has(place.id) && habitOf(place) === "evening").map((place) => place.id));
+    if (yielding.size === 0) return plan;
+    const eased = planFramed({ ...input, places: input.places.map((place) => (yielding.has(place.id) ? { ...place, anyHour: true as const } : place)) }, options, frames);
+    const after = aside(eased);
+    const other = (from: ShioriPlan) => from.unplaced.filter((entry) => entry.reason !== "no-room").length;
+    if (!(after.size < before.size && other(eased) <= other(plan))) return plan;
+    // (The booklet carries the traveller's own places, without the planner's mark.)
+    const own = new Map(input.places.map((place) => [place.id, place]));
+    return { ...eased, days: eased.days.map((day) => ({ ...day, stops: day.stops.map((stop) => (yielding.has(stop.place.id) ? { ...stop, place: own.get(stop.place.id)! } : stop)) })) };
+  }
   if (input.packAnyway || input.places.length < 2) return planCore(input, options, null, NO_IDS);
   // A list too full for its days: the set that fits is planned, the rest is listed.
   const pricing = priceTrip(input, options.rail ?? null, options.cities);
