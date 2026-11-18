@@ -1,0 +1,2277 @@
+{"q":"Q57965","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q183536","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q242803","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q500681","stay":90,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q653433","stay":150,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q843997","stay":480,"hours":"day","access":"booking","partOf":null}
+{"q":"Q287165","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q859471","stay":60,"hours":"morning","access":"closed","partOf":null}
+{"q":"Q615183","stay":60,"hours":"any","access":"walk-in","partOf":"Q720644"}
+{"q":"Q720644","stay":120,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q418096","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q746216","stay":90,"hours":"any","access":"walk-in","partOf":"Q576781"}
+{"q":"Q1362629","stay":90,"hours":"day","access":"walk-in","partOf":"Q746216"}
+{"q":"Q555255","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q162722","stay":150,"hours":"early","access":"walk-in","partOf":"Q746216"}
+{"q":"Q576781","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1202341","stay":480,"hours":"day","access":"booking","partOf":null}
+{"q":"Q1362638","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1204253","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q74940","stay":150,"hours":"day","access":"walk-in","partOf":"Q746216"}
+{"q":"Q1033333","stay":60,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q776863","stay":90,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q1359908","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1359892","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q2090752","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q670049","stay":30,"hours":"any","access":"walk-in","partOf":"Q615183"}
+{"q":"Q249139","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q702042","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q335612","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q717682","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q864957","stay":90,"hours":"day","access":"walk-in","partOf":"Q746216"}
+{"q":"Q1030463","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1046736","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q11633916","stay":90,"hours":"morning","access":"walk-in","partOf":null}
+{"q":"Q3176144","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1534481","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q221716","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q270983","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q714828","stay":120,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q257473","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1202239","stay":60,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q917195","stay":150,"hours":"early","access":"walk-in","partOf":"Q748040"}
+{"q":"Q587371","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1046403","stay":60,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q1013399","stay":90,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q700448","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q385141","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1196273","stay":30,"hours":"unsure","access":"closed","partOf":null}
+{"q":"Q1202871","stay":60,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q692714","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1157535","stay":120,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q2166743","stay":60,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q1516753","stay":90,"hours":"unsure","access":"booking","partOf":null}
+{"q":"Q701620","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1089767","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1201304","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q653319","stay":45,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q1759226","stay":60,"hours":"day","access":"walk-in","partOf":"Q2859566"}
+{"q":"Q626535","stay":15,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q873645","stay":60,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q901256","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q986750","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q147286","stay":90,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q1756307","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q662176","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q748040","stay":180,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1736808","stay":60,"hours":"early","access":"booking","partOf":null}
+{"q":"Q2859566","stay":150,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q376288","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1146038","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q2702064","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q926312","stay":90,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q321242","stay":90,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q339859","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1375103","stay":480,"hours":"day","access":"booking","partOf":null}
+{"q":"Q1148463","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1191885","stay":150,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q705949","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1098123","stay":15,"hours":"unsure","access":"closed","partOf":null}
+{"q":"Q150118","stay":90,"hours":"any","access":"walk-in","partOf":"Q321242"}
+{"q":"Q1054648","stay":150,"hours":"early","access":"walk-in","partOf":"Q5364342"}
+{"q":"Q16318627","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q385793","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q11440555","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1055037","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q5364342","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q9004920","stay":75,"hours":"day","access":"walk-in","partOf":"Q5364342"}
+{"q":"Q1157628","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q2968288","stay":30,"hours":"unsure","access":"walk-in","partOf":null}
+{"q":"Q704855","stay":30,"hours":"day","access":"walk-in","partOf":"Q321242"}
+{"q":"Q11444501","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q11464946","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q11425667","stay":15,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q11574477","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q875709","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q11659562","stay":15,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q11261312","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q11439944","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q3155710","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q11376859","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q11555078","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q11563573","stay":60,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q3329563","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q7105564","stay":60,"hours":"day","access":"walk-in","partOf":"Q150118"}
+{"q":"Q11571882","stay":15,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q11305182","stay":15,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q3514709","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q11464751","stay":15,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q460367","stay":90,"hours":"day","access":"walk-in","partOf":"Q1186358"}
+{"q":"Q945913","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1070863","stay":60,"hours":"day","access":"walk-in","partOf":"Q1186358"}
+{"q":"Q714559","stay":60,"hours":"day","access":"walk-in","partOf":"Q1186358"}
+{"q":"Q211585","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q973175","stay":60,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q1203099","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1186358","stay":120,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1351209","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1203935","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1044009","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q4301475","stay":30,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q1093645","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q5367406","stay":60,"hours":"any","access":"walk-in","partOf":"Q714559"}
+{"q":"Q3080305","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q2428328","stay":90,"hours":"day","access":"walk-in","partOf":"Q1186358"}
+{"q":"Q1089221","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1091232","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1576651","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q655678","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q3076936","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q3329639","stay":60,"hours":"day","access":"unsure","partOf":null}
+{"q":"Q580386","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q11496939","stay":15,"hours":"day","access":"walk-in","partOf":"Q1186358"}
+{"q":"Q1018450","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q147312","stay":90,"hours":"day","access":"walk-in","partOf":"Q1186358"}
+{"q":"Q246479","stay":15,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q2963562","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q11419051","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q22117854","stay":15,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q10856337","stay":15,"hours":"unsure","access":"closed","partOf":null}
+{"q":"Q11475587","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q11664929","stay":15,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1781626","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q11665046","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q2379007","stay":15,"hours":"day","access":"private","partOf":null}
+{"q":"Q798766","stay":45,"hours":"day","access":"walk-in","partOf":"Q5365128"}
+{"q":"Q710086","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q3329607","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q3330666","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q3518099","stay":45,"hours":"day","access":"walk-in","partOf":"Q6922072"}
+{"q":"Q1334137","stay":30,"hours":"early","access":"unsure","partOf":null}
+{"q":"Q713188","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q6424313","stay":150,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q11612054","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q11590062","stay":150,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q5364119","stay":60,"hours":"day","access":"unsure","partOf":"Q5365128"}
+{"q":"Q5365128","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q3695449","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q6922072","stay":120,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q7636914","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q612608","stay":60,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q3330671","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q7360052","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q24882700","stay":90,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q11589733","stay":150,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q11615723","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q11664679","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q6424318","stay":120,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q6796675","stay":45,"hours":"day","access":"walk-in","partOf":"Q6922072"}
+{"q":"Q11589762","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q11589991","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q11667775","stay":60,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q11590110","stay":120,"hours":"unsure","access":"closed","partOf":null}
+{"q":"Q11519847","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q7667612","stay":45,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q11251779","stay":60,"hours":"day","access":"unsure","partOf":null}
+{"q":"Q11263124","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q7360060","stay":90,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q11547506","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q11622400","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q11523752","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q1250321","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1207989","stay":45,"hours":"day","access":"unsure","partOf":null}
+{"q":"Q864499","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q4249885","stay":120,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q4383788","stay":30,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q861318","stay":120,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q861588","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q11262875","stay":150,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1138655","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q942479","stay":60,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q5365233","stay":75,"hours":"early","access":"unsure","partOf":null}
+{"q":"Q5372158","stay":45,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q11542964","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q5363823","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q6156562","stay":60,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q11257362","stay":120,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q116601","stay":30,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q105438533","stay":90,"hours":"unsure","access":"closed","partOf":null}
+{"q":"Q2969498","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q11542838","stay":60,"hours":"early","access":"walk-in","partOf":"Q10856301"}
+{"q":"Q587108","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q8054641","stay":90,"hours":"unsure","access":"closed","partOf":null}
+{"q":"Q6956071","stay":45,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q8054642","stay":45,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q11612564","stay":45,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q11487349","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q81733862","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q5363525","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q10856301","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q11536319","stay":45,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q11543182","stay":45,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q11645748","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q11468704","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q11121599","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q11262871","stay":60,"hours":"early","access":"unsure","partOf":null}
+{"q":"Q1743714","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q672056","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q701403","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q954860","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1396078","stay":75,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q1034293","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q167087","stay":15,"hours":"unsure","access":"private","partOf":null}
+{"q":"Q3146363","stay":45,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q11446912","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q536925","stay":30,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q7496115","stay":45,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q8060490","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q615465","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q3503094","stay":30,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q710351","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1504529","stay":45,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q3138262","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q45470","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1504539","stay":30,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q3304613","stay":60,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q5214583","stay":60,"hours":"early","access":"unsure","partOf":null}
+{"q":"Q1632583","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1534486","stay":30,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q642681","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q2972130","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q2972149","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q3547085","stay":15,"hours":"any","access":"closed","partOf":null}
+{"q":"Q3049117","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q2841005","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q3076914","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q3079728","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q45507","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q3146362","stay":30,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q2850357","stay":30,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q11370083","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q109599027","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q115009403","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1013437","stay":60,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q1134422","stay":120,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q187053","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q705310","stay":45,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1067417","stay":180,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1048679","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q18515604","stay":90,"hours":"day","access":"unsure","partOf":null}
+{"q":"Q1574475","stay":120,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q37988","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q11589135","stay":120,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q11284659","stay":60,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q11428033","stay":30,"hours":"any","access":"walk-in","partOf":"Q1013437"}
+{"q":"Q2072706","stay":240,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q5640598","stay":60,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q11492299","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q17224006","stay":120,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q11087074","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q11606201","stay":30,"hours":"unsure","access":"walk-in","partOf":null}
+{"q":"Q116083103","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q116148162","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q11462957","stay":45,"hours":"any","access":"walk-in","partOf":"Q1013437"}
+{"q":"Q11634812","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q131925946","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q11515473","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q10855979","stay":60,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q65263796","stay":45,"hours":"day","access":"unsure","partOf":null}
+{"q":"Q10871928","stay":180,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q10859199","stay":240,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q10871917","stay":240,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q24871465","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q17228790","stay":30,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q30935830","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q30935875","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q11531611","stay":60,"hours":"early","access":"unsure","partOf":null}
+{"q":"Q106374238","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q111244119","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q": "Q37580", "stay": 30, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q696641", "stay": 120, "hours": "early", "access": "walk-in", "partOf": null}
+{"q": "Q1348249", "stay": 60, "hours": "early", "access": "walk-in", "partOf": null}
+{"q": "Q1063133", "stay": 180, "hours": "early", "access": "walk-in", "partOf": "Q696641"}
+{"q": "Q1188532", "stay": 180, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q5363719", "stay": 120, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q701927", "stay": 45, "hours": "early", "access": "walk-in", "partOf": null}
+{"q": "Q15277559", "stay": 30, "hours": "early", "access": "walk-in", "partOf": "Q1348249"}
+{"q": "Q11504885", "stay": 240, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q11504890", "stay": 60, "hours": "early", "access": "walk-in", "partOf": null}
+{"q": "Q15262331", "stay": 60, "hours": "early", "access": "walk-in", "partOf": null}
+{"q": "Q110734894", "stay": 15, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q18339260", "stay": 30, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q28952427", "stay": 45, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q2480885", "stay": 60, "hours": "early", "access": "walk-in", "partOf": null}
+{"q": "Q48749937", "stay": 120, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q17989677", "stay": 60, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q11446413", "stay": 480, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q28040588", "stay": 15, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q2873976", "stay": 45, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q11477568", "stay": 45, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q11626784", "stay": 30, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q109358586", "stay": 60, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q11660918", "stay": 45, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q11679305", "stay": 90, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q11436842", "stay": 120, "hours": "unsure", "access": "unsure", "partOf": null}
+{"q": "Q30931573", "stay": 60, "hours": "unsure", "access": "unsure", "partOf": null}
+{"q": "Q29841167", "stay": 30, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q112148940", "stay": 15, "hours": "day", "access": "unsure", "partOf": null}
+{"q": "Q788917", "stay": 15, "hours": "early", "access": "walk-in", "partOf": "Q696641"}
+{"q": "Q7035313", "stay": 60, "hours": "day", "access": "unsure", "partOf": null}
+{"q": "Q511412", "stay": 75, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q998239", "stay": 90, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q3242206", "stay": 90, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q998709", "stay": 30, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q3342007", "stay": 45, "hours": "early", "access": "booking", "partOf": null}
+{"q": "Q3297759", "stay": 60, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q1157584", "stay": 45, "hours": "early", "access": "walk-in", "partOf": null}
+{"q": "Q7446985", "stay": 45, "hours": "early", "access": "walk-in", "partOf": null}
+{"q": "Q11648713", "stay": 60, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q11453044", "stay": 30, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q4676340", "stay": 60, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q42898428", "stay": 45, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q11369003", "stay": 15, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q125927189", "stay": 15, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q6924291", "stay": 60, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q11585980", "stay": 45, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q101001030", "stay": 75, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q11442593", "stay": 30, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q11465245", "stay": 30, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q11586369", "stay": 15, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q11586806", "stay": 15, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q11647513", "stay": 15, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q29407949", "stay": 45, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q29408050", "stay": 15, "hours": "any", "access": "walk-in", "partOf": "Q29407949"}
+{"q": "Q30926021", "stay": 15, "hours": "any", "access": "walk-in", "partOf": "Q29407949"}
+{"q": "Q30926058", "stay": 15, "hours": "any", "access": "walk-in", "partOf": "Q29407949"}
+{"q": "Q11452342", "stay": 30, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q30926295", "stay": 15, "hours": "any", "access": "walk-in", "partOf": "Q29407949"}
+{"q": "Q106836680", "stay": 15, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q11439622", "stay": 15, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q11637884", "stay": 30, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q43064611", "stay": 45, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q11317883", "stay": 15, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q11489258", "stay": 15, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q11436507", "stay": 45, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q11490424", "stay": 30, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q648629", "stay": 90, "hours": "early", "access": "walk-in", "partOf": null}
+{"q": "Q482065", "stay": 60, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q6108856", "stay": 45, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q3077236", "stay": 75, "hours": "early", "access": "walk-in", "partOf": null}
+{"q": "Q3295344", "stay": 180, "hours": "early", "access": "walk-in", "partOf": null}
+{"q": "Q7231211", "stay": 180, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q3594052", "stay": 30, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q469573", "stay": 75, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q608994", "stay": 30, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q5754149", "stay": 45, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q3342235", "stay": 30, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q11415016", "stay": 150, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q1357421", "stay": 30, "hours": "early", "access": "walk-in", "partOf": null}
+{"q": "Q3140102", "stay": 15, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q7830774", "stay": 150, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q11514132", "stay": 60, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q3335115", "stay": 15, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q11616255", "stay": 15, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q3482375", "stay": 15, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q5357802", "stay": 60, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q10990728", "stay": 75, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q872549", "stay": 45, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q11618756", "stay": 30, "hours": "day", "access": "unsure", "partOf": null}
+{"q": "Q7813713", "stay": 60, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q11679274", "stay": 30, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q11334476", "stay": 45, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q7051341", "stay": 120, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q7850284", "stay": 45, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q47461613", "stay": 45, "hours": "unsure", "access": "walk-in", "partOf": null}
+{"q": "Q5359224", "stay": 45, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q6149037", "stay": 45, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q11415200", "stay": 90, "hours": "unsure", "access": "unsure", "partOf": null}
+{"q": "Q11447013", "stay": 15, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q11535655", "stay": 15, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q22117790", "stay": 60, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q11669906", "stay": 15, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q191763", "stay": 75, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q231140", "stay": 30, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q41977", "stay": 60, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q1207208", "stay": 60, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q1200076", "stay": 90, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q114718", "stay": 15, "hours": "any", "access": "walk-in", "partOf": "Q1207208"}
+{"q": "Q875301", "stay": 240, "hours": "any", "access": "walk-in", "partOf": "Q191763"}
+{"q": "Q93425", "stay": 75, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q2576732", "stay": 60, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q63828", "stay": 75, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q23476", "stay": 15, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q3330773", "stay": 60, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q3012169", "stay": 45, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q63712", "stay": 45, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q84008", "stay": 15, "hours": "any", "access": "walk-in", "partOf": "Q41977"}
+{"q": "Q3109237", "stay": 180, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q2969919", "stay": 15, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q81821", "stay": 180, "hours": "early", "access": "walk-in", "partOf": null}
+{"q": "Q1063071", "stay": 90, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q3805303", "stay": 75, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q6764196", "stay": 90, "hours": "early", "access": "walk-in", "partOf": null}
+{"q": "Q73444", "stay": 30, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q63203", "stay": 90, "hours": "early", "access": "walk-in", "partOf": null}
+{"q": "Q11263021", "stay": 60, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q1770596", "stay": 45, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q4425941", "stay": 30, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q5771207", "stay": 90, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q11349625", "stay": 30, "hours": "day", "access": "walk-in", "partOf": "Q1207208"}
+{"q": "Q11356950", "stay": 15, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q11441893", "stay": 30, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q11341148", "stay": 60, "hours": "unsure", "access": "closed", "partOf": null}
+{"q": "Q11420581", "stay": 15, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q11547466", "stay": 15, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q15229355", "stay": 45, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q5771219", "stay": 45, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q11340571", "stay": 90, "hours": "day", "access": "booking", "partOf": null}
+{"q":"Q847033","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q710786","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q148543","stay":120,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q657825","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1143944","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q714742","stay":45,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q11548410","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q3511678","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q3073273","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q29682","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1568000","stay":30,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q11592587","stay":60,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q865839","stay":45,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q631373","stay":45,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q865845","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q3191941","stay":30,"hours":"day","access":"walk-in","partOf":"Q3192777"}
+{"q":"Q3192777","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q5507695","stay":150,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q846710","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q11491171","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q3191242","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q3547067","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q924940","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q2970111","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q6764266","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q11592423","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q4503545","stay":120,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1050353","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q11558610","stay":240,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q11380926","stay":60,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q11602778","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q11388585","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q30932323","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q11532469","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q11675677","stay":45,"hours":"early","access":"walk-in","partOf":"Q1143944"}
+{"q":"Q10889644","stay":30,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q640267","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q571980","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q430626","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1099077","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q63208","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q84028","stay":45,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q63465","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q211522","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q93490","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q93619","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q84029","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q10944270","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q11652770","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q133628","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q93616","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q73564","stay":30,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q1049762","stay":45,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q73613","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q74710","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q3031841","stay":90,"hours":"evening","access":"walk-in","partOf":null}
+{"q":"Q11441845","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q11514520","stay":30,"hours":"unsure","access":"walk-in","partOf":null}
+{"q":"Q11520788","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q11560360","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q11511154","stay":30,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q11526710","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q11652602","stay":45,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q11370877","stay":30,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q11511147","stay":30,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q11511148","stay":15,"hours":"any","access":"unsure","partOf":null}
+{"q":"Q11323718","stay":45,"hours":"unsure","access":"walk-in","partOf":null}
+{"q":"Q11357149","stay":60,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q127806461","stay":30,"hours":"day","access":"walk-in","partOf":"Q63465"}
+{"q":"Q11652552","stay":45,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q11395617","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q11679439","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q385351","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q3107971","stay":45,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q710826","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1055944","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1140619","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q11403709","stay":90,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q11403710","stay":150,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q3348373","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q2842754","stay":60,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q11402992","stay":90,"hours":"early","access":"unsure","partOf":null}
+{"q":"Q494860","stay":60,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q2420835","stay":60,"hours":"unsure","access":"closed","partOf":null}
+{"q":"Q7421103","stay":150,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q6739876","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q11398074","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q11521480","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q11249478","stay":75,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q68620047","stay":60,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q5361031","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q7049983","stay":120,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q11402928","stay":15,"hours":"unsure","access":"closed","partOf":null}
+{"q":"Q11625132","stay":90,"hours":"evening","access":"walk-in","partOf":null}
+{"q":"Q11521150","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q11516040","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q11521425","stay":45,"hours":"early","access":"unsure","partOf":null}
+{"q":"Q22117940","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q11573744","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q11305917","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q11503644","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q11583058","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q11633646","stay":15,"hours":"unsure","access":"walk-in","partOf":null}
+{"q":"Q11497091","stay":150,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q21654597","stay":45,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q5371866","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q6778052","stay":45,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q11591788","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1196357","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q3526214","stay":90,"hours":"evening","access":"walk-in","partOf":null}
+{"q":"Q17222936","stay":45,"hours":"day","access":"walk-in","partOf":"Q1196357"}
+{"q":"Q11395952","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q926475","stay":45,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q285602","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q6455283","stay":45,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q11396003","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q11647285","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q27644574","stay":30,"hours":"unsure","access":"walk-in","partOf":null}
+{"q":"Q17219598","stay":15,"hours":"unsure","access":"walk-in","partOf":null}
+{"q":"Q3916336","stay":90,"hours":"unsure","access":"walk-in","partOf":null}
+{"q":"Q22120303","stay":60,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q11563466","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q11452835","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q19887675","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q11387983","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q11395950","stay":30,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q11395954","stay":45,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q4504662","stay":30,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q11364487","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q11465844","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q97499005","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q21654857","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q11395994","stay":45,"hours":"unsure","access":"walk-in","partOf":null}
+{"q":"Q17209049","stay":60,"hours":"unsure","access":"walk-in","partOf":null}
+{"q":"Q11402650","stay":30,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q11411559","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q17228241","stay":45,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q2688247","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q104236424","stay":30,"hours":"unsure","access":"walk-in","partOf":null}
+{"q":"Q11294362","stay":30,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q11321811","stay":45,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q56346699","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q11491132","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q10896697","stay":60,"hours":"morning","access":"walk-in","partOf":null}
+{"q":"Q598621","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q870867","stay":45,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q3140498","stay":75,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q874428","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q115856","stay":45,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q133753","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1101060","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1621882","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q3055370","stay":45,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q3246933","stay":90,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q11453791","stay":90,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q17222417","stay":150,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q4416112","stay":60,"hours":"unsure","access":"walk-in","partOf":null}
+{"q":"Q87746275","stay":45,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q11453994","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q11377835","stay":180,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q11360748","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q11505195","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q11573970","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q11391333","stay":180,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q11341120","stay":15,"hours":"unsure","access":"closed","partOf":null}
+{"q":"Q11679017","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q11558528","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q11658605","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q28686589","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q9010989","stay":90,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q11377845","stay":30,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q5018668","stay":30,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q11377856","stay":120,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q21652335","stay":45,"hours":"unsure","access":"walk-in","partOf":null}
+{"q":"Q11544820","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q17995372","stay":120,"hours":"day","access":"walk-in","partOf":"Q11330319"}
+{"q":"Q11330319","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q11294808","stay":45,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q11627260","stay":45,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q38267005","stay":45,"hours":"unsure","access":"walk-in","partOf":null}
+{"q":"Q907052","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1186324","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q4617100","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q3087076","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q704636","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1013209","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q3133545","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q713275","stay":15,"hours":"any","access":"walk-in","partOf":"Q907052"}
+{"q":"Q3511683","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1101111","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1619050","stay":60,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q3109955","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q4555530","stay":75,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q5507745","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q2037226","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q11558303","stay":60,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q10927533","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q11519653","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q11442211","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q11451643","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q56347666","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q11552497","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q11514556","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q11552583","stay":150,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q11609171","stay":120,"hours":"unsure","access":"walk-in","partOf":null}
+{"q":"Q11632260","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q11458206","stay":45,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q11559258","stay":45,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q7569315","stay":120,"hours":"day","access":"unsure","partOf":null}
+{"q":"Q11383094","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q11552847","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q104784709","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q11365521","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q10567386","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q11642847","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q38278464","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q605959","stay":480,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1116359","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1207908","stay":360,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q220207","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q908216","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q17541","stay":90,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q3531719","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q16396","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q2326446","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q1481864","stay":240,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q2918611","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q2918614","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q692288","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1144740","stay":75,"hours":"unsure","access":"walk-in","partOf":null}
+{"q":"Q15022","stay":120,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q155643","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1431112","stay":15,"hours":"unsure","access":"private","partOf":null}
+{"q":"Q5894671","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1195474","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1626931","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q908224","stay":30,"hours":"early","access":"walk-in","partOf":"Q2918611"}
+{"q":"Q2166585","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1859090","stay":45,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q84300794","stay":60,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q2307544","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q931179","stay":240,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q24437","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1652985","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q2618145","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q2942473","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q2262481","stay":90,"hours":"day","access":"walk-in","partOf":"Q17541"}
+{"q":"Q16242214","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q836319","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q318115","stay":90,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1568304","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1551411","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q2601433","stay":120,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q2149114","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q977841","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q4130614","stay":15,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q838085","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q3271236","stay":15,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1106554","stay":15,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q709079","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q3181816","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q3078465","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1073822","stay":180,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q15243366","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q16258099","stay":360,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q281550","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q842525","stay":90,"hours":"day","access":"walk-in","partOf":"Q838085"}
+{"q":"Q3504601","stay":15,"hours":"unsure","access":"walk-in","partOf":null}
+{"q":"Q3182054","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q6757684","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1536210","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q4310094","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q4579079","stay":15,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q11610891","stay":15,"hours":"unsure","access":"walk-in","partOf":null}
+{"q":"Q2200748","stay":15,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q3274095","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q137970396","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q5147805","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q105635891","stay":15,"hours":"any","access":"walk-in","partOf":"Q5147805"}
+{"q":"Q3272047","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q837935","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1137940","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q4570262","stay":30,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q6730196","stay":15,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q7217785","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q6706523","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q540668","stay":180,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q591131","stay":240,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q540794","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q697118","stay":90,"hours":"evening","access":"walk-in","partOf":null}
+{"q":"Q706692","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q701307","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q55601","stay":60,"hours":"early","access":"booking","partOf":null}
+{"q":"Q3330688","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q83101","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q10899202","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q10902996","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q6541958","stay":30,"hours":"any","access":"walk-in","partOf":"Q540794"}
+{"q":"Q717882","stay":30,"hours":"unsure","access":"walk-in","partOf":null}
+{"q":"Q706761","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q15893583","stay":60,"hours":"evening","access":"walk-in","partOf":null}
+{"q":"Q4391002","stay":45,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q19853356","stay":45,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q712387","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q136181","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q16242253","stay":60,"hours":"morning","access":"unsure","partOf":null}
+{"q":"Q10924612","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q701292","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q14319036","stay":30,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q697177","stay":45,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q699040","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q24837610","stay":60,"hours":"day","access":"booking","partOf":null}
+{"q":"Q131219817","stay":45,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q10926810","stay":30,"hours":"unsure","access":"walk-in","partOf":"Q555332"}
+{"q":"Q114918","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q697319","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q575665","stay":240,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q555332","stay":30,"hours":"day","access":"walk-in","partOf":"Q540794"}
+{"q":"Q10914190","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q10926802","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q21042906","stay":45,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q10900611","stay":90,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q482485","stay":150,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q477157","stay":120,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q490497","stay":90,"hours":"early","access":"tour","partOf":null}
+{"q":"Q494577","stay":90,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q482631","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q494407","stay":180,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q497066","stay":30,"hours":"any","access":"walk-in","partOf":"Q488571"}
+{"q":"Q486694","stay":120,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q494668","stay":300,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q495437","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q482852","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q69134","stay":90,"hours":"day","access":"walk-in","partOf":"Q484448"}
+{"q":"Q495391","stay":240,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q483291","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q12585067","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q5623300","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q486449","stay":90,"hours":"day","access":"walk-in","partOf":"Q482485"}
+{"q":"Q485338","stay":30,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q485034","stay":15,"hours":"any","access":"walk-in","partOf":"Q482485"}
+{"q":"Q496515","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q624285","stay":60,"hours":"day","access":"walk-in","partOf":"Q486694"}
+{"q":"Q16630774","stay":60,"hours":"day","access":"walk-in","partOf":"Q494407"}
+{"q":"Q482760","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q484054","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q487036","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q488571","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q707067","stay":300,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q135709","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q488824","stay":45,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q625836","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q488935","stay":15,"hours":"unsure","access":"closed","partOf":null}
+{"q":"Q484448","stay":150,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q495646","stay":120,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q64506","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q47524353","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q494687","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q487662","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q2494268","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q130628","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q491203","stay":90,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q490809","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q495370","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q30156702","stay":30,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q485443","stay":15,"hours":"any","access":"walk-in","partOf":"Q495370"}
+{"q":"Q490572","stay":150,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q12585885","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q5001260","stay":60,"hours":"morning","access":"unsure","partOf":null}
+{"q":"Q486310","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q483056","stay":45,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q11246045","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q2187707","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q482647","stay":240,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q14020347","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q18191755","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q5296014","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q16689597","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q5554858","stay":120,"hours":"any","access":"walk-in","partOf":"Q482647"}
+{"q":"Q496218","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q11261050","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q15465499","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q7464522","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q5001263","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q18999434","stay":45,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q15464762","stay":30,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q5961370","stay":30,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q5638300","stay":15,"hours":"unsure","access":"private","partOf":null}
+{"q":"Q489909","stay":120,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q496078","stay":60,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q223207","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q3182046","stay":180,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1051293","stay":150,"hours":"early","access":"booking","partOf":null}
+{"q":"Q80852","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1328025","stay":90,"hours":"early","access":"walk-in","partOf":"Q7083702"}
+{"q":"Q1142220","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q967601","stay":45,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q2859205","stay":150,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q403189","stay":45,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q15046355","stay":90,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q49633","stay":30,"hours":"unsure","access":"walk-in","partOf":"Q760271"}
+{"q":"Q855376","stay":180,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q579977","stay":90,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q5099572","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1078123","stay":30,"hours":"any","access":"walk-in","partOf":"Q1051293"}
+{"q":"Q41912","stay":45,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q1325611","stay":30,"hours":"unsure","access":"walk-in","partOf":"Q1078123"}
+{"q":"Q18547","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q713922","stay":60,"hours":"day","access":"walk-in","partOf":"Q1078123"}
+{"q":"Q80813","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1194232","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1074628","stay":90,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q41728","stay":45,"hours":"day","access":"booking","partOf":"Q1326515"}
+{"q":"Q1365598","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q760271","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1326515","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1194314","stay":60,"hours":"unsure","access":"unsure","partOf":"Q1078123"}
+{"q":"Q1312291","stay":150,"hours":"day","access":"booking","partOf":null}
+{"q":"Q406446","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q11078482","stay":45,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q2121198","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q7083702","stay":90,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q910848","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1161278","stay":30,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q739528","stay":30,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q578363","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q80290","stay":240,"hours":"early","access":"booking","partOf":null}
+{"q":"Q7313","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q125445","stay":150,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q220083","stay":180,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q4132","stay":240,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q164055","stay":45,"hours":"any","access":"unsure","partOf":null}
+{"q":"Q197889","stay":15,"hours":"unsure","access":"private","partOf":null}
+{"q":"Q1074318","stay":150,"hours":"day","access":"booking","partOf":null}
+{"q":"Q83973","stay":45,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q907894","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1060121","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1154819","stay":45,"hours":"morning","access":"booking","partOf":null}
+{"q":"Q692723","stay":90,"hours":"early","access":"unsure","partOf":null}
+{"q":"Q912817","stay":90,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q734499","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q133650","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1347866","stay":60,"hours":"early","access":"unsure","partOf":null}
+{"q":"Q615178","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1399104","stay":45,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q700376","stay":120,"hours":"day","access":"booking","partOf":null}
+{"q":"Q804054","stay":60,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q1064185","stay":30,"hours":"unsure","access":"walk-in","partOf":null}
+{"q":"Q860188","stay":60,"hours":"evening","access":"unsure","partOf":null}
+{"q":"Q1064580","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1188864","stay":30,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q1189666","stay":120,"hours":"early","access":"booking","partOf":null}
+{"q":"Q964720","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q680679","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q197834","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q233705","stay":90,"hours":"day","access":"unsure","partOf":null}
+{"q":"Q2047427","stay":240,"hours":"early","access":"booking","partOf":"Q80290"}
+{"q":"Q2666344","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q2298526","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q536955","stay":15,"hours":"any","access":"walk-in","partOf":"Q164055"}
+{"q":"Q943688","stay":180,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1789184","stay":150,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q873769","stay":150,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q1203550","stay":60,"hours":"evening","access":"walk-in","partOf":null}
+{"q":"Q1502138","stay":15,"hours":"early","access":"walk-in","partOf":"Q873769"}
+{"q":"Q1068311","stay":180,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1255815","stay":120,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q1235886","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1479428","stay":90,"hours":"unsure","access":"unsure","partOf":"Q2089016"}
+{"q":"Q2089016","stay":60,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q977437","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q972334","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q13026076","stay":120,"hours":"evening","access":"walk-in","partOf":null}
+{"q":"Q1267646","stay":150,"hours":"day","access":"closed","partOf":null}
+{"q":"Q648038","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q61053357","stay":15,"hours":"unsure","access":"private","partOf":null}
+{"q":"Q2495658","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1972305","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q6761807","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1518029","stay":120,"hours":"evening","access":"walk-in","partOf":null}
+{"q":"Q1926372","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1092231","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1186076","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1130188","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q3270302","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q493505","stay":75,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q1279344","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1968373","stay":60,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q1936390","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1813523","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1206639","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q767544","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q2057014","stay":60,"hours":"evening","access":"walk-in","partOf":null}
+{"q":"Q2916351","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q2063737","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1856401","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q949446","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1343629","stay":45,"hours":"evening","access":"walk-in","partOf":null}
+{"q":"Q3034913","stay":180,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q4036104","stay":150,"hours":"evening","access":"walk-in","partOf":null}
+{"q":"Q1657130","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q843034","stay":240,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q669271","stay":60,"hours":"unsure","access":"walk-in","partOf":"Q843034"}
+{"q":"Q1537210","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q19896645","stay":30,"hours":"unsure","access":"walk-in","partOf":null}
+{"q":"Q1642767","stay":60,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q17637232","stay":30,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q20558642","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q4022414","stay":30,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q13016585","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q17637241","stay":30,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q7840310","stay":60,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q4347394","stay":30,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q4818120","stay":30,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q13017454","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q630024","stay":180,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1548655","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q14220372","stay":120,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q13024202","stay":150,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q13424404","stay":120,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q10542974","stay":90,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q14221092","stay":180,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1826791","stay":240,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q946100","stay":30,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q49646688","stay":120,"hours":"day","access":"unsure","partOf":null}
+{"q":"Q21159965","stay":90,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q14221085","stay":90,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q49647369","stay":90,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q14221109","stay":90,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q630135","stay":150,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q2709506","stay":240,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1186714","stay":360,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1547682","stay":180,"hours":"day","access":"closed","partOf":null}
+{"q":"Q632689","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q3046409","stay":120,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q6970475","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q843531","stay":15,"hours":"unsure","access":"private","partOf":null}
+{"q":"Q2234723","stay":150,"hours":"evening","access":"walk-in","partOf":null}
+{"q":"Q1018484","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q752407","stay":45,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q28419359","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q4802043","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q7337785","stay":180,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q28219616","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q3082977","stay":180,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q7586300","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q2117455","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q171390","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q7937930","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q40129","stay":90,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q2125883","stay":90,"hours":"day","access":"closed","partOf":null}
+{"q":"Q7586260","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q6741538","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q2428845","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q548679","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q208760","stay":15,"hours":"any","access":"walk-in","partOf":"Q6819812"}
+{"q":"Q6268872","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q6819812","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q25551594","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q866299","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q24946344","stay":45,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q8000861","stay":180,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q720209","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q168806","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q2032637","stay":60,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q83063","stay":90,"hours":"day","access":"unsure","partOf":null}
+{"q":"Q2660049","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1142942","stay":180,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q687629","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q917630","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q29168","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q3330187","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q820738","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1306924","stay":90,"hours":"day","access":"walk-in","partOf":"Q83063"}
+{"q":"Q1041262","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1356818","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q3043065","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q2639733","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1143296","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q7586152","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q12061078","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q3239125","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q6332465","stay":60,"hours":"any","access":"walk-in","partOf":"Q83063"}
+{"q":"Q5552448","stay":30,"hours":"unsure","access":"walk-in","partOf":null}
+{"q":"Q7155871","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q745016","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q7969454","stay":60,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q114953809","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q6679799","stay":30,"hours":"any","access":"walk-in","partOf":"Q687629"}
+{"q":"Q591717","stay":120,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q724745","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1481063","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q118214","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q2474998","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q209013","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q535177","stay":60,"hours":"day","access":"walk-in","partOf":"Q591717"}
+{"q":"Q1081260","stay":60,"hours":"day","access":"walk-in","partOf":"Q591717"}
+{"q":"Q3015254","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q3503888","stay":60,"hours":"day","access":"walk-in","partOf":"Q591717"}
+{"q":"Q6692970","stay":45,"hours":"day","access":"walk-in","partOf":"Q591717"}
+{"q":"Q7393569","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q206219","stay":90,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q874234","stay":60,"hours":"morning","access":"walk-in","partOf":null}
+{"q":"Q1359941","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q5370414","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1202019","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1048345","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1186043","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q864758","stay":15,"hours":"unsure","access":"private","partOf":"Q5370392"}
+{"q":"Q1186292","stay":15,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q10751146","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q9010921","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q864770","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q3654706","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q798059","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1151254","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1055897","stay":75,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q1923783","stay":30,"hours":"unsure","access":"walk-in","partOf":null}
+{"q":"Q1134533","stay":15,"hours":"any","access":"private","partOf":"Q1151254"}
+{"q":"Q10743287","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q2234574","stay":30,"hours":"any","access":"walk-in","partOf":"Q874234"}
+{"q":"Q864752","stay":30,"hours":"day","access":"unsure","partOf":"Q1048785"}
+{"q":"Q1094375","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q58395249","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q2670019","stay":45,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q7273080","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q113377179","stay":60,"hours":"day","access":"unsure","partOf":null}
+{"q":"Q1048785","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1835176","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q944021","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q10743330","stay":15,"hours":"unsure","access":"private","partOf":null}
+{"q":"Q5370148","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q10802018","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q5370392","stay":75,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q16481383","stay":30,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q1187394","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q3023944","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q428129","stay":30,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q3162430","stay":150,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q6941045","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q933384","stay":75,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q703871","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q3232879","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1063916","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1005868","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q4448947","stay":15,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q864767","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1949129","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q18640924","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q2756351","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q2056423","stay":180,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q638512","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q15265989","stay":60,"hours":"morning","access":"walk-in","partOf":null}
+{"q":"Q3360457","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q6121304","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q10832864","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q5122391","stay":15,"hours":"unsure","access":"closed","partOf":null}
+{"q":"Q10752055","stay":45,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q3033670","stay":60,"hours":"evening","access":"walk-in","partOf":null}
+{"q":"Q4463947","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q2290616","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q10752011","stay":15,"hours":"any","access":"walk-in","partOf":"Q428129"}
+{"q":"Q2051647","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q11334291","stay":60,"hours":"evening","access":"walk-in","partOf":"Q3033670"}
+{"q":"Q19705165","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q11300021","stay":45,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q7682043","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q108864020","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q2770718","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q7400074","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q6353162","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q20026285","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q23786328","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q1091054","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q5305270","stay":30,"hours":"evening","access":"walk-in","partOf":null}
+{"q":"Q6940790","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1477078","stay":90,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q60853845","stay":60,"hours":"day","access":"walk-in","partOf":"Q18277260"}
+{"q":"Q30744118","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q10752400","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q7560606","stay":180,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q6755207","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q10796763","stay":90,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q7798648","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q7833322","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q6941009","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q6941034","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q114397271","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q10800905","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q18277260","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q14489975","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q5095075","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q28197235","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q515253","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q829418","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q158470","stay":480,"hours":"morning","access":"tour","partOf":null}
+{"q":"Q37648","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1381933","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q2563728","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q2220851","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1789991","stay":90,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q2037360","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1028566","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q7809287","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q6507227","stay":30,"hours":"unsure","access":"walk-in","partOf":null}
+{"q":"Q4850846","stay":240,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1872519","stay":90,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q6940675","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q43876","stay":300,"hours":"morning","access":"tour","partOf":null}
+{"q":"Q4845403","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q2390081","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1132052","stay":180,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q2605109","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1520301","stay":480,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1164385","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q3025956","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1992789","stay":90,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q7260784","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q43389200","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q47492282","stay":150,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1899522","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q124808061","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q19646466","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q48730124","stay":30,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q19595604","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q7260781","stay":15,"hours":"day","access":"walk-in","partOf":"Q3025956"}
+{"q":"Q124878799","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q124962509","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q13511216","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q211436","stay":480,"hours":"any","access":"unsure","partOf":null}
+{"q":"Q685318","stay":240,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q666552","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1472845","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q2692999","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1869800","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q5055803","stay":15,"hours":"unsure","access":"private","partOf":null}
+{"q":"Q772656","stay":15,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q2692495","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q5037917","stay":60,"hours":"morning","access":"walk-in","partOf":null}
+{"q":"Q2110972","stay":60,"hours":"day","access":"unsure","partOf":null}
+{"q":"Q5052254","stay":45,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q107316436","stay":30,"hours":"any","access":"unsure","partOf":null}
+{"q":"Q30594240","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q56062211","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q3545735","stay":45,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q130245","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q84046","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q735900","stay":240,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q11983227","stay":15,"hours":"day","access":"walk-in","partOf":"Q84046"}
+{"q":"Q6922008","stay":180,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q31827725","stay":240,"hours":"day","access":"walk-in","partOf":"Q735900"}
+{"q":"Q619277","stay":30,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q942688","stay":60,"hours":"unsure","access":"booking","partOf":null}
+{"q":"Q2307982","stay":180,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q2306339","stay":90,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q773443","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q174968","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q6825145","stay":60,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q1899439","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q478181","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1306513","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q3543369","stay":90,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q28980","stay":180,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q3235452","stay":15,"hours":"unsure","access":"private","partOf":null}
+{"q":"Q1408400","stay":15,"hours":"day","access":"walk-in","partOf":"Q1899439"}
+{"q":"Q6741382","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q123815605","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q864029","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q7420533","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q2435880","stay":30,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q1417648","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q7339077","stay":15,"hours":"any","access":"walk-in","partOf":"Q2306339"}
+{"q":"Q5440278","stay":15,"hours":"any","access":"unsure","partOf":null}
+{"q":"Q210710","stay":30,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q646686","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1639613","stay":45,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q1914841","stay":15,"hours":"any","access":"unsure","partOf":null}
+{"q":"Q685133","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1987325","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q6463476","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q243","stay":120,"hours":"day","access":"booking","partOf":null}
+{"q":"Q19675","stay":240,"hours":"day","access":"booking","partOf":null}
+{"q":"Q23402","stay":150,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q64436","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q2981","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1538826","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1865480","stay":15,"hours":"any","access":"closed","partOf":null}
+{"q":"Q838691","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1327886","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q650519","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q743206","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1094338","stay":180,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q860994","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q3090513","stay":180,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q730948","stay":90,"hours":"day","access":"walk-in","partOf":"Q838691"}
+{"q":"Q726781","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q218613","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q28785","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q523312","stay":15,"hours":"any","access":"walk-in","partOf":"Q64436"}
+{"q":"Q234364","stay":15,"hours":"any","access":"closed","partOf":null}
+{"q":"Q151952","stay":15,"hours":"day","access":"booking","partOf":"Q19675"}
+{"q":"Q640447","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1969385","stay":150,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q329852","stay":60,"hours":"unsure","access":"booking","partOf":null}
+{"q":"Q1996069","stay":150,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1165526","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q329948","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q178065","stay":150,"hours":"day","access":"closed","partOf":null}
+{"q":"Q550","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q188856","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q184407","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q656296","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q193193","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q217925","stay":45,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q946883","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q216402","stay":15,"hours":"day","access":"booking","partOf":"Q19675"}
+{"q":"Q62378","stay":150,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q6373","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q160659","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q5933","stay":90,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q180788","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q186309","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q207385","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q213322","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q193375","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q270263","stay":180,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q309388","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q83125","stay":45,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q238587","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q171255","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q564981","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q270920","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q41225","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q749808","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q195436","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q917820","stay":90,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q653858","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1199924","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q757178","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q173882","stay":90,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q44057","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q202902","stay":15,"hours":"unsure","access":"closed","partOf":null}
+{"q":"Q1327919","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1990172","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q272162","stay":15,"hours":"any","access":"private","partOf":null}
+{"q":"Q123738","stay":90,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q192988","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q526804","stay":30,"hours":"unsure","access":"walk-in","partOf":null}
+{"q":"Q622206","stay":60,"hours":"unsure","access":"walk-in","partOf":null}
+{"q":"Q2002512","stay":45,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q1455777","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q391620","stay":15,"hours":"unsure","access":"closed","partOf":null}
+{"q":"Q10285","stay":90,"hours":"day","access":"booking","partOf":null}
+{"q":"Q12512","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q99309","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q623612","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q145093","stay":15,"hours":"unsure","access":"private","partOf":"Q182955"}
+{"q":"Q486382","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q186282","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q180212","stay":90,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q185382","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q223079","stay":75,"hours":"unsure","access":"booking","partOf":null}
+{"q":"Q182955","stay":150,"hours":"early","access":"booking","partOf":null}
+{"q":"Q84090","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q200642","stay":75,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q231699","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q192784","stay":15,"hours":"any","access":"walk-in","partOf":"Q211295"}
+{"q":"Q207808","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q753791","stay":15,"hours":"early","access":"walk-in","partOf":"Q180212"}
+{"q":"Q5786","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q625149","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q848386","stay":75,"hours":"unsure","access":"booking","partOf":null}
+{"q":"Q841506","stay":120,"hours":"day","access":"booking","partOf":null}
+{"q":"Q211295","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q622438","stay":75,"hours":"unsure","access":"booking","partOf":null}
+{"q":"Q333906","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q746721","stay":15,"hours":"early","access":"walk-in","partOf":"Q180212"}
+{"q":"Q864639","stay":150,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q34925","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q380530","stay":15,"hours":"early","access":"walk-in","partOf":"Q180212"}
+{"q":"Q506234","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q502098","stay":75,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q723887","stay":15,"hours":"any","access":"walk-in","partOf":"Q180212"}
+{"q":"Q83425","stay":30,"hours":"any","access":"walk-in","partOf":"Q12512"}
+{"q":"Q536580","stay":15,"hours":"unsure","access":"private","partOf":null}
+{"q":"Q719794","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q542070","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q849241","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q732511","stay":30,"hours":"day","access":"walk-in","partOf":"Q191739"}
+{"q":"Q51252","stay":120,"hours":"day","access":"booking","partOf":null}
+{"q":"Q388448","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q191739","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q29286","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q637237","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q179900","stay":30,"hours":"day","access":"booking","partOf":"Q10855544"}
+{"q":"Q1200696","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1668196","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q271928","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q51177","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q657629","stay":45,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q51175","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q573881","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q888825","stay":90,"hours":"early","access":"walk-in","partOf":"Q29286"}
+{"q":"Q208633","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q10855544","stay":60,"hours":"day","access":"booking","partOf":null}
+{"q":"Q72786","stay":45,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q1875558","stay":45,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q913295","stay":30,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q531218","stay":45,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q844337","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q913058","stay":60,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q3854843","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1348158","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1140023","stay":45,"hours":"day","access":"walk-in","partOf":"Q191739"}
+{"q":"Q1519975","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1042634","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1257947","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q2287001","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1996075","stay":30,"hours":"day","access":"walk-in","partOf":"Q1042634"}
+{"q":"Q1062114","stay":15,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q849846","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q13453137","stay":45,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q1357573","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1228199","stay":60,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q189883","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q172988","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q223942","stay":45,"hours":"unsure","access":"booking","partOf":null}
+{"q":"Q52531","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q338330","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q754194","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q217527","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q820872","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q52505","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1052171","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q756807","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q52517","stay":15,"hours":"any","access":"walk-in","partOf":"Q189883"}
+{"q":"Q830807","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q224961","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q3867986","stay":60,"hours":"day","access":"walk-in","partOf":"Q52437"}
+{"q":"Q713558","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q155225","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q182708","stay":45,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q907964","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1265593","stay":30,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q1049033","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q966625","stay":45,"hours":"day","access":"tour","partOf":null}
+{"q":"Q1470912","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q856400","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q52423","stay":90,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1994701","stay":15,"hours":"day","access":"walk-in","partOf":"Q172988"}
+{"q":"Q52437","stay":150,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q945981","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q52629","stay":15,"hours":"any","access":"private","partOf":null}
+{"q":"Q1585745","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q3673484","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q2931413","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1270723","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1816328","stay":45,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q226221","stay":180,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q52509","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q18068","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1071570","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q244952","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q23354","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q5471","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1533416","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q51112","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q150066","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q51108","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q860569","stay":45,"hours":"unsure","access":"walk-in","partOf":null}
+{"q":"Q1255904","stay":30,"hours":"unsure","access":"walk-in","partOf":null}
+{"q":"Q838986","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q3757721","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q3867848","stay":60,"hours":"day","access":"walk-in","partOf":"Q23354"}
+{"q":"Q1255998","stay":30,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q1255602","stay":15,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q51105","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q2525507","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1190657","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q101414001","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q111699000","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q752332","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q2104856","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q810080","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q133566","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q3678765","stay":60,"hours":"day","access":"walk-in","partOf":"Q23354"}
+{"q":"Q3673630","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q3747208","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q62066874","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q1130908","stay":120,"hours":"evening","access":"unsure","partOf":null}
+{"q":"Q589462","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1580885","stay":60,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q734515","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q93485222","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q121263184","stay":15,"hours":"any","access":"unsure","partOf":null}
+{"q":"Q1156274","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q48435","stay":120,"hours":"day","access":"booking","partOf":null}
+{"q":"Q220013","stay":180,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1200948","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q212867","stay":120,"hours":"day","access":"booking","partOf":null}
+{"q":"Q17155","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q597051","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q2625747","stay":150,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1463283","stay":180,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q746333","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1334899","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q861252","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q867072","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1050032","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q908802","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q2605209","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q631075","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q616238","stay":90,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q1067140","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q850593","stay":45,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q301135","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q822881","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1414600","stay":30,"hours":"evening","access":"walk-in","partOf":null}
+{"q":"Q9046889","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1189293","stay":45,"hours":"day","access":"walk-in","partOf":"Q658271"}
+{"q":"Q2500125","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q506814","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q658271","stay":180,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q3571337","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q388195","stay":15,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q2293331","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q2890127","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1130050","stay":60,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q1321526","stay":75,"hours":"unsure","access":"walk-in","partOf":null}
+{"q":"Q1435468","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1474299","stay":15,"hours":"day","access":"walk-in","partOf":"Q658271"}
+{"q":"Q1286354","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q160112","stay":150,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1322403","stay":75,"hours":"day","access":"unsure","partOf":null}
+{"q":"Q1994806","stay":240,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q171517","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q460889","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q11993457","stay":30,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q849711","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q2917041","stay":60,"hours":"day","access":"unsure","partOf":null}
+{"q":"Q1140249","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1367970","stay":15,"hours":"unsure","access":"private","partOf":null}
+{"q":"Q176251","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1131807","stay":120,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1352282","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1141262","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q2079615","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1140634","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q5856756","stay":240,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1123493","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1794858","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q427163","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1592523","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1046524","stay":180,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q164027","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1849031","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q2628455","stay":45,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q9054619","stay":60,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q211250","stay":60,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q2568412","stay":75,"hours":"unsure","access":"walk-in","partOf":null}
+{"q":"Q3288223","stay":75,"hours":"unsure","access":"booking","partOf":null}
+{"q":"Q1326261","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1324163","stay":45,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1473674","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q126193406","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q2657591","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q2268271","stay":60,"hours":"unsure","access":"tour","partOf":null}
+{"q":"Q2736564","stay":15,"hours":"any","access":"walk-in","partOf":"Q1849031"}
+{"q":"Q215003","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q272781","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q233737","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q7875112","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q636780","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q287359","stay":90,"hours":"day","access":"unsure","partOf":null}
+{"q":"Q985517","stay":120,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q721152","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1133712","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q432290","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q805446","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q652806","stay":150,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q403671","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q652613","stay":90,"hours":"evening","access":"walk-in","partOf":null}
+{"q":"Q220063","stay":240,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q2313815","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1370811","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q2034183","stay":45,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q999002","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q2415561","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q1463929","stay":120,"hours":"evening","access":"unsure","partOf":null}
+{"q":"Q804032","stay":90,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q8843624","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1144592","stay":15,"hours":"unsure","access":"private","partOf":null}
+{"q":"Q1464499","stay":60,"hours":"unsure","access":"booking","partOf":null}
+{"q":"Q168001","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q212459","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q211262","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q2547006","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q801115","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q99636","stay":15,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1054260","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1478288","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1601019","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q8187791","stay":60,"hours":"day","access":"unsure","partOf":null}
+{"q":"Q1756313","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q": "Q190804", "stay": 180, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q713124", "stay": 240, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q224124", "stay": 120, "hours": "day", "access": "booking", "partOf": null}
+{"q": "Q1422000", "stay": 120, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q1056152", "stay": 75, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q1576733", "stay": 75, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q924335", "stay": 120, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q165366", "stay": 90, "hours": "day", "access": "booking", "partOf": null}
+{"q": "Q18169481", "stay": 90, "hours": "day", "access": "walk-in", "partOf": "Q713124"}
+{"q": "Q1131589", "stay": 90, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q277316", "stay": 60, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q1419691", "stay": 90, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q1419675", "stay": 60, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q849957", "stay": 120, "hours": "evening", "access": "unsure", "partOf": null}
+{"q": "Q51411", "stay": 15, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q447664", "stay": 60, "hours": "evening", "access": "walk-in", "partOf": null}
+{"q": "Q623558", "stay": 45, "hours": "day", "access": "walk-in", "partOf": "Q447664"}
+{"q": "Q839050", "stay": 30, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q643079", "stay": 30, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q49057", "stay": 15, "hours": "unsure", "access": "closed", "partOf": null}
+{"q": "Q1820897", "stay": 90, "hours": "day", "access": "unsure", "partOf": null}
+{"q": "Q1429748", "stay": 15, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q130736773", "stay": 75, "hours": "day", "access": "unsure", "partOf": null}
+{"q": "Q1853707", "stay": 45, "hours": "early", "access": "walk-in", "partOf": null}
+{"q": "Q1350009", "stay": 90, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q2342892", "stay": 60, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q702726", "stay": 90, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q1350750", "stay": 30, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q1616123", "stay": 90, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q493160", "stay": 60, "hours": "day", "access": "walk-in", "partOf": "Q447664"}
+{"q": "Q639321", "stay": 30, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q1344400", "stay": 15, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q3329876", "stay": 45, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q1538389", "stay": 90, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q207109", "stay": 90, "hours": "day", "access": "tour", "partOf": null}
+{"q": "Q1401387", "stay": 90, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q82425", "stay": 15, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q151356", "stay": 60, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q154828", "stay": 240, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q157298", "stay": 120, "hours": "day", "access": "unsure", "partOf": "Q151963"}
+{"q": "Q154563", "stay": 60, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q154996", "stay": 120, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q317091", "stay": 15, "hours": "unsure", "access": "private", "partOf": null}
+{"q": "Q156722", "stay": 90, "hours": "day", "access": "walk-in", "partOf": "Q151963"}
+{"q": "Q157825", "stay": 90, "hours": "day", "access": "walk-in", "partOf": "Q151963"}
+{"q": "Q165631", "stay": 120, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q151963", "stay": 240, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q702771", "stay": 240, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q233098", "stay": 120, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q154987", "stay": 30, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q163255", "stay": 120, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q315644", "stay": 45, "hours": "day", "access": "unsure", "partOf": null}
+{"q": "Q548850", "stay": 60, "hours": "unsure", "access": "closed", "partOf": null}
+{"q": "Q32660126", "stay": 15, "hours": "any", "access": "walk-in", "partOf": "Q694020"}
+{"q": "Q704933", "stay": 60, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q157316", "stay": 90, "hours": "day", "access": "walk-in", "partOf": "Q151963"}
+{"q": "Q160272", "stay": 60, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q254156", "stay": 90, "hours": "day", "access": "walk-in", "partOf": "Q157316"}
+{"q": "Q157003", "stay": 120, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q162111", "stay": 90, "hours": "day", "access": "walk-in", "partOf": "Q151963"}
+{"q": "Q19094", "stay": 90, "hours": "unsure", "access": "unsure", "partOf": null}
+{"q": "Q317985", "stay": 90, "hours": "day", "access": "walk-in", "partOf": "Q154828"}
+{"q": "Q694020", "stay": 90, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q170123", "stay": 30, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q2402748", "stay": 90, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q152252", "stay": 45, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q160899", "stay": 45, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q152783", "stay": 30, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q688335", "stay": 120, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q706530", "stay": 180, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q564747", "stay": 90, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q160700", "stay": 45, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q131617", "stay": 240, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q131631", "stay": 120, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q264691", "stay": 240, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q154568", "stay": 120, "hours": "day", "access": "unsure", "partOf": null}
+{"q": "Q167193", "stay": 30, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q260223", "stay": 90, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q162077", "stay": 60, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q707660", "stay": 75, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q686548", "stay": 120, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q170152", "stay": 120, "hours": "unsure", "access": "closed", "partOf": null}
+{"q": "Q703212", "stay": 90, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q252648", "stay": 30, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q686629", "stay": 45, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q599148", "stay": 45, "hours": "day", "access": "walk-in", "partOf": "Q383296"}
+{"q": "Q152973", "stay": 15, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q322160", "stay": 45, "hours": "unsure", "access": "unsure", "partOf": null}
+{"q": "Q265745", "stay": 30, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q707645", "stay": 45, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q631056", "stay": 90, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q697782", "stay": 75, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q250195", "stay": 120, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q259839", "stay": 15, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q254294", "stay": 15, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q383296", "stay": 150, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q262234", "stay": 90, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q258597", "stay": 90, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q260660", "stay": 15, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q707673", "stay": 30, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q707981", "stay": 60, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q286549", "stay": 60, "hours": "day", "access": "walk-in", "partOf": "Q250195"}
+{"q": "Q700887", "stay": 30, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q254394", "stay": 15, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q707669", "stay": 30, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q131610", "stay": 60, "hours": "day", "access": "walk-in", "partOf": "Q383296"}
+{"q": "Q567400", "stay": 15, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q264573", "stay": 60, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q752283", "stay": 240, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q371908", "stay": 90, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q688704", "stay": 120, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q211818", "stay": 120, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q46242", "stay": 120, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q5943", "stay": 45, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q59435", "stay": 90, "hours": "day", "access": "walk-in", "partOf": "Q699943"}
+{"q": "Q95569", "stay": 150, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q414219", "stay": 60, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q264752", "stay": 120, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q209937", "stay": 60, "hours": "evening", "access": "unsure", "partOf": null}
+{"q": "Q686544", "stay": 45, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q460607", "stay": 90, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q254476", "stay": 30, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q871525", "stay": 30, "hours": "unsure", "access": "unsure", "partOf": null}
+{"q": "Q686431", "stay": 60, "hours": "day", "access": "tour", "partOf": null}
+{"q": "Q303139", "stay": 120, "hours": "day", "access": "walk-in", "partOf": "Q211818"}
+{"q": "Q46232", "stay": 60, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q700751", "stay": 90, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q265129", "stay": 45, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q308720", "stay": 120, "hours": "evening", "access": "booking", "partOf": null}
+{"q": "Q167619", "stay": 120, "hours": "evening", "access": "booking", "partOf": null}
+{"q": "Q699943", "stay": 120, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q478455", "stay": 90, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q697527", "stay": 45, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q688614", "stay": 15, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q697578", "stay": 30, "hours": "day", "access": "walk-in", "partOf": "Q264752"}
+{"q": "Q372676", "stay": 120, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q686443", "stay": 45, "hours": "unsure", "access": "unsure", "partOf": null}
+{"q": "Q374336", "stay": 120, "hours": "evening", "access": "booking", "partOf": null}
+{"q": "Q700199", "stay": 30, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q651030", "stay": 45, "hours": "unsure", "access": "unsure", "partOf": null}
+{"q": "Q873332", "stay": 60, "hours": "day", "access": "unsure", "partOf": null}
+{"q": "Q689951", "stay": 90, "hours": "day", "access": "walk-in", "partOf": "Q699943"}
+{"q": "Q694810", "stay": 60, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q387667", "stay": 60, "hours": "day", "access": "walk-in", "partOf": null}
+{"q":"Q5949","stay":45,"hours":"day","access":"walk-in","partOf":"Q193369"}
+{"q":"Q193369","stay":180,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q220086","stay":240,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q729370","stay":15,"hours":"any","access":"walk-in","partOf":"Q2332231"}
+{"q":"Q188112","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q204871","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q616334","stay":90,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1419555","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1413217","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q969482","stay":60,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q2571867","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q569877","stay":45,"hours":"day","access":"unsure","partOf":null}
+{"q":"Q1488700","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q12256","stay":60,"hours":"day","access":"walk-in","partOf":"Q427604"}
+{"q":"Q27017","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q847613","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q421678","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q956163","stay":30,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q2916171","stay":30,"hours":"day","access":"walk-in","partOf":"Q616334"}
+{"q":"Q80843","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q959499","stay":75,"hours":"early","access":"unsure","partOf":null}
+{"q":"Q2332231","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q2595999","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q2034292","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q2340793","stay":45,"hours":"day","access":"walk-in","partOf":"Q193369"}
+{"q":"Q753219","stay":90,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q715264","stay":30,"hours":"unsure","access":"unsure","partOf":"Q956163"}
+{"q":"Q2424070","stay":30,"hours":"day","access":"unsure","partOf":null}
+{"q":"Q632057","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1000684","stay":30,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q427604","stay":120,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1535529","stay":30,"hours":"day","access":"walk-in","partOf":"Q193369"}
+{"q":"Q1502676","stay":15,"hours":"day","access":"walk-in","partOf":"Q427604"}
+{"q":"Q4306202","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q603573","stay":15,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q521155","stay":120,"hours":"unsure","access":"booking","partOf":null}
+{"q":"Q922178","stay":240,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q427016","stay":90,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q46313","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q623345","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q338665","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q493133","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q927806","stay":30,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q840886","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q914141","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q195344","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1092030","stay":45,"hours":"any","access":"walk-in","partOf":"Q427016"}
+{"q":"Q372376","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q465534","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q299973","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q252071","stay":90,"hours":"day","access":"walk-in","partOf":"Q46313"}
+{"q":"Q367395","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q854317","stay":15,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q36833","stay":60,"hours":"day","access":"tour","partOf":null}
+{"q":"Q292927","stay":90,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1088467","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q368537","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q731939","stay":15,"hours":"day","access":"walk-in","partOf":"Q46313"}
+{"q":"Q915195","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q206170","stay":45,"hours":"any","access":"walk-in","partOf":"Q577122"}
+{"q":"Q577122","stay":90,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q897556","stay":120,"hours":"unsure","access":"walk-in","partOf":null}
+{"q":"Q778686","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q699098","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q839142","stay":30,"hours":"day","access":"walk-in","partOf":"Q577122"}
+{"q":"Q916120","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q573257","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q933182","stay":15,"hours":"any","access":"walk-in","partOf":"Q206170"}
+{"q":"Q950534","stay":45,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1069906","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1187508","stay":120,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q636088","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q220109","stay":240,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q685038","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q691896","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q670406","stay":150,"hours":"evening","access":"booking","partOf":null}
+{"q":"Q680727","stay":15,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q668300","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q666331","stay":60,"hours":"day","access":"walk-in","partOf":"Q685038"}
+{"q":"Q16524","stay":150,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q220270","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q684948","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q190260","stay":15,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q668213","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q207623","stay":30,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q22984572","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q477189","stay":15,"hours":"day","access":"walk-in","partOf":"Q684948"}
+{"q":"Q638236","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q100012","stay":15,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q248667","stay":120,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q663516","stay":90,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q437802","stay":45,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q672290","stay":90,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q358573","stay":90,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q690944","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q675026","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q537986","stay":15,"hours":"any","access":"walk-in","partOf":"Q675026"}
+{"q":"Q690687","stay":15,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q682033","stay":90,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q39374","stay":30,"hours":"any","access":"walk-in","partOf":"Q10987378"}
+{"q":"Q10987378","stay":45,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q692773","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q815950","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q688143","stay":120,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q689858","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q666984","stay":120,"hours":"evening","access":"unsure","partOf":null}
+{"q":"Q666565","stay":45,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q7658882","stay":120,"hours":"evening","access":"unsure","partOf":null}
+{"q":"Q10288","stay":60,"hours":"day","access":"walk-in","partOf":"Q131013"}
+{"q":"Q131013","stay":150,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q122443","stay":480,"hours":"any","access":"unsure","partOf":null}
+{"q":"Q421084","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q193093","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q242741","stay":30,"hours":"day","access":"walk-in","partOf":"Q131013"}
+{"q":"Q384813","stay":15,"hours":"day","access":"walk-in","partOf":"Q131013"}
+{"q":"Q1123019","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q756824","stay":30,"hours":"day","access":"walk-in","partOf":"Q395367"}
+{"q":"Q500444","stay":45,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q1160664","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q637187","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q202487","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q372717","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q17511186","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q582203","stay":120,"hours":"evening","access":"unsure","partOf":null}
+{"q":"Q1227044","stay":30,"hours":"day","access":"walk-in","partOf":"Q131013"}
+{"q":"Q1328165","stay":30,"hours":"day","access":"unsure","partOf":"Q131013"}
+{"q":"Q395367","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q755341","stay":15,"hours":"unsure","access":"private","partOf":null}
+{"q":"Q208811","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1455447","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1125096","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q7084890","stay":15,"hours":"any","access":"walk-in","partOf":"Q1137997"}
+{"q":"Q981372","stay":15,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q816669","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1160691","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1035075","stay":15,"hours":"unsure","access":"unsure","partOf":"Q131013"}
+{"q":"Q2629065","stay":15,"hours":"any","access":"private","partOf":null}
+{"q":"Q1357713","stay":90,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1760491","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q7131645","stay":15,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q646284","stay":45,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1137997","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q4306254","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q683988","stay":15,"hours":"unsure","access":"unsure","partOf":"Q131013"}
+{"q":"Q12506","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q170495","stay":150,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q80541","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q178643","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q274141","stay":90,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q800973","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q91274","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q505954","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q216511","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q18871","stay":15,"hours":"any","access":"unsure","partOf":null}
+{"q":"Q849489","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q848397","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q90801","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q644677","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q668641","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q911734","stay":60,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q794349","stay":60,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q273225","stay":45,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q911720","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q179839","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q176380","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q756189","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q4484","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q636978","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q475338","stay":30,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q1003322","stay":15,"hours":"any","access":"unsure","partOf":null}
+{"q":"Q952924","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1721042","stay":15,"hours":"unsure","access":"unsure","partOf":"Q170495"}
+{"q":"Q1572472","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1137511","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q81650","stay":30,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q736072","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1551419","stay":30,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q853064","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q590900","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q197094","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q110289","stay":240,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q671384","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q220057","stay":240,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q211053","stay":45,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1992413","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q214619","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q940733","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q206101","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q892711","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q31828","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q2982867","stay":75,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q1140534","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1898947","stay":45,"hours":"any","access":"walk-in","partOf":"Q206101"}
+{"q":"Q648166","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q202206","stay":90,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1066641","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q220274","stay":60,"hours":"unsure","access":"unsure","partOf":"Q978464"}
+{"q":"Q536499","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q2562401","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q33003","stay":45,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q978464","stay":90,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q3089054","stay":45,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q3378551","stay":45,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q513382","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q653100","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q665954","stay":15,"hours":"any","access":"private","partOf":"Q513382"}
+{"q":"Q747844","stay":45,"hours":"day","access":"unsure","partOf":null}
+{"q":"Q872947","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q3365660","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1451811","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q3306889","stay":45,"hours":"day","access":"walk-in","partOf":"Q940733"}
+{"q":"Q3432620","stay":45,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q221812","stay":45,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q3434260","stay":45,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q838297","stay":60,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q943946","stay":45,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q725108","stay":240,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1142142","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q750444","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q901371","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q842858","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1968711","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1133075","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q5574523","stay":15,"hours":"unsure","access":"private","partOf":null}
+{"q":"Q1420103","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q657118","stay":30,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q1274511","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q579854","stay":120,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1726607","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q147009","stay":45,"hours":"day","access":"unsure","partOf":"Q750444"}
+{"q":"Q831527","stay":120,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q260304","stay":240,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q176860","stay":60,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q59482","stay":60,"hours":"day","access":"tour","partOf":null}
+{"q":"Q2743819","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1636176","stay":60,"hours":"day","access":"walk-in","partOf":"Q750444"}
+{"q":"Q1547268","stay":30,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q1721899","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q2164087","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q926316","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q298289","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q15042147","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q667094","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q681497","stay":45,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q690002","stay":75,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q4346239","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q254283","stay":60,"hours":"evening","access":"unsure","partOf":null}
+{"q":"Q892231","stay":15,"hours":"unsure","access":"private","partOf":null}
+{"q":"Q783848","stay":15,"hours":"unsure","access":"private","partOf":null}
+{"q":"Q177550","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q772914","stay":15,"hours":"unsure","access":"private","partOf":null}
+{"q":"Q537","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q9202","stay":180,"hours":"early","access":"booking","partOf":null}
+{"q":"Q160236","stay":180,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q160409","stay":120,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q217717","stay":150,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q201469","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q11690","stay":30,"hours":"any","access":"walk-in","partOf":"Q1050048"}
+{"q":"Q11277","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q11259","stay":45,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q189074","stay":120,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1069129","stay":90,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1261362","stay":30,"hours":"evening","access":"walk-in","partOf":null}
+{"q":"Q109858","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q13689","stay":45,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1049632","stay":90,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q110000","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q954207","stay":75,"hours":"day","access":"walk-in","partOf":"Q160409"}
+{"q":"Q188740","stay":150,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q682827","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q9188","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1478423","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q766014","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q455587","stay":90,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q319821","stay":180,"hours":"early","access":"booking","partOf":"Q9202"}
+{"q":"Q461572","stay":90,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q125006","stay":45,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q866332","stay":90,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1050048","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q109849","stay":45,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q202175","stay":120,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q632682","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1156823","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q502218","stay":45,"hours":"day","access":"unsure","partOf":null}
+{"q":"Q1129820","stay":75,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1339602","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q201462","stay":45,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q753437","stay":60,"hours":"day","access":"booking","partOf":"Q11277"}
+{"q":"Q34006","stay":120,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q180376","stay":45,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q71719","stay":60,"hours":"any","access":"walk-in","partOf":"Q868616"}
+{"q":"Q29247","stay":240,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1370924","stay":240,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1337576","stay":480,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q849284","stay":120,"hours":"unsure","access":"walk-in","partOf":null}
+{"q":"Q1624932","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1400558","stay":240,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1134646","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1340614","stay":180,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q860442","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1138378","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q731126","stay":240,"hours":"day","access":"walk-in","partOf":"Q29247"}
+{"q":"Q1780798","stay":120,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1069719","stay":15,"hours":"day","access":"unsure","partOf":null}
+{"q":"Q180615","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1147168","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1641836","stay":150,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q7737452","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q773853","stay":120,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q995043","stay":180,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1122565","stay":30,"hours":"any","access":"walk-in","partOf":"Q868616"}
+{"q":"Q868616","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q607743","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1156726","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1752085","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q86768","stay":45,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q2301193","stay":60,"hours":"evening","access":"walk-in","partOf":null}
+{"q":"Q7256248","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q6435145","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q2358105","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1631067","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q769446","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1015874","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1370207","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q44440","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q635559","stay":180,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q913672","stay":150,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q965731","stay":180,"hours":"day","access":"walk-in","partOf":"Q635559"}
+{"q":"Q930276","stay":30,"hours":"any","access":"walk-in","partOf":"Q339055"}
+{"q":"Q1107297","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1886334","stay":180,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1755360","stay":120,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q771404","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q727277","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1855438","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q956169","stay":90,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1027700","stay":90,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1073644","stay":90,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1856083","stay":90,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1142661","stay":180,"hours":"day","access":"booking","partOf":"Q131354"}
+{"q":"Q768669","stay":30,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q1141355","stay":120,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1456206","stay":120,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q589884","stay":90,"hours":"day","access":"walk-in","partOf":"Q635559"}
+{"q":"Q3270367","stay":45,"hours":"day","access":"walk-in","partOf":"Q635559"}
+{"q":"Q374956","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q131354","stay":180,"hours":"day","access":"booking","partOf":null}
+{"q":"Q1470276","stay":120,"hours":"day","access":"walk-in","partOf":"Q635559"}
+{"q":"Q339055","stay":45,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q948933","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1535460","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1438659","stay":45,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q4782760","stay":90,"hours":"day","access":"walk-in","partOf":"Q1856083"}
+{"q":"Q461","stay":30,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q7466","stay":45,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q2000502","stay":90,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q599301","stay":45,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1416890","stay":120,"hours":"day","access":"walk-in","partOf":"Q1470276"}
+{"q":"Q5099596","stay":45,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1324280","stay":120,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q745608","stay":180,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q845846","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q171676","stay":15,"hours":"unsure","access":"closed","partOf":null}
+{"q":"Q363434","stay":15,"hours":"unsure","access":"closed","partOf":null}
+{"q":"Q2134698","stay":60,"hours":"day","access":"walk-in","partOf":"Q1342565"}
+{"q":"Q4259805","stay":90,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q892103","stay":45,"hours":"evening","access":"walk-in","partOf":null}
+{"q":"Q113112116","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q3338973","stay":120,"hours":"evening","access":"booking","partOf":null}
+{"q":"Q4999136","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q6993531","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q3816781","stay":45,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q61694052","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q61863764","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q5395415","stay":60,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q7119284","stay":120,"hours":"evening","access":"booking","partOf":"Q1342565"}
+{"q":"Q786639","stay":15,"hours":"unsure","access":"closed","partOf":null}
+{"q":"Q1342565","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q61795542","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q61749018","stay":30,"hours":"day","access":"walk-in","partOf":"Q2134698"}
+{"q":"Q637389","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q27768421","stay":120,"hours":"unsure","access":"booking","partOf":null}
+{"q":"Q25007","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q713960","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1368043","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1049209","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1429071","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q717472","stay":120,"hours":"evening","access":"booking","partOf":"Q713960"}
+{"q":"Q1426968","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q16935535","stay":30,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q1514587","stay":45,"hours":"day","access":"walk-in","partOf":"Q1049209"}
+{"q":"Q1309059","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1360313","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q280339","stay":15,"hours":"unsure","access":"closed","partOf":null}
+{"q":"Q1147483","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q280910","stay":15,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q127091","stay":240,"hours":"early","access":"booking","partOf":null}
+{"q":"Q272560","stay":120,"hours":"early","access":"booking","partOf":null}
+{"q":"Q254861","stay":180,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q5896736","stay":120,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q2891869","stay":90,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q423525","stay":90,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q5195257","stay":120,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q5004179","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q384254","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q944686","stay":120,"hours":"early","access":"booking","partOf":null}
+{"q":"Q128316","stay":120,"hours":"unsure","access":"walk-in","partOf":null}
+{"q":"Q2004262","stay":120,"hours":"early","access":"booking","partOf":"Q127091"}
+{"q":"Q3317200","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q2541865","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q2630395","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q2477478","stay":30,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1617253","stay":15,"hours":"unsure","access":"private","partOf":null}
+{"q":"Q4244057","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q826520","stay":180,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1638840","stay":90,"hours":"day","access":"walk-in","partOf":"Q127091"}
+{"q":"Q448450","stay":45,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q4243326","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q2295739","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q7972130","stay":45,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q5052335","stay":30,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q2336640","stay":30,"hours":"any","access":"walk-in","partOf":"Q423525"}
+{"q":"Q2485027","stay":60,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q11340775","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q2701927","stay":120,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q5303462","stay":120,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q2118341","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q3273127","stay":60,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1281206","stay":30,"hours":"early","access":"walk-in","partOf":null}
+{"q":"Q1697292","stay":15,"hours":"unsure","access":"closed","partOf":null}
+{"q":"Q1501136","stay":60,"hours":"any","access":"unsure","partOf":null}
+{"q": "Q2580264", "stay": 30, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q4380977", "stay": 150, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q621760", "stay": 60, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q326616", "stay": 120, "hours": "unsure", "access": "tour", "partOf": null}
+{"q": "Q16901792", "stay": 120, "hours": "unsure", "access": "tour", "partOf": null}
+{"q": "Q7968628", "stay": 90, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q15208613", "stay": 30, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q7203678", "stay": 30, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q20717704", "stay": 45, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q6120858", "stay": 90, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q15218150", "stay": 30, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q16982836", "stay": 60, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q5442963", "stay": 30, "hours": "unsure", "access": "unsure", "partOf": null}
+{"q": "Q107272126", "stay": 15, "hours": "unsure", "access": "unsure", "partOf": null}
+{"q": "Q4255891", "stay": 15, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q15218129", "stay": 30, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q22673194", "stay": 30, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q22673199", "stay": 30, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q7103873", "stay": 30, "hours": "unsure", "access": "unsure", "partOf": null}
+{"q": "Q7680272", "stay": 90, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q7901539", "stay": 60, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q8536893", "stay": 60, "hours": "any", "access": "unsure", "partOf": null}
+{"q": "Q15178290", "stay": 15, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q6921557", "stay": 60, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q6919360", "stay": 60, "hours": "any", "access": "unsure", "partOf": null}
+{"q": "Q25185608", "stay": 45, "hours": "unsure", "access": "unsure", "partOf": null}
+{"q": "Q25187643", "stay": 30, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q7037699", "stay": 30, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q2876899", "stay": 60, "hours": "unsure", "access": "unsure", "partOf": null}
+{"q": "Q371013", "stay": 30, "hours": "unsure", "access": "unsure", "partOf": null}
+{"q": "Q24248866", "stay": 15, "hours": "unsure", "access": "walk-in", "partOf": null}
+{"q": "Q185228", "stay": 150, "hours": "day", "access": "walk-in", "partOf": "Q1126258"}
+{"q": "Q1126258", "stay": 240, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q1479020", "stay": 90, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q371960", "stay": 90, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q22556204", "stay": 60, "hours": "any", "access": "walk-in", "partOf": "Q1126258"}
+{"q": "Q1327751", "stay": 15, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q1495636", "stay": 90, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q7103961", "stay": 120, "hours": "evening", "access": "unsure", "partOf": null}
+{"q": "Q5545799", "stay": 30, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q612227", "stay": 90, "hours": "unsure", "access": "unsure", "partOf": null}
+{"q": "Q1954743", "stay": 120, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q124352", "stay": 30, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q862283", "stay": 120, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q1514655", "stay": 30, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q1476562", "stay": 60, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q1139295", "stay": 75, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q105031521", "stay": 120, "hours": "unsure", "access": "unsure", "partOf": null}
+{"q": "Q517318", "stay": 120, "hours": "evening", "access": "unsure", "partOf": null}
+{"q": "Q841926", "stay": 240, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q1076122", "stay": 90, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q27919858", "stay": 15, "hours": "any", "access": "walk-in", "partOf": "Q1126258"}
+{"q": "Q4179275", "stay": 90, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q107542577", "stay": 30, "hours": "any", "access": "walk-in", "partOf": "Q1126258"}
+{"q": "Q832644", "stay": 60, "hours": "unsure", "access": "unsure", "partOf": null}
+{"q": "Q1376408", "stay": 30, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q930702", "stay": 30, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q1785026", "stay": 15, "hours": "any", "access": "unsure", "partOf": null}
+{"q": "Q920240", "stay": 30, "hours": "unsure", "access": "unsure", "partOf": null}
+{"q": "Q867340", "stay": 45, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q683915", "stay": 15, "hours": "any", "access": "unsure", "partOf": null}
+{"q": "Q763076", "stay": 15, "hours": "unsure", "access": "unsure", "partOf": null}
+{"q": "Q2155353", "stay": 15, "hours": "any", "access": "unsure", "partOf": null}
+{"q": "Q45178", "stay": 120, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q54495", "stay": 60, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q1064813", "stay": 240, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q769416", "stay": 120, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q705551", "stay": 120, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q690242", "stay": 90, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q1105244", "stay": 180, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q54489", "stay": 120, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q971514", "stay": 30, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q2591764", "stay": 120, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q54518", "stay": 45, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q1144894", "stay": 45, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q54488", "stay": 90, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q1577600", "stay": 60, "hours": "early", "access": "unsure", "partOf": null}
+{"q": "Q3271969", "stay": 120, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q7660067", "stay": 60, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q746452", "stay": 120, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q1068032", "stay": 45, "hours": "early", "access": "walk-in", "partOf": null}
+{"q": "Q844329", "stay": 90, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q6133813", "stay": 60, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q1641346", "stay": 45, "hours": "unsure", "access": "unsure", "partOf": null}
+{"q": "Q910232", "stay": 60, "hours": "day", "access": "unsure", "partOf": null}
+{"q": "Q8000710", "stay": 90, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q1092910", "stay": 45, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q2107035", "stay": 120, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q3748475", "stay": 90, "hours": "early", "access": "tour", "partOf": null}
+{"q": "Q1065004", "stay": 30, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q1722305", "stay": 90, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q22271907", "stay": 90, "hours": "day", "access": "unsure", "partOf": null}
+{"q": "Q7659930", "stay": 60, "hours": "morning", "access": "unsure", "partOf": null}
+{"q": "Q7660094", "stay": 60, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q7031614", "stay": 90, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q12060536", "stay": 15, "hours": "any", "access": "walk-in", "partOf": "Q746452"}
+{"q": "Q4915733", "stay": 45, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q21919992", "stay": 150, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q844556", "stay": 45, "hours": "day", "access": "walk-in", "partOf": "Q1144894"}
+{"q": "Q330136", "stay": 90, "hours": "day", "access": "unsure", "partOf": null}
+{"q": "Q829338", "stay": 45, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q1464509", "stay": 120, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q578027", "stay": 240, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q1353869", "stay": 150, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q695935", "stay": 45, "hours": "early", "access": "unsure", "partOf": "Q829338"}
+{"q": "Q1321392", "stay": 90, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q860621", "stay": 90, "hours": "morning", "access": "walk-in", "partOf": null}
+{"q": "Q1129647", "stay": 30, "hours": "day", "access": "walk-in", "partOf": "Q3444049"}
+{"q": "Q2694295", "stay": 75, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q171288", "stay": 60, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q923304", "stay": 45, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q2018436", "stay": 75, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q7433721", "stay": 150, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q1688730", "stay": 60, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q4350417", "stay": 90, "hours": "day", "access": "walk-in", "partOf": "Q923304"}
+{"q": "Q4315039", "stay": 90, "hours": "day", "access": "walk-in", "partOf": "Q330136"}
+{"q": "Q1138670", "stay": 30, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q5457014", "stay": 30, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q3444049", "stay": 60, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q5593518", "stay": 45, "hours": "day", "access": "unsure", "partOf": null}
+{"q": "Q1293949", "stay": 45, "hours": "day", "access": "unsure", "partOf": null}
+{"q": "Q15961629", "stay": 60, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q7836802", "stay": 30, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q5100547", "stay": 45, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q3247898", "stay": 90, "hours": "day", "access": "tour", "partOf": null}
+{"q": "Q2429342", "stay": 30, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q7085326", "stay": 45, "hours": "early", "access": "walk-in", "partOf": null}
+{"q": "Q5982619", "stay": 45, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q7567936", "stay": 60, "hours": "early", "access": "walk-in", "partOf": null}
+{"q": "Q7244436", "stay": 15, "hours": "any", "access": "walk-in", "partOf": null}
+{"q": "Q222878", "stay": 120, "hours": "unsure", "access": "unsure", "partOf": null}
+{"q": "Q52807706", "stay": 60, "hours": "day", "access": "unsure", "partOf": null}
+{"q": "Q7335741", "stay": 90, "hours": "early", "access": "walk-in", "partOf": null}
+{"q": "Q53700558", "stay": 60, "hours": "day", "access": "walk-in", "partOf": null}
+{"q": "Q4348856", "stay": 60, "hours": "early", "access": "walk-in", "partOf": null}
+{"q":"Q12495","stay":90,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1133309","stay":240,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q62939","stay":30,"hours":"day","access":"booking","partOf":null}
+{"q":"Q1066448","stay":180,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q787902","stay":240,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q1244144","stay":30,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q2125281","stay":60,"hours":"day","access":"unsure","partOf":null}
+{"q":"Q2384491","stay":30,"hours":"evening","access":"walk-in","partOf":"Q1133309"}
+{"q":"Q200856","stay":240,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q2116901","stay":90,"hours":"day","access":"unsure","partOf":null}
+{"q":"Q40132250","stay":45,"hours":"evening","access":"unsure","partOf":null}
+{"q":"Q22948398","stay":120,"hours":"day","access":"booking","partOf":null}
+{"q":"Q24192494","stay":15,"hours":"unsure","access":"closed","partOf":null}
+{"q":"Q1135647","stay":120,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1142971","stay":90,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q140673","stay":120,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q1262899","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q21036724","stay":150,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q3021334","stay":120,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q277294","stay":120,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q6310943","stay":120,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q2094764","stay":75,"hours":"day","access":"walk-in","partOf":"Q140673"}
+{"q":"Q18066085","stay":15,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q2913336","stay":120,"hours":"evening","access":"booking","partOf":null}
+{"q":"Q838780","stay":15,"hours":"unsure","access":"private","partOf":null}
+{"q":"Q1713201","stay":15,"hours":"unsure","access":"private","partOf":null}
+{"q":"Q620734","stay":180,"hours":"any","access":"walk-in","partOf":null}
+{"q":"Q216264","stay":15,"hours":"any","access":"private","partOf":"Q1135647"}
+{"q":"Q648338","stay":15,"hours":"unsure","access":"unsure","partOf":null}
+{"q":"Q19492","stay":15,"hours":"any","access":"private","partOf":"Q1135647"}
+{"q":"Q845182","stay":15,"hours":"unsure","access":"private","partOf":"Q1049027"}
+{"q":"Q3595657","stay":60,"hours":"day","access":"walk-in","partOf":null}
+{"q":"Q1972281","stay":15,"hours":"unsure","access":"closed","partOf":null}
+{"q":"Q391648","stay":15,"hours":"any","access":"private","partOf":"Q1135647"}
+{"q":"Q1165269","stay":15,"hours":"unsure","access":"unsure","partOf":"Q1135647"}
+{"q":"Q1049027","stay":30,"hours":"unsure","access":"unsure","partOf":null}

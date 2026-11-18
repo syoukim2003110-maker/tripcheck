@@ -18,6 +18,7 @@
     "relay:dev": "node --experimental-strip-types scripts/apple-relay-dev.ts",
     "build:static": "node --experimental-strip-types scripts/build-static.ts",
     "sights:generate": "node --experimental-strip-types scripts/generate-popular-sights.ts",
+    "sights:notes": "node --experimental-strip-types scripts/build-sight-notes.ts",
     "deploy:finish": "node --experimental-strip-types scripts/deploy-finish.ts"
   },
   "dependencies": {
