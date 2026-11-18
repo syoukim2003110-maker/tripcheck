@@ -37,13 +37,24 @@ const rules: Array<[RegExp, number]> = [
 const names: Array<[RegExp, number]> = [
   [/ディズニー|disney|ユニバーサル|universal studios|USJ|レゴランド|legoland/i, 480],
   [/富士急ハイランド|fuji-q|ハウステンボス|huis ten bosch|ナガシマスパーランド|nagashima spa ?land|志摩スペイン村/i, 420],
-  [/オーシャンパーク|海洋公園|ロッテワールド|lotte world|エバーランド|everland|江戸村|edo wonderland|ピューロランド|puroland|よみうりランド|ひらかたパーク/i, 360],
+  [/香港オーシャンパーク|香港海洋公園|ocean park hong kong|ロッテワールド|lotte world|エバーランド|everland|江戸村|edo wonderland|ピューロランド|puroland|よみうりランド|ひらかたパーク/i, 360],
   [/チボリ公園|tivoli gardens|グローナルンド|gröna lund|ベニーランド|benyland|dam sen|ダムセン|ワイルド・ワディ|wild wadi|wild wild wet/i, 240],
 ];
 
+/*
+ * A place that carries a park's name without being the park: the tower, the
+ * shop, the hotel, the station or the hall named after it. (釜山ロッテタウン
+ * タワー is "Busan Lotte World Tower" in English, and a skyscraper was planned
+ * as six hours that fill the day.) Such a place is judged by its kind.
+ */
+const NOT_THE_PARK_NAME = /タワー|tower|ストア|store|ショップ|shop|ホテル|hotel|駅|station|モール|mall|ホール|\bhall\b|シティウォーク|citywalk/i;
+const NOT_THE_PARK_KIND = /skyscraper|\btower\b|hotel|station|\bstore\b|\bshop\b|shopping|\bmall\b|concert|theat/;
+
 export function shioriStayMinutes(kind: string | undefined, name: string) {
-  for (const [pattern, minutes] of names) if (pattern.test(name)) return minutes;
   const lowered = (kind ?? "").toLowerCase();
+  if (!NOT_THE_PARK_NAME.test(name) && !NOT_THE_PARK_KIND.test(lowered)) {
+    for (const [pattern, minutes] of names) if (pattern.test(name)) return minutes;
+  }
   for (const [pattern, minutes] of rules) if (pattern.test(lowered)) return minutes;
   return 75;
 }

@@ -611,3 +611,38 @@ test("an island or a summit is never reached by a taxi, and the way up to a summ
   const near = buildShioriPlan({ places: [{ id: "a", name: "a", lat: 35.0, lon: 135.0, stayMinutes: 30 }, { id: "b", name: "b", lat: 35.004, lon: 135.0, stayMinutes: 30, kind: "mountain" }], days: 1, hotel: null, locale: "ja" }).days[0].legs[0];
   assert.equal(near.mode, "walk");
 });
+
+/*
+ * Faults three reviewers found in the fixes above.
+ */
+
+test("a tower, a shop or a hotel that carries a park's name is not planned as the park: 釜山ロッテタウンタワー (Busan Lotte World Tower) is an hour, not six that fill the day", () => {
+  const busan = cities.find((city) => city.id === "busan");
+  const tower = busan?.sights.find((sight) => sight.ja === "釜山ロッテタウンタワー");
+  assert.ok(busan && tower);
+  assert.equal(placeFromSight(tower, "ja").stayMinutes, 60);
+  assert.equal(placeFromSight(tower, "en").stayMinutes, 60);
+  // The day it is on is an ordinary one: it does not open the day at 09:00 for six hours.
+  const places = [...busan.sights.slice(0, 3).filter((sight) => sight.q !== tower.q), tower].map((sight) => placeFromSight(sight, "ja"));
+  const plan = buildShioriPlan({ places, days: 1, hotel: null, locale: "ja" }, { rail: railOf("busan"), cities });
+  const stop = plan.days.flatMap((day) => day.stops).find((entry) => entry.place.name === "釜山ロッテタウンタワー");
+  assert.ok(stop && stop.stayMinutes === 60, JSON.stringify(stop));
+  assert.ok(!plan.days.some((day) => day.meals.some((meal) => meal.during)));
+  // No bundled sight that is not a park of rides has a stay that fills the day.
+  for (const city of cities) {
+    for (const sight of city.sights) {
+      const stay = shioriStayMinutes(sight.kind, `${sight.ja} ${sight.en}`);
+      if (stay >= DAY_FILLING_STAY) assert.match(sight.kind ?? "", /amusement|theme park/, `${sight.ja} [${sight.kind}] ${stay}`);
+    }
+  }
+  // The same for a name the traveller types.
+  assert.equal(shioriStayMinutes("skyscraper", "ロッテワールドタワー"), 60);
+  assert.equal(shioriStayMinutes(undefined, "ディズニーストア 渋谷"), 75);
+  assert.equal(shioriStayMinutes(undefined, "ユニバーサルシティ駅"), 75);
+  assert.equal(shioriStayMinutes("concert hall", "ウォルト・ディズニー・コンサートホール"), 75);
+  assert.equal(shioriStayMinutes("zoo", "マニラオーシャンパーク"), 150);
+  // The parks themselves keep their day.
+  assert.equal(shioriStayMinutes("amusement park", "ロッテワールド Lotte World"), 360);
+  assert.equal(shioriStayMinutes(undefined, "東京ディズニーランド"), 480);
+  assert.equal(shioriStayMinutes("animal theme park", "香港海洋公園 Ocean Park Hong Kong"), 360);
+});
