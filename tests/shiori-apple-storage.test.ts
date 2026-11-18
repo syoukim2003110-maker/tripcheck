@@ -5,6 +5,7 @@ import { openCandidate, putPlace } from "../lib/shiori/add-search.ts";
 import type { ShioriPlace } from "../lib/shiori/plan.ts";
 import {
   OWN_KINDS,
+  appleDataCount,
   appleRematches,
   canonicalPlaceId,
   decodeTrip,
@@ -14,8 +15,10 @@ import {
   placeSource,
   plannableTrip,
   resavedForm,
+  tripTitleName,
   withAppleDetails,
   withRematch,
+  withoutAppleData,
   type ShioriTrip,
 } from "../lib/shiori/state.ts";
 
@@ -203,4 +206,35 @@ test("every kind word the booklet gives a map category is one it may keep", asyn
   for (const category of ["Restaurant", "Cafe", "Bakery", "Hotel", "Museum", "Park", "Store", "Nightlife", "Theater", "Zoo", "Aquarium", "AmusementPark", "Beach", "NationalPark", "Winery", "Brewery", "FoodMarket"]) {
     assert.ok(OWN_KINDS.has(kindOfCategory(category)!), category);
   }
+});
+
+test("while no Apple map can be shown, every place known from Apple is set aside, not removed, and the trip is not named after one", () => {
+  const trip = tripWithApple();
+  const legacy: ShioriPlace = { id: "apple-34.29604,132.31969", name: "旧い保存の場所", lat: 34.29604, lon: 132.31969, stayMinutes: 60 };
+  const withLegacy = { ...trip, places: [...trip.places, legacy] };
+  const shown = withoutAppleData(withLegacy);
+  assert.deepEqual(shown.places.map((place) => place.id), ["wikidata-Q1", "hotpepper-J000123456", "osm-node-42"]);
+  assert.equal(shown.hotel, null);
+  assert.equal(appleDataCount(withLegacy), 4);
+  // Nothing is taken out of the trip itself.
+  assert.equal(withLegacy.places.length, 6);
+  // A hotel kept without an id may be Apple's; one from the open lookup is not.
+  assert.equal(withoutAppleData({ ...emptyTrip, hotel: { name: "古いホテル", lat: 34.39, lon: 132.46 } }).hotel, null);
+  const osmHotel = { name: "駅前ホテル", lat: 34.3975, lon: 132.4753, id: "osm-node-7" };
+  assert.deepEqual(withoutAppleData({ ...emptyTrip, hotel: osmHotel }).hotel, osmHotel);
+  // A trip with none of Apple's places is the same trip.
+  const plain = { ...emptyTrip, places: [trip.places[0]] };
+  assert.equal(withoutAppleData(plain), plain);
+  // The title (and the LINE text made from it) never takes an Apple place's name.
+  assert.equal(tripTitleName({ ...trip, cityName: "" }), "原爆ドーム");
+  assert.equal(tripTitleName({ ...trip, cityName: "", places: [trip.places[1]] }), "");
+  assert.equal(tripTitleName(trip), "広島");
+});
+
+test("the page plans without Apple's places while the Apple map has failed, and says so in both languages", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const page = await readFile(new URL("../app/shiori/ShioriApp.tsx", import.meta.url), "utf8");
+  assert.match(page, /const usable = useMemo\(\(\) => \(appleMap === "failed" \? withoutAppleData\(plannableTrip\(trip\)\) : plannableTrip\(trip\)\)/);
+  assert.match(page, /const cityTitle = tripTitleName\(trip\);/);
+  assert.equal(page.match(/appleMapAside: \(count: number\) =>/g)?.length, 2);
 });

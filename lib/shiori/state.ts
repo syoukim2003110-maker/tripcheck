@@ -161,6 +161,36 @@ export function plannableTrip(trip: ShioriTrip): ShioriTrip {
   return { ...trip, places: trip.places.filter((place) => !place.pending), hotel: trip.hotel?.pending ? null : trip.hotel };
 }
 
+/** Whether a stop (or the hotel) holds what Apple said about a place: found through Apple, kept from before Place IDs were, or a hotel kept without an id (most were Apple's). */
+export function holdsAppleData(entry: { id?: string } | null | undefined, hotel = false): boolean {
+  if (!entry) return false;
+  const source = placeSource(entry.id);
+  return source === "apple" || source === "apple-legacy" || (hotel && !entry.id);
+}
+
+/**
+ * The trip as it may be planned and shown while no Apple map is on screen:
+ * every place (and the hotel) known from Apple is set aside, never removed.
+ * Apple's terms allow its map data to be shown only with an Apple map
+ * (Attachment 6, 2.4), and the plan, its order and its minutes are made from
+ * Apple's positions of them.
+ */
+export function withoutAppleData(trip: ShioriTrip): ShioriTrip {
+  const places = trip.places.filter((place) => !holdsAppleData(place));
+  const hotel = holdsAppleData(trip.hotel, true) ? null : trip.hotel;
+  return places.length === trip.places.length && hotel === trip.hotel ? trip : { ...trip, places, hotel };
+}
+
+/** How many of the trip's places (and its hotel) withoutAppleData sets aside. */
+export function appleDataCount(trip: ShioriTrip): number {
+  return trip.places.filter((place) => holdsAppleData(place)).length + (holdsAppleData(trip.hotel, true) ? 1 : 0);
+}
+
+/** The name a trip goes by (its title, the resume button, the LINE text): its destination, or else the first place not found through Apple. */
+export function tripTitleName(trip: ShioriTrip): string {
+  return trip.cityName || trip.places.find((place) => place.name && !holdsAppleData(place))?.name || "";
+}
+
 /**
  * The stops kept from before Place IDs were kept that may be Apple's: an
  * Apple stop with no Place ID in it, and a hotel chosen before hotels had an

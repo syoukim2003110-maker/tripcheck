@@ -421,9 +421,9 @@ test("the page says which places did not fit and how many days hold them, in bot
   // The trip state is what the buttons change, and the plan is made from it.
   assert.match(source, /withPackAnyway\(current, true\)/);
   assert.match(source, /withPackAnyway\(current, false\)/);
-  // (The trip as it can be planned: the same trip, less any Apple place still being looked up.)
+  // (The trip as it can be planned: the same trip, less any Apple place still being looked up, or every Apple place while Apple's map cannot be shown.)
   assert.match(source, /packAnyway: usable\.packAnyway === true/);
-  assert.match(source, /const usable = useMemo\(\(\) => plannableTrip\(trip\), \[trip\]\);/);
+  assert.match(source, /const usable = useMemo\(\(\) => \(appleMap === "failed" \? withoutAppleData\(plannableTrip\(trip\)\) : plannableTrip\(trip\)\), \[trip, appleMap\]\);/);
   // The places are named in the notice, and the days offered are the days the plan found.
   assert.match(source, /t\.noticeLeftOut\(notice\.places\.map\(\(place\) => place\.name\), trip\.days, days\)/);
   // Nothing is deleted from the trip by either button.

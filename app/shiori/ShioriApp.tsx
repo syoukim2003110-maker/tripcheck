@@ -53,6 +53,9 @@ import {
   withCity,
   withFirstDayStart,
   withAppleDetails,
+  withoutAppleData,
+  appleDataCount,
+  tripTitleName,
   withLastDayFinish,
   withPackAnyway,
   withRematch,
@@ -425,6 +428,7 @@ const text = {
     appleGoneRemove: "リストから外す",
     applePendingChip: "読み込み中の場所",
     appleFailedChip: "読み込めなかった場所",
+    appleMapAside: (count: number) => `Apple の地図を表示できないため、Apple マップで見つけた場所${count}件を外して予定を作っています（場所は消えていません）。地図が表示されると元に戻ります。`,
     mapStreetCredit: "一部の道のり © OpenStreetMap contributors",
     pinLabel: (dayIndex: number, position: number, name: string) => `${dayIndex + 1}日目 ${position + 1}番 ${name}`,
     hotelMark: "泊",
@@ -736,6 +740,7 @@ const text = {
     appleGoneRemove: "Remove from the list",
     applePendingChip: "Place loading",
     appleFailedChip: "Place not loaded",
+    appleMapAside: (count: number) => `Apple's map cannot be shown, so ${count === 1 ? "1 place" : `${count} places`} found on Apple Maps ${count === 1 ? "is" : "are"} left out of the plan for now (still in your list). ${count === 1 ? "It comes" : "They come"} back when the map is shown.`,
     mapStreetCredit: "Some street routes © OpenStreetMap contributors",
     pinLabel: (dayIndex: number, position: number, name: string) => `Day ${dayIndex + 1}, stop ${position + 1}: ${name}`,
     hotelMark: "H",
@@ -1450,10 +1455,6 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
   const [routes, setRoutes] = useState<ReadonlyMap<string, ShioriRoute | null>>(() => new Map());
   const askedRoutes = useRef(new Set<string>());
   const routeAttempts = useRef(new Map<string, number>());
-  // Whether the booklet's Apple map is on screen. Apple's walking and driving
-  // routes are asked for only while it is (Apple's terms allow Apple map data
-  // on an Apple map only); until it has answered, the streets wait for it.
-  const [appleMap, setAppleMap] = useState<"pending" | "ready" | "failed">("pending");
   const hydrated = useRef(false);
   // Whether this visit has saved the trip in hand (see storageStep).
   const wrote = useRef(false);
@@ -1586,8 +1587,16 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
     }
   }, [rematches, locale]);
 
+  // Whether the booklet's Apple map is on screen. Apple's walking and driving
+  // routes are asked for only while it is (Apple's terms allow Apple map data
+  // on an Apple map only); until it has answered, the streets wait for it.
+  // While it cannot be shown, the places found through Apple are set aside
+  // (see withoutAppleData): their names, positions and the plan made from
+  // them are not shown without Apple's map.
+  const [appleMap, setAppleMap] = useState<"pending" | "ready" | "failed">("pending");
   // What can be planned and drawn now: the trip without the Apple places still being looked up.
-  const usable = useMemo(() => plannableTrip(trip), [trip]);
+  const usable = useMemo(() => (appleMap === "failed" ? withoutAppleData(plannableTrip(trip)) : plannableTrip(trip)), [trip, appleMap]);
+  const appleAside = appleMap === "failed" ? appleDataCount(plannableTrip(trip)) : 0;
 
   useEffect(() => {
     const cityId = trip.cityId;
@@ -1649,7 +1658,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
   // The forecast is part of what the plan is made from: a plan numbered for
   // one forecast is not shown for another.
   // (encodeTrip leaves out what Apple says about its places, so the Place IDs still waiting are part of the key.)
-  const planKey = useMemo(() => screen === "plan" ? `${planVisit}|${locale}|${encodeTrip(trip)}|${appleKey}|${JSON.stringify(wetDays)}` : null, [screen, planVisit, locale, trip, appleKey, wetDays]);
+  const planKey = useMemo(() => screen === "plan" ? `${planVisit}|${locale}|${encodeTrip(trip)}|${appleKey}|${appleMap === "failed" ? "no-apple" : "apple"}|${JSON.stringify(wetDays)}` : null, [screen, planVisit, locale, trip, appleKey, appleMap, wetDays]);
   const [planned, setPlanned] = useState<{ key: string; visit: number; plan: ShioriPlan } | null>(null);
   useEffect(() => {
     // The Apple places being looked up are waited for: a plan made without
@@ -2380,7 +2389,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
               go("plan");
             }} type="button">
               <Icon name="clock" />
-              <span>{index === 0 ? t.resume : t.resumePrevious}：{candidate.cityName || candidate.places.find((place) => place.name)?.name} ・ {candidate.places.length}</span>
+              <span>{index === 0 ? t.resume : t.resumePrevious}：{tripTitleName(candidate)} ・ {candidate.places.length}</span>
             </button>
           )] : [])}
         </section>
@@ -2574,7 +2583,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
   );
 
   const dayColor = (index: number) => DAY_COLORS[index % DAY_COLORS.length];
-  const cityTitle = trip.cityName || trip.places.find((place) => place.name)?.name || "";
+  const cityTitle = tripTitleName(trip);
   const planTitle = t.planTitle(cityTitle, trip.days);
   const partOf = (clock: string) => {
     const hour = Number(clock.slice(0, 2));
@@ -2612,9 +2621,10 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
 
           {/* Apple places that are not in hand: said once, above the plan that is made without them. */}
           {appleWaiting ? <p aria-live="polite" className="shiori-working">{t.appleLoading}</p> : null}
-          {appleFailed.length > 0 || appleGone.length > 0 ? (
+          {appleFailed.length > 0 || appleGone.length > 0 || appleAside > 0 ? (
             <div className="shiori-notices shiori-screen-only" role="status">
               {appleFailed.length > 0 ? <p><span>{t.appleFailed(appleFailed.length)}</span> <button onClick={retryApple} type="button">{t.appleRetry}</button></p> : null}
+              {appleAside > 0 ? <p><span>{t.appleMapAside(appleAside)}</span></p> : null}
               {appleGone.length > 0 ? (
                 <p>
                   <span>{t.appleGone(appleGone.length)}</span>{" "}
