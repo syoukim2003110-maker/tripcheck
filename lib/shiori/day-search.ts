@@ -2798,6 +2798,16 @@ export function daySearch(
       const day = solveDay(ids, cls);
       return { ...byHours(day), ...printed(day, true) };
     },
+    /**
+     * The same set as the search costs it while the days are being chosen:
+     * not tried in every order with its hours counted, so a fraction of the
+     * work. For comparing many candidate days; the one chosen is then asked
+     * of solveDay.
+     */
+    roughDay: (ids: readonly number[], cls = 0) => {
+      const day = solveDay(ids, cls);
+      return { cost: day.cost, overrun: printed(day, false).overrun };
+    },
     /** `hours`: with what the hours of the day cost counted in `orderCost` (see HABITS), as when a chosen day is put in order. */
     describe: (order: number[], cls = 0, hours = false) => describe(order, cls, hours),
     /**

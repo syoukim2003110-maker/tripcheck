@@ -1150,6 +1150,22 @@ const ROOM_SEARCHES = 160;
  * `input.places`, in list order.
  */
 function leaveOutForRoom(input: ShioriInput, pricing: TripPrices, search: ReturnType<typeof daySearch>, frames: Frames | null, already: readonly number[]): number[] {
+  // The answer hangs on the search (the priced minutes, the stays, the entered times), the days asked for and
+  // what is protected, and on nothing else: it is worked out once and looked up while the trip is on screen.
+  const shelf = roomAnswers.get(search) ?? new Map<string, number[]>();
+  roomAnswers.set(search, shelf);
+  const asked = `${input.days}|${already.join(",")}|${input.places.map((place) => (place.id.startsWith("hotpepper-") ? 1 : 0)).join("")}`;
+  let answer = shelf.get(asked);
+  if (!answer) {
+    answer = roomFor(input, pricing, search, frames, already);
+    if (shelf.size >= 24) shelf.clear();
+    shelf.set(asked, answer);
+  }
+  return [...answer];
+}
+const roomAnswers = new WeakMap<object, Map<string, number[]>>();
+
+function roomFor(input: ShioriInput, pricing: TripPrices, search: ReturnType<typeof daySearch>, frames: Frames | null, already: readonly number[]): number[] {
   const requested = requestedDays(input);
   type Days = ReturnType<ReturnType<typeof daySearch>["choose"]>["days"];
   const planned = (out: readonly number[]): Days => search.choose(input.days, already.length + out.length === 0 ? {} : { without: [...already, ...out] }).days;
@@ -1173,6 +1189,29 @@ function leaveOutForRoom(input: ShioriInput, pricing: TripPrices, search: Return
   const takes = (index: number) => stayOf(input.places[index]) + DAY_CLOCK.legBuffer
     + Math.max(pricing.hotel?.out[index] ?? 0, ...pricing.minutes.map((row) => row[index]))
     + Math.max(pricing.hotel?.back[index] ?? 0, ...pricing.minutes[index]);
+  // On a list of plain sights — no chosen meal, no place of the evening, no entered time, no stay that claims
+  // a day — a place frees no more than putting it back would cost: its stay and the detour to it from the
+  // nearest place that stays, whatever comes after that one. A far tighter measure, so that the ways of
+  // leaving out too little are not planned one by one (ten sights for one day: none of the 45 pairs).
+  const plain = frames === null && input.places.every((place) => clockMeal(place) === null && stayOf(place) < DAY_FILLING_STAY);
+  const live = input.places.map((_, index) => index).filter((index) => !gone.has(index));
+  const detours = live.map((stop) => live.map((from) => {
+    if (from === stop) return Infinity;
+    let after = pricing.hotel ? Math.max(0, pricing.hotel.back[stop] - pricing.hotel.back[from]) : 0;
+    for (const next of live) if (next !== stop && next !== from) after = Math.max(after, pricing.minutes[stop][next] - pricing.minutes[from][next]);
+    return pricing.minutes[from][stop] + after;
+  }));
+  const position = new Map(live.map((index, at) => [index, at]));
+  /** The most time leaving these out can free. */
+  const frees = (out: readonly number[]) => {
+    if (!plain) return out.reduce((sum, index) => sum + takes(index), 0);
+    const kept = live.filter((index) => !out.includes(index));
+    return out.reduce((sum, index) => {
+      const row = detours[position.get(index)!];
+      const detour = Math.min(...kept.map((from) => row[position.get(from)!]));
+      return sum + Math.min(takes(index), stayOf(input.places[index]) + DAY_CLOCK.legBuffer + detour);
+    }, 0);
+  };
   const missing = late(whole).reduce((sum, day) => sum + day.overrun - DAY_CLOCK.endGrace, 0);
   const candidates = [...free].sort((left, right) => takes(right) - takes(left) || left - right);
   // Of two sets, the one that keeps the place higher in the list.
@@ -1190,7 +1229,7 @@ function leaveOutForRoom(input: ShioriInput, pricing: TripPrices, search: Return
     const sets: number[][] = [];
     const grow = (from: number, chosen: number[], freed: number) => {
       if (chosen.length === size) {
-        if (freed + 30 >= missing) sets.push(chosen);
+        if (freed + 30 >= missing && frees(chosen) + 30 >= missing) sets.push(chosen);
         return;
       }
       for (let position = from; position <= candidates.length - (size - chosen.length); position += 1) {
@@ -1206,6 +1245,9 @@ function leaveOutForRoom(input: ShioriInput, pricing: TripPrices, search: Return
     budget -= sets.length;
     let best: { out: number[]; cost: number } | null = null;
     for (const out of sets) {
+      // Planned first as the days are costed while they are chosen, a hundredth of the work: a way that
+      // leaves a day more than an hour over there is not one that every order of its days could mend.
+      if (late(search.choose(input.days, { quick: true, without: [...already, ...out] }).days).some((day) => day.overrun > FAR_PAST_END)) continue;
       const days = planned(out);
       if (!fits(days)) continue;
       const cost = costOf(days);
@@ -1231,7 +1273,8 @@ function leaveOutForRoom(input: ShioriInput, pricing: TripPrices, search: Return
           let best: { stop: number; over: number; cost: number } | null = null;
           for (const stop of rest) {
             if (!free.has(stop)) continue;
-            const day = search.solveDay(rest.filter((other) => other !== stop), cls);
+            // (Compared as the search costs a day while choosing days: nine days of eight places tried in every order are a quarter of a second.)
+            const day = search.roughDay(rest.filter((other) => other !== stop), cls);
             // (The place lower in the list goes where two do the same.)
             if (best === null || day.overrun < best.over || (day.overrun === best.over && day.cost <= best.cost + 1e-6)) best = { stop, over: day.overrun, cost: day.cost };
           }

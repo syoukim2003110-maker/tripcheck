@@ -34,7 +34,7 @@ const both = (input: Omit<ShioriInput, "locale">, cityId: string | null) => {
 };
 
 /** Everything that must hold of any trip nobody entered a time for, whatever is on its list. */
-function assertFitsOrSaysSo(input: Omit<ShioriInput, "locale">, shown: ShioriPlan, packed: ShioriPlan, where: string) {
+function assertFitsOrSaysSo(input: Omit<ShioriInput, "locale">, cityId: string | null, shown: ShioriPlan, packed: ShioriPlan, where: string) {
   // Every place is on exactly one day or in the list of what was left out: never both, never neither.
   const onDays = namesOn(shown);
   assert.deepEqual([...onDays, ...shown.leftOut].sort(), input.places.map((place) => place.name).sort(), `${where}: every place once`);
@@ -55,7 +55,8 @@ function assertFitsOrSaysSo(input: Omit<ShioriInput, "locale">, shown: ShioriPla
     // "This many days hold everything" is said only of a plan that was made, and that plan holds everything.
     if (notice[0].days !== null) {
       assert.ok(notice[0].days > input.days && notice[0].days <= 7, where);
-      const longer = buildShioriPlan({ ...input, days: notice[0].days, locale: "ja" }, { cities });
+      // (Priced as the plan the notice came from: with the city's rail network.)
+      const longer = buildShioriPlan({ ...input, days: notice[0].days, locale: "ja" }, { rail: cityId ? railOf(cityId) : null, cities });
       assert.deepEqual([longer.leftOut, longer.days.some((day) => day.runsLate)], [[], false], `${where}: ${notice[0].days} days`);
     }
     assert.equal(shown.notices.some((entry) => entry.kind === "needs-days" || entry.kind === "drop" || entry.kind === "too-much" || entry.kind === "packed-anyway"), false, where);
@@ -137,7 +138,7 @@ test("in all 63 trips of the audit no day with more than one place ends more tha
     const input = { places: scenarioPlaces(scenario), days: scenario.days, hotel: scenario.hotel };
     const shown = auditPlan(scenario.id).plan;
     const packed = auditPlan(scenario.id, { packAnyway: true }).plan;
-    assertFitsOrSaysSo(input, shown, packed, scenario.id);
+    assertFitsOrSaysSo(input, scenario.city.id, shown, packed, scenario.id);
     if (shown.leftOut.length > 0) changed.push(scenario.id);
   }
   assert.deepEqual(changed.sort(), Object.keys(LEFT_OUT).sort());
@@ -170,7 +171,7 @@ test("in 240 random trips the same holds: no day far past its end, every place o
   for (let round = 0; round < 240; round += 1) {
     const { cityId, input } = randomTrip(next, 10);
     const { shown, packed } = both(input, cityId);
-    assertFitsOrSaysSo(input, shown, packed, `#${round} ${cityId} ${input.places.length} places ${input.days} days`);
+    assertFitsOrSaysSo(input, cityId, shown, packed, `#${round} ${cityId} ${input.places.length} places ${input.days} days`);
     if (shown.leftOut.length > 0) thinned += 1;
   }
   assert.ok(thinned >= 40, `${thinned} of 240 trips had a place left out`);
@@ -304,6 +305,27 @@ test("a street path measured later corrects a clock and never throws a place out
     assert.deepEqual(measured.leftOut, first.leftOut, `legs × ${factor}`);
     assert.deepEqual(measured.days.map((day) => day.stops.map((stop) => stop.place.name)), first.days.map((day) => day.stops.map((stop) => stop.place.name)));
   }
+});
+
+test("a list too full for its day is planned in the time any list is, and planning it again when a street path arrives costs next to nothing", () => {
+  // Was 1.3 s, and a quarter of a second again for every street path that arrived: ten Kyoto sights for one day.
+  const kyoto = cities.find((entry) => entry.id === "kyoto")!;
+  const places = kyoto.sights.slice(0, 10).map((sight) => placeFromSight(sight, "ja"));
+  const options = { rail: railOf("kyoto"), cities };
+  const routes = new Map<string, ShioriRoute | null>();
+  const timed = () => {
+    const started = performance.now();
+    const plan = buildShioriPlan({ places, days: 1, hotel: null, locale: "ja" }, { ...options, routes: new Map(routes) });
+    return { plan, ms: performance.now() - started };
+  };
+  const first = timed();
+  assert.equal(first.plan.leftOut.length, 5);
+  assert.ok(first.ms <= 700, `first plan: ${Math.round(first.ms)} ms`);
+  const leg = first.plan.days[0].legs.find((entry) => entry.mode !== "rail")!;
+  routes.set(`walk|${leg.key}`, { minutes: leg.minutes, path: [leg.from, leg.to] });
+  const again = timed();
+  assert.deepEqual(again.plan.leftOut, first.plan.leftOut);
+  assert.ok(again.ms <= 120, `planned again: ${Math.round(again.ms)} ms`);
 });
 
 test("what is left out of the days is on no day's map, in no day's print and not in the outline the meal advisor is sent", () => {
