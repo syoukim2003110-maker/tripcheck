@@ -75,8 +75,14 @@ export type PlannedDay = {
   lunchAt: number;
   /** Chosen restaurants that cannot be reached during their meal. */
   missed: number;
-  /** Minutes past what a traveller can keep: sights after 18:00, a dinner after 21:30. */
+  /** Minutes past what a traveller can keep: sights after 18:00, a dinner after 21:30 — nothing while within the grace of either (see pastEnd). */
   overrun: number;
+  /**
+   * The same to the minute, with no grace: what the search itself counts,
+   * for ranking one plan against another (which area to stay in) the way
+   * the search ranked them. Never a reason to say a day runs late.
+   */
+  pastHour: number;
   /** First arrival to the end of the last sight, on the clock the booklet prints. */
   span: number;
   /** What the booklet calls a packed day. */
@@ -108,6 +114,16 @@ export const DAY_CLOCK = {
   /** A chosen dinner may run to 21:30. */
   dinnerEnd: 21 * 60 + 30,
   /**
+   * A day that ends this little past one of those two hours is not called
+   * late. The hours are the planner's habit and the legs before them are
+   * estimates, most of them rounded to five minutes: 18:08 on five estimated
+   * legs is no reason to tell a traveller to add a day or drop a place.
+   * (See pastEnd: what is said of a day. The search itself goes on aiming
+   * at the hour — it uses another day it was given before it ends one at
+   * 18:08 — and no printed time is changed.)
+   */
+  endGrace: 15,
+  /**
    * Where a day ends on a trip with entered times. Such a trip is laid on
    * the calendar — day 1 is the day of the start, a booking's day is its
    * date — so a day that ran past midnight would be standing in the next
@@ -129,6 +145,19 @@ export const DAY_CLOCK = {
     dinner: { open: 17 * 60 + 30, lastSeat: 20 * 60 },
   },
 } as const;
+
+/**
+ * How many minutes past an end of the planner's own (18:00 for sights, 21:30
+ * for a chosen dinner) a visit runs, for saying that a day runs late: nothing
+ * within the grace, and beyond it every minute past the hour itself. This is
+ * the one place that decides it — the days the search hands back and the
+ * booklet's "runs late", and with them the advice to add a day or leave a
+ * place out, all read it. Never used for a time the traveller entered: a
+ * booking or a finish is kept to the minute.
+ */
+export function pastEnd(leave: number, end: number) {
+  return leave - end > DAY_CLOCK.endGrace ? leave - end : 0;
+}
 
 /**
  * What a taxi ride costs the search beyond its minutes. A taxi is money and
@@ -2160,7 +2189,10 @@ export function daySearch(
       leave: clock.leave,
       lunchAt: clock.lunchAt,
       missed: final.missed,
-      overrun: final.overrun,
+      // What is said of the day (the search's own count has no grace: see DAY_CLOCK.endGrace).
+      // The worst of its stops is over its hour by exactly this much, so the grace is read off it.
+      overrun: pastEnd(final.overrun, 0),
+      pastHour: final.overrun,
       span: final.span,
       tight: final.tight,
       cost: final.cost,

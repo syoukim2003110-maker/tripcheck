@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { cafeBreakFor } from "../lib/shiori/cafes.ts";
 import { buildMealBrief, EMPTY_MEAL_PREFS, mealSights, mealSlotKey, mealStopKind, openMealSlots } from "../lib/shiori/meal-advice.ts";
-import { DAY_FILLING_STAY, dayClock, daySearch, type SearchProblem } from "../lib/shiori/day-search.ts";
+import { DAY_CLOCK, DAY_FILLING_STAY, dayClock, daySearch, pastEnd, type SearchProblem } from "../lib/shiori/day-search.ts";
 import { readdirSync, readFileSync } from "node:fs";
 
 import { isBoatLineName } from "../lib/rail-router.ts";
@@ -904,4 +904,51 @@ test("a place whose name ends in the name of a city is not an island: ヒルト�
       if (/(広島|福島|徳島|鹿児島)$/.test(sight.ja)) assert.notEqual(hardToReach({ kind: sight.kind, name: sight.ja }), "island", sight.ja);
     }
   }
+});
+
+/* ------------------------------------------------- the hours of a day (audit, second batch) */
+
+test("a day that ends a few minutes past 18:00 on estimated legs is not called late, and nobody is told to add a day or drop a place: 札幌 18:08, バンコク 18:14", () => {
+  // Were: sapporo-1 "09:00–18:08, load tight, runs late" with needs-days 2 and drop サッポロビール博物館; bangkok-1 18:14 the same.
+  for (const [id, end] of [["sapporo-1", "18:08"], ["bangkok-1", "18:14"], ["london-1", "18:08"], ["paris-1", "18:02"]] as const) {
+    const { plan } = auditPlan(id);
+    assert.equal(plan.days.length, 1, id);
+    // The printed time is what it was: nothing is rounded down to look kept.
+    assert.equal(plan.days[0].stops.at(-1)!.leave, end, id);
+    assert.equal(plan.days[0].runsLate, false, id);
+    assert.deepEqual(plan.notices.filter((notice) => notice.kind === "needs-days" || notice.kind === "drop" || notice.kind === "too-much"), [], id);
+  }
+  // Beyond a quarter of an hour a day is late, and by every minute past the hour: tokyo-1 ends 18:33.
+  const tokyo = auditPlan("tokyo-1").plan;
+  assert.equal(tokyo.days[0].runsLate, true);
+  assert.ok(tokyo.notices.some((notice) => notice.kind === "needs-days"));
+  // The rule, in the one place that decides it.
+  assert.equal(DAY_CLOCK.endGrace, 15);
+  assert.deepEqual([0, 15, 16, 45].map((over) => pastEnd(DAY_CLOCK.sightsEnd + over, DAY_CLOCK.sightsEnd)), [0, 0, 16, 45]);
+  assert.deepEqual([15, 16].map((over) => pastEnd(DAY_CLOCK.dinnerEnd + over, DAY_CLOCK.dinnerEnd)), [0, 16]);
+  // In every trip of the audit the booklet and its notices agree with it: a day is called late exactly when a
+  // sight nobody booked ends more than the grace past 18:00, and no advice to add days or drop a place is
+  // given to a trip without such a day.
+  for (const scenario of scenarios) {
+    const { plan } = auditPlan(scenario.id);
+    for (const day of plan.days) {
+      const last = day.stops.at(-1)!;
+      const over = minutesOfClock(last.leave) + (last.leaveNextDay ? 1_440 : 0) - DAY_CLOCK.sightsEnd;
+      assert.equal(day.runsLate, over > DAY_CLOCK.endGrace, `${scenario.id} day ${day.index + 1} ends ${last.leave}`);
+    }
+    if (!plan.days.some((day) => day.runsLate)) assert.equal(plan.notices.some((notice) => notice.kind === "needs-days" || notice.kind === "drop" || notice.kind === "too-much"), false, scenario.id);
+  }
+});
+
+test("the grace is for what is said of a day, not a later end to plan up to: with a second day to use, a list that would end at 18:10 is put on two", () => {
+  // Three visits of three hours, ten minutes apart: one day from 09:00 ends at 19:40 with its lunch hour — late.
+  // Two of 3 h 55 the same way end at 18:10: not called late on one day, and still spread when a second day was asked for.
+  const stop = (stay: number) => ({ stay, meal: null, day: null });
+  const problem = (stays: number[]): SearchProblem => ({ stops: stays.map(stop), minutes: stays.map((_, from) => stays.map((__, to) => (from === to ? 0 : 10))), km: stays.map((_, from) => stays.map((__, to) => (from === to ? 0 : 1))), hotel: null });
+  const two = daySearch(problem([235, 235]));
+  const one = two.choose(1).days;
+  assert.deepEqual([one.length, one[0].leave.at(-1), one[0].overrun, one[0].pastHour], [1, 18 * 60 + 10, 0, 10]);
+  assert.equal(two.choose(2).days.length, 2);
+  const three = daySearch(problem([180, 180, 180])).choose(1).days;
+  assert.deepEqual([three[0].leave.at(-1), three[0].overrun, three[0].pastHour], [19 * 60 + 40, 100, 100]);
 });

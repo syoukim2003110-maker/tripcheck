@@ -5,7 +5,7 @@ import { RailNetwork, walkMinutes, type GeoPoint, type RailAdvice, type RailJour
 import type { ResolvedInputStop, RouteStop } from "../route-optimizer.ts";
 import { estimateTravelOptions } from "../time-feasibility.ts";
 import { cafeBreakFor, type CafeBreak } from "./cafes.ts";
-import { DAY_CLOCK, DAY_FILLING_STAY, LATE_LUNCH, daySearch, packedDay, scheduleDay, type SearchProblem } from "./day-search.ts";
+import { DAY_CLOCK, DAY_FILLING_STAY, LATE_LUNCH, daySearch, packedDay, pastEnd, scheduleDay, type SearchProblem } from "./day-search.ts";
 import { weatherDayOrder } from "./weather-days.ts";
 import {
   buildTripFromWishlist,
@@ -464,7 +464,9 @@ function timeline(day: EngineDay) {
 }
 
 /**
- * How many minutes a day runs past what a traveller can keep. Sightseeing
+ * How many minutes a day runs past what a traveller can keep, for saying so:
+ * a few minutes past either hour on estimated legs is not late (pastEnd in
+ * day-search.ts, which the days of the search are read by too). Sightseeing
  * ends by the day's end. A chosen dinner may run to 21:30 — the dinner, not
  * the day: the last sight before it still has to be over by the day's end.
  */
@@ -474,15 +476,15 @@ function overrunOf(day: EngineDay, dayEnd: string, dinnerIds: ReadonlySet<string
   if (bookedIds.size > 0 && day.stops.some((stop) => bookedIds.has(stop.stop.id))) {
     // A booked stop is not held to 18:00 or 21:30: the traveller chose its hour.
     return day.stops.reduce((over, stop, index) => (
-      bookedIds.has(stop.stop.id) ? over : Math.max(over, times[index].leave - clockMinutes(dinnerIds.has(stop.stop.id) ? DINNER_DAY_END : dayEnd))
+      bookedIds.has(stop.stop.id) ? over : Math.max(over, pastEnd(times[index].leave, clockMinutes(dinnerIds.has(stop.stop.id) ? DINNER_DAY_END : dayEnd)))
     ), 0);
   }
   const lastSight = day.stops.findLastIndex((stop) => !dinnerIds.has(stop.stop.id));
   // Sightseeing — not the ride back to the hotel — is what has to be over by
   // the day's end: the same nine hours with a hotel as without one.
-  const sights = lastSight >= 0 ? times[lastSight].leave - clockMinutes(dayEnd) : 0;
+  const sights = lastSight >= 0 ? pastEnd(times[lastSight].leave, clockMinutes(dayEnd)) : 0;
   const hasDinner = lastSight < day.stops.length - 1;
-  return Math.max(0, sights, hasDinner ? times.at(-1)!.leave - clockMinutes(DINNER_DAY_END) : 0);
+  return Math.max(sights, hasDinner ? pastEnd(times.at(-1)!.leave, clockMinutes(DINNER_DAY_END)) : 0);
 }
 
 function dayLate(day: EngineDay, dayEnd: string, dinnerIds: ReadonlySet<string>, bookedIds: ReadonlySet<string> = NO_IDS) {
@@ -2032,7 +2034,8 @@ export function buildShioriPlan(input: ShioriInput, options: PlanOptions = {}): 
     const dayOf = new Map(plan.days.flatMap((day) => day.stops.map((stop) => [stop.place.id, day.engineDay] as const)));
     const usedDays = Math.max(...plan.days.map((day) => day.engineDay));
     type Measure = { late: number; tight: number; travel: number; days: number };
-    const sum = (days: ReturnType<ReturnType<typeof daySearch>["choose"]>["days"]): Measure => ({ late: unkept(days), tight: days.filter((day) => day.tight).length, travel: days.reduce((total, day) => total + day.travel, 0), days: days.length });
+    // (Ranked as the search ranks its own plans, to the minute: the grace is for what is said of a day, not for choosing between areas.)
+    const sum = (days: ReturnType<ReturnType<typeof daySearch>["choose"]>["days"]): Measure => ({ late: days.filter((day) => day.pastHour > 0 || day.missed > 0 || day.late > 0 || day.hardOver > 0).length, tight: days.filter((day) => day.tight).length, travel: days.reduce((total, day) => total + day.travel, 0), days: days.length });
     // The days as planned, each in its best order from that hotel (cheap) …
     const kept = (hotel: ShioriHotel) => sum(searched({ ...laid, hotel }).keep(laid.places.map((place) => dayOf.get(place.id) ?? 1), usedDays, frames ? { quick: true, requested } : { quick: true }).days);
     // … and the trip planned afresh from that hotel, which changes which
