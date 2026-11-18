@@ -10,10 +10,12 @@ import { join, sep } from "node:path";
  *   terms do not allow. Its source stays in the repository; it is not built
  *   and not linked from anywhere. api/deploy.php removes a copy left on the
  *   host by an earlier build (RETIRED_PAGES).
+ * - The MapLibre map worker (/maplibre/): the booklet's map is Apple's now,
+ *   and the static site ships no MapLibre. Its old folder is retired too.
  */
 
 /** Page folders of earlier builds that must not stay on the host. Fixed names, no slashes. */
-export const RETIRED_PAGES = ["classic"] as const;
+export const RETIRED_PAGES = ["classic", "maplibre"] as const;
 
 const LEFT_OUT = [["app", "api"], ["app", "classic"]] as const;
 

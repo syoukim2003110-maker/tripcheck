@@ -10,6 +10,8 @@ import {
   type MouseEvent,
 } from "react";
 import type { GeoJSONSource, Map as MapLibreMap, MapMouseEvent, Marker } from "maplibre-gl";
+// The old planner's map only: the booklet does not carry MapLibre's styles.
+import "maplibre-gl/dist/maplibre-gl.css";
 import type { PlannerGoogleMapProps } from "../../../PlannerGoogleMap";
 import {
   buildPlannerMapDayLayerViews,

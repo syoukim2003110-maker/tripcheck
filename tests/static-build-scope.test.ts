@@ -51,9 +51,9 @@ test("nothing the static site builds links to /classic", () => {
 });
 
 test("the deploy step removes the old planner left on the host by an earlier build", () => {
-  assert.deepEqual([...RETIRED_PAGES], ["classic"]);
+  assert.deepEqual([...RETIRED_PAGES], ["classic", "maplibre"]);
   const deploy = read("deploy/xserver/api/deploy.php");
-  assert.match(deploy, /const RETIRED_PAGES = \['classic'\];/);
+  assert.match(deploy, /const RETIRED_PAGES = \['classic', 'maplibre'\];/);
   // Both ways of finishing a deploy (from the zip, from an extracted folder) remove it.
   assert.equal(deploy.match(/\$retired = remove_retired_pages\(\$root\);/g)?.length, 2);
 });

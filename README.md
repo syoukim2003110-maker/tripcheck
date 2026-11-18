@@ -50,8 +50,10 @@ pnpm install
 pnpm dev
 ```
 
-Copy `.env.example` to `.env.local`. The default uses OpenFreeMap plus explicit
-Nominatim search and keeps every paid provider off. If a later deployment opts
+Copy `.env.example` to `.env.local`. The booklet's map is Apple's MapKit JS,
+signed by the Apple relay (`pnpm relay:dev` locally); without a relay the
+booklet works and says the map could not be shown. Place lookup uses explicit
+Nominatim search, and every paid provider stays off. If a later deployment opts
 into Google, use a referrer-restricted browser key and server-only Places/Routes
 keys. Paid requests additionally require `TRIPCHECK_PAID_API_ENABLED=true`, the
 D1 `DB` binding, `TRIPCHECK_PUBLIC_ORIGIN`, a random server-only

@@ -41,9 +41,10 @@ function remove_tree(string $directory): void
     @rmdir($directory);
 }
 
-// Pages earlier builds published and this one does not (scripts/static-build-scope.ts,
-// RETIRED_PAGES): the old planner showed Apple travel times without an Apple map.
-const RETIRED_PAGES = ['classic'];
+// Folders earlier builds published and this one does not (scripts/static-build-scope.ts,
+// RETIRED_PAGES): the old planner showed Apple travel times without an Apple map,
+// and the MapLibre map worker went with the MapLibre map.
+const RETIRED_PAGES = ['classic', 'maplibre'];
 
 function remove_retired_pages(string $root): int
 {

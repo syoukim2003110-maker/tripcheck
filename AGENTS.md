@@ -59,7 +59,14 @@ Working branch: `claude/free-place-resolution`.
   photos, budgets, hours) are never saved anywhere; only a shop the traveller
   adds to the trip is kept, as a stop (name, position, shop ID), in that
   traveller's own trip in their browser and in a link they share.
-- **Map credit.** OpenFreeMap / OpenStreetMap attribution stays reachable.
+- **Map credit.** The booklet's map is Apple's (MapKit JS): Apple's logo and
+  "Legal" link, drawn inside the map, are never covered, hidden or restyled,
+  and Apple map data (walking and driving routes, place cards) appears only on
+  an Apple map and is never written to the browser's storage. TripCheck's own
+  lines on it keep their credit beside the map ("Wikidata" for rail lines and
+  stations, "© OpenStreetMap contributors" for street routes from the
+  OpenStreetMap router), and the footer names Apple Maps, Wikidata,
+  OpenStreetMap and Wikimedia Commons, in both languages.
 - **Apple place card.** It is drawn by Apple inside a closed element; do not
   restyle its inside, and keep it lazy (nothing is requested until the
   traveller presses the button).
