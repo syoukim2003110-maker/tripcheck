@@ -70,9 +70,22 @@ test("Apple's places, and the places where a meal or a break falls, are handed t
 });
 
 test("the strings of the small map exist in both languages", () => {
-  for (const key of ["candidateMapLabel", "candidateMapFailed", "appleMapsLink", "appleLoading", "appleFailed", "appleRetry", "appleGone", "appleGoneRemove", "applePendingChip", "appleFailedChip"]) {
+  for (const key of ["candidateMapLabel", "candidateMapFailed", "appleMapsLink", "appleLoading", "appleFailed", "appleRetry", "appleGone", "appleGoneRemove", "applePendingChip", "appleFailedChip", "appleChip", "chipMapLabel", "appleMapAside"]) {
     assert.equal(app.split("\n").filter((line) => line.startsWith(`    ${key}: `)).length, 2, key);
   }
+});
+
+test("a chosen place or hotel found through Apple is named only beside an Apple map: the plan's own, or a small map of the chosen places", () => {
+  const form = app.slice(app.indexOf("const appleChips = ["), app.indexOf("const bulkShown ="));
+  // The plan screen's map is the one there; elsewhere a small map of the Apple chips is drawn.
+  assert.match(form, /const chipMapOn = appleChips\.length > 0 && screen !== "plan";/);
+  assert.match(form, /const appleNamed = \(screen === "plan" && appleMap === "ready"\) \|\| \(chipMapOn && chipMap\?\.at === chipMapAt && chipMap\.state === "ready"\);/);
+  assert.match(form, /return appleNamed \? <>\{number\}\{entry\.name\}<\/> : <>\{number\}\{t\.appleChip\}<\/>;/);
+  // The chips and the "added" line go through it.
+  assert.match(app, /holdsAppleData\(place\) \? chipName\(place, place\.id\) : place\.name/);
+  assert.match(app, /holdsAppleData\(trip\.hotel, true\) \? chipName\(trip\.hotel, "hotel"\) : trip\.hotel\.name/);
+  assert.match(app, /t\.addedAs\(added\.apple && !appleNamed \? t\.appleChip : added\.name, added\.kind\)/);
+  assert.match(app, /\{chipMapOn \? <CandidateMap /);
 });
 
 test("the privacy page says, in both languages, that the map is Apple's, that Apple places are kept as their IDs and looked up again, and that stored paths are OpenStreetMap's", () => {

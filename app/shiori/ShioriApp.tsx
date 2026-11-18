@@ -55,6 +55,7 @@ import {
   withAppleDetails,
   withoutAppleData,
   appleDataCount,
+  holdsAppleData,
   tripTitleName,
   withLastDayFinish,
   withPackAnyway,
@@ -428,6 +429,8 @@ const text = {
     appleGoneRemove: "リストから外す",
     applePendingChip: "読み込み中の場所",
     appleFailedChip: "読み込めなかった場所",
+    appleChip: "Apple マップで選んだ場所",
+    chipMapLabel: "選んだ場所の地図",
     appleMapAside: (count: number) => `Apple の地図を表示できないため、Apple マップで見つけた場所${count}件を外して予定を作っています（場所は消えていません）。地図が表示されると元に戻ります。`,
     mapStreetCredit: "一部の道のり © OpenStreetMap contributors",
     pinLabel: (dayIndex: number, position: number, name: string) => `${dayIndex + 1}日目 ${position + 1}番 ${name}`,
@@ -740,6 +743,8 @@ const text = {
     appleGoneRemove: "Remove from the list",
     applePendingChip: "Place loading",
     appleFailedChip: "Place not loaded",
+    appleChip: "Place chosen on Apple Maps",
+    chipMapLabel: "Map of the places you chose",
     appleMapAside: (count: number) => `Apple's map cannot be shown, so ${count === 1 ? "1 place" : `${count} places`} found on Apple Maps ${count === 1 ? "is" : "are"} left out of the plan for now (still in your list). ${count === 1 ? "It comes" : "They come"} back when the map is shown.`,
     mapStreetCredit: "Some street routes © OpenStreetMap contributors",
     pinLabel: (dayIndex: number, position: number, name: string) => `Day ${dayIndex + 1}, stop ${position + 1}: ${name}`,
@@ -1441,8 +1446,11 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
   const [otherHits, setOtherHits] = useState<{ kind: AddKind; candidates: AddCandidate[] } | null>(null);
   // Whether the small Apple map beside a list of search results could be shown (one MapKit for the page: one answer for every list).
   const [listMap, setListMap] = useState<"pending" | "ready" | "failed">("pending");
+  // The same for the small map beside the chosen places' chips on the pick
+  // screen (see appleChips), tagged with the screen it was drawn on.
+  const [chipMap, setChipMap] = useState<{ at: string; state: "ready" | "failed" } | null>(null);
   // The last thing added, said out loud: the plan it changed is far up the page.
-  const [added, setAdded] = useState<{ id: string | null; name: string; kind: AddKind } | null>(null);
+  const [added, setAdded] = useState<{ id: string | null; name: string; kind: AddKind; apple?: true } | null>(null);
   // The pasted-list mode of the add form: the text, and, once it is being checked, the review of its lines.
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkText, setBulkText] = useState("");
@@ -1979,7 +1987,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
     } else {
       update((current) => putPlace(current, placeOfCandidate(candidate, kind)));
     }
-    setAdded({ id: kind === "hotel" ? null : candidate.id, name: candidate.name, kind });
+    setAdded({ id: kind === "hotel" ? null : candidate.id, name: candidate.name, kind, ...(holdsAppleData(candidate) ? { apple: true as const } : {}) });
     otherRun.current += 1;
     setOtherHits(null);
     setOther("");
@@ -2211,6 +2219,24 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
   // Places the traveller typed in themselves: restaurants, and anything the
   // destination's list does not have.
   const extras = trip.places.filter((place) => place.meal || !city?.sights.some((sight) => `wikidata-${sight.q}` === place.id));
+  // The chosen places and hotel that hold what Apple said about them are
+  // named only beside an Apple map: the booklet's own map on the plan screen
+  // when it is shown, or else a small map of just these, numbered as their
+  // chips are. Without either, a chip says only that it is a place found on
+  // Apple Maps (Attachment 6, 2.4).
+  const appleChips = [
+    ...extras.filter((place) => !place.pending && holdsAppleData(place)).map((place) => ({ id: place.id, name: place.name, lat: place.lat, lon: place.lon })),
+    ...(trip.hotel && !trip.hotel.pending && holdsAppleData(trip.hotel, true) ? [{ id: "hotel", name: trip.hotel.name, lat: trip.hotel.lat, lon: trip.hotel.lon }] : []),
+  ];
+  // (On the plan screen the booklet's map is the one: while it loads or has failed, the chips are not named.)
+  const chipMapOn = appleChips.length > 0 && screen !== "plan";
+  const chipMapAt = screen;
+  const appleNamed = (screen === "plan" && appleMap === "ready") || (chipMapOn && chipMap?.at === chipMapAt && chipMap.state === "ready");
+  const appleChipNo = (id: string) => appleChips.findIndex((entry) => entry.id === id) + 1;
+  const chipName = (entry: { id?: string; name: string }, chipId: string) => {
+    const number = chipMapOn ? <i aria-hidden="true" className="shiori-hit-no">{appleChipNo(chipId)}</i> : null;
+    return appleNamed ? <>{number}{entry.name}</> : <>{number}{t.appleChip}</>;
+  };
   // Apple's search results are listed only beside an Apple map: when the map
   // cannot be shown, only what other sources found is.
   const withoutApple = <T extends { id: string }>(list: readonly T[]) => (listMap === "failed" ? list.filter((entry) => placeSource(entry.id) !== "apple") : [...list]);
@@ -2262,18 +2288,19 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
       ) : null}
       {added ? (
         <p className="shiori-added" role="status">
-          <span>{t.addedAs(added.name, added.kind)}{addedDay !== null ? ` ${t.addedWhere(addedDay + 1)}` : ""}</span>
+          <span>{t.addedAs(added.apple && !appleNamed ? t.appleChip : added.name, added.kind)}{addedDay !== null ? ` ${t.addedWhere(addedDay + 1)}` : ""}</span>
           {addedStop && screen === "plan" ? <button onClick={() => showStop(addedStop.day, addedStop.stop.place.id)} type="button">{t.addedSee}</button> : null}
         </p>
       ) : null}
       {otherState === "full" ? <p className="shiori-warn" role="alert">{t.addFull}</p> : null}
       <p className="shiori-quiet">{t.addHint}</p>
+      {chipMapOn ? <CandidateMap failed={t.candidateMapFailed} label={t.chipMapLabel} locale={locale} onState={(state) => setChipMap({ at: chipMapAt, state })} points={appleChips} /> : null}
       {extras.length > 0 || trip.hotel ? (
         <ul className="shiori-chips is-own">
           {extras.map((place) => (
-            <li key={place.id}><button onClick={() => update((current) => togglePlace(current, place))} type="button">{place.meal ? <small>{`${t.mealShort[place.meal]}: `}</small> : null}{place.pending ? appleWaiting ? t.applePendingChip : t.appleFailedChip : place.name}<i aria-hidden="true"> ×</i></button></li>
+            <li key={place.id}><button onClick={() => update((current) => togglePlace(current, place))} type="button">{place.meal ? <small>{`${t.mealShort[place.meal]}: `}</small> : null}{place.pending ? appleWaiting ? t.applePendingChip : t.appleFailedChip : holdsAppleData(place) ? chipName(place, place.id) : place.name}<i aria-hidden="true"> ×</i></button></li>
           ))}
-          {trip.hotel ? <li><button onClick={() => update((current) => ({ ...current, hotel: null }))} type="button"><small>{t.hotelChip}: </small>{trip.hotel.pending ? appleWaiting ? t.applePendingChip : t.appleFailedChip : trip.hotel.name}<i aria-hidden="true"> ×</i></button></li> : null}
+          {trip.hotel ? <li><button onClick={() => update((current) => ({ ...current, hotel: null }))} type="button"><small>{t.hotelChip}: </small>{trip.hotel.pending ? appleWaiting ? t.applePendingChip : t.appleFailedChip : holdsAppleData(trip.hotel, true) ? chipName(trip.hotel, "hotel") : trip.hotel.name}<i aria-hidden="true"> ×</i></button></li> : null}
         </ul>
       ) : null}
       <div className="shiori-bulk">
