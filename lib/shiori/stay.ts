@@ -5,7 +5,13 @@
  * places and looks empty.
  */
 const rules: Array<[RegExp, number]> = [
-  [/amusement|theme park/, 420],
+  /* A building of food stalls is a meal, whatever the catalogue calls it. */
+  [/food theme park/, 75],
+  /* The catalogue says "amusement park" or "theme park" of a food hall, a
+   * fairground beside a harbour, a children's museum and a craft village as
+   * readily as of Disneyland. The category alone therefore means a visit of a
+   * couple of hours; a park that takes most of a day is named below. */
+  [/amusement|theme park/, 150],
   [/\bzoo\b|safari/, 150],
   [/aquarium/, 120],
   [/museum|gallery/, 90],
@@ -23,9 +29,16 @@ const rules: Array<[RegExp, number]> = [
   [/bridge|statue|sculpture|monument|memorial|fountain|gate|pier|promenade/, 30],
 ];
 
+/*
+ * Parks named one by one, because only the name tells an all-day park from a
+ * small one. Three sizes: the resort a traveller gives the whole day, the park
+ * that takes most of one, and the ride or water park of half a day.
+ */
 const names: Array<[RegExp, number]> = [
   [/ディズニー|disney|ユニバーサル|universal studios|USJ|レゴランド|legoland/i, 480],
-  [/オーシャンパーク|海洋公園|ロッテワールド|エバーランド/i, 360],
+  [/富士急ハイランド|fuji-q|ハウステンボス|huis ten bosch|ナガシマスパーランド|nagashima spa ?land|志摩スペイン村/i, 420],
+  [/オーシャンパーク|海洋公園|ロッテワールド|lotte world|エバーランド|everland|江戸村|edo wonderland|ピューロランド|puroland|よみうりランド|ひらかたパーク/i, 360],
+  [/チボリ公園|tivoli gardens|グローナルンド|gröna lund|ベニーランド|benyland|dam sen|ダムセン|ワイルド・ワディ|wild wadi|wild wild wet/i, 240],
 ];
 
 export function shioriStayMinutes(kind: string | undefined, name: string) {
