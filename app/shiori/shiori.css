@@ -292,6 +292,11 @@
 .shiori-map-toggle { flex: 0 0 auto; font-size: 13px; }
 .shiori-map-credit { color: var(--muted); font-size: 11px; line-height: 1.5; margin: 4px 0 0; }
 .shiori-map-credit a { color: inherit; }
+/* The small Apple map shown with a list of places found through Apple; the list carries its pin numbers. */
+.shiori-candmap { background: #f1f3f4; border: 1px solid var(--rule); border-radius: var(--r-md); height: 180px; margin: 0 0 8px; overflow: hidden; position: relative; }
+.shiori .shiori-candmap-canvas { inset: 0; position: absolute; }
+.shiori-pin.is-candidate { cursor: default; }
+.shiori-hit-no { align-items: center; background: var(--shu); border-radius: 50%; color: #fff; display: inline-flex; flex: 0 0 auto; font: 700 11px/1 var(--gothic); font-style: normal; font-variant-numeric: tabular-nums; height: 18px; justify-content: center; margin-right: 6px; min-width: 18px; vertical-align: 1px; }
 /* A fixed square holds each map pin: the 44px tap target, and an anchor that does not move when the pin grows. */
 .shiori-pin-holder { align-items: center; display: flex; height: 44px; justify-content: center; pointer-events: none; width: 44px; }
 .shiori-pin-holder > * { pointer-events: auto; position: relative; }

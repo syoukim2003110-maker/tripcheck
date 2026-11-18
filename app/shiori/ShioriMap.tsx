@@ -536,3 +536,109 @@ export default function ShioriMap({ days, selectedDay, hotel, focus, onSelectSto
     </div>
   );
 }
+
+/** A place in a list of search results, as its numbered pin on the small map beside the list. */
+export type CandidatePoint = { id: string; name: string; lat: number; lon: number };
+
+/**
+ * The small Apple map shown with a list of places found through Apple (a
+ * search by name, a pasted list, a meal, a coffee break, a hotel): Apple's
+ * terms let what Apple says about places be shown only with the Apple map
+ * it belongs to. Each place is a numbered pin; the list beside it carries
+ * the same numbers. `onState` hears whether the map could be shown — a list
+ * of Apple's places is not shown without it.
+ */
+export function CandidateMap({ points, locale, label, failed: failedText, onState }: {
+  points: readonly CandidatePoint[];
+  locale: "ja" | "en";
+  label: string;
+  failed: string;
+  onState?: (state: "ready" | "failed") => void;
+}) {
+  const container = useRef<HTMLDivElement | null>(null);
+  const map = useRef<MapKitMap | null>(null);
+  const library = useRef<MapKit | null>(null);
+  const [ready, setReady] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const onStateRef = useRef(onState);
+  useEffect(() => { onStateRef.current = onState; }, [onState]);
+  useEffect(() => {
+    let cancelled = false;
+    let instance: MapKitMap | null = null;
+    let stopListening = () => {};
+    const fail = () => {
+      if (cancelled) return;
+      setFailed(true);
+      onStateRef.current?.("failed");
+    };
+    if (!appleRelayUrl()) { fail(); return; }
+    void mapToken().then(() => loadMapKit(locale)).then((mapkit) => {
+      if (cancelled || !container.current) return;
+      library.current = mapkit;
+      instance = new mapkit.Map(container.current, {
+        mapType: "mutedStandard",
+        colorScheme: "light",
+        pointOfInterestFilter: mapkit.PointOfInterestFilter.excludingAllCategories,
+        isRotationEnabled: false,
+        showsCompass: mapkit.FeatureVisibility.Hidden,
+        showsMapTypeControl: false,
+        showsUserLocationControl: false,
+        showsZoomControl: true,
+        showsScale: mapkit.FeatureVisibility.Hidden,
+        center: new mapkit.Coordinate(35.6812, 139.7671),
+      });
+      map.current = instance;
+      const firstFrame = new Promise<void>((resolve) => window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve())));
+      stopListening = onMapKitState((state) => {
+        if (cancelled) return;
+        if (state === "ready") void firstFrame.then(() => { if (!cancelled) { setFailed(false); setReady(true); onStateRef.current?.("ready"); } });
+        if (state === "failed") fail();
+      });
+    }).catch(fail);
+    return () => {
+      cancelled = true;
+      stopListening();
+      instance?.destroy();
+      map.current = null;
+      setReady(false);
+    };
+    // The language is fixed for the page.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const key = points.map((point) => `${point.id}@${point.lat},${point.lon}`).join("|");
+  useEffect(() => {
+    const instance = map.current;
+    const mapkit = library.current;
+    if (!ready || !instance || !mapkit) return;
+    instance.removeAnnotations(instance.annotations);
+    if (points.length === 0) return;
+    const annotations = points.map((point, index) => {
+      const holder = document.createElement("div");
+      holder.className = "shiori-pin-holder";
+      const element = document.createElement("div");
+      element.className = "shiori-pin is-selected is-candidate";
+      element.textContent = String(index + 1);
+      element.title = point.name;
+      element.setAttribute("role", "img");
+      element.setAttribute("aria-label", `${index + 1} ${point.name}`);
+      holder.appendChild(element);
+      return new mapkit.Annotation(new mapkit.Coordinate(point.lat, point.lon), () => holder, { anchorOffset: new DOMPoint(0, -22), calloutEnabled: false, enabled: false, title: point.name, displayPriority: 1000 });
+    });
+    instance.addAnnotations(annotations);
+    const latitudes = points.map((point) => point.lat);
+    const longitudes = points.map((point) => point.lon);
+    const [south, north, west, east] = [Math.min(...latitudes), Math.max(...latitudes), Math.min(...longitudes), Math.max(...longitudes)];
+    // Room around the pins, and above Apple's logo and legal link at the foot.
+    const span = new mapkit.CoordinateSpan(Math.max(north - south, CLOSEST_SPAN) * 1.6, Math.max(east - west, CLOSEST_SPAN) * 1.4);
+    const middle = (north + south) / 2 - (north - south) * 0.08;
+    instance.setRegionAnimated(new mapkit.CoordinateRegion(new mapkit.Coordinate(middle, (east + west) / 2), span), !prefersLessMotion());
+    // `key` stands for the points.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, ready]);
+  return (
+    <div aria-label={label} className="shiori-candmap shiori-screen-only" role="region">
+      <div className="shiori-candmap-canvas" ref={container} />
+      {failed ? <p className="shiori-map-note">{failedText}</p> : null}
+    </div>
+  );
+}
