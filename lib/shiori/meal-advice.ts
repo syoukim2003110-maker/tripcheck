@@ -211,14 +211,30 @@ export function buildMealBrief(input: MealBriefInput): MealBrief | null {
       const free = minutesOf(next.arrive) - (day.legs[meal.afterStop]?.minutes ?? 0) - minutesOf(meal.start) - visitLeft;
       if (Number.isFinite(free)) minutesUntilNext = Math.max(0, Math.min(MEAL_ADVICE_LIMITS.minutes, Math.round(free)));
     }
+    // What comes just before and just after the meal, as the booklet prints
+    // it — which is not always "the stop it is listed under, then the next":
+    // a dinner back near the hotel follows the ride back (told as "after a
+    // sight, before the hotel", the advisor would describe a table beside a
+    // sight an hour's ride away); a lunch during a visit has that visit on
+    // both sides, and one eaten on arrival has it ahead.
+    const kindOf = (stop: ShioriDay["stops"][number] | undefined) => (stop ? mealStopKind(stop.place, input.sights) : null);
+    let afterKind: MealStopKind | null = kindOf(after);
+    let beforeKind: MealStopKind | null = next ? kindOf(next) : day.toHotel ? "hotel" : null;
+    if (meal.atHotel) {
+      afterKind = "hotel";
+      beforeKind = null;
+    } else if (meal.during) {
+      beforeKind = kindOf(after);
+      if (meal.onArrival) afterKind = meal.afterStop > 0 ? kindOf(day.stops[meal.afterStop - 1]) : day.fromHotel ? "hotel" : null;
+    }
     return {
       slot,
       day: day.index + 1,
       meal: meal.kind,
       time: meal.start,
       minutesUntilNext,
-      afterKind: after ? mealStopKind(after.place, input.sights) : null,
-      beforeKind: next ? mealStopKind(next.place, input.sights) : day.toHotel ? "hotel" : null,
+      afterKind,
+      beforeKind,
     };
   });
 

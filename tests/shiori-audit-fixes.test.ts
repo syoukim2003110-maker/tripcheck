@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { cafeBreakFor } from "../lib/shiori/cafes.ts";
-import { buildMealBrief, EMPTY_MEAL_PREFS, mealSights, mealSlotKey, openMealSlots } from "../lib/shiori/meal-advice.ts";
+import { buildMealBrief, EMPTY_MEAL_PREFS, mealSights, mealSlotKey, mealStopKind, openMealSlots } from "../lib/shiori/meal-advice.ts";
 import { DAY_FILLING_STAY, dayClock, daySearch, type SearchProblem } from "../lib/shiori/day-search.ts";
 import { readdirSync, readFileSync } from "node:fs";
 
@@ -845,4 +845,49 @@ test("a stop that holds a lunch hour says so beside its stay, and a lunch eaten 
   for (const key of ["mealOnArrival", "stayWithLunch"]) assert.equal(source.match(new RegExp(`^    ${key}: \\(`, "gm"))?.length, 2, key);
   assert.equal(source.match(/stayText\(stop\.stayMinutes, stop\.lunchMinutes\)/g)?.length, 2);
   assert.match(source, /meal\.onArrival \? t\.mealOnArrival\(meal\.nearName\) : t\.mealDuring\(meal\.nearName\)/);
+});
+
+test("the meal advisor is told what the meal really follows: a dinner back near the hotel comes after the hotel, not after a sight an hour's ride away; a lunch during a visit has that visit on both sides", () => {
+  const sights = mealSights(cities);
+  const briefOf = (id: string) => {
+    const { plan } = auditPlan(id);
+    const brief = buildMealBrief({ plan, sights, city: null, prefs: EMPTY_MEAL_PREFS });
+    assert.ok(brief, id);
+    return { plan, slot: (dayIndex: number, meal: "lunch" | "dinner") => brief.slots.find((entry) => entry.slot === `d${dayIndex + 1}-${meal}`)! };
+  };
+  // Was: fukuoka-2, dinner 17:46 near the hotel sent as { afterKind: "sight", beforeKind: "hotel" } while the last
+  // sight is over at 16:40, 66 minutes of riding away.
+  const fukuoka = briefOf("fukuoka-2");
+  const { day } = dayEndingAt("fukuoka-2", /^九州国立博物館$/);
+  assert.equal(dinnerOf(day)!.meal.atHotel, true);
+  assert.deepEqual([fukuoka.slot(day.index, "dinner").time, fukuoka.slot(day.index, "dinner").afterKind, fukuoka.slot(day.index, "dinner").beforeKind], ["17:46", "hotel", null]);
+  // Was: kobe-3, lunch 12:30 inside a visit from 11:54 sent as following that visit.
+  const kobe = briefOf("kobe-3");
+  const museumDay = kobe.plan.days.find((entry) => entry.stops.some((stop) => /アンパンマン/.test(stop.place.name)))!;
+  const inside = kobe.slot(museumDay.index, "lunch");
+  assert.deepEqual([inside.time, inside.afterKind, inside.beforeKind], ["12:30", "sight", "sight"]);
+  // In every trip of the audit, by the three shapes a meal has.
+  let hotel = 0;
+  let during = 0;
+  for (const scenario of scenarios) {
+    const { plan, slot } = briefOf(scenario.id);
+    for (const entry of openMealSlots(plan)) {
+      const sent = slot(entry.day.index, entry.meal.kind);
+      const where = `${scenario.id} ${entry.slot}`;
+      const under = entry.day.stops[entry.meal.afterStop];
+      const kind = (stop: typeof under | undefined) => (stop ? mealStopKind(stop.place, sights) : null);
+      if (entry.meal.atHotel) {
+        hotel += 1;
+        assert.deepEqual([sent.afterKind, sent.beforeKind], ["hotel", null], where);
+      } else if (entry.meal.during) {
+        during += 1;
+        assert.equal(sent.beforeKind, kind(under), where);
+        assert.equal(sent.afterKind, entry.meal.onArrival ? (entry.meal.afterStop > 0 ? kind(entry.day.stops[entry.meal.afterStop - 1]) : entry.day.fromHotel ? "hotel" : null) : kind(under), where);
+      } else {
+        const next = entry.day.stops[entry.meal.afterStop + 1];
+        assert.deepEqual([sent.afterKind, sent.beforeKind], [kind(under), next ? kind(next) : entry.day.toHotel ? "hotel" : null], where);
+      }
+    }
+  }
+  assert.ok(hotel >= 20 && during >= 5, `${hotel} dinners near the hotel, ${during} lunches during a visit`);
 });
