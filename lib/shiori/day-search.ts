@@ -144,7 +144,13 @@ const LONG_DAY = 450;
 const PACKED_SPAN = 480;
 /** A day that starts late so as not to wait for its dinner still sits down to a chosen lunch by 13:00; a lunch during a long visit starts by then too. */
 export const LATE_LUNCH = 13 * 60;
-/** A stay this long claims the day (a theme park): it opens it, unless that costs a meal or the evening. */
+/**
+ * A stay this long claims the day (a theme park): it opens it. On a day that
+ * cannot be kept in any order it still does — the park at opening and the
+ * rest after it is the day a traveller would have, not the park from 10:53
+ * after another sight. It gives way only to an order that can be kept, or
+ * that keeps a chosen meal or an entered time the day would otherwise lose.
+ */
 export const DAY_FILLING_STAY = 300;
 /** Up to this many ordinary sights a day's order is found exactly; no real day has more. */
 const EXACT_ORDER_STOPS = 9;
@@ -674,6 +680,17 @@ export function daySearch(
   };
 
   /**
+   * Whether the day that opens with its day-filling stay gives way to the
+   * best order found without that rule: only when that order can be kept, or
+   * breaks less of what the traveller entered, or misses fewer chosen meals.
+   * Ten minutes less on a day that runs late either way is no reason to
+   * enter a theme park at eleven.
+   */
+  const openerYields = (opened: Described, free: Described) => (
+    free.keepable || free.broken < opened.broken || (free.broken === opened.broken && free.missed < opened.missed)
+  );
+
+  /**
    * The cheapest way to visit every subset of `nodes` starting where
    * `first` says, ending at each possible last stop (Held–Karp). One table
    * answers every question about one day's sights.
@@ -923,9 +940,9 @@ export function daySearch(
    * The best order for one day's places. A chosen dinner closes the day, a
    * restaurant chosen for lunch is reached while it serves, and with a
    * hotel the day starts and ends at its door (without one it may start and
-   * end anywhere). A stay that fills the day opens it — when the day can be
-   * kept that way; if that order misses a meal or runs late, any order may
-   * be the day's.
+   * end anywhere). A stay that fills the day opens it; another order is
+   * the day's only when it can be kept, or keeps a meal that order misses
+   * (see openerYields).
    */
   function solveDay(ids: readonly number[], cls = 0): Solved {
     const plainKey = keyOf(ids);
@@ -1030,7 +1047,8 @@ export function daySearch(
       && (lunches.length >= 2 || ways <= EXACT_ARRANGEMENTS) && (ways <= SMALL_DAY_ARRANGEMENTS || !overfull)
     ) {
       // The restaurants split the day. With the long stay first; and if the
-      // day cannot be kept that way, with it wherever it fits. Two lunch
+      // day cannot be kept that way, with it wherever the day can be kept or
+      // keeps a meal more. Two lunch
       // restaurants on one day (more restaurants than days): every
       // arrangement that seats both, and when none does — the day misses a
       // meal whatever its order — the order found by nearness below.
@@ -1040,7 +1058,11 @@ export function daySearch(
       best.unkept = Math.min(best.unkept, first.unkept);
       if (head >= 0 && !best.day?.keepable) {
         const free = arrangements(-1, [head, ...lunches], dinners, plain, { cost: best.day?.orderCost ?? Infinity }, strict);
-        if (free.order) consider(free.order);
+        if (free.order) {
+          const candidate = describe(free.order);
+          if (!candidate.keepable && candidate.base < best.unkept) best.unkept = candidate.base;
+          if (best.day === null || (openerYields(best.day, candidate) && better(candidate, best.day))) best.day = candidate;
+        }
         best.unkept = Math.min(best.unkept, free.unkept);
       }
       if (strict && !best.day?.keepable) roughly();
@@ -1116,7 +1138,8 @@ export function daySearch(
    * stop still to come, already cost more than it does. (The nearest stop is
    * tried first, so a good order is found early and most others are cut.)
    * Dinners nobody booked come after the sights nobody booked; a stay that
-   * fills the day comes before them when such an order can be kept.
+   * fills the day comes before them, unless another order can be kept or
+   * breaks less (see openerYields).
    */
   function framedOrders(ids: readonly number[], cls: number, seed: Described | null): Described {
     const total = ids.length;
@@ -1322,6 +1345,10 @@ export function daySearch(
     if (openers) {
       const opened = search(true, start(true));
       found = opened?.keepable ? opened : search(false, opened ?? start(false));
+      if (opened && found && found.order !== opened.order) {
+        const told = (day: Found) => (seed && day.order === seed.order ? seed : describe(day.order, cls));
+        if (!openerYields(told(opened), told(found))) found = opened;
+      }
     } else found = search(false, start(false));
     return seed && found!.order === seed.order ? seed : describe(found!.order, cls);
   }
@@ -1390,8 +1417,8 @@ export function daySearch(
    * one whose lunch hour falls after another stop, or that takes a taxi
    * the shortest route avoids. So a day of up to eight stops whose shortest
    * routes did not all fit is tried in every order before it is printed.
-   * Dinners come last; a stay that fills the day comes first when such an
-   * order can be kept.
+   * Dinners come last; a stay that fills the day comes first, unless
+   * another order can be kept or keeps a meal more (see openerYields).
    */
   function everyOrder(start: Solved): Described {
     const ids = start.order;
@@ -1509,6 +1536,10 @@ export function daySearch(
     if (openers.size > 0) {
       const opened = search(true, opensWithStay ? from(start) : null);
       found = opened?.keepable ? opened : search(false, opened && (!opensWithStay || opened.order !== start.order) && opened.cost <= start.orderCost ? opened : from(start));
+      if (opened && found && found.order !== opened.order) {
+        const told = (day: Found) => (day.order === start.order ? start : describe(day.order));
+        if (!openerYields(told(opened), told(found))) found = opened;
+      }
     } else found = search(false, from(start));
     return found && found.order !== start.order ? describe(found.order) : start;
   }

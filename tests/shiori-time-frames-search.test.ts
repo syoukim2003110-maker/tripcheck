@@ -291,6 +291,7 @@ function reference(problem: SearchProblem, order: readonly number[], first: bool
   return {
     broken,
     kept: broken === 0 && overrun === 0 && clock.missed === 0,
+    missed: clock.missed,
     travel,
     cost: travel + clock.lunchWait / 2 + fine(overrun) + clock.missed * 1000 + (broken > 0 ? 1000 * clock.late + fine(clock.over) : 0),
     arrive: clock.arrive,
@@ -321,9 +322,12 @@ function bestByBruteForce(problem: SearchProblem, ids: readonly number[], first:
     }
     return least!;
   };
-  // A stay that fills the day opens it when the day can be kept that way; else any order may be the day's.
+  // A stay that fills the day opens it — also on a day no order keeps. Another order is the day's only
+  // when it can be kept, or breaks less of what was entered, or misses fewer chosen meals.
   const opened = leastOf(true);
-  return opened.kept ? opened : leastOf(false);
+  if (opened.kept) return opened;
+  const free = leastOf(false);
+  return free.kept || free.broken < opened.broken || (free.broken === opened.broken && free.missed < opened.missed) ? free : opened;
 }
 
 function randomDay(random: (below: number) => number, count: number, days: number) {

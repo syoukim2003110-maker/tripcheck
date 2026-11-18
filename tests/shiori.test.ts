@@ -426,7 +426,7 @@ function table(count: number, minutes: (from: number, to: number) => number) {
   return Array.from({ length: count }, (_, from) => Array.from({ length: count }, (_, to) => (from === to ? 0 : minutes(from, to))));
 }
 
-test("the order of a day is the cheapest of all orders, whatever is fixed in it", () => {
+test("the order of a day is the cheapest of all orders, whatever is fixed in it, and a day-filling stay still opens a day that no order keeps", () => {
   // Random small days — with and without a hotel, a lunch restaurant, a
   // dinner, a day-filling stay — against every order tried one by one.
   let state = 7;
@@ -464,12 +464,14 @@ test("the order of a day is the cheapest of all orders, whatever is fixed in it"
       });
       return day.travel + waiting / 2 + (day.overrun > 0 ? 500 + day.overrun * 10 + (day.overrun * day.overrun) / 6 : 0) + day.missed * 1000;
     };
-    // A dinner is last. A day-filling stay is first when the day can be kept
-    // that way; when it cannot, every other order is a candidate too.
+    // A dinner is last. A day-filling stay is first — also on a day no order
+    // keeps; another order is the day's only when it can be kept, or misses
+    // fewer chosen meals.
     const rank = (stop: number, opens: boolean) => (stops[stop].meal === "dinner" ? 2 : opens && !stops[stop].meal && stops[stop].stay >= 300 ? 0 : 1);
     const leastOf = (opens: boolean) => {
       let least = Infinity;
       let kept = false;
+      let missed = 0;
       const order: number[] = [];
       const visit = () => {
         if (order.length === count) {
@@ -477,6 +479,7 @@ test("the order of a day is the cheapest of all orders, whatever is fixed in it"
           if (costOf(day) < least) {
             least = costOf(day);
             kept = day.overrun === 0 && day.missed === 0;
+            missed = day.missed;
           }
           return;
         }
@@ -488,10 +491,11 @@ test("the order of a day is the cheapest of all orders, whatever is fixed in it"
         }
       };
       visit();
-      return { least, kept };
+      return { least, kept, missed };
     };
     const opened = leastOf(true);
-    const least = opened.kept ? opened.least : leastOf(false).least;
+    const free = opened.kept ? opened : leastOf(false);
+    const least = free.kept || free.missed < opened.missed ? free.least : opened.least;
     // (Costed on the usual clock: the printed day may start later, so as not to wait at a door.)
     const cost = costOf(search.describe(found.order));
     assert.ok(Math.abs(cost - least) < 1e-6, `round ${round}: found ${cost}, best ${least}, order ${found.order.join(">")}`);

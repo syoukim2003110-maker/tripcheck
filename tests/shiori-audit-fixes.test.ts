@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { cafeBreakFor } from "../lib/shiori/cafes.ts";
 import { buildMealBrief, EMPTY_MEAL_PREFS, mealSights, mealSlotKey, openMealSlots } from "../lib/shiori/meal-advice.ts";
-import { DAY_FILLING_STAY, dayClock } from "../lib/shiori/day-search.ts";
+import { DAY_FILLING_STAY, dayClock, daySearch, type SearchProblem } from "../lib/shiori/day-search.ts";
 import { buildShioriPlan, departureAfterStop, dinnerHourAt, dinnerSlot, nobodySleepsAt, type ShioriDay } from "../lib/shiori/plan.ts";
 import { shioriStayMinutes } from "../lib/shiori/stay.ts";
 import { auditPlan, cities, railOf, scenarioPlaces, scenarios } from "../scripts/audit-scenarios.ts";
@@ -366,4 +366,41 @@ test("the meal advisor is told how long a lunch during a visit has before a book
   const next = island.day.stops[island.index + 1];
   assert.equal(slot.minutesUntilNext, minutesOfClock(next.arrive) - island.day.legs[island.index].minutes - minutesOfClock("12:30") - (minutesOfClock(island.stop.leave) - minutesOfClock("13:30")));
   assert.equal(slot.minutesUntilNext, 70);
+});
+
+test("a theme park that fills the day is entered at opening on a day too full to keep, and the rest follows it: not Disneyland from 10:53 after the Skytree", () => {
+  // Were: 09:08–10:08 東京スカイツリー, 10:53–18:53 東京ディズニーランド; and 09:20–11:20 海遊館, 11:51–19:51 ユニバーサル・スタジオ・ジャパン.
+  for (const [id, park, then] of [["tokyo-2", /東京ディズニーランド/, "東京スカイツリー"], ["osaka-2", /ユニバーサル/, "海遊館"], ["osaka-1", /ユニバーサル/, null]] as const) {
+    const found = dayWith(id, park);
+    assert.equal(found.index, 0, `${id}: ${found.day.stops.map((stop) => `${stop.arrive} ${stop.place.name}`).join(", ")}`);
+    assert.ok(found.stop.arrive <= "09:30", `${id}: in at ${found.stop.arrive}`);
+    assert.equal(found.stop.stayMinutes, 480, id);
+    if (then) assert.deepEqual(found.day.stops.map((stop) => stop.place.name), [found.stop.place.name, then], id);
+  }
+  // In every trip of the audit: a stay that fills the day is anywhere but first only on a day that is kept that way.
+  for (const scenario of scenarios) {
+    for (const day of auditPlan(scenario.id).plan.days) {
+      const late = day.stops.findIndex((stop, index) => index > 0 && !stop.place.meal && stop.stayMinutes >= DAY_FILLING_STAY && day.stops.slice(0, index).some((before) => before.stayMinutes < DAY_FILLING_STAY));
+      if (late >= 0) assert.equal(day.runsLate, false, `${scenario.id} day ${day.index + 1}: ${day.stops[late].place.name} from ${day.stops[late].arrive}`);
+    }
+  }
+});
+
+test("the stay that fills the day gives way only to an order that can be kept or that keeps a chosen meal, never to ten minutes on a day that runs late either way", () => {
+  const stop = (stay: number, meal: "lunch" | null = null) => ({ stay, meal, day: null });
+  const order = (problem: SearchProblem) => {
+    const day = daySearch(problem).choose(1).days[0];
+    return { order: day.order, arrive: day.arrive, leave: day.leave, missed: day.missed };
+  };
+  // A park of eight hours forty minutes from the hotel and a tower ten minutes from it, thirty-five apart. Tower first
+  // is over ten minutes sooner; either way the day runs past 18:00. The park is entered at 09:20, not at 10:35.
+  const full = order({ stops: [stop(480), stop(60)], minutes: [[0, 35], [35, 0]], km: [[0, 9], [9, 0]], hotel: { out: [40, 10], back: [40, 10], km: [9, 3] } });
+  assert.deepEqual([full.order, full.arrive[0], full.leave[1]], [[0, 1], 9 * 60 + 20, 19 * 60 + 5]);
+  // A six-hour park and a two-hour sight that fit the day only with the sight first (over at 18:00 sharp): the day that can be kept is the day.
+  const fits = order({ stops: [stop(360), stop(120)], minutes: [[0, 30], [30, 0]], km: [[0, 5], [5, 0]], hotel: { out: [50, 40], back: [50, 10], km: [9, 3] } });
+  assert.deepEqual([fits.order, fits.leave[1]], [[1, 0], 18 * 60]);
+  // A five-hour stay, a restaurant chosen for lunch and a long sight: no order is over by 18:00, but with the stay first
+  // the restaurant is reached after its kitchen has closed. The order that eats the chosen lunch is the day.
+  const meal = order({ stops: [stop(300), stop(60, "lunch"), stop(200)], minutes: [[0, 30, 10], [30, 0, 10], [10, 10, 0]], km: [[0, 5, 2], [5, 0, 2], [2, 2, 0]], hotel: null });
+  assert.deepEqual([meal.order, meal.missed], [[2, 1, 0], 0]);
 });
