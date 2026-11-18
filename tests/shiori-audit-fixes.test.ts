@@ -470,7 +470,8 @@ test("the meal advisor is told how long a lunch during a visit has before a book
 test("a theme park that fills the day is entered at opening on a day too full to keep, and the rest follows it: not Disneyland from 10:53 after the Skytree", () => {
   // Were: 09:08–10:08 東京スカイツリー, 10:53–18:53 東京ディズニーランド; and 09:20–11:20 海遊館, 11:51–19:51 ユニバーサル・スタジオ・ジャパン.
   // (The Skytree shared the park's day while the two were 35 minutes apart by taxi; by train the museum at Ueno does.)
-  for (const [id, park, then] of [["tokyo-2", /東京ディズニーランド/, "東京国立博物館"], ["osaka-2", /ユニバーサル/, "海遊館"], ["osaka-1", /ユニバーサル/, null]] as const) {
+  // (Packed anyway, osaka-2's park shares its day with 住吉大社 since 大阪城公園 is seen at 大阪城 and 海遊館 fits another day.)
+  for (const [id, park, then] of [["tokyo-2", /東京ディズニーランド/, "東京国立博物館"], ["osaka-2", /ユニバーサル/, "住吉大社"], ["osaka-1", /ユニバーサル/, null]] as const) {
     const found = dayWith(id, park);
     assert.equal(found.index, 0, `${id}: ${found.day.stops.map((stop) => `${stop.arrive} ${stop.place.name}`).join(", ")}`);
     assert.ok(found.stop.arrive <= "09:30", `${id}: in at ${found.stop.arrive}`);
@@ -772,7 +773,11 @@ test("a walk to a quarter named after a hill is a walk, and the way up a hill be
   // 嵐山 is the quarter at the foot of the hill, whatever the catalogue calls it.
   assert.equal(hardToReach(sightOf("kyoto", "嵐山")), null);
   assert.equal(hardToReach({ kind: "mountain", name: "Arashiyama" }), null);
-  const arashiyama = buildShioriPlan({ places: [sightOf("kyoto", "天龍寺"), sightOf("kyoto", "嵐山")], days: 1, hotel: null, locale: "ja" }, { rail: railOf("kyoto"), cities }).days[0].legs[0];
+  // (天龍寺 is seen during a visit to 嵐山 of three hours, as a temple of the quarter: one stop. Given a longer stay than
+  // its usual hour it is a stop of its own, and the way between them is a walk.)
+  const together = buildShioriPlan({ places: [sightOf("kyoto", "天龍寺"), sightOf("kyoto", "嵐山")], days: 1, hotel: null, locale: "ja" }, { rail: railOf("kyoto"), cities }).days[0];
+  assert.deepEqual(together.stops.map((stop) => [stop.place.name, stop.within?.map((place) => place.name)]), [["嵐山", ["天龍寺"]]]);
+  const arashiyama = buildShioriPlan({ places: [{ ...sightOf("kyoto", "天龍寺"), stayMinutes: 90 }, sightOf("kyoto", "嵐山")], days: 1, hotel: null, locale: "ja" }, { rail: railOf("kyoto"), cities }).days[0].legs[0];
   assert.equal(arashiyama.mode, "walk");
   assert.equal(arashiyama.climb, undefined);
   // 若草山 is a hill of 342 m twenty minutes of level walking from 春日大社: not a level walk, and no bus either.
@@ -1442,12 +1447,15 @@ test("the trips of the audit are planned with the usual stays of the sight notes
   assert.deepEqual([paris.leftOut, paris.days[0].runsLate, paris.notices.find((notice) => notice.kind === "left-out")], [["ルーヴル美術館"], false, { kind: "left-out", places: [{ placeId: "wikidata-Q19675", name: "ルーヴル美術館" }], days: 2 }]);
 });
 
-test("in the trips of the audit as first shown, a palace or a large zoo opens its day and the night-life street closes it, by the hours of the sight notes: バンコク 王宮 from 09:00 and カオサン通り from 17:30, not カオサン通り at 09:00 and 王宮 until 16:14", () => {
+test("in the trips of the audit as first shown, a palace or a large zoo opens its day and the night-life street closes it, by the hours of the sight notes: バンコク 王宮 first, with エメラルド仏 seen inside it, and カオサン通り from 17:30, not カオサン通り at 09:00 and 王宮 until 16:14", () => {
   const shown = (id: string) => auditPlanShown(id).plan.days.map((day) => day.stops.map((stop) => ({ name: stop.place.name, habit: habitOf(stop.place), arrive: minutesOfClock(stop.arrive) + (stop.arriveNextDay ? 1_440 : 0), leave: minutesOfClock(stop.leave) + (stop.leaveNextDay ? 1_440 : 0), evening: stop.evening === true })));
   // Was (with the usual stays, before the notes' hours): 09:00 カオサン通り, 10:19 バンコク国立博物館, 13:44–16:14 王宮, 16:26 エメラルド仏.
   const bangkok = shown("bangkok-1")[0];
-  assert.deepEqual(bangkok.map((stop) => stop.name), ["王宮", "エメラルド仏", "バンコク国立博物館", "カオサン通り"]);
-  assert.deepEqual([bangkok[0].arrive, bangkok.at(-1)!.arrive, bangkok.at(-1)!.evening], [9 * 60, 17 * 60 + 30, true]);
+  // (エメラルド仏, inside the palace, is seen during its visit since parts of a place are: one stop of 150 minutes, not 225.
+  // With that hour and a quarter less, the day that waits for its evening sets out later: the palace from 10:05.)
+  assert.deepEqual(bangkok.map((stop) => stop.name), ["王宮", "バンコク国立博物館", "カオサン通り"]);
+  assert.deepEqual(auditPlanShown("bangkok-1").plan.days[0].stops[0].within?.map((place) => place.name), ["エメラルド仏"]);
+  assert.deepEqual([bangkok[0].arrive, bangkok[0].leave <= 13 * 60, bangkok.at(-1)!.arrive, bangkok.at(-1)!.evening], [10 * 60 + 5, true, 17 * 60 + 30, true]);
   // Was: kyoto-2 day 2, 京都御所 first already; it stays first, now as a place of the first half of the day.
   assert.deepEqual([shown("kyoto-2")[1][0].name, shown("kyoto-2")[1][0].habit], ["京都御所", "early"]);
   // Over the 63 trips: places of the first half of the day still visited after 16:00, places with a door first before
@@ -1468,7 +1476,9 @@ test("in the trips of the audit as first shown, a palace or a large zoo opens it
   }
   // (Daytime places begun at 16:30 or later: 12, not 16, since a tower, a theme park or a mall is no longer a daytime
   // place by a note of the daytime: the Eiffel Tower and 通天閣 may close their days.)
-  assert.deepEqual([firstHalfLate, ticketedFirst, daytimeLate], [6, 3, 12]);
+  // (2, not 6, places of the first half of the day after 16:00 since a listing or a park is seen through its parts:
+  // nikko's 日光の社寺 no longer stands beside 日光東照宮 and 輪王寺, nor 大阪城公園 beside 大阪城.)
+  assert.deepEqual([firstHalfLate, ticketedFirst, daytimeLate], [2, 3, 11]);
   // (17,765 with the notes' hours; 17,805 since nikko-2 holds 日光の社寺 too, which it left out before; 17,815 since a
   // tower may close its day: ten minutes more in all, three of them for the Eiffel Tower last in paris-1.)
   assert.ok(total <= 17_815, `${total} minutes on the way`);

@@ -69,6 +69,14 @@ export const OVERRIDES: Record<string, { set: Partial<Record<keyof SightNote, Si
   Q30926295: { set: { partOf: null }, why: "本光寺 is 3.4 km from 卯辰山山麓寺院群, not one of its temples" },
   Q864752: { set: { partOf: null }, why: "the Hanoi flag tower stands on its own; the military history museum it was part of has moved 9 km away" },
   Q715264: { set: { partOf: null }, why: "Operation Anthropoid is an event, not a part of the cathedral 5.7 km away where it ended" },
+  Q220274: { set: { partOf: null }, why: "the university's zoological museum is a building of its own 2 km from the natural history museum it now belongs to: a visit to one is not a visit to the other" },
+  // The drafts disagreed on which way round these lie (one called 日光の社寺 part of 日光東照宮, the castle park part
+  // of the castle, the island part of its shrine), so no note was kept; a place inside another is the smaller one.
+  Q696641: { set: { partOf: "Q1063133" }, why: "日光東照宮 is one of the shrines and temples of 日光の社寺" },
+  Q1348249: { set: { partOf: "Q1063133" }, why: "輪王寺 is one of the shrines and temples of 日光の社寺" },
+  Q701927: { set: { partOf: "Q1063133" }, why: "日光二荒山神社 is one of the shrines and temples of 日光の社寺" },
+  Q321242: { set: { partOf: "Q150118" }, why: "大阪城 stands in 大阪城公園" },
+  Q191763: { set: { partOf: "Q875301" }, why: "厳島神社 is on 厳島 (Miyajima)" },
   Q859471: { set: { access: null }, why: "only the inner wholesale market of 築地市場 moved to Toyosu; the outer market (場外市場) still trades and is a usual morning visit" },
 };
 

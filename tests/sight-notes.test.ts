@@ -39,7 +39,8 @@ test("a stay is kept only when both drafts are within half again of each other, 
       assert.ok(Math.max(one.stay, two.stay) / Math.min(one.stay, two.stay) <= 1.5, q);
     }
     if (note.hours !== undefined) assert.ok(one.hours === note.hours && two.hours === note.hours, q);
-    if (note.partOf !== undefined) {
+    // (A reviewer's correction, with its reason, is the build script's OVERRIDES: see below.)
+    if (note.partOf !== undefined && OVERRIDES[q]?.set.partOf === undefined) {
       assert.ok(one.partOf === note.partOf && two.partOf === note.partOf && note.partOf !== q, q);
       assert.equal(cityOf.get(note.partOf), cityOf.get(q), q);
     }
@@ -297,6 +298,47 @@ test("a large part of another place is a stop of its own: 東大寺 in 奈良公
   assert.equal(foldedParts(nara).size, 0);
   assert.deepEqual(buildShioriPlan({ places: nara, days: 1, hotel: null, locale: "ja" }, { cities }).days[0].stops.length, 2);
   assert.equal(foldedParts([placeFromSight(sight("tokyo", "上野公園"), "ja"), placeFromSight(sight("tokyo", "上野動物園"), "ja")]).size, 0);
+});
+
+test("a listing seen through its parts is not hours more on top of them: 日光の社寺 on the card of 日光東照宮, 大阪城公園 on 大阪城's, and nikko's day is over by four with 華厳滝 in it", () => {
+  // The drafts disagreed on which way round these lie; the build script's overrides say, each with its reason.
+  assert.deepEqual(["日光東照宮", "輪王寺", "日光二荒山神社"].map((name) => sightNote(sight("nikko", name).q)?.partOf), ["Q1063133", "Q1063133", "Q1063133"]);
+  assert.equal(sightNote(sight("osaka", "大阪城").q)?.partOf, sight("osaka", "大阪城公園").q);
+  const [listing, shrine, temple] = [nikko("日光の社寺"), nikko("日光東照宮"), nikko("輪王寺")];
+  assert.deepEqual([listing.stayMinutes, shrine.stayMinutes, temple.stayMinutes], [180, 120, 60]);
+  assert.deepEqual([...foldedParts([temple, listing, shrine])], [[listing.id, shrine.id]]);
+  const plan = buildShioriPlan({ places: [nikko("華厳滝"), temple, listing, shrine], days: 1, hotel: null, locale: "ja" }, { cities });
+  const stops = plan.days[0].stops;
+  assert.deepEqual(stops.map((stop) => [stop.place.name, stop.within?.map((place) => place.name)]).filter(([, within]) => within), [["日光東照宮", ["日光の社寺"]]]);
+  // Nothing is added for it: the shrine is its own two hours.
+  assert.equal(stops.find((stop) => stop.place.name === "日光東照宮")!.stayMinutes, 120);
+  assert.deepEqual([plan.leftOut, plan.days[0].runsLate], [[], false]);
+  assert.ok(plan.days[0].stops.at(-1)!.leave <= "16:00", plan.days[0].stops.at(-1)!.leave);
+  // Its parts on the list taking less than its time, the listing is the stop — and 輪王寺, an hour of its three, is seen in it.
+  assert.deepEqual([...foldedParts([listing, temple])], [[temple.id, listing.id]]);
+  // The park around the castle: the castle takes all of the park's time.
+  const osaka = (name: string) => placeFromSight(sight("osaka", name), "ja");
+  assert.deepEqual([...foldedParts([osaka("大阪城公園"), osaka("大阪城")])], [[osaka("大阪城公園").id, osaka("大阪城").id]]);
+});
+
+test("a part that takes at most half its place's time is seen during the visit: エメラルド仏 in 王宮, one stop of 150 minutes, not 225; a part as long as its park is a stop of its own", () => {
+  const bangkok = (name: string) => placeFromSight(sight("bangkok", name), "ja");
+  const [palace, buddha] = [bangkok("王宮"), bangkok("エメラルド仏")];
+  assert.deepEqual([palace.stayMinutes, buddha.stayMinutes], [150, 75]);
+  const plan = buildShioriPlan({ places: [buddha, palace], days: 1, hotel: null, locale: "ja" }, { cities });
+  assert.deepEqual(plan.days[0].stops.map((stop) => [stop.place.name, stop.stayMinutes, stop.within?.map((place) => place.name)]), [["王宮", 150, ["エメラルド仏"]]]);
+  // Given a longer stay than its note's, booked, or on another day: a stop of its own.
+  assert.equal(foldedParts([palace, { ...buddha, reserve: { day: 1, time: "10:00" } }]).size, 0);
+  assert.equal(foldedParts([palace, { ...buddha, day: 2 }]).size, 0);
+  const kyoto = (name: string) => placeFromSight(sight("kyoto", name), "ja");
+  assert.deepEqual([...foldedParts([kyoto("嵐山"), kyoto("天龍寺")])], [[kyoto("天龍寺").id, kyoto("嵐山").id]]);
+  assert.equal(foldedParts([kyoto("嵐山"), { ...kyoto("天龍寺"), stayMinutes: 75 }]).size, 0);
+  // More than half — 東大寺, ninety minutes of 奈良公園's hundred and twenty — is a stop of its own (see below).
+  assert.equal(foldedParts([placeFromSight(sight("nara", "奈良公園"), "ja"), placeFromSight(sight("nara", "東大寺"), "ja")]).size, 0);
+  // A part whose place's point is farther than SMALL_PART_KM — the middle of 厳島, 2.5 km from 厳島神社 by the pier — is a stop of its own.
+  const hiroshima = (name: string) => placeFromSight(sight("hiroshima", name), "ja");
+  assert.equal(sightNote(hiroshima("厳島神社").id)?.partOf, sight("hiroshima", "厳島").q);
+  assert.equal(foldedParts([hiroshima("厳島"), hiroshima("厳島神社")]).size, 0);
 });
 
 test("a part the traveller booked, chose as a meal, lengthened or put on another day than its place is a stop of its own", () => {

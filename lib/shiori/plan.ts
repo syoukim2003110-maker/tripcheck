@@ -2226,43 +2226,106 @@ export const SMALL_PART_STAY = 30;
 /**
  * …and when it is no farther from that place than this, as the crow flies: a
  * statue in a large park, a funicular up a mountain, but not a temple across
- * town that a note wrongly calls part of a temple group.
+ * town that a note wrongly calls part of a temple group. (The same for a
+ * larger part. A place whose point on the map is far from its parts — the
+ * middle of an island, the top of a mountain — keeps them as stops of their
+ * own: the way to its point is not the way to them.)
  */
 export const SMALL_PART_KM = 2;
+/**
+ * A place that is a listing or a precinct more than a place of its own — a
+ * group of shrines and temples, the park around a castle, an old quarter, an
+ * archaeological site — is seen through its parts when they take its time.
+ */
+const UMBRELLA_KIND = /historic site|heritage|castle park|historical region|archaeological site/;
+
+const qOf = (place: ShioriPlace) => (place.id.startsWith("wikidata-") ? place.id.slice("wikidata-".length) : null);
+
+/** The nearest place on the list that this one lies inside, by the sight notes. */
+function containerOf(part: ShioriPlace, byQ: ReadonlyMap<string, ShioriPlace>): ShioriPlace | undefined {
+  const seen = new Set<string>();
+  for (let q = sightNote(part.id)?.partOf; q && !seen.has(q); q = sightNote(q)?.partOf) {
+    seen.add(q);
+    const main = byQ.get(q);
+    if (main) return main;
+  }
+  return undefined;
+}
 
 /**
- * Which places on the list are seen during another place's visit: a sight
- * whose note says it lies inside another sight (sight-notes.ts: 眠り猫 in
- * 日光東照宮, 守礼門 in 首里城, 原爆の子の像 in 平和記念公園) when that place
- * — or the place that one lies inside — is on the list too, and the part is
- * small: a stay of SMALL_PART_STAY or less, within SMALL_PART_KM. Part id → the id of the stop it
- * is seen at.
+ * Whether a part may be seen during its place's visit at all: not booked,
+ * not a meal, not on another day than the place, and — past a small part's
+ * stay — not given a longer stay than its note's.
+ */
+const foldable = (part: ShioriPlace, main: ShioriPlace) => {
+  const noted = sightNote(part.id)?.stay;
+  return !part.reserve && !part.meal && (typeof part.day !== "number" || part.day === main.day) && !(noted !== undefined && stayOf(part) > Math.max(noted, SMALL_PART_STAY));
+};
+
+/**
+ * Which places on the list are seen during another place's visit, by the
+ * sight notes about which place lies inside which. Part id → the id of the
+ * stop it is seen at.
  *
- * A large part (a temple or a museum in a park: 東大寺 in 奈良公園, 上野動物園
- * in 上野公園) is a stop of its own, as is a part the traveller booked, chose
- * as a meal, gave a longer stay or put on another day than its place.
+ * - A small part — a stay of SMALL_PART_STAY or less, within SMALL_PART_KM:
+ *   眠り猫 in 日光東照宮, 守礼門 in 首里城, 原爆の子の像 in 平和記念公園 — is
+ *   seen during the visit to the place it lies inside.
+ * - A listing or a precinct (UMBRELLA_KIND) whose larger parts on the list
+ *   take all of its stay is seen through them, on the card of the longest:
+ *   日光の社寺, which is 日光東照宮, 輪王寺 and 日光二荒山神社, is not three
+ *   hours more on top of them; 大阪城公園 is seen at 大阪城.
+ * - Otherwise larger parts that take together at most half their place's
+ *   stay are seen during the place's visit (the shortest first): エメラルド仏
+ *   in 王宮, 天龍寺 in 嵐山, as the one visit they are.
+ * - A larger part is counted only within SMALL_PART_KM of its place.
+ *
+ * Anything else — a temple or a museum in a park that takes as long as the
+ * park (東大寺 in 奈良公園, 上野動物園 in 上野公園) — is a stop of its own, as
+ * is a part the traveller booked, chose as a meal or put on another day than
+ * its place, or a small part given a longer stay. Nothing is added to a
+ * place's stay for a larger part seen in it.
  */
 export function foldedParts(places: readonly ShioriPlace[]): Map<string, string> {
   const byQ = new Map<string, ShioriPlace>();
-  for (const place of places) if (place.id.startsWith("wikidata-")) byQ.set(place.id.slice("wikidata-".length), place);
+  for (const place of places) {
+    const q = qOf(place);
+    if (q) byQ.set(q, place);
+  }
   const into = new Map<string, string>();
+  const large = new Map<string, ShioriPlace[]>();
   for (const part of places) {
-    if (part.meal || part.reserve || stayOf(part) > SMALL_PART_STAY) continue;
-    // The nearest place on the list that this one lies inside.
-    let main: ShioriPlace | undefined;
-    const seen = new Set<string>();
-    for (let q = sightNote(part.id)?.partOf; q && !seen.has(q) && !main; q = sightNote(q)?.partOf) {
-      seen.add(q);
-      main = byQ.get(q);
-    }
+    if (part.meal) continue;
+    const main = containerOf(part, byQ);
     if (!main || main.id === part.id || main.meal) continue;
-    if (straightKm(part, main) > SMALL_PART_KM) continue;
-    if (typeof part.day === "number" && part.day !== main.day) continue;
-    into.set(part.id, main.id);
+    const km = straightKm(part, main);
+    if (stayOf(part) <= SMALL_PART_STAY) {
+      if (foldable(part, main) && km <= SMALL_PART_KM) into.set(part.id, main.id);
+    } else if (km <= SMALL_PART_KM) {
+      large.set(main.id, [...(large.get(main.id) ?? []), part]);
+    }
+  }
+  const own = new Map(places.map((place) => [place.id, place]));
+  for (const [id, inside] of large) {
+    const main = own.get(id)!;
+    if (into.has(id)) continue;
+    if (!main.reserve && UMBRELLA_KIND.test((main.kind ?? "").toLowerCase()) && inside.reduce((sum, part) => sum + stayOf(part), 0) >= stayOf(main)) {
+      // (At the longest of its parts on its day; of two as long, the first on the list.)
+      const host = inside.filter((part) => typeof main.day !== "number" || part.day === main.day).reduce<ShioriPlace | null>((best, part) => (!best || stayOf(part) > stayOf(best) ? part : best), null);
+      if (host) {
+        into.set(id, host.id);
+        continue;
+      }
+    }
+    let taken = 0;
+    for (const part of [...inside].sort((a, b) => stayOf(a) - stayOf(b))) {
+      if (!foldable(part, main) || (taken + stayOf(part)) * 2 > stayOf(main)) continue;
+      taken += stayOf(part);
+      into.set(part.id, main.id);
+    }
   }
   // A place seen inside a place that is itself seen inside a third is seen at the third. (Places said to lie
   // inside each other in a ring — no note does — are each a stop of their own: none of them is lost.)
-  const resolved = new Map<string, string>();
+  const folds = new Map<string, string>();
   for (const [part, main] of into) {
     let end = main;
     const path = new Set([part]);
@@ -2270,21 +2333,22 @@ export function foldedParts(places: readonly ShioriPlace[]): Map<string, string>
       path.add(end);
       end = into.get(end)!;
     }
-    if (!path.has(end)) resolved.set(part, end);
+    if (!path.has(end)) folds.set(part, end);
   }
-  return resolved;
+  return folds;
 }
 
 /**
- * The booklet for a list. A small part of another place on the list
- * (foldedParts) is seen during that place's visit: it is planned as the one
- * stop it is, and named on that stop (`within`). Every place stays accounted
- * for: on a day, within a stop of a day, or — when its place is left out —
- * left out with it.
+ * The booklet for a list. A part of another place on the list (foldedParts)
+ * is seen during that place's visit: it is planned as the one stop it is,
+ * and named on that stop (`within`). Every place stays accounted for: on a
+ * day, within a stop of a day, or — when its place is left out — left out
+ * with it.
  *
  * The stop's stay is the visit to the whole place, which takes in what is
  * inside it: nothing is added for a part, unless the place's own stay is
- * shorter than the part's — then the visit is as long as the part's.
+ * shorter than a small part's — then the visit is as long as the part's. A
+ * listing seen through its parts adds nothing to the part it is seen at.
  */
 export function buildShioriPlan(input: ShioriInput, options: PlanOptions = {}): ShioriPlan {
   const folds = foldedParts(input.places);
@@ -2297,9 +2361,8 @@ export function buildShioriPlan(input: ShioriInput, options: PlanOptions = {}): 
   const own = new Map(input.places.map((place) => [place.id, place]));
   const places = input.places.flatMap((place) => {
     if (folds.has(place.id)) return [];
-    const within = parts.get(place.id);
-    const longest = within ? Math.max(...within.map(stayOf)) : 0;
-    return [within && stayOf(place) < longest ? { ...place, stayMinutes: longest } : place];
+    const longest = Math.max(0, ...(parts.get(place.id) ?? []).filter((part) => stayOf(part) <= SMALL_PART_STAY).map(stayOf));
+    return [stayOf(place) < longest ? { ...place, stayMinutes: longest } : place];
   });
   const plan = buildWithoutParts({ ...input, places }, options);
   const folded = (id: string) => folds.has(id);

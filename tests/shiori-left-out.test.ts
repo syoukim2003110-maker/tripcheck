@@ -96,11 +96,14 @@ const LEFT_OUT: Record<string, { before: string; after: string; out: string[]; d
   "tokyo-2": { before: "20:25 21:01", after: "16:46 16:34", out: ["東京ディズニーランド"], days: 3 },
   "kyoto-1": { before: "19:05", after: "16:25", out: ["伏見稲荷大社"], days: 2 },
   "osaka-1": { before: "+01:54", after: "13:59", out: ["ユニバーサル・スタジオ・ジャパン", "海遊館"], days: 3 },
-  "osaka-2": { before: "18:49 20:29", after: "16:01 16:04", out: ["ユニバーサル・スタジオ・ジャパン"], days: 3 },
+  // (大阪城公園 is seen at 大阪城, the castle in it, since the park is a precinct its castle covers: 海遊館 fits a day.)
+  "osaka-2": { before: "18:56 19:37", after: "16:02 13:04", out: ["ユニバーサル・スタジオ・ジャパン"], days: 3 },
   "fukuoka-1": { before: "19:10", after: "16:52", out: ["九州国立博物館"], days: 2 },
   "hakone-1": { before: "22:05", after: "17:40", out: ["箱根山"], days: 2 },
   "hakone-2": { before: "19:06 19:24", after: "17:53 16:07", out: ["箱根山"], days: 3 },
-  "nikko-1": { before: "22:52", after: "16:32", out: ["華厳滝", "東武ワールドスクウェア"], days: 2 },
+  // (日光の社寺, the listing of 日光東照宮 and 輪王寺 that are on the list too, is seen at 日光東照宮: not three
+  // hours more on top of them, and 華厳滝 fits the day.)
+  "nikko-1": { before: "19:42", after: "15:22", out: ["東武ワールドスクウェア"], days: 2 },
   "nikko-3": { before: "19:23 19:18 21:10", after: "17:50 17:25 17:28", out: ["女峰山"], days: 4 },
   "paris-1": { before: "22:12", after: "17:50", out: ["ルーヴル美術館"], days: 2 },
   "london-1": { before: "21:33", after: "18:02", out: ["ロンドン塔"], days: 2 },
@@ -110,7 +113,7 @@ const LEFT_OUT: Record<string, { before: string; after: string; out: string[]; d
   "seoul-2": { before: "18:47 19:16", after: "16:46 17:54", out: ["オリンピック公園"], days: 3 },
   "taipei-1": { before: "+00:32", after: "19:30", out: ["台北市立動物園"], days: 2 },
   // (Its day closes at カオサン通り, a street its sight note keeps for the evening: 17:30–18:30, not called late.)
-  "bangkok-1": { before: "21:59", after: "18:30", out: ["チャトチャック・ウィークエンド・マーケット"], days: 2 },
+  "bangkok-1": { before: "20:34", after: "18:30", out: ["チャトチャック・ウィークエンド・マーケット"], days: 2 },
 };
 
 test("the audit's lists too full for their days are shown as the set that fits: USJ is not followed by four sights until 00:44, and what is left out is named with the days that hold it", () => {
@@ -134,7 +137,9 @@ test("the audit's lists too full for their days are shown as the set that fits: 
 
 test("a day that runs less than an hour over keeps everything and says it runs late, as before; a day that closes at its night market ends inside its evening", () => {
   // The ordinary end is 18:00 for sightseeing; a place of the evening may run to 21:30.
-  for (const [id, ends] of [["nara-1", "18:29"], ["nikko-2", "18:19 18:30"], ["yokohama-1", "18:43"], ["kobe-1", "18:16"], ["paris-2", "18:56 17:58"], ["newyork-2", "18:32 18:44"]] as const) {
+  // (nikko-2 no longer runs late: 日光の社寺 is seen at 日光東照宮 instead of three hours of its own, and both days end by 17:15.)
+  assert.deepEqual([latest(auditPlan("nikko-2").plan), auditPlan("nikko-2").plan.days.some((day) => day.runsLate)], ["17:15 15:49", false]);
+  for (const [id, ends] of [["nara-1", "18:29"], ["yokohama-1", "18:43"], ["kobe-1", "18:16"], ["paris-2", "18:56 17:58"], ["newyork-2", "18:32 18:44"]] as const) {
     const shown = auditPlan(id).plan;
     assert.equal(latest(shown), ends, id);
     assert.deepEqual([shown.leftOut, shown.overfull], [[], []], id);
