@@ -110,12 +110,32 @@ test("lunch is its own hour in the day, after the stop that ends nearest midday"
   assert.equal(day.meals.filter((meal) => meal.kind === "lunch").length, 1);
 });
 
-test("too much for the days asked is planned anyway and says the days run late", () => {
+test("too much for the days asked is planned anyway only when the traveller asks for everything, and the day then says it runs late", () => {
   const many = Array.from({ length: 9 }, (_, index) => place(`場所${index}`, 35.0 + (index % 3) * 0.02, 135.76 + Math.floor(index / 3) * 0.03, 120));
-  const plan = buildShioriPlan({ places: many, days: 1, pace: "relaxed", hotel: null, locale: "ja" });
+  const plan = buildShioriPlan({ places: many, days: 1, pace: "relaxed", hotel: null, locale: "ja", packAnyway: true });
   assert.equal(plan.days.length, 1);
   assert.equal(plan.freeDays, 0);
   assert.equal(plan.days[0].runsLate, true);
+  assert.equal(plan.days[0].stops.length, 9);
+  assert.deepEqual(plan.leftOut, []);
+  assert.deepEqual(plan.overfull, []);
+});
+
+test("too much for the days asked is planned as the set that fits: the rest is left out of the days and named, and no day runs late", () => {
+  const many = Array.from({ length: 9 }, (_, index) => place(`場所${index}`, 35.0 + (index % 3) * 0.02, 135.76 + Math.floor(index / 3) * 0.03, 120));
+  const plan = buildShioriPlan({ places: many, days: 1, pace: "relaxed", hotel: null, locale: "ja" });
+  assert.equal(plan.days.length, 1);
+  assert.equal(plan.days[0].runsLate, false);
+  assert.equal(plan.days[0].endsNextDay, false);
+  const planned = plan.days[0].stops.map((stop) => stop.place.name);
+  // Every place is on the day or in the list of what was left out, never both.
+  assert.deepEqual([...planned, ...plan.leftOut].sort(), many.map((entry) => entry.name).sort());
+  assert.deepEqual(plan.overfull.map((entry) => entry.name), plan.leftOut);
+  assert.ok(plan.leftOut.length > 0 && planned.length >= 3, `${planned.length} planned, ${plan.leftOut.length} left out`);
+  const notice = plan.notices.find((entry) => entry.kind === "left-out");
+  assert.ok(notice && notice.kind === "left-out");
+  assert.deepEqual(notice.places.map((entry) => entry.name), plan.leftOut);
+  assert.equal(plan.notices.some((entry) => entry.kind === "needs-days" || entry.kind === "drop" || entry.kind === "too-much"), false);
 });
 
 test("a pinned place stays on its day, and a hotel adds the way out and back", () => {
@@ -284,17 +304,22 @@ test("a restaurant chosen for dinner ends its day, which may run into the evenin
 
 test("too much for the days says how many days it takes, and the plan with that many fits", () => {
   const many = Array.from({ length: 9 }, (_, index) => place(`場所${index}`, 35.0 + (index % 3) * 0.02, 135.76 + Math.floor(index / 3) * 0.03, 120));
-  const plan = buildShioriPlan({ places: many, days: 1, hotel: null, locale: "ja" });
-  const notice = plan.notices.find((entry) => entry.kind === "needs-days");
-  assert.ok(notice && notice.kind === "needs-days");
-  const longer = buildShioriPlan({ places: many, days: notice.days, hotel: null, locale: "ja" });
-  assert.equal(longer.days.some((day) => day.runsLate), false);
-  assert.equal(longer.notices.some((entry) => entry.kind === "needs-days" || entry.kind === "too-much"), false);
+  // Planned as the set that fits, or with everything in: the days that hold the whole list are the same.
+  for (const packAnyway of [false, true]) {
+    const plan = buildShioriPlan({ places: many, days: 1, hotel: null, locale: "ja", packAnyway });
+    const notice = plan.notices.find((entry) => entry.kind === (packAnyway ? "needs-days" : "left-out"));
+    assert.ok(notice && (notice.kind === "needs-days" || notice.kind === "left-out") && notice.days !== null);
+    const longer = buildShioriPlan({ places: many, days: notice.days, hotel: null, locale: "ja", packAnyway });
+    assert.equal(longer.days.some((day) => day.runsLate), false);
+    assert.deepEqual(longer.leftOut, []);
+    assert.equal(longer.notices.some((entry) => entry.kind === "needs-days" || entry.kind === "too-much" || entry.kind === "left-out"), false);
+  }
 });
 
 test("a day that runs past midnight is late, whatever the clock prints", () => {
   const many = Array.from({ length: 12 }, (_, index) => place(`長居${index}`, 35.0 + (index % 4) * 0.02, 135.76 + Math.floor(index / 4) * 0.03, 150));
-  const plan = buildShioriPlan({ places: many, days: 1, hotel: null, locale: "ja" });
+  // (Only a list planned anyway gets there.)
+  const plan = buildShioriPlan({ places: many, days: 1, hotel: null, locale: "ja", packAnyway: true });
   assert.equal(plan.days[0].runsLate, true);
 });
 

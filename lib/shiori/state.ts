@@ -28,6 +28,13 @@ export type ShioriTrip = {
    */
   firstDayStart?: string;
   lastDayFinish?: string;
+  /**
+   * The traveller asked for every place to be planned on the days asked for,
+   * even where that makes a day run far into the evening. Absent — on every
+   * trip made before the choice existed too — a list too full for its days
+   * is planned as the set that fits and the rest is listed as left out.
+   */
+  packAnyway?: true;
 };
 
 export const emptyTrip: ShioriTrip = { cityId: null, cityName: "", places: [], days: 3, pace: "standard", hotel: null };
@@ -188,6 +195,16 @@ export function withReservation(trip: ShioriTrip, placeId: string, reserve: Shio
 }
 
 /**
+ * The trip with everything planned anyway (`on`), or back to the booklet
+ * that leaves out what does not fit its days.
+ */
+export function withPackAnyway(trip: ShioriTrip, on: boolean): ShioriTrip {
+  const { packAnyway: _dropped, ...rest } = trip;
+  void _dropped;
+  return on ? { ...rest, packAnyway: true } : rest;
+}
+
+/**
  * The trip with the start date a date field handed over. An empty field
  * removes the date; anything else that cannot be used (half-typed, long
  * past) leaves the trip as it is, so a slip of the keyboard loses nothing.
@@ -223,6 +240,8 @@ type Wire = {
    * null for the one not set. Written only when one of them is set.
    */
   w?: [number | null, number | null];
+  /** 1 when the traveller asked for everything to be planned anyway. Written only then, so any other trip encodes exactly as it always did. */
+  a?: 1;
 };
 
 function isPace(value: unknown): value is ShioriPace {
@@ -267,6 +286,7 @@ export function encodeTrip(trip: ShioriTrip): string {
     h: trip.hotel ? [clipName(trip.hotel.name), Number(trip.hotel.lat.toFixed(5)), Number(trip.hotel.lon.toFixed(5))] : null,
     ...(trip.startDate ? { t: trip.startDate } : {}),
     ...(start !== null || finish !== null ? { w: [start, finish] as [number | null, number | null] } : {}),
+    ...(trip.packAnyway ? { a: 1 as const } : {}),
   };
   const bytes = new TextEncoder().encode(JSON.stringify(wire));
   let binary = "";
@@ -350,6 +370,8 @@ export function decodeTrip(encoded: string, now: Date = new Date()): ShioriTrip 
       // A date that is malformed or long past is forgotten; the trip still opens.
       ...(usableStartDate(wire.t, now) ? { startDate: wire.t } : {}),
       ...wholeFrames(wire.w),
+      // Exactly the mark that is written; anything else is the default.
+      ...(wire.a === 1 ? { packAnyway: true as const } : {}),
     };
   } catch {
     return null;

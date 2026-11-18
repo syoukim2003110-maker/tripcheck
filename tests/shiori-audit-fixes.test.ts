@@ -11,13 +11,23 @@ import { isBoatLineName } from "../lib/rail-router.ts";
 import { buildShioriPlan, departureAfterStop, dinnerHourAt, dinnerSlot, habitOf, hardToReach, legWord, nobodySleepsAt, type ShioriDay } from "../lib/shiori/plan.ts";
 import { placeFromSight } from "../lib/shiori/state.ts";
 import { shioriStayMinutes } from "../lib/shiori/stay.ts";
-import { auditPlan, cities, railOf, scenarioPlaces, scenarios } from "../scripts/audit-scenarios.ts";
+import { auditPlan as auditPlanShown, cities, railOf, scenarioPlaces, scenarios } from "../scripts/audit-scenarios.ts";
 
 /*
  * Faults a reader found in the 63 trips of the plan audit
  * (scripts/audit-plans.ts). Each test builds the very trip that showed the
  * fault and asserts what a traveller would have seen go wrong.
+ *
+ * The audit read every trip with all its places planned on the days asked
+ * for, and several faults were on days too full to keep. Those days are now
+ * printed only when the traveller asks for everything (a list too full for
+ * its days is otherwise planned as the set that fits: see
+ * tests/shiori-left-out.test.ts, which also reads the trips as they are
+ * first shown). The trips here are the ones the audit read: planned anyway.
+ * For the 56 of the 63 that fit, or run less than an hour over, that is the
+ * plan a traveller first sees.
  */
+const auditPlan = (id: string) => auditPlanShown(id, { packAnyway: true });
 
 const stopNamed = (id: string, name: RegExp) => {
   const { plan } = auditPlan(id);
@@ -500,7 +510,8 @@ const straightKm = (leg: { from: { latitude: number; longitude: number }; to: { 
 
 test("beyond a short hop a leg is the train, not a taxi: the bundled journey where there is one, public transport with the way unknown where there is none", () => {
   // Was: ↓ taxi 35 min between the Skytree and Disneyland, while the bundled network has the journey.
-  const pair = (cityId: string, from: string, to: string) => buildShioriPlan({ places: [sightOf(cityId, from), sightOf(cityId, to)], days: 1, hotel: null, locale: "ja" }, { rail: railOf(cityId), cities });
+  // (Both places on the one day, as asked: the Skytree and a day at Disneyland are more than a day holds.)
+  const pair = (cityId: string, from: string, to: string) => buildShioriPlan({ places: [sightOf(cityId, from), sightOf(cityId, to)], days: 1, hotel: null, locale: "ja", packAnyway: true }, { rail: railOf(cityId), cities });
   const tokyo = pair("tokyo", "東京スカイツリー", "東京ディズニーランド").days[0];
   const ride = tokyo.legs[0];
   assert.equal(ride.mode, "rail");
@@ -524,7 +535,7 @@ test("beyond a short hop a leg is the train, not a taxi: the bundled journey whe
   assert.deepEqual([far.mode, far.minutes], ["transit", 95]);
   // A measured drive does not bring the taxi back, on a leg with a train or without.
   for (const [plan, leg] of [[pair("tokyo", "東京スカイツリー", "東京ディズニーランド"), ride], [pair("nikko", "日光東照宮", "華厳滝"), nikko]] as const) {
-    const input = { places: plan.days[0].stops.map((stop) => stop.place), days: 1, hotel: null, locale: "ja" as const };
+    const input = { places: plan.days[0].stops.map((stop) => stop.place), days: 1, hotel: null, locale: "ja" as const, packAnyway: true };
     const cityId = leg === ride ? "tokyo" : "nikko";
     const measured = buildShioriPlan(input, { rail: railOf(cityId), cities, routes: new Map([[`drive|${leg.key}`, { minutes: 22, path: [leg.from, leg.to] }]]) });
     assert.deepEqual([measured.days[0].legs[0].mode, measured.days[0].legs[0].minutes], [leg.mode, leg.minutes], cityId);

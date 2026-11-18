@@ -15,26 +15,33 @@ const wire = (value: unknown) => Buffer.from(JSON.stringify(value), "utf8").toSt
 
 /* ---- one limit for days: what is offered can be kept ---- */
 
-test("a 'needs more days' notice never offers a length that cannot be saved", () => {
+test("the days that hold the whole list — said beside what was left out, or as 'needs more days' when everything is planned anyway — are never a length that cannot be saved", () => {
   assert.equal(MAX_DAYS, MAX_TRIP_DAYS);
   // The trips that lost their saved copy: full-day places on a 6- and 7-day trip were told "make it 8 / 9 days".
   for (const [count, days] of [[8, 7], [9, 7], [8, 6]] as const) {
     const trip = tripOf(Array.from({ length: count }, (_, index) => sight(index, 480)), days);
-    const plan = buildShioriPlan({ places: trip.places, days: trip.days, hotel: null, locale: "en" });
-    for (const notice of plan.notices) {
-      if (notice.kind !== "needs-days") continue;
-      assert.ok(notice.days <= MAX_DAYS, `${count} places on ${days} days offered ${notice.days}`);
-      assert.notEqual(decodeTrip(encodeTrip({ ...trip, days: notice.days })), null);
+    // Whether the list is planned as the set that fits (the days are then said with what was left out) or with everything in.
+    for (const packAnyway of [false, true]) {
+      const plan = buildShioriPlan({ places: trip.places, days: trip.days, hotel: null, locale: "en", packAnyway });
+      for (const notice of plan.notices) {
+        if ((notice.kind !== "needs-days" && notice.kind !== "left-out") || notice.days === null) continue;
+        assert.ok(notice.days <= MAX_DAYS, `${count} places on ${days} days offered ${notice.days}`);
+        assert.notEqual(decodeTrip(encodeTrip({ ...trip, days: notice.days })), null);
+      }
     }
   }
   // A shorter trip is still told what it needs.
-  const short = buildShioriPlan({ places: Array.from({ length: 3 }, (_, index) => sight(index, 480)), days: 2, hotel: null, locale: "en" });
-  assert.deepEqual(short.notices.filter((notice) => notice.kind === "needs-days"), [{ kind: "needs-days", days: 3 }]);
+  const daysNeeded = (count: number, stay: number, days: number, packAnyway: boolean) => buildShioriPlan({ places: Array.from({ length: count }, (_, index) => sight(index, stay)), days, hotel: null, locale: "en", packAnyway })
+    .notices.flatMap((notice) => (notice.kind === "needs-days" || notice.kind === "left-out" ? [[notice.kind, notice.days]] : []));
+  assert.deepEqual(daysNeeded(3, 480, 2, true), [["needs-days", 3]]);
+  assert.deepEqual(daysNeeded(3, 480, 2, false), [["left-out", 3]]);
   // ...even when it needs several more days than it has: the search runs up to the limit, not just two days on.
-  const needs = (count: number, stay: number, days: number) => buildShioriPlan({ places: Array.from({ length: count }, (_, index) => sight(index, stay)), days, hotel: null, locale: "en" }).notices.filter((notice) => notice.kind === "needs-days");
-  assert.deepEqual(needs(4, 480, 1), [{ kind: "needs-days", days: 4 }]);
-  assert.deepEqual(needs(5, 480, 2), [{ kind: "needs-days", days: 5 }]);
-  assert.deepEqual(needs(12, 180, 2), [{ kind: "needs-days", days: 6 }]);
+  assert.deepEqual(daysNeeded(4, 480, 1, true), [["needs-days", 4]]);
+  assert.deepEqual(daysNeeded(5, 480, 2, true), [["needs-days", 5]]);
+  assert.deepEqual(daysNeeded(12, 180, 2, true), [["needs-days", 6]]);
+  assert.deepEqual(daysNeeded(4, 480, 1, false), [["left-out", 4]]);
+  assert.deepEqual(daysNeeded(5, 480, 2, false), [["left-out", 5]]);
+  assert.deepEqual(daysNeeded(12, 180, 2, false), [["left-out", 6]]);
 });
 
 test("a trip saved with more days than the limit opens with its places, shortened", () => {

@@ -471,12 +471,23 @@ test("a trip too full for its start and finish never runs a day through the nigh
   for (const day of trip.days) for (const stop of day.stops) assert.equal(stop.arriveNextDay || stop.leaveNextDay, false, `${stop.place.name} ${stop.arrive}-${stop.leave}`);
   // What the two days cannot hold is listed by name, as not fitting — not hidden in a day that ends at 06:34.
   assert.ok(trip.unplaced.length >= 2 && trip.unplaced.every((entry) => entry.reason === "no-room" && entry.proven === false), JSON.stringify(trip.unplaced));
-  assert.equal(trip.days.reduce((sum, day) => sum + day.stops.length, 0) + trip.unplaced.length, 9);
+  // (And what the days could hold before midnight but only by sightseeing into the night is left out as on any trip, and named.)
+  assert.equal(trip.days.reduce((sum, day) => sum + day.stops.length, 0) + trip.unplaced.length + trip.overfull.length, 9);
+  assert.equal(trip.days.some((day) => day.runsLate), false);
   for (const entry of trip.unplaced) assert.ok(trip.notices.some((notice) => notice.kind === "unplaced" && notice.placeId === entry.placeId));
+  for (const entry of trip.overfull) assert.ok(trip.notices.some((notice) => notice.kind === "left-out" && notice.places.some((place) => place.placeId === entry.placeId)));
   // More days hold it, and that is offered because that plan was made.
-  const more = trip.notices.find((notice) => notice.kind === "needs-days");
-  assert.ok(more && more.kind === "needs-days");
-  assert.deepEqual(plan("kyoto", { ...input, days: more.days }).unplaced, []);
+  const more = trip.notices.find((notice) => notice.kind === "needs-days" || notice.kind === "left-out");
+  assert.ok(more && (more.kind === "needs-days" || more.kind === "left-out") && more.days !== null);
+  assert.deepEqual(plan("kyoto", { ...input, days: more.days }).leftOut, []);
+  // Planned anyway, only the entered times and the day's own midnight leave a place out, as before.
+  const packed = plan("kyoto", { ...input, packAnyway: true });
+  assertKeepsEveryEnteredTime(packed, input, "Kyoto, planned anyway");
+  assert.deepEqual(packed.overfull, []);
+  assert.equal(packed.days.reduce((sum, day) => sum + day.stops.length, 0) + packed.unplaced.length, 9);
+  const moreDays = packed.notices.find((notice) => notice.kind === "needs-days");
+  assert.ok(moreDays && moreDays.kind === "needs-days");
+  assert.deepEqual(plan("kyoto", { ...input, days: moreDays.days, packAnyway: true }).unplaced, []);
   // The same nine places with nothing entered are planned as they always were: nothing is set aside.
   assert.deepEqual(plan("kyoto", { ...input, firstDayStart: null, lastDayFinish: null }).unplaced, []);
 

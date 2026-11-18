@@ -114,6 +114,13 @@ export type ShioriInput = {
   firstDayStart?: ShioriClock | null;
   /** The last day is over by this time, the ride back to the hotel included. */
   lastDayFinish?: ShioriClock | null;
+  /**
+   * The traveller asked for every place to be planned on the days asked for,
+   * however late the days then run. Without it a list too full for its days
+   * is planned as the set that fits, and the rest is listed as left out (see
+   * leaveOutForRoom).
+   */
+  packAnyway?: boolean;
 };
 
 /** A street path looked up for one leg ("walk|<key>" or "drive|<key>"). */
@@ -248,6 +255,9 @@ export type ShioriUnplaced = { placeId: string; name: string } & (
   | { reason: "no-room"; day: number; edge: "finish" | "reserve" | "day"; proven: false }
 );
 
+/** A place that is in the traveller's list and on no day of the booklet. */
+export type ShioriLeftOut = { placeId: string; name: string };
+
 /**
  * Where the traveller's own wishes pull against each other, each with the
  * way out the numbers support. This is what a list of places cannot show.
@@ -259,6 +269,18 @@ export type ShioriNotice =
   | { kind: "drop"; placeId: string; name: string }
   /** No number of days up to a week holds the list, and neither does leaving one place out. */
   | { kind: "too-much" }
+  /**
+   * The list did not fit the days asked for: these places are not on any
+   * day (they stay in the traveller's list). `days` is the number of days
+   * that holds everything, or null when no length up to a week does.
+   */
+  | { kind: "left-out"; places: ShioriLeftOut[]; days: number | null }
+  /**
+   * The traveller asked for everything to be planned anyway, and a day runs
+   * far into the evening for it: `places` is what would be left out for the
+   * days to be kept.
+   */
+  | { kind: "packed-anyway"; places: ShioriLeftOut[] }
   /** The chosen hotel costs this much travel; the suggested area saves `savedMinutes` over the trip. */
   | { kind: "hotel-far"; oneWayMinutes: number; savedMinutes: number; /** Days that are packed from this hotel and would not be from the area named. */ calmerDays?: number }
   /** Eating here adds this much travel to its day. */
@@ -368,6 +390,12 @@ export type ShioriPlan = {
   notices: ShioriNotice[];
   /** Places left out because of a time the traveller entered (their names are in `leftOut` too). */
   unplaced: ShioriUnplaced[];
+  /**
+   * Places left out because the list is too full for the days asked for
+   * (their names are in `leftOut` too). Empty when everything fits, and
+   * always when the traveller asked for everything to be planned anyway.
+   */
+  overfull: ShioriLeftOut[];
 };
 
 const paceSettings: Record<ShioriPace, { engine: Pace; dayEnd: string }> = {
@@ -766,6 +794,8 @@ function structureKey(input: ShioriInput, frames: Frames | null = null, excluded
     (input.wetDays ?? []).map((wet) => (wet === null ? "-" : wet ? "w" : "d")).join(""),
     // The times the traveller entered, and what they left no room for.
     ...(frames ? [[frames.start, frames.finish, input.places.map((place) => { const booked = frames.booked.get(place.id); return booked ? [booked.day, booked.at] : 0; }), [...excluded].sort()]] : []),
+    // What a list too full for its days leaves out.
+    ...(!frames && excluded.size > 0 ? [[...excluded].sort()] : []),
   ]);
 }
 
@@ -1076,6 +1106,158 @@ function sideSearchFor(input: ShioriInput, pricing: TripPrices, frames: Frames |
   return search;
 }
 
+/**
+ * How far past its ordinary end — 18:00 for sightseeing, 21:30 for a place
+ * of the evening — a day may run and still be printed with everything on it:
+ * an hour. Up to there the booklet keeps the whole list and says the day
+ * runs late, with the way out (a day more, a place less). Beyond it the day
+ * is not one a traveller can use as it stands — sights at ten at night — and
+ * the list is planned as the set that fits instead (see leaveOutForRoom).
+ * The planner's own measure of a day, like the 18:00 it is counted from:
+ * nothing about the hours of any place.
+ */
+export const FAR_PAST_END = 60;
+/** How many ways of leaving places out are planned to find the fewest; beyond it each late day is thinned on its own. */
+const ROOM_SEARCHES = 160;
+
+/**
+ * Which places a list too full for its days is planned without.
+ *
+ * Nothing, unless a day of the trip as the search plans it runs more than an
+ * hour past its end (FAR_PAST_END). Then places are left out until no day
+ * runs late at all — the set that fits, not the set that is only less late:
+ *
+ *   - as few as can be: every way of leaving one place out is planned, then
+ *     every way of leaving two, and so on (ways that cannot free the time
+ *     that is missing are not tried; a list of more than fourteen places,
+ *     or one with too many ways to plan them all, has each late day thinned
+ *     on its own instead: good, not proven fewest);
+ *   - among sets of one size, the one whose plan costs least — so the place
+ *     far from the rest goes, or the long stay that crowds out several
+ *     others — and, where two cost the same, the places lower in the list.
+ *
+ * Never left out: a restaurant or a shop the traveller chose, a place with a
+ * time the traveller entered, a place the traveller put on a day, and a
+ * place that would run late on a day of its own (leaving out everything
+ * around it is no cure). A day that only such places make late stays as it
+ * is and is said to run late.
+ *
+ * Decided on the priced minutes alone, like the days and their order: a
+ * street path measured later corrects a clock and never throws a place out
+ * of a booklet that is already on screen.
+ *
+ * `already`: places set aside for an entered time. Returns indices into
+ * `input.places`, in list order.
+ */
+function leaveOutForRoom(input: ShioriInput, pricing: TripPrices, search: ReturnType<typeof daySearch>, frames: Frames | null, already: readonly number[]): number[] {
+  const requested = requestedDays(input);
+  type Days = ReturnType<ReturnType<typeof daySearch>["choose"]>["days"];
+  const planned = (out: readonly number[]): Days => search.choose(input.days, already.length + out.length === 0 ? {} : { without: [...already, ...out] }).days;
+  const whole = planned([]);
+  if (!whole.some((day) => day.overrun > FAR_PAST_END)) return [];
+  const gone = new Set(already);
+  const free = new Set(input.places.flatMap((place, index) => {
+    if (gone.has(index) || place.meal || place.id.startsWith("hotpepper-") || frames?.booked.has(place.id)) return [];
+    if (typeof place.day === "number" && place.day >= 1 && Math.round(place.day) <= requested) return [];
+    return search.solveDay([index]).overrun === 0 ? [index] : [];
+  }));
+  /** The days that run late and have a place on them that could be left out. */
+  const late = (days: Days) => days.filter((day) => day.overrun > 0 && day.order.some((stop) => free.has(stop)));
+  if (!late(whole).some((day) => day.overrun > FAR_PAST_END)) return [];
+  // Leaving a place out never costs an entered time or a chosen meal that the whole list keeps.
+  const lost = (days: Days) => days.reduce((sum, day) => sum + day.late + (day.hardOver > 0 ? 1 : 0) + day.missed, 0);
+  const lostWhole = lost(whole);
+  const fits = (days: Days) => days.length > 0 && late(days).length === 0 && lost(days) <= lostWhole;
+  const costOf = (days: Days) => days.reduce((sum, day) => sum + day.cost, 0);
+  // The most time a place can free: its stay and the longest rides in and out of it.
+  const takes = (index: number) => stayOf(input.places[index]) + DAY_CLOCK.legBuffer
+    + Math.max(pricing.hotel?.out[index] ?? 0, ...pricing.minutes.map((row) => row[index]))
+    + Math.max(pricing.hotel?.back[index] ?? 0, ...pricing.minutes[index]);
+  const missing = late(whole).reduce((sum, day) => sum + day.overrun - DAY_CLOCK.endGrace, 0);
+  const candidates = [...free].sort((left, right) => takes(right) - takes(left) || left - right);
+  // Of two sets, the one that keeps the place higher in the list.
+  const lower = (left: readonly number[], right: readonly number[]) => {
+    const first = [...left].sort((a, b) => a - b);
+    const second = [...right].sort((a, b) => a - b);
+    for (let position = 0; position < first.length; position += 1) if (first[position] !== second[position]) return first[position] > second[position];
+    return false;
+  };
+  let found: number[] | null = null;
+  let budget = ROOM_SEARCHES;
+  // (Set by set only where the search keeps one table for all the days of a list: up to fourteen places.)
+  if (input.places.length > 14) budget = 0;
+  for (let size = 1; size < candidates.length && found === null && budget > 0; size += 1) {
+    const sets: number[][] = [];
+    const grow = (from: number, chosen: number[], freed: number) => {
+      if (chosen.length === size) {
+        if (freed + 30 >= missing) sets.push(chosen);
+        return;
+      }
+      for (let position = from; position <= candidates.length - (size - chosen.length); position += 1) {
+        grow(position + 1, [...chosen, candidates[position]], freed + takes(candidates[position]));
+        if (sets.length > budget) return;
+      }
+    };
+    grow(0, [], 0);
+    if (sets.length > budget) {
+      budget = 0;
+      break;
+    }
+    budget -= sets.length;
+    let best: { out: number[]; cost: number } | null = null;
+    for (const out of sets) {
+      const days = planned(out);
+      if (!fits(days)) continue;
+      const cost = costOf(days);
+      if (best === null || cost < best.cost - 1e-6 || (cost <= best.cost + 1e-6 && lower(out, best.out))) best = { out, cost };
+    }
+    if (best) found = best.out;
+  }
+  if (found === null) {
+    // Too many ways to plan them all. Each day that runs late is thinned on
+    // its own — the place whose absence leaves that day least late goes,
+    // until the day can be kept — and the trip planned again without what
+    // the days gave up, for as long as a day runs late. (A day is cheap to
+    // plan; a long list is not.)
+    const out: number[] = [];
+    for (;;) {
+      const days = planned(out);
+      if (fits(days)) break;
+      const before = out.length;
+      for (const full of late(days)) {
+        const cls = frames ? (full.day === 1 && frames.start !== null ? 1 : 0) | (full.day === requested && frames.finish !== null ? 2 : 0) : 0;
+        let rest = [...full.order].sort((left, right) => left - right);
+        while (rest.length > 1 && search.solveDay(rest, cls).overrun > 0) {
+          let best: { stop: number; over: number; cost: number } | null = null;
+          for (const stop of rest) {
+            if (!free.has(stop)) continue;
+            const day = search.solveDay(rest.filter((other) => other !== stop), cls);
+            // (The place lower in the list goes where two do the same.)
+            if (best === null || day.overrun < best.over || (day.overrun === best.over && day.cost <= best.cost + 1e-6)) best = { stop, over: day.overrun, cost: day.cost };
+          }
+          if (best === null) break;
+          const gone = best.stop;
+          out.push(gone);
+          rest = rest.filter((other) => other !== gone);
+        }
+      }
+      if (out.length === before) break;
+    }
+    found = out;
+  }
+  // One of them may fit again now that the others are gone: each is tried, in the traveller's own order.
+  // (Each try is a search of the whole list: on a long one only the three highest in the list are tried.)
+  let chosen: number[] = [...found].sort((left, right) => left - right);
+  if (chosen.length >= 2) {
+    for (const stop of chosen.slice(0, input.places.length <= 16 ? chosen.length : 3)) {
+      const rest = chosen.filter((other) => other !== stop);
+      if (fits(planned(rest))) chosen = rest;
+    }
+  }
+  // (Where even that leaves a day late, the places are left out only if fewer days are.)
+  return fits(planned(chosen)) || late(planned(chosen)).length < late(whole).length ? chosen : [];
+}
+
 function straightKm(from: { lat: number; lon: number }, to: { lat: number; lon: number }) {
   return Math.hypot((from.lat - to.lat) * 111, (from.lon - to.lon) * 111 * Math.cos((from.lat * Math.PI) / 180));
 }
@@ -1235,7 +1417,14 @@ type PlanOptions = {
 
 function planOnce(input: ShioriInput, options: PlanOptions): ShioriPlan {
   const frames = framesOf(input);
-  return frames ? planFramed(input, options, frames) : planCore(input, options, null, NO_IDS);
+  if (frames) return planFramed(input, options, frames);
+  if (input.packAnyway || input.places.length < 2) return planCore(input, options, null, NO_IDS);
+  // A list too full for its days: the set that fits is planned, the rest is listed.
+  const pricing = priceTrip(input, options.rail ?? null, options.cities);
+  const out = leaveOutForRoom(input, pricing, searchFor(input, pricing, null), null, []);
+  if (out.length === 0) return planCore(input, options, null, NO_IDS);
+  const overfull = out.map((index) => ({ placeId: input.places[index].id, name: input.places[index].name }));
+  return { ...planCore(input, options, null, new Set(overfull.map((entry) => entry.placeId))), overfull };
 }
 
 /**
@@ -1247,7 +1436,7 @@ function planOnce(input: ShioriInput, options: PlanOptions): ShioriPlan {
 function planCore(input: ShioriInput, options: PlanOptions, frames: Frames | null, excluded: ReadonlySet<string>): ShioriPlan {
   const engineInput = excluded.size === 0 ? input : { ...input, places: input.places.filter((place) => !excluded.has(place.id)) };
   if (engineInput.places.length === 0) {
-    return { days: [], freeDays: Math.max(0, input.days), freeDayIdeas: [], leftOut: input.places.map((place) => place.name), stayNear: null, hotel: input.hotel, notices: [], unplaced: [] };
+    return { days: [], freeDays: Math.max(0, input.days), freeDayIdeas: [], leftOut: input.places.map((place) => place.name), stayNear: null, hotel: input.hotel, notices: [], unplaced: [], overfull: [] };
   }
   const settings = paceSettings.standard;
   const dinnerIds = dinnerIdsOf(input);
@@ -1647,6 +1836,7 @@ function planCore(input: ShioriInput, options: PlanOptions, frames: Frames | nul
     hotel: input.hotel,
     notices: known.weatherDays.length > 0 ? [{ kind: "weather-order", days: known.weatherDays }] : [],
     unplaced: [],
+    overfull: [],
   };
 }
 
@@ -1675,6 +1865,7 @@ function planFramed(input: ShioriInput, options: PlanOptions, frames: Frames): S
   const rail = options.rail ?? null;
   const requested = requestedDays(input);
   const unplaced: ShioriUnplaced[] = [];
+  const overfull: ShioriLeftOut[] = [];
   const excluded = new Set<string>();
   const setAside = (entry: ShioriUnplaced) => {
     unplaced.push(entry);
@@ -1823,6 +2014,15 @@ function planFramed(input: ShioriInput, options: PlanOptions, frames: Frames): S
       excluded.delete(entry.placeId);
       unplaced.splice(unplaced.indexOf(entry), 1);
     }
+    // With every entered time kept, the list may still be too full for its
+    // days — sightseeing until ten at night. As on any trip, the set that
+    // fits is planned and the rest listed (never a booked place).
+    if (!input.packAnyway) {
+      for (const index of leaveOutForRoom(input, pricing, search, frames, without())) {
+        overfull.push({ placeId: input.places[index].id, name: input.places[index].name });
+        excluded.add(input.places[index].id);
+      }
+    }
   }
   // 3. The booklet itself, read back.
   let plan = planCore(input, options, frames, excluded);
@@ -1864,6 +2064,7 @@ function planFramed(input: ShioriInput, options: PlanOptions, frames: Frames): S
     freeDays,
     freeDayIdeas: freeDays > 0 ? plan.freeDayIdeas : [],
     unplaced,
+    overfull,
     notices: [...unplaced.map((entry): ShioriNotice => ({ kind: "unplaced", ...entry })), ...emptied, ...plan.notices],
   };
 }
@@ -1955,7 +2156,7 @@ export function buildShioriPlan(input: ShioriInput, options: PlanOptions = {}): 
   // What the planner laid out: the list less what an entered time left no
   // room for. The hotel area is judged on that — a booking that cannot be
   // kept says nothing about where to stay.
-  const aside = new Set(plan.unplaced.map((entry) => entry.placeId));
+  const aside = new Set([...plan.unplaced, ...plan.overfull].map((entry) => entry.placeId));
   const laid = aside.size > 0 ? { ...input, places: input.places.filter((place) => !aside.has(place.id)) } : input;
   const fits = (candidate: ShioriPlan) => candidate.leftOut.length === 0 && !candidate.days.some((day) => day.runsLate || day.stops.some((stop) => stop.mealMissed));
   /**
@@ -1975,8 +2176,9 @@ export function buildShioriPlan(input: ShioriInput, options: PlanOptions = {}): 
   const searched = (trip: ShioriInput) => daySearch(searchProblem(trip, priceTrip(trip, rail, options.cities), areaFrames(trip)), frames ? { bookedDayStops: 4 } : {});
   const unkept = (days: ReturnType<ReturnType<typeof daySearch>["choose"]>["days"]) => days.filter((day) => day.overrun > 0 || day.missed > 0 || day.late > 0 || day.hardOver > 0).length;
   const runsLate = plan.days.some((day) => day.runsLate);
-  // Left out by the engine, not by an entered time (as on any trip).
+  // Left out because the list is too full, or by the engine — not by an entered time.
   const otherLeftOut = plan.leftOut.length > plan.unplaced.length;
+  const overfull = plan.overfull.length > 0;
   // What more days, or one place fewer, could cure. A booking that clashes
   // with another, or cannot be reached in time, is cured by neither.
   const curable = (entry: ShioriUnplaced) => entry.reason === "no-room" || entry.reason === "reserve-day" || entry.reason === "reserve-after-finish";
@@ -2000,11 +2202,14 @@ export function buildShioriPlan(input: ShioriInput, options: PlanOptions = {}): 
     ));
     for (let days = Math.max(requested + 1, least); days <= MAX_TRIP_DAYS && !found; days += 1) {
       // Said only if the plan the traveller would then get — the full one — fits.
-      if (holds(planOnce({ ...input, days }, options))) {
-        notices.push({ kind: "needs-days", days });
+      // (The whole list on that many days: what did not fit is not left out again to answer this.)
+      if (holds(planOnce({ ...input, days, packAnyway: true }, options))) {
+        // Where places were left out, the days that bring them back are said with their names.
+        notices.push(overfull ? { kind: "left-out", places: plan.overfull, days } : { kind: "needs-days", days });
         found = true;
       }
     }
+    if (overfull && !found) notices.push({ kind: "left-out", places: plan.overfull, days: null });
     // Leaving one place out: the places that cost the most — a long stay,
     // or far from the rest — first, since their absence is what saves a
     // day. On a short list every place is tried; on a long one the six
@@ -2030,14 +2235,22 @@ export function buildShioriPlan(input: ShioriInput, options: PlanOptions = {}): 
       + Math.max(pricing.hotel?.out[index] ?? 0, ...pricing.minutes.map((row) => row[index]))
       + Math.max(pricing.hotel?.back[index] ?? 0, ...pricing.minutes[index]);
     // (Where a booking itself cannot be kept, leaving out some other place cures nothing.)
-    const droppable = plan.unplaced.some((entry) => entry.reason !== "no-room") ? undefined : costly.find(({ place }) => {
+    // (Nor where the planner has already left out what did not fit: the booklet shown is that plan.)
+    const droppable = overfull || plan.unplaced.some((entry) => entry.reason !== "no-room") ? undefined : costly.find(({ place }) => {
       const without = { ...input, places: input.places.filter((entry) => entry.id !== place.id) };
       if (without.places.length === 0 || over > takes(input.places.indexOf(place)) + 30) return false;
-      return unkept(whole.choose(input.days, { quick: true, without: input.places.indexOf(place) }).days) === 0 && fits(planOnce(without, options));
+      return unkept(whole.choose(input.days, { quick: true, without: input.places.indexOf(place) }).days) === 0 && fits(planOnce({ ...without, packAnyway: true }, options));
     });
     if (droppable) notices.push({ kind: "drop", placeId: droppable.place.id, name: droppable.place.name });
     // "Too much for the days" is said of a list, never of a booking that cannot be kept.
-    if (!found && !droppable && (runsLate || otherLeftOut || plan.unplaced.some((entry) => entry.reason === "no-room"))) notices.push({ kind: "too-much" });
+    if (!overfull && !found && !droppable && (runsLate || otherLeftOut || plan.unplaced.some((entry) => entry.reason === "no-room"))) notices.push({ kind: "too-much" });
+    // Everything was planned because the traveller asked for it: what the
+    // booklet would leave out for its days to be kept, so that the choice
+    // can be taken back.
+    if (input.packAnyway && runsLate) {
+      const fitted = planOnce({ ...input, packAnyway: false }, options);
+      if (fitted.overfull.length > 0) notices.push({ kind: "packed-anyway", places: fitted.overfull });
+    }
   }
 
   for (const day of plan.days) {

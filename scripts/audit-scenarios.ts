@@ -54,9 +54,13 @@ for (const [cityIndex, id] of CITY_IDS.entries()) {
 }
 
 export const scenarioPlaces = (scenario: Scenario) => scenario.sights.map((sight) => placeFromSight(sight, "ja"));
-/** The plan of one audit trip, by its name in the audit ("kyoto-3"). */
-export function auditPlan(id: string): { scenario: Scenario; plan: ShioriPlan } {
+/**
+ * The plan of one audit trip, by its name in the audit ("kyoto-3"): as a
+ * traveller first sees it, or — `packAnyway` — with every place planned on
+ * the days asked for however late they run, as the audit first read them.
+ */
+export function auditPlan(id: string, options: { packAnyway?: boolean } = {}): { scenario: Scenario; plan: ShioriPlan } {
   const scenario = scenarios.find((entry) => entry.id === id);
   if (!scenario) throw new Error(`no audit trip ${id}`);
-  return { scenario, plan: buildShioriPlan({ places: scenarioPlaces(scenario), days: scenario.days, hotel: scenario.hotel, locale: "ja" }, { rail: railOf(scenario.city.id), cities }) };
+  return { scenario, plan: buildShioriPlan({ places: scenarioPlaces(scenario), days: scenario.days, hotel: scenario.hotel, locale: "ja", packAnyway: options.packAnyway === true }, { rail: railOf(scenario.city.id), cities }) };
 }

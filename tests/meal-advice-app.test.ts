@@ -66,7 +66,11 @@ test("the brief names bundled sights only; a shop, a searched place and a typed 
   }
   const stops = brief.days.flatMap((day) => day.stops);
   const named = stops.filter((stop) => stop.name !== undefined);
-  assert.ok(named.length >= 6, "the bundled sights are named");
+  // (Six sights, a shop and two more places are too much for two days: Disneyland is left out of the days, and of the outline with them.)
+  assert.deepEqual(plan.leftOut, ["東京ディズニーランド"]);
+  assert.equal(sent.includes("ディズニー"), false, "a place left out of the days is not in the outline");
+  assert.equal(stops.length, plan.days.reduce((sum, day) => sum + day.stops.length, 0));
+  assert.equal(named.length, 5, "the bundled sights on the days are named");
   for (const stop of named) assert.equal(stop.kind, "sight");
   // The chosen lunch is there as what it is, without who it is.
   const lunch = stops.find((stop) => stop.meal === "lunch")!;
@@ -76,7 +80,8 @@ test("the brief names bundled sights only; a shop, a searched place and a typed 
   assert.deepEqual(brief.days.map((day) => [day.day, day.weekday, day.weather]), [[1, "fri", "rain"], [2, "sat", "cloud"]]);
   // The day with a restaurant chosen for lunch has no lunch slot; open slots are asked about.
   assert.equal(brief.slots.some((slot) => slot.slot === "d1-lunch"), false);
-  assert.ok(brief.slots.length >= 2);
+  // (Day 2's lunch. Without Disneyland both days are over by mid-afternoon, and no dinner is listed after them.)
+  assert.deepEqual(brief.slots.map((slot) => slot.slot), ["d2-lunch"]);
   for (const slot of brief.slots) assert.equal(slot.slot, `d${slot.day}-${slot.meal}`);
   // What is built is exactly what the relay's own check lets through.
   assert.deepEqual(cleanMealBrief(brief), brief);
@@ -404,7 +409,8 @@ test("a place that only looks bundled goes without its name: a live lookup, a sh
   assert.equal(sent.includes(LOOKED_UP_SHOP.name), false, "a looked-up restaurant's name is sent");
   const allowed = new Set([...SIGHTS.values()].flat());
   const named = brief.days.flatMap((day) => day.stops).filter((stop) => stop.name !== undefined);
-  assert.ok(named.length >= 6);
+  // (The five bundled sights on the days: Disneyland did not fit beside the rest and is left out.)
+  assert.equal(named.length, 5);
   for (const stop of named) assert.ok(allowed.has(stop.name!), `${stop.name} is not a bundled name`);
   // The looked-up place is there as a stop of an unknown kind, not as a sight.
   assert.ok(brief.days.flatMap((day) => day.stops).some((stop) => stop.kind === "other" && stop.name === undefined));

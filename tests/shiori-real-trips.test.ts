@@ -21,7 +21,7 @@ function trip(cityId: string, count: number, days: number, extra: Partial<Shiori
   if (!networks.has(cityId)) networks.set(cityId, new RailNetwork(JSON.parse(readFileSync(new URL(`../public/rail/${cityId}.json`, import.meta.url), "utf8"))));
   // `raw` keeps the uncurated ranking the reviewer used.
   const sights = (extra.raw ? city.sights : curateSights(city.sights)).slice(0, count).map((sight) => placeFromSight(sight, "ja"));
-  return buildShioriPlan({ places: [...sights, ...(extra.more ?? [])], days, hotel: extra.hotel ?? null, locale: "ja" }, { rail: networks.get(cityId)!, cities });
+  return buildShioriPlan({ places: [...sights, ...(extra.more ?? [])], days, hotel: extra.hotel ?? null, locale: "ja", packAnyway: extra.packAnyway }, { rail: networks.get(cityId)!, cities });
 }
 const minutes = (clock: string) => Number(clock.slice(0, 2)) * 60 + Number(clock.slice(3));
 /** No stop of any day starts before the one ahead of it: nothing wraps past midnight. */
@@ -46,18 +46,32 @@ test("a theme-park day is not filled up with the other day's sights", () => {
   const three = trip("osaka", 7, 3, { raw: true });
   assert.equal(three.days.some((day) => day.runsLate), false);
   assert.equal(three.days.find((day) => day.stops.some((stop) => /ユニバーサル/.test(stop.place.name)))!.stops.length, 1);
+  // Seven sights with Disneyland do not fit two days, and a day would run
+  // more than an hour over: Disneyland, which needs a day to itself, is left
+  // out and named with the three days that hold everything.
   const tokyo = trip("tokyo", 7, 2, { raw: true });
   assertNoDayPastMidnight(tokyo);
-  // Seven sights with Disneyland do not fit two days; what is printed is
-  // two days a little over, never one day into the night — and it says so.
-  for (const day of tokyo.days) assert.ok(minutes(day.stops.at(-1)!.leave) <= 20 * 60, `day ${day.index + 1} ends ${day.stops.at(-1)!.leave}`);
-  assert.ok(tokyo.notices.some((notice) => notice.kind === "needs-days"));
+  assert.equal(tokyo.days.some((day) => day.runsLate), false);
+  assert.deepEqual(tokyo.leftOut, ["東京ディズニーランド"]);
+  assert.ok(tokyo.notices.some((notice) => notice.kind === "left-out" && notice.days === 3 && notice.places.length === 1));
+  // Planned anyway, what is printed is two days over, never one day into the night — and it says so.
+  const packed = trip("tokyo", 7, 2, { raw: true, packAnyway: true });
+  assertNoDayPastMidnight(packed);
+  assert.deepEqual(packed.leftOut, []);
+  for (const day of packed.days) assert.ok(minutes(day.stops.at(-1)!.leave) <= 20 * 60, `day ${day.index + 1} ends ${day.stops.at(-1)!.leave}`);
+  assert.ok(packed.notices.some((notice) => notice.kind === "needs-days"));
 });
 
-test("with a hotel, a full list still gives days that end on the day they began", () => {
-  const plan = trip("tokyo", 8, 2, { raw: true, hotel: { name: "新宿のホテル", lat: 35.6909, lon: 139.7003 } });
+test("with a hotel, a full list still gives days that end on the day they began: planned anyway with nothing left out, and by default with what does not fit named", () => {
+  const hotel = { name: "新宿のホテル", lat: 35.6909, lon: 139.7003 };
+  const packed = trip("tokyo", 8, 2, { raw: true, hotel, packAnyway: true });
+  assertNoDayPastMidnight(packed);
+  assert.equal(packed.leftOut.length, 0);
+  const plan = trip("tokyo", 8, 2, { raw: true, hotel });
   assertNoDayPastMidnight(plan);
-  assert.equal(plan.leftOut.length, 0);
+  assert.equal(plan.days.some((day) => day.runsLate), false);
+  assert.deepEqual(plan.leftOut, ["東京ディズニーランド"]);
+  assert.equal(plan.days.reduce((sum, day) => sum + day.stops.length, 0), 7);
 });
 
 test("the way out of and back to the hotel is a train with its stations, like any other leg", () => {
@@ -98,8 +112,8 @@ test("a place pinned to day 3 is printed as day 3, with the free days before it"
   assert.equal(plan.freeDays, 2);
 });
 
-test("an overfull day keeps honest stays and says it is late, even past midnight", () => {
-  const plan = trip("tokyo", 6, 1, { raw: true });
+test("an overfull day that is planned anyway keeps honest stays and says it is late, even past midnight", () => {
+  const plan = trip("tokyo", 6, 1, { raw: true, packAnyway: true });
   assert.equal(plan.days.length, 1);
   assert.equal(plan.days[0].runsLate, true);
   for (const stop of plan.days[0].stops) assert.ok(stop.stayMinutes >= 15, `${stop.place.name} stays ${stop.stayMinutes}`);
@@ -402,7 +416,7 @@ test("a restaurant for dinner does not pull a sight away from its neighbour", ()
   assert.ok(namesOn(dayWith(trip.plan, "渋谷の店")).includes("明治神宮"));
 });
 
-test("only a list that cannot fit its days runs past midnight, and then every clock after midnight says so", () => {
+test("only a list that cannot fit its days and is planned anyway runs past midnight, and then every clock after midnight says so", () => {
   const fitting = [
     planned("tokyo", topOf("tokyo", 10), 3),
     planned("tokyo", topOf("tokyo", 12), 4, { name: "新宿", lat: 35.6909, lon: 139.7003 }),
@@ -420,9 +434,15 @@ test("only a list that cannot fit its days runs past midnight, and then every cl
       for (const stop of day.stops) assert.equal(stop.arriveNextDay || stop.leaveNextDay, false, `${stop.place.name} ${stop.arrive}–${stop.leave}`);
     }
   }
-  // Six sights with Disneyland in one day cannot be kept: the day is printed
+  // Six sights with Disneyland in one day cannot be kept. By default the day
+  // holds what fits and ends on its own date …
+  const fitted = trip("tokyo", 6, 1, { raw: true });
+  assert.equal(fitted.days[0].runsLate || fitted.days[0].endsNextDay, false);
+  assert.equal(fitted.days[0].stops.some((stop) => stop.arriveNextDay || stop.leaveNextDay), false);
+  assert.deepEqual(fitted.leftOut, ["東京国立博物館", "東京ディズニーランド"]);
+  // … and when the traveller asks for everything the day is printed
   // anyway, says it is late, and marks what falls on the next calendar day.
-  const overfull = trip("tokyo", 6, 1, { raw: true });
+  const overfull = trip("tokyo", 6, 1, { raw: true, packAnyway: true });
   const day = overfull.days[0];
   assert.equal(day.runsLate, true);
   assert.equal(day.endsNextDay, true);
@@ -714,8 +734,8 @@ test("a renamed hotel or place is printed under its new name, and a slot after m
   const legs = renamed.days.flatMap((day) => [day.fromHotel, ...day.legs, day.toHotel]).filter((leg) => leg !== null);
   assert.equal(legs.some((leg) => leg.fromName === "清水寺" || leg.toName === "清水寺" || leg.fromName === "京都駅" || leg.toName === "京都駅"), false);
   assert.ok(legs.some((leg) => leg.fromName === "清水寺（改名）" || leg.toName === "清水寺（改名）"));
-  // Six sights with Disneyland on one day run past midnight: the dinner slot after the last stop is on the next calendar day, and says so.
-  const overfull = trip("tokyo", 6, 1, { raw: true });
+  // Six sights with Disneyland on one day, planned anyway, run past midnight: the dinner slot after the last stop is on the next calendar day, and says so.
+  const overfull = trip("tokyo", 6, 1, { raw: true, packAnyway: true });
   const dinnerSlot = overfull.days[0].meals.find((meal) => meal.kind === "dinner")!;
   assert.equal(overfull.days[0].stops.at(-1)!.leaveNextDay, true);
   assert.equal(dinnerSlot.nextDay, true);

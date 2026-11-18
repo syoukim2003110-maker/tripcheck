@@ -45,6 +45,7 @@ import {
   withCity,
   withFirstDayStart,
   withLastDayFinish,
+  withPackAnyway,
   withReservation,
   withStartDate,
   type ShioriTrip,
@@ -151,6 +152,11 @@ const text = {
     noticeDrop: (name: string, days: number) => `「${name}」を外すと、${days}日のまま収まります。`,
     noticeDropAction: "外す",
     noticeTooMuch: "行きたい場所が多く、1日増やしても収まりません。場所を減らすか、日数を大きく増やしてください。",
+    noticeLeftOut: (names: string[], asked: number, days: number | null) => `${names.map((name) => `「${name}」`).join("")}は${asked}日の予定に入りきらなかったため、日程から外しています（行きたい場所のリストには残っています）。${days === null ? "日数を1週間に増やしても、すべては入りきりません。" : `${days}日にすると、すべて入ります。`}`,
+    noticePackAnyway: "遅くなってもすべて入れる",
+    noticePackedAnyway: (names: string[]) => `ご指定のとおり、すべての場所を日程に入れています。そのため、夜遅くまでかかる日があります。${names.map((name) => `「${name}」`).join("")}を日程から外した予定に戻せます。`,
+    noticePackedAnywayAction: "入りきる分だけにする",
+    leftOutRoom: (asked: number) => `${asked}日の予定に入りきりませんでした。下で日を選ぶと、この場所を優先してその日に入れます。`,
     noticeHotelFar: (oneWay: string, saved: string, calmerDays: number) => `このホテルは行き先から遠く、毎日片道 約${oneWay}かかります。下の「泊まる場所」のエリアにすると、旅行全体の移動が約${saved}減ります${calmerDays > 0 ? `。詰まっている日も${calmerDays}日減ります` : ""}。`,
     noticeMealDetour: (name: string, meal: string, minutes: string) => `「${name}」（${meal}）は他の行き先から離れていて、寄るために約${minutes}余計に移動します。`,
     noticeMealTime: (name: string, meal: string) => `「${name}」に${meal}の時間帯に着ける日がありません。日数を増やすか、近くの場所と同じ日にしてください。`,
@@ -449,6 +455,11 @@ const text = {
     noticeDrop: (name: string, days: number) => `Without “${name}” it fits in ${days} day${days === 1 ? "" : "s"}.`,
     noticeDropAction: "Remove",
     noticeTooMuch: "There is too much here even with one more day. Drop some places or add several days.",
+    noticeLeftOut: (names: string[], asked: number, days: number | null) => `${names.map((name) => `“${name}”`).join(", ")} did not fit in ${asked} day${asked === 1 ? "" : "s"} and ${names.length === 1 ? "is" : "are"} not on any day (still in your list). ${days === null ? "Even a week does not hold everything." : `With ${days} days everything fits.`}`,
+    noticePackAnyway: "Put everything in anyway",
+    noticePackedAnyway: (names: string[]) => `Everything is on the plan, as you asked, so a day runs late into the evening. You can go back to the plan that leaves out ${names.map((name) => `“${name}”`).join(", ")}.`,
+    noticePackedAnywayAction: "Keep only what fits",
+    leftOutRoom: (asked: number) => `Did not fit in ${asked} day${asked === 1 ? "" : "s"}. Choose a day below to put this place on that day ahead of the others.`,
     noticeHotelFar: (oneWay: string, saved: string, calmerDays: number) => `This hotel is far from your places: about ${oneWay} each way, every day. Staying in the area suggested below saves about ${saved} over the trip${calmerDays > 0 ? ` and leaves ${calmerDays === 1 ? "one packed day fewer" : `${calmerDays} fewer packed days`}` : ""}.`,
     noticeMealDetour: (name: string, meal: string, minutes: string) => `“${name}” (${meal}) is away from everything else; going there adds about ${minutes} of travel.`,
     noticeMealTime: (name: string, meal: string) => `No day reaches “${name}” at ${meal} time. Add a day, or plan places near it on the same day.`,
@@ -1541,7 +1552,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
   useEffect(() => {
     if (!planKey) return;
     const handle = window.setTimeout(() => {
-      setPlanned({ key: planKey, visit: planVisit, plan: buildShioriPlan({ places: trip.places, days: trip.days, hotel: trip.hotel, locale, wetDays, firstDayStart: trip.firstDayStart ?? null, lastDayFinish: trip.lastDayFinish ?? null }, { rail, cities, routes }) });
+      setPlanned({ key: planKey, visit: planVisit, plan: buildShioriPlan({ places: trip.places, days: trip.days, hotel: trip.hotel, locale, wetDays, firstDayStart: trip.firstDayStart ?? null, lastDayFinish: trip.lastDayFinish ?? null, packAnyway: trip.packAnyway === true }, { rail, cities, routes }) });
     }, 0);
     return () => window.clearTimeout(handle);
   }, [planKey, planVisit, trip, rail, cities, locale, routes, wetDays]);
@@ -2309,6 +2320,13 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
         return <><span>{t.noticeDrop(notice.name, trip.days)}</span><button onClick={() => update((current) => ({ ...current, places: current.places.filter((place) => place.id !== notice.placeId) }))} type="button">{t.noticeDropAction}</button></>;
       case "too-much":
         return <span>{t.noticeTooMuch}</span>;
+      case "left-out": {
+        // What did not fit, the days that bring it back, and the one tap that plans everything anyway.
+        const days = notice.days;
+        return <><span>{t.noticeLeftOut(notice.places.map((place) => place.name), trip.days, days)}</span>{days !== null ? <button onClick={() => update((current) => ({ ...current, days }))} type="button">{t.noticeNeedsDaysAction(days)}</button> : null}<button onClick={() => update((current) => withPackAnyway(current, true))} type="button">{t.noticePackAnyway}</button></>;
+      }
+      case "packed-anyway":
+        return <><span>{t.noticePackedAnyway(notice.places.map((place) => place.name))}</span><button onClick={() => update((current) => withPackAnyway(current, false))} type="button">{t.noticePackedAnywayAction}</button></>;
       case "hotel-far":
         return <span>{t.noticeHotelFar(span(notice.oneWayMinutes), span(notice.savedMinutes), notice.calmerDays ?? 0)}</span>;
       case "meal-detour":
@@ -2686,18 +2704,18 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
           {plan && plan.leftOut.length > 0 ? (
             <section className="shiori-section">
               <h2>{t.leftOut}</h2>
-              {plan.unplaced.length === 0 ? <p className="shiori-warn">{plan.leftOut.join("、")}</p> : (
+              {plan.unplaced.length + plan.overfull.length === 0 ? <p className="shiori-warn">{plan.leftOut.join("、")}</p> : (
                 <>
-                  {plan.leftOut.length > plan.unplaced.length ? <p className="shiori-warn">{plan.leftOut.filter((name) => !plan.unplaced.some((entry) => entry.name === name)).join("、")}</p> : null}
-                  {/* A place an entered time left no room for: why, and the means to put it right. */}
+                  {plan.leftOut.length > plan.unplaced.length + plan.overfull.length ? <p className="shiori-warn">{plan.leftOut.filter((name) => ![...plan.unplaced, ...plan.overfull].some((entry) => entry.name === name)).join("、")}</p> : null}
+                  {/* A place an entered time left no room for, or one the days asked for could not hold: why, and the means to put it right. */}
                   <ul className="shiori-unplaced">
-                    {plan.unplaced.map((entry) => {
+                    {[...plan.unplaced.map((entry) => ({ entry, why: unplacedText(entry), day: entry.day })), ...plan.overfull.map((entry) => ({ entry, why: t.leftOutRoom(trip.days), day: 1 }))].map(({ entry, why, day }) => {
                       const place = trip.places.find((candidate) => candidate.id === entry.placeId);
                       return (
                         <li key={entry.placeId}>
                           <b>{entry.name}</b>
-                          <p className="shiori-warn">{unplacedText(entry)}</p>
-                          {place ? <div className="shiori-stop-edit">{placeControls(place, Math.min(trip.days, Math.max(1, entry.day)))}</div> : null}
+                          <p className="shiori-warn">{why}</p>
+                          {place ? <div className="shiori-stop-edit">{placeControls(place, Math.min(trip.days, Math.max(1, day)))}</div> : null}
                         </li>
                       );
                     })}
