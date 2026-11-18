@@ -28,8 +28,8 @@ function dayText(day: ShioriDay, hotel: ShioriHotel | null): string {
   const lines = [`  Day ${day.index + 1} "${day.title}" — ${day.start}–${day.end}${day.endsNextDay ? " (next day)" : ""}, load ${day.load}${day.runsLate ? ", runs late" : ""}, moving ${day.travelMinutes} min, on foot ${day.walkMinutes} min${day.noLunchRoom ? ", NO ROOM FOR LUNCH" : ""}`];
   if (hotel && day.fromHotel) lines.push(`    leave ${hotel.name} ${day.start}`, legText(day.fromHotel));
   day.stops.forEach((stop, index) => {
-    lines.push(`    ${stop.arrive}–${stop.leave} ${stop.place.name} [${kindOf(stop.place.kind)}; stay ${stop.stayMinutes} min${stop.waitMinutes ? `; waits ${stop.waitMinutes} min first` : ""}]`);
-    for (const meal of day.meals.filter((entry) => entry.afterStop === index)) lines.push(`      (${meal.kind} ${meal.start}${meal.end ? `–${meal.end}` : ""} ${meal.during ? "during the visit, at or near" : meal.atHotel ? "back near" : "near"} ${meal.nearName})`);
+    lines.push(`    ${stop.arrive}–${stop.leave} ${stop.place.name} [${kindOf(stop.place.kind)}; stay ${stop.stayMinutes} min${stop.lunchMinutes ? ` + lunch ${stop.lunchMinutes} min` : ""}${stop.waitMinutes ? `; waits ${stop.waitMinutes} min first` : ""}]`);
+    for (const meal of day.meals.filter((entry) => entry.afterStop === index)) lines.push(`      (${meal.kind} ${meal.start}${meal.end ? `–${meal.end}` : ""} ${meal.during ? (meal.onArrival ? "on arrival, before the visit, at or near" : "during the visit, at or near") : meal.atHotel ? "back near" : "near"} ${meal.nearName})`);
     if (day.cafe && day.cafe.afterStop === index) lines.push(`      (café break ${day.cafe.time}, ${day.cafe.reason})`);
     if (index < day.legs.length) lines.push(legText(day.legs[index]));
   });

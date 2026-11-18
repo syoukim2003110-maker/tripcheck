@@ -803,3 +803,46 @@ test("a crossing by boat is headed 船 / Ferry, not 電車 / Train, and a train 
   assert.match(source, /ride\.boat \? t\.rideBoat : t\.rideStops\(ride\.stops\)/);
   assert.match(source, /\}\[legWord\(leg\)\]/);
 });
+
+test("a stop that holds a lunch hour says so beside its stay, and a lunch eaten on arrival is not called 'during your visit': 11:54–15:24 is 2 h 30 and a lunch", () => {
+  // Was: kobe-3, 11:54–15:24 神戸アンパンマンこどもミュージアム&モール ・ 滞在 2時間30分 — a range an hour longer than the stay beside it.
+  const { plan } = auditPlan("kobe-3");
+  const museum = plan.days.flatMap((day) => day.stops).find((stop) => /アンパンマン/.test(stop.place.name))!;
+  assert.deepEqual([museum.arrive, museum.leave, museum.stayMinutes, museum.lunchMinutes], ["11:54", "15:24", 150, 60]);
+  // Was: sapporo-3, 12:35–15:05 北海道博物館 with (lunch 12:35–13:35 北海道博物館の見学の途中で): the lunch begins on arrival.
+  const sapporo = auditPlan("sapporo-3").plan.days.find((day) => day.stops.some((stop) => stop.place.name === "北海道博物館"))!;
+  const at = sapporo.stops.findIndex((stop) => stop.place.name === "北海道博物館");
+  const lunch = sapporo.meals.find((meal) => meal.kind === "lunch" && meal.afterStop === at)!;
+  assert.equal(lunch.during, true);
+  assert.equal(lunch.start, sapporo.stops[at].arrive);
+  assert.equal(lunch.onArrival, true);
+  // In every trip of the audit: the printed times of a stop are its stay plus the lunch it says it holds, nothing
+  // else; a lunch that adds its hour is listed under that stop; "on arrival" is said exactly when the lunch begins
+  // the minute of arrival.
+  let held = 0;
+  let onArrival = 0;
+  for (const scenario of scenarios) {
+    for (const day of auditPlan(scenario.id).plan.days) {
+      day.stops.forEach((stop, index) => {
+        const where = `${scenario.id} day ${day.index + 1}: ${stop.arrive}–${stop.leave} ${stop.place.name}`;
+        const span = minutesOfClock(stop.leave) + (stop.leaveNextDay ? 1_440 : 0) - minutesOfClock(stop.arrive) - (stop.arriveNextDay ? 1_440 : 0);
+        assert.equal(span, stop.stayMinutes + (stop.lunchMinutes ?? 0), where);
+        const during = day.meals.find((meal) => meal.afterStop === index && meal.during);
+        if (stop.lunchMinutes) {
+          held += 1;
+          assert.ok(during, where);
+        }
+        if (during) {
+          assert.equal(during.onArrival === true, during.start === stop.arrive, where);
+          if (during.onArrival) onArrival += 1;
+        } else assert.equal(day.meals.some((meal) => meal.afterStop === index && meal.onArrival), false, where);
+      });
+    }
+  }
+  assert.ok(held >= 3 && onArrival >= 1, `${held} stops with a lunch hour in them, ${onArrival} lunches on arrival`);
+  // The page says both, in both languages, on the card and on the map's peek.
+  const source = readFileSync(new URL("../app/shiori/ShioriApp.tsx", import.meta.url), "utf8");
+  for (const key of ["mealOnArrival", "stayWithLunch"]) assert.equal(source.match(new RegExp(`^    ${key}: \\(`, "gm"))?.length, 2, key);
+  assert.equal(source.match(/stayText\(stop\.stayMinutes, stop\.lunchMinutes\)/g)?.length, 2);
+  assert.match(source, /meal\.onArrival \? t\.mealOnArrival\(meal\.nearName\) : t\.mealDuring\(meal\.nearName\)/);
+});

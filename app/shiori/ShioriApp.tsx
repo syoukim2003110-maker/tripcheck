@@ -300,6 +300,8 @@ const text = {
     mealNear: (name: string) => `${name}の近く`,
     mealNearHotel: (name: string) => `ホテル（${name}）に戻って、その近く`,
     mealDuring: (name: string) => `${name}の見学の途中で（中か、その近く）`,
+    mealOnArrival: (name: string) => `${name}に着いたら、まず（中か、その近く）`,
+    stayWithLunch: (lunch: string) => `＋昼ごはん${lunch}`,
     showFood: "近くのお店を見る",
     hideFood: "閉じる",
     foodLoading: "近くのお店を探しています…",
@@ -591,6 +593,8 @@ const text = {
     mealNear: (name: string) => `near ${name}`,
     mealNearHotel: (name: string) => `back near your hotel (${name})`,
     mealDuring: (name: string) => `during your visit to ${name}, inside or close by`,
+    mealOnArrival: (name: string) => `when you arrive at ${name}, inside or close by, before the visit`,
+    stayWithLunch: (lunch: string) => ` + lunch ${lunch}`,
     showFood: "Places to eat nearby",
     hideFood: "Hide",
     foodLoading: "Looking nearby…",
@@ -1108,8 +1112,8 @@ function MealRow({ meal, locale, onAdd, advice, slot }: { meal: ShioriMeal; loca
       <span aria-hidden="true" className="shiori-meal-mark"><Icon name="meal" /></span>
       <div className="shiori-meal-head">
         <span>
-          <b>{meal.kind === "lunch" ? t.lunch : t.dinner}</b> <span className="shiori-meal-time">{meal.nextDay ? <NextDay locale={locale} /> : null}{meal.start}{meal.end ? `–${meal.end}` : locale === "ja" ? "ごろ" : ""}</span>
-          <small><span className="shiori-sep"> ・ </span>{meal.during ? t.mealDuring(meal.nearName) : meal.atHotel ? t.mealNearHotel(meal.nearName) : t.mealNear(meal.nearName)}</small>
+          <b>{meal.kind === "lunch" ? t.lunch : t.dinner}</b> <span className="shiori-meal-time">{meal.nextDay ? <NextDay locale={locale} /> : null}{meal.end || locale === "ja" ? "" : t.about}{meal.start}{meal.end ? `–${meal.end}` : locale === "ja" ? "ごろ" : ""}</span>
+          <small><span className="shiori-sep"> ・ </span>{meal.during ? (meal.onArrival ? t.mealOnArrival(meal.nearName) : t.mealDuring(meal.nearName)) : meal.atHotel ? t.mealNearHotel(meal.nearName) : t.mealNear(meal.nearName)}</small>
         </span>
         <button aria-expanded={state !== "closed"} onClick={() => void open()} type="button">{state === "closed" ? t.showFood : t.hideFood}</button>
       </div>
@@ -2384,7 +2388,8 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
     selectDay(next);
     window.requestAnimationFrame(() => document.getElementById(`shiori-tab-${next}`)?.focus());
   };
-  const stayText = (minutes: number) => `${t.stay}${t.staySep}${durationText(minutes, locale)}`;
+  // (A lunch hour inside the stop's printed times is said beside the stay: 11:54–15:24 is 2 h 30 and a lunch.)
+  const stayText = (minutes: number, lunchMinutes = 0) => `${t.stay}${t.staySep}${durationText(minutes, locale)}${lunchMinutes > 0 ? t.stayWithLunch(durationText(lunchMinutes, locale)) : ""}`;
   const shareLink = typeof window === "undefined" ? "" : `${window.location.origin}${window.location.pathname}#s=${encodeTrip(trip)}`;
 
   return (
@@ -2561,7 +2566,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
                                   {stop.reserved ? <> <i className="shiori-fixed">{t.reserveChip(stop.arrive)}</i></> : estimated ? <> <i className="shiori-est">{t.estimate}</i></> : null}
                                 </span>
                                 <b className="shiori-stop-name">{stop.place.name}</b>
-                                <small>{stop.place.meal ? t.mealLabels[stop.place.meal] : kindLabel(stop.place.kind, locale)} ・ <span className="shiori-nb">{stayText(stop.stayMinutes)}</span></small>
+                                <small>{stop.place.meal ? t.mealLabels[stop.place.meal] : kindLabel(stop.place.kind, locale)} ・ <span className="shiori-nb">{stayText(stop.stayMinutes, stop.lunchMinutes)}</span></small>
                                 {stop.mealMissed ? <small className="shiori-warn">{t.mealMissed}</small> : null}
                               </span>
                               <Photo alt="" icon={stop.place.meal ? "meal" : "pin"} img={stop.place.img} width={160} />
@@ -2656,7 +2661,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
                   pinLabel: t.pinLabel,
                   legTag: (minutes: number) => `${t.about}${minutes}${t.minute}`,
                   modes: { walk: t.walk, rail: t.rail, transit: t.transit, taxi: t.taxi },
-                  peekMeta: (stop: ShioriStop) => `${stop.arriveNextDay ? t.nextDayMark : ""}${stop.arrive}–${stop.leaveNextDay ? t.nextDayMark : ""}${stop.leave} ・ ${stayText(stop.stayMinutes)}`,
+                  peekMeta: (stop: ShioriStop) => `${stop.arriveNextDay ? t.nextDayMark : ""}${stop.arrive}–${stop.leaveNextDay ? t.nextDayMark : ""}${stop.leave} ・ ${stayText(stop.stayMinutes, stop.lunchMinutes)}`,
                 }}
               />
             ) : null}

@@ -167,7 +167,14 @@ export type ShioriStop = {
   place: ShioriPlace;
   arrive: string;
   leave: string;
+  /** The visit itself. `arrive`–`leave` is longer by `lunchMinutes` where a lunch hour lies inside the stop. */
   stayMinutes: number;
+  /**
+   * The lunch hour that `arrive`–`leave` holds on top of the stay: a visit
+   * that runs across lunchtime, with the lunch during it. Absent otherwise.
+   * (11:54–15:24 beside "stay 2 h 30" read as a mistake without it.)
+   */
+  lunchMinutes?: number;
   /**
    * Idle minutes before this stop: a restaurant that is not serving yet.
    * Every such minute is here, at the first stop as at any other. (A day
@@ -289,6 +296,11 @@ export type ShioriMeal = {
    * inside the stop's own times.
    */
   during?: true;
+  /**
+   * With `during`: the lunch begins the minute the traveller arrives (after
+   * 12:30), so it is eaten before the visit, not in the middle of it.
+   */
+  onArrival?: true;
 };
 
 export type ShioriDay = {
@@ -1419,7 +1431,7 @@ function planCore(input: ShioriInput, options: PlanOptions, frames: Frames | nul
       const leaveMinutes = lunchDuring ? times[stopIndex].leave : visitOver;
       if (lunchDuring) {
         const start = lunchDuringStart(times[stopIndex].arrive);
-        meals.push({ kind: "lunch", afterStop: stopIndex, start: clock(start), end: clock(start + LUNCH_MINUTES), near: { latitude: place.lat, longitude: place.lon }, nearName: place.name, during: true });
+        meals.push({ kind: "lunch", afterStop: stopIndex, start: clock(start), end: clock(start + LUNCH_MINUTES), near: { latitude: place.lat, longitude: place.lon }, nearName: place.name, during: true, ...(start === times[stopIndex].arrive ? { onArrival: true as const } : {}) });
       } else if (lunchHere) {
         meals.push({ kind: "lunch", afterStop: stopIndex, start: clock(leaveMinutes), end: entry.departure, near: { latitude: place.lat, longitude: place.lon }, nearName: place.name, ...(leaveMinutes >= 1_440 ? { nextDay: true } : {}) });
       }
@@ -1438,6 +1450,7 @@ function planCore(input: ShioriInput, options: PlanOptions, frames: Frames | nul
         // From the minutes, not the printed clocks: 23:32 to 01:02 is an hour and a half.
         // The visit itself: a lunch hour inside it is the lunch row's, not the stay's.
         stayMinutes: visitOver - times[stopIndex].arrive,
+        ...(lunchDuring ? { lunchMinutes: LUNCH_MINUTES } : {}),
         waitMinutes,
         mealMissed: Boolean(place.meal) && entry.openingStatus !== "verified_open",
         arriveNextDay: times[stopIndex].arrive >= 1_440,
@@ -1459,7 +1472,7 @@ function planCore(input: ShioriInput, options: PlanOptions, frames: Frames | nul
       if (park >= 0) {
         const start = lunchDuringStart(times[park].arrive);
         const place = stops[park].place;
-        meals.push({ kind: "lunch", afterStop: park, start: clock(start), end: clock(start + LUNCH_MINUTES), near: { latitude: place.lat, longitude: place.lon }, nearName: place.name, during: true });
+        meals.push({ kind: "lunch", afterStop: park, start: clock(start), end: clock(start + LUNCH_MINUTES), near: { latitude: place.lat, longitude: place.lon }, nearName: place.name, during: true, ...(start === times[park].arrive ? { onArrival: true as const } : {}) });
       }
     }
     const lastPlace = stops.at(-1)!.place;
