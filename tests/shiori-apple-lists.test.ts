@@ -106,3 +106,13 @@ test("the privacy page says, in both languages, that the map is Apple's, that Ap
   assert.match(privacy, /Street paths kept in your browser come from OpenStreetMap only/);
   assert.match(privacy, /Apple&apos;s name, address, category and position of the place are not stored\./);
 });
+
+test("a minute tag over a pin is hidden on the map's first view too, not only after the map is moved", () => {
+  const declutter = map.slice(map.indexOf("const declutter = () => {"), map.indexOf("// The stop whose card is open"));
+  // Tags or pins MapKit has not laid out yet are looked at again shortly, a bounded number of times.
+  assert.match(declutter, /let unplaced = pins\.length < pinBoxes\.length;/);
+  assert.match(declutter, /if \(unplaced && retries < 20\)/);
+  // And again whenever the map's own box changes size (a phone's "expand map").
+  assert.match(declutter, /new ResizeObserver\(soon\)/);
+  assert.match(declutter, /watcher\?\.disconnect\(\)/);
+});

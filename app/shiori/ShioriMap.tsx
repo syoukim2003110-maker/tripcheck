@@ -439,24 +439,34 @@ export default function ShioriMap({ days, selectedDay, hotel, focus, onSelectSto
       const near = instance.region.span.latitudeDelta <= STATIONS_WITHIN_SPAN;
       for (const station of stationAnnotations.current) station.visible = near;
       // A pin or tag MapKit has not laid out yet has no size, and hides nothing.
-      const pins = pinElements.current.filter((element) => element.classList.contains("is-selected") || element.classList.contains("is-hotel")).map((element) => element.getBoundingClientRect()).filter((box) => box.width > 0);
+      const pinBoxes = pinElements.current.filter((element) => element.classList.contains("is-selected") || element.classList.contains("is-hotel")).map((element) => element.getBoundingClientRect());
+      const pins = pinBoxes.filter((box) => box.width > 0);
       const shown: DOMRect[] = [];
+      let unplaced = pins.length < pinBoxes.length;
       for (const tag of tagElements.current) {
         tag.style.visibility = "visible";
         const box = tag.getBoundingClientRect();
-        if (box.width === 0) continue;
+        if (box.width === 0) { unplaced = true; continue; }
         const hit = (other: DOMRect) => box.left < other.right + 2 && box.right > other.left - 2 && box.top < other.bottom + 2 && box.bottom > other.top - 2;
         if (pins.some(hit) || shown.some(hit)) tag.style.visibility = "hidden";
         else shown.push(box);
       }
+      // MapKit had not laid every tag out yet (the map's first frames, or a
+      // map below the fold on a phone): looked at again shortly, a few times.
+      if (unplaced && retries < 20) { retries += 1; window.clearTimeout(later); later = window.setTimeout(declutter, 250); }
     };
     // MapKit places its annotations a moment after the map stops moving.
     let later = 0;
-    const soon = () => { window.clearTimeout(later); later = window.setTimeout(declutter, 120); };
+    let retries = 0;
+    const soon = () => { retries = 0; window.clearTimeout(later); later = window.setTimeout(declutter, 120); };
     soon();
     instance.addEventListener("region-change-end", soon);
     window.addEventListener("resize", soon);
-    return () => { window.clearTimeout(later); instance.removeEventListener("region-change-end", soon); window.removeEventListener("resize", soon); };
+    // The map's own box changes without the window's: the phone's "expand map", the page settling around it.
+    const box = container.current;
+    const watcher = box && typeof ResizeObserver === "function" ? new ResizeObserver(soon) : null;
+    if (box) watcher?.observe(box);
+    return () => { window.clearTimeout(later); watcher?.disconnect(); instance.removeEventListener("region-change-end", soon); window.removeEventListener("resize", soon); };
   }, [days, selectedDay, hotel, ready]);
 
   // The stop whose card is open, or that is open in the itinerary, is the larger, ringed pin.
