@@ -73,8 +73,9 @@ export function safePlaceId(raw: string) {
  *     whenever the trip is opened.
  *   - "apple-legacy": an Apple stop saved before Place IDs were kept, with
  *     no Place ID in it (`apple-<lat>,<lon>`). There is nothing to look it
- *     up by, so it is kept as it was until the page has found it again by
- *     its name (see appleRematches) and can keep it as a Place ID.
+ *     up by, so on the next visit the page looks for it once by its name
+ *     (see appleRematches): found, it is kept as its Place ID; not found, it
+ *     is removed and the page says so (see withoutRematch).
  *   - everything else ("wikidata" bundled sights, "hotpepper" shops — name,
  *     position and shop ID, as the guide allows — and the open lookups'
  *     "osm" places) is kept as it always was.
@@ -219,6 +220,19 @@ export function withRematch(trip: ShioriTrip, key: string, placeId: string, deta
   if (key === "hotel") return trip.hotel && !trip.hotel.id ? { ...trip, hotel: { ...now, id } } : trip;
   if (trip.places.some((place) => place.id === id)) return { ...trip, places: trip.places.filter((place) => place.id !== key) };
   return { ...trip, places: trip.places.map((place) => place.id === key ? { ...place, ...now, id } : place) };
+}
+
+/**
+ * The trip without a legacy stop (or the id-less hotel, key "hotel") that
+ * Apple's search, asked by its very name where it is, did not find again.
+ * What it keeps is Apple's name and position of a place, which may be kept
+ * only for a while (Attachment 6, 2.5): with no Place ID to keep instead, it
+ * goes, and the page says so (the traveller adds it again by searching).
+ * A search that could not be asked (offline, Apple down) removes nothing.
+ */
+export function withoutRematch(trip: ShioriTrip, key: string): ShioriTrip {
+  if (key === "hotel") return trip.hotel && !trip.hotel.id && !trip.hotel.pending ? { ...trip, hotel: null } : trip;
+  return trip.places.some((place) => place.id === key && placeSource(place.id) === "apple-legacy") ? { ...trip, places: trip.places.filter((place) => place.id !== key) } : trip;
 }
 
 /** A name short enough to be read back. Cut by whole characters, so an emoji is never split in two. */

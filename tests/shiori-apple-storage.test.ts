@@ -19,6 +19,7 @@ import {
   withAppleDetails,
   withRematch,
   withoutAppleData,
+  withoutRematch,
   type ShioriTrip,
 } from "../lib/shiori/state.ts";
 
@@ -248,4 +249,28 @@ test("the page plans without Apple's places while the Apple map has failed, and 
   assert.match(page, /const usable = useMemo\(\(\) => \(appleMap === "failed" \? withoutAppleData\(plannableTrip\(trip\)\) : plannableTrip\(trip\)\)/);
   assert.match(page, /const cityTitle = tripTitleName\(trip\);/);
   assert.equal(page.match(/appleMapAside: \(count: number\) =>/g)?.length, 2);
+});
+
+test("a stop or hotel kept from before Place IDs that Apple's search does not find again is removed, and nothing else is", () => {
+  const legacy: ShioriTrip = {
+    ...emptyTrip,
+    places: [{ id: "apple-34.29604,132.31969", name: "旧い保存の場所", lat: 34.29604, lon: 132.31969, stayMinutes: 60 }, { id: "wikidata-Q1", name: "原爆ドーム", lat: 34.39555, lon: 132.45358, stayMinutes: 30 }],
+    hotel: { name: "古いホテル", lat: 34.39, lon: 132.46 },
+  };
+  assert.deepEqual(withoutRematch(legacy, "apple-34.29604,132.31969").places.map((place) => place.id), ["wikidata-Q1"]);
+  assert.equal(withoutRematch(legacy, "hotel").hotel, null);
+  // Only a legacy stop, and only an id-less hotel.
+  assert.equal(withoutRematch(legacy, "wikidata-Q1"), legacy);
+  const osmHotel = { ...legacy, hotel: { name: "駅前ホテル", lat: 34.3975, lon: 132.4753, id: "osm-node-7" } };
+  assert.equal(withoutRematch(osmHotel, "hotel"), osmHotel);
+});
+
+test("the page removes a legacy stop only when Apple answered without it, and says how many in both languages", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const page = await readFile(new URL("../app/shiori/ShioriApp.tsx", import.meta.url), "utf8");
+  const effect = page.slice(page.indexOf("const rematches = useMemo"), page.indexOf("const usable = useMemo"));
+  assert.match(effect, /if \(same\?\.id\) \{\s*setTrip\(\(current\) => withRematch\(current, stop\.key, same\.id!, same\)\);\s*\} else \{\s*setTrip\(\(current\) => withoutRematch\(current, stop\.key\)\);/);
+  // A search that could not be asked removes nothing.
+  assert.match(effect, /\}, \(\) => undefined\);/);
+  assert.equal(page.match(/rematchGone: \(count: number\) =>/g)?.length, 2);
 });

@@ -43,9 +43,10 @@ for (const [cityIndex, id] of CITY_IDS.entries()) {
   const city = cities.find((entry) => entry.id === id);
   if (!city) continue;
   const next = draws(1000 + cityIndex);
-  const centre: ShioriHotel = { name: "中心部のホテル", lat: city.lat, lon: city.lon };
+  // Invented hotels, marked as such (an id-less hotel is one kept from before hotels had ids, which may be Apple's).
+  const centre: ShioriHotel = { name: "中心部のホテル", lat: city.lat, lon: city.lon, id: "scenario-centre-hotel" };
   const edgeSight = [...city.sights].sort((a, b) => Math.hypot(b.lat - city.lat, b.lon - city.lon) - Math.hypot(a.lat - city.lat, a.lon - city.lon))[0];
-  const edge: ShioriHotel = { name: "外れのホテル", lat: edgeSight.lat, lon: edgeSight.lon };
+  const edge: ShioriHotel = { name: "外れのホテル", lat: edgeSight.lat, lon: edgeSight.lon, id: "scenario-edge-hotel" };
   const shapes: Array<{ sights: PopularSight[]; days: number; hotel: ShioriHotel | null; note: string }> = [
     { sights: city.sights.slice(0, 5), days: 1, hotel: null, note: "top 5 sights, 1 day, no hotel" },
     { sights: city.sights.slice(0, 8), days: 2, hotel: centre, note: "top 8 sights, 2 days, hotel in the centre" },

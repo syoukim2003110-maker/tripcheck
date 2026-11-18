@@ -60,6 +60,7 @@ import {
   withLastDayFinish,
   withPackAnyway,
   withRematch,
+  withoutRematch,
   withReservation,
   withStartDate,
   type ShioriTrip,
@@ -432,6 +433,7 @@ const text = {
     applePendingChip: "読み込み中の場所",
     appleFailedChip: "読み込めなかった場所",
     appleChip: "Apple マップで選んだ場所",
+    rematchGone: (count: number) => `以前の版で保存した場所・ホテル${count}件を Apple マップで見つけ直せなかったため、リストから外しました。必要なら名前で探して追加し直してください。`,
     chipMapLabel: "選んだ場所の地図",
     appleMapAside: (count: number) => `Apple の地図を表示できないため、Apple マップで見つけた場所${count}件を外して予定を作っています（場所は消えていません）。地図が表示されると元に戻ります。`,
     mapStreetCredit: "一部の道のり © OpenStreetMap contributors",
@@ -748,6 +750,7 @@ const text = {
     applePendingChip: "Place loading",
     appleFailedChip: "Place not loaded",
     appleChip: "Place chosen on Apple Maps",
+    rematchGone: (count: number) => `${count === 1 ? "1 place or hotel" : `${count} places or hotels`} saved by an earlier version could not be found again on Apple Maps and ${count === 1 ? "was" : "were"} removed from your list. Search for ${count === 1 ? "it" : "them"} by name to add ${count === 1 ? "it" : "them"} again.`,
     chipMapLabel: "Map of the places you chose",
     appleMapAside: (count: number) => `Apple's map cannot be shown, so ${count === 1 ? "1 place" : `${count} places`} found on Apple Maps ${count === 1 ? "is" : "are"} left out of the plan for now (still in your list). ${count === 1 ? "It comes" : "They come"} back when the map is shown.`,
     mapStreetCredit: "Some street routes © OpenStreetMap contributors",
@@ -1592,9 +1595,13 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
 
   // A stop kept from before Place IDs were kept, with no Place ID to look it
   // up by (and a hotel chosen before hotels had ids), is looked for once per
-  // visit by its very name where it is; found, it is kept as its Place ID.
+  // visit by its very name where it is; found, it is kept as its Place ID;
+  // not found, it is removed (it holds Apple's name and position, which are
+  // not kept for good) and the page says how many. A search that could not
+  // be asked removes nothing.
   const rematches = useMemo(() => appleRematches(trip), [trip]);
   const rematchTried = useRef(new Set<string>());
+  const [rematchGone, setRematchGone] = useState(0);
   useEffect(() => {
     if (!appleRelayClient()) return;
     for (const stop of rematches) {
@@ -1603,7 +1610,12 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
       rematchTried.current.add(tried);
       void appleRelaySearch({ query: stop.name, language: locale === "ja" ? "ja-JP" : "en-US", near: { latitude: stop.lat, longitude: stop.lon }, withinMeters: 500 }).then((results) => {
         const same = results.find((result) => result.id && /^[A-Za-z0-9]{4,64}$/.test(result.id) && placeNameCertainty(result.name, stop.name) === 2);
-        if (same?.id) setTrip((current) => withRematch(current, stop.key, same.id!, same));
+        if (same?.id) {
+          setTrip((current) => withRematch(current, stop.key, same.id!, same));
+        } else {
+          setTrip((current) => withoutRematch(current, stop.key));
+          setRematchGone((count) => count + 1);
+        }
       }, () => undefined);
     }
   }, [rematches, locale]);
@@ -2674,10 +2686,11 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
 
           {/* Apple places that are not in hand: said once, above the plan that is made without them. */}
           {appleWaiting ? <p aria-live="polite" className="shiori-working">{t.appleLoading}</p> : null}
-          {appleFailed.length > 0 || appleGone.length > 0 || appleAside > 0 ? (
+          {appleFailed.length > 0 || appleGone.length > 0 || appleAside > 0 || rematchGone > 0 ? (
             <div className="shiori-notices shiori-screen-only" role="status">
               {appleFailed.length > 0 ? <p><span>{t.appleFailed(appleFailed.length)}</span> <button onClick={retryApple} type="button">{t.appleRetry}</button></p> : null}
               {appleAside > 0 ? <p><span>{t.appleMapAside(appleAside)}</span></p> : null}
+              {rematchGone > 0 ? <p><span>{t.rematchGone(rematchGone)}</span></p> : null}
               {appleGone.length > 0 ? (
                 <p>
                   <span>{t.appleGone(appleGone.length)}</span>{" "}
