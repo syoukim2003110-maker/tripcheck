@@ -4,7 +4,10 @@ import test from "node:test";
 import { cafeBreakFor } from "../lib/shiori/cafes.ts";
 import { buildMealBrief, EMPTY_MEAL_PREFS, mealSights, mealSlotKey, openMealSlots } from "../lib/shiori/meal-advice.ts";
 import { DAY_FILLING_STAY, dayClock, daySearch, type SearchProblem } from "../lib/shiori/day-search.ts";
-import { buildShioriPlan, departureAfterStop, dinnerHourAt, dinnerSlot, nobodySleepsAt, type ShioriDay } from "../lib/shiori/plan.ts";
+import { readdirSync, readFileSync } from "node:fs";
+
+import { isBoatLineName } from "../lib/rail-router.ts";
+import { buildShioriPlan, departureAfterStop, dinnerHourAt, dinnerSlot, hardToReach, nobodySleepsAt, type ShioriDay } from "../lib/shiori/plan.ts";
 import { placeFromSight } from "../lib/shiori/state.ts";
 import { shioriStayMinutes } from "../lib/shiori/stay.ts";
 import { auditPlan, cities, railOf, scenarioPlaces, scenarios } from "../scripts/audit-scenarios.ts";
@@ -496,7 +499,7 @@ test("beyond a short hop a leg is the train, not a taxi: the bundled journey whe
   assert.equal(bali.days[0].legs[0].mode, "taxi");
 });
 
-test("in every trip of the audit a taxi is a hop of four kilometres at most: 128 taxi rides, 106 of them of 35 minutes or more, are 3 short ones", () => {
+test("in every trip of the audit a taxi is a hop of four kilometres at most: 128 taxi rides, 106 of them of 35 minutes or more, are two or three short ones", () => {
   let taxis = 0;
   let unknown = 0;
   for (const scenario of scenarios) {
@@ -515,4 +518,96 @@ test("in every trip of the audit a taxi is a hop of four kilometres at most: 128
   assert.ok(unknown > 0);
   // The same pair goes the same way on every day: london-3 leaves its Greenwich hotel by train each morning.
   for (const day of auditPlan("london-3").plan.days) assert.notEqual(day.fromHotel?.mode, "taxi");
+});
+
+test("a crossing by boat is never beaten by a taxi or a walk drawn over the water: Miyajima is reached by the ferry the network has", () => {
+  // Were: ↓ taxi 45 min 広島平和記念資料館 > 厳島神社 and ↓ taxi 45 min 厳島神社 > the hotel in town, straight across the strait.
+  for (const id of ["hiroshima-1", "hiroshima-2"]) {
+    const { plan } = auditPlan(id);
+    const day = plan.days.find((entry) => entry.stops.some((stop) => stop.place.name === "厳島神社"))!;
+    const index = day.stops.findIndex((stop) => stop.place.name === "厳島神社");
+    const into = index === 0 ? day.fromHotel! : day.legs[index - 1];
+    assert.equal(into.mode, "rail", id);
+    const ferry = into.rail!.rides.at(-1)!;
+    assert.deepEqual([ferry.boat, ferry.from, ferry.to], [true, "宮島口駅", "宮島桟橋"], id);
+    assert.ok(/フェリー|汽船|航路/.test(ferry.line ?? ""), ferry.line ?? "");
+    assert.ok(into.rail!.rides.slice(0, -1).every((ride) => ride.boat === undefined), "a train is not a boat");
+  }
+  // From the pier on the mainland the shrine is 2.4 km in a straight line — across the water. Whatever a
+  // road or a footpath is measured at, the leg is the ferry.
+  const pier = { id: "pier", name: "宮島口", lat: 34.3118, lon: 132.3028, stayMinutes: 30 };
+  const input = { places: [pier, sightOf("hiroshima", "厳島神社")], days: 1, hotel: null, locale: "ja" as const };
+  const crossing = buildShioriPlan(input, { rail: railOf("hiroshima"), cities }).days[0];
+  const leg = crossing.legs[0];
+  assert.deepEqual([leg.mode, leg.rail?.rides.length, leg.rail?.rides[0].boat], ["rail", 1, true]);
+  for (const routes of [
+    new Map([[`walk|${leg.key}`, { minutes: 9, path: [leg.from, leg.to] }]]),
+    new Map([[`drive|${leg.key}`, { minutes: 4, path: [leg.from, leg.to] }]]),
+    new Map([[`walk|${leg.key}`, { minutes: 9, path: [leg.from, leg.to] }], [`drive|${leg.key}`, { minutes: 4, path: [leg.from, leg.to] }]]),
+  ]) {
+    const measured = buildShioriPlan(input, { rail: railOf("hiroshima"), cities, routes }).days[0].legs[0];
+    assert.deepEqual([measured.mode, measured.minutes], ["rail", leg.minutes]);
+  }
+  // Which bundled lines are boats is read off their names; this is all of them. A regenerated network
+  // with a boat under another kind of name must be added to isBoatLineName, not pass unnoticed here.
+  const boats: Record<string, string[]> = {};
+  for (const file of readdirSync(new URL("../public/rail/", import.meta.url)).sort()) {
+    const network = JSON.parse(readFileSync(new URL(`../public/rail/${file}`, import.meta.url), "utf8")) as { id: string; lines: Array<[string, string]> };
+    const found = network.lines.filter(([ja, en]) => isBoatLineName(ja, en)).map(([ja]) => ja).sort();
+    if (found.length > 0) boats[network.id] = found;
+  }
+  assert.deepEqual(boats, {
+    hiroshima: ["JR西日本宮島フェリー", "宮島松大汽船", "宮島航路"],
+    london: ["ウーリッジ・フェリー"],
+    newyork: ["スタテン島フェリー"],
+    sanfrancisco: ["Alameda Seaplane–San Francisco ferry", "Harbor Bay–San Francisco ferry", "Oakland/Alameda–San Francisco ferry", "Oakland/Alameda–South San Francisco ferry", "Richmond–San Francisco ferry", "Sausalito–San Francisco ferry", "Tiburon–San Francisco ferry", "Treasure Island–San Francisco ferry", "Vallejo–San Francisco ferry", "水上バス"],
+  });
+  for (const [ja, en] of [["箱根ロープウェイ", "Hakone Ropeway"], ["ロンドン・ケーブルカー", "London cable car"], ["Riverside Line", "Riverside Line"], ["山陽本線", "San'yō Main Line"]]) assert.equal(isBoatLineName(ja, en), false, ja);
+});
+
+test("an island or a summit is never reached by a taxi, and the way up to a summit is not printed as a level walk: public transport, the way unknown", () => {
+  for (const [kind, name, reach] of [
+    ["island", "厳島", "island"], ["heritage site", "リバティ島", "island"], ["island", "Ellis Island", "island"], ["historical cultural heritage site", "コッカトゥー島 (ニューサウスウェールズ州)", "island"], ["neighborhood", "Alcatraz Island", null],
+    ["artificial island", "パーム・ジュメイラ", null], ["neighborhood", "出島", null], ["japanese castle", "広島", null], ["island group", "オランゴ環礁", null],
+    ["mountain", "弥山", "summit"], ["stratovolcano", "女峰山", "summit"], ["volcano", "箱根山", "summit"], ["mountain pass", "ハイヴァン峠", null], ["mountain range", "五行山", null],
+    ["volcano observatory", "火山観測所", null], ["hill", "カンピドリオ", null], ["hill castle", "中城城", null], ["volcanic crater lake", "芦ノ湖", null], [undefined, "東京タワー", null],
+  ] as const) assert.equal(hardToReach({ kind, name }), reach, `${name} [${kind}]`);
+
+  // Were: ↓ taxi 50 min 広島市現代美術館 > 厳島, ↓ taxi 41 min a hotel > リバティ島, ↓ taxi 21 min ウォール街 > 自由の女神像,
+  // ↓ walk 21 min a hotel > 弥山 (535 m up), ↓ taxi 45 min 鬼怒楯岩大吊橋 > 女峰山 (2,483 m).
+  let checked = 0;
+  for (const scenario of scenarios) {
+    const { plan } = auditPlan(scenario.id);
+    for (const day of plan.days) {
+      const ends = [null, ...day.stops.map((stop) => stop.place), null];
+      const legs = [day.fromHotel, ...day.legs, day.toHotel];
+      legs.forEach((leg, index) => {
+        if (!leg) return;
+        const reach = [ends[index], ends[index + 1]].map((place) => (place ? hardToReach(place) : null));
+        if (!reach.some(Boolean)) return;
+        checked += 1;
+        const where = `${scenario.id}: ${leg.mode} ${leg.minutes} min ${leg.fromName} > ${leg.toName}`;
+        assert.notEqual(leg.mode, "taxi", where);
+        if (reach.includes("summit") && leg.mode === "walk") assert.ok(straightKm(leg) <= 0.9, where);
+      });
+    }
+  }
+  assert.ok(checked >= 15, `${checked} legs to or from an island or a summit`);
+  // The statue stands on Liberty Island: 3.5 km from Wall Street and 2 km from the Battery, a hop a taxi would
+  // be the plan for anywhere else. The planner has no ferry for it; it says public transport, way unknown.
+  const statue = sightOf("newyork", "自由の女神像");
+  assert.equal(hardToReach(statue), null, "nothing in its own kind or name says so");
+  for (const from of [sightOf("newyork", "ウォール街"), { id: "battery", name: "Battery Park", lat: 40.7033, lon: -74.017, stayMinutes: 30 }]) {
+    const day = buildShioriPlan({ places: [from, statue], days: 1, hotel: null, locale: "ja" }, { rail: railOf("newyork"), cities }).days[0];
+    assert.deepEqual([day.legs[0].mode, day.legs[0].rail], ["transit", null], from.name);
+  }
+  // The way from the temple at its foot up 弥山: not ↓ walk 24 min. And the climb measured at an hour and a half does not call a taxi.
+  const misen = { places: [sightOf("hiroshima", "大聖院"), sightOf("hiroshima", "弥山")], days: 1, hotel: null, locale: "ja" as const };
+  const up = buildShioriPlan(misen, { rail: railOf("hiroshima"), cities }).days[0].legs[0];
+  assert.deepEqual([up.mode, up.rail], ["transit", null]);
+  const climbed = buildShioriPlan(misen, { rail: railOf("hiroshima"), cities, routes: new Map([[`walk|${up.key}`, { minutes: 90, path: [up.from, up.to] }]]) }).days[0].legs[0];
+  assert.equal(climbed.mode, "transit");
+  // A summit a few minutes from the next sight is still a walk: 天保山 is 4.5 m high.
+  const near = buildShioriPlan({ places: [{ id: "a", name: "a", lat: 35.0, lon: 135.0, stayMinutes: 30 }, { id: "b", name: "b", lat: 35.004, lon: 135.0, stayMinutes: 30, kind: "mountain" }], days: 1, hotel: null, locale: "ja" }).days[0].legs[0];
+  assert.equal(near.mode, "walk");
 });

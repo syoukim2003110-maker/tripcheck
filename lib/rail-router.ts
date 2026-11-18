@@ -45,6 +45,8 @@ export type RailRide = {
   minutes: number;
   /** Every station passed, for drawing the ride on the map. */
   path: GeoPoint[];
+  /** Present (true) where the ride is a boat: a crossing no taxi and no walk can stand in for. */
+  boat?: true;
 };
 
 export type RailJourney = {
@@ -77,6 +79,18 @@ const DWELL_MINUTES = 0.6;
  * name": the train's number plus this. Far above any line count.
  */
 const UNNAMED_STRETCH = 2_048;
+
+/**
+ * A line that is a boat, by the name it carries in the bundled networks
+ * (宮島航路, JR西日本宮島フェリー, 宮島松大汽船, スタテン島フェリー, 水上バス, "… ferry").
+ * The networks keep a line's name and nothing about what runs on it; the
+ * generator itself names a tramway of landing stages 「水上バス」. A test pins
+ * the full list of bundled lines this matches, so a regenerated network
+ * with a boat under another name does not pass unnoticed.
+ */
+export function isBoatLineName(ja: string, en: string) {
+  return /フェリー|汽船|航路|水上バス|渡船|連絡船/.test(ja) || /\bferr(y|ies)\b|\bwater ?bus\b|\bvaporetto\b/i.test(en);
+}
 
 /*
  * Wikidata keeps one item per operator — sometimes per line — at a shared
@@ -242,6 +256,8 @@ export class RailNetwork {
   private readonly linesBetween = new Map<number, number[]>();
   /** "pair:line" where the line runs as a guest on another line's track. */
   private readonly guestOn = new Set<string>();
+  /** For each line, whether it is a boat (see isBoatLineName). */
+  private readonly boatLine: boolean[];
 
   constructor(data: RailNetworkData) {
     this.id = data.id;
@@ -253,6 +269,7 @@ export class RailNetwork {
       const members = group.filter((line) => Number.isInteger(line) && line >= 0 && line < data.lines.length);
       for (const line of members) this.trainOf[line] = Math.min(...members);
     }
+    this.boatLine = data.lines.map(([ja, en]) => isBoatLineName(ja, en));
     this.linkCount = data.lines.map(() => 0);
     this.trainLinkCount = new Map();
     for (const [from, to, line, guest] of data.edges) {
@@ -530,7 +547,14 @@ export class RailNetwork {
       for (let index = 1; index < ride.stations.length; index += 1) {
         minutes += meters(this.points[ride.stations[index - 1]], this.points[ride.stations[index]]) / 1_000 * RIDE_MINUTES_PER_KM + DWELL_MINUTES;
       }
+      // A boat: every stretch of the ride is served by boats and nothing else.
+      const boat = ride.stations.every((station, index) => {
+        if (index === 0) return true;
+        const lines = this.linesBetween.get(this.pairKey(ride.stations[index - 1], station)) ?? [];
+        return lines.length > 0 && lines.every((line) => this.boatLine[line]);
+      });
       return {
+        ...(boat ? { boat: true as const } : {}),
         line: this.rideName(ride.stations, ride.line, language),
         from: this.stationName(ride.stations[0], language),
         to: this.stationName(ride.stations.at(-1)!, language),

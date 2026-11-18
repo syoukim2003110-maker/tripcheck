@@ -484,6 +484,58 @@ const TAXI_HOP_MINUTES = 20;
 /** How far (straight line) a leg with no known way is priced as a city bus all the way. */
 const CITY_BUS_KM = 10;
 
+/** The longest walk (at the pace of level streets) printed to or from a summit: beyond it the way up is not known to be a walk. */
+const SUMMIT_WALK_MINUTES = 15;
+
+/**
+ * What a place's kind and name say about how it is reached, as far as they
+ * say it: an island (a boat, perhaps a bridge — never a taxi drawn over the
+ * sea) or the top of a mountain (a ropeway, a bus or a hike — never a taxi
+ * to the summit, never a level walk of the straight-line minutes). A small
+ * rule, not a fact about the place: リバティ島 is known by its name, the
+ * statue standing on it is not known at all.
+ */
+export function hardToReach(place: Pick<ShioriPlace, "kind" | "name">): "island" | "summit" | null {
+  const kind = (place.kind ?? "").toLowerCase();
+  // (A man-made island has roads to it; a quarter named after one is a quarter; a group of islands is a region, not a place to land.)
+  const onLand = /artificial|neighbou?rhood|district|quarter|\bgroup\b|archipelago/.test(kind);
+  const name = place.name.replace(/\s*[(（][^)）]*[)）]\s*$/, "").trim();
+  if (/\bislands?\b|\bislet\b|\batoll\b/.test(kind)) return onLand ? null : "island";
+  // (広島 and 福島 are cities, and so is anything of two characters ending in 島 as often as not.)
+  if ((/^.{2,}島$/.test(name) && !/^(広島|福島|徳島|鹿児島)$/.test(name)) || /\b(island|isle)$/i.test(name)) return onLand ? null : "island";
+  if (/mountain|volcano|\bsummit\b|\bpeak\b/.test(kind) && !/\bpass\b|\brange\b|artificial|observatory|temple|shrine|castle|museum|resort|village|town|\bpark\b|railway|\bhut\b/.test(kind)) return "summit";
+  return null;
+}
+type Sights = readonly PopularDestination[] | undefined;
+const islandPoints = new WeakMap<object, Array<{ lat: number; lon: number }>>();
+/** How near (km) the point of a bundled island a place stands on that island: Liberty Island is 300 m long. */
+const ON_ISLAND_KM = 0.4;
+/**
+ * hardToReach(), and one thing more where the bundled sights are at hand: a
+ * place that stands on one of their islands (自由の女神像 on リバティ島) is
+ * reached the way the island is, whatever its own kind says.
+ */
+function reachOf(place: ShioriPlace, cities: Sights): "island" | "summit" | null {
+  const own = hardToReach(place);
+  if (own || !cities || cities.length === 0) return own;
+  let points = islandPoints.get(cities);
+  if (!points) {
+    points = cities.flatMap((city) => city.sights).filter((sight) => hardToReach({ kind: sight.kind, name: sight.ja }) === "island").map((sight) => ({ lat: sight.lat, lon: sight.lon }));
+    islandPoints.set(cities, points);
+  }
+  return points.some((point) => Math.abs(point.lat - place.lat) < 0.01 && straightKm(point, place) <= ON_ISLAND_KM) ? "island" : null;
+}
+type Ground = {
+  /** A long taxi is not the plan here (see TAXI_HOP_MINUTES). */
+  holdLongTaxi: boolean;
+  /** By place id; a hotel has no kind. */
+  reach: (id: string) => "island" | "summit" | null;
+};
+function groundOf(input: ShioriInput, holdLongTaxi: boolean, cities: Sights): Ground {
+  const reach = new Map(input.places.map((place) => [place.id, reachOf(place, cities)] as const));
+  return { holdLongTaxi, reach: (id) => reach.get(id) ?? null };
+}
+
 function hotelId(hotel: ShioriHotel) {
   return `shiori-hotel@${hotel.lat.toFixed(4)},${hotel.lon.toFixed(4)}`;
 }
@@ -620,11 +672,12 @@ const sameTiming = (left: DayTiming, right: DayTiming) => (
 );
 const NO_RAIL = {};
 const structures = new WeakMap<object, Map<string, Structure>>();
-function structureKey(input: ShioriInput, frames: Frames | null = null, excluded: ReadonlySet<string> = NO_IDS) {
+function structureKey(input: ShioriInput, frames: Frames | null = null, excluded: ReadonlySet<string> = NO_IDS, cities: Sights = undefined) {
   return JSON.stringify([
     // The names too: they are printed on the legs, and a renamed place or
     // hotel must not come back under its old name.
-    input.places.map((place) => [place.id, place.name, place.lat, place.lon, place.stayMinutes, place.day ?? 0, place.meal ?? ""]),
+    // (And what kind and name say about the way there: an island, a summit.)
+    input.places.map((place) => [place.id, place.name, place.lat, place.lon, place.stayMinutes, place.day ?? 0, place.meal ?? "", reachOf(place, cities) ?? 0]),
     input.days,
     input.hotel ? [input.hotel.name, input.hotel.lat, input.hotel.lon] : 0,
     input.locale,
@@ -644,14 +697,17 @@ type PriceTables = {
   /** Pairs where the network's answer is "no train helps, just walk". */
   walkAdvised: Set<string>;
   driving: Record<string, number>;
-  /** Pairs the engine would send by taxi and the booklet sends by public transport (see noTaxi). */
+  /** Pairs the engine would send by taxi or on foot and the booklet sends by public transport (see noTaxi, noWalk). */
   legModeOverrides: Record<string, "transit">;
-  /** Pairs a taxi is not the plan for: anything beyond a short hop. */
+  /** Pairs a taxi is not the plan for: anything beyond a short hop, a crossing by boat, the way to an island or a summit. */
   noTaxi: Set<string>;
+  /** Pairs that are not a walk: a boat crosses the water between them, or one end is a summit some way off. */
+  noWalk: Set<string>;
 };
-const emptyTables = (): PriceTables => ({ journeys: new Map(), transit: {}, walking: {}, walkAdvised: new Set(), driving: {}, legModeOverrides: {}, noTaxi: new Set() });
+const emptyTables = (): PriceTables => ({ journeys: new Map(), transit: {}, walking: {}, walkAdvised: new Set(), driving: {}, legModeOverrides: {}, noTaxi: new Set(), noWalk: new Set() });
 /** Whether the booklet sends this pair by public transport although the engine recommends `mode` at `minutes`. */
 function heldToTransit(tables: PriceTables, key: string, mode: string | null | undefined, minutes: number) {
+  if (mode === "walk") return tables.noWalk.has(key);
   if (mode !== "taxi") return false;
   if (tables.noTaxi.has(key)) return true;
   // A short hop: the engine assumes thin rail in New York or Sydney; a
@@ -679,7 +735,7 @@ function strayLegs(plan: BuiltTripPlan, tables: PriceTables) {
  * Prices one pair with the bundled network: a train journey becomes that
  * pair's transit time, "no train helps, just walk" its walking time.
  */
-function priceLeg(tables: PriceTables, from: RouteStop, to: RouteStop, rail: RailNetwork | null, locale: "ja" | "en", holdLongTaxi: boolean) {
+function priceLeg(tables: PriceTables, from: RouteStop, to: RouteStop, rail: RailNetwork | null, locale: "ja" | "en", ground: Ground) {
   const key = routeLegKey(from.id, to.id);
   const onFoot = walkMinutes(from, to);
   const advice: RailAdvice = rail ? rail.advise(from, to, locale) : onFoot <= 30 ? { kind: "walk", minutes: onFoot } : { kind: "none" };
@@ -710,8 +766,17 @@ function priceLeg(tables: PriceTables, from: RouteStop, to: RouteStop, rail: Rai
   // — 135 minutes from Yokohama to Tokyo would be wrong on its face. Such
   // legs used to be printed as taxis and this number was never seen.
   const bus = straight <= CITY_BUS_KM ? cityBus : Math.ceil((12 + CITY_BUS_KM * 1.3 * 4.2 + (straight - CITY_BUS_KM) * 2.3) / 5) * 5;
-  if (holdLongTaxi && taxi !== undefined && taxi > TAXI_HOP_MINUTES) tables.noTaxi.add(key);
-  if (advice.kind === "rail" && advice.journey.totalMinutes <= cityBus + 10) {
+  // A journey with a boat in it crosses water: no bus stands in for it, and
+  // neither a taxi nor a walk does (Miyajima was reached by a 45-minute taxi
+  // drawn across the strait while the network had the ferry). An island or
+  // a summit is not reached by taxi either, as far as its kind says what it
+  // is; and the way up to a summit is not a level walk.
+  const boat = advice.kind === "rail" && advice.journey.rides.some((ride) => ride.boat);
+  const ends = [ground.reach(from.id), ground.reach(to.id)];
+  const summit = ends.includes("summit");
+  if (boat || summit || ends.includes("island") || (ground.holdLongTaxi && taxi !== undefined && taxi > TAXI_HOP_MINUTES)) tables.noTaxi.add(key);
+  if (boat || (summit && onFoot > SUMMIT_WALK_MINUTES)) tables.noWalk.add(key);
+  if (advice.kind === "rail" && (boat || advice.journey.totalMinutes <= cityBus + 10)) {
     // (A rail answer slower than the bus means the real answer is a
     // bus this data does not know: 82 minutes by three trains from
     // Yasaka Shrine to Kinkaku-ji, against 50 by bus.)
@@ -745,12 +810,13 @@ const placePrices = new WeakMap<object, Map<string, PlacePrices>>();
  * rules of its own — so the search and the printed plan can never disagree
  * about a leg.
  */
-function pricePlaces(input: ShioriInput, rail: RailNetwork | null): PlacePrices {
+function pricePlaces(input: ShioriInput, rail: RailNetwork | null, cities: Sights): PlacePrices {
   const shelf = placePrices.get(rail ?? NO_RAIL) ?? new Map<string, PlacePrices>();
   placePrices.set(rail ?? NO_RAIL, shelf);
   // Prices depend on where the places are, not on how long one stays. (The
   // same trip is priced again for every hotel area that is tried.)
-  const cacheKey = JSON.stringify([input.locale, input.places.map((place) => [place.id, place.lat, place.lon])]);
+  // (And, for the way to an island or a summit, on what they are.)
+  const cacheKey = JSON.stringify([input.locale, input.places.map((place) => [place.id, place.lat, place.lon, reachOf(place, cities) ?? 0])]);
   const known = shelf.get(cacheKey);
   if (known) return known;
   const stops = input.places.map(resolvedStop);
@@ -763,9 +829,10 @@ function pricePlaces(input: ShioriInput, rail: RailNetwork | null): PlacePrices 
     dayOverrides: Object.fromEntries(stops.map((stop, index) => [stop.id, index + 1])),
   }).destination;
   const holdLongTaxi = rail !== null || destinationById(destination).mobility === "transit_first";
+  const ground = groundOf(input, holdLongTaxi, cities);
   const tables = emptyTables();
   for (const from of stops) {
-    for (const to of stops) if (from.id !== to.id) priceLeg(tables, from, to, rail, input.locale, holdLongTaxi);
+    for (const to of stops) if (from.id !== to.id) priceLeg(tables, from, to, rail, input.locale, ground);
   }
   const taxi = stops.map(() => stops.map(() => false));
   const minutes = stops.map((from, row) => stops.map((to, column) => {
@@ -780,8 +847,9 @@ function pricePlaces(input: ShioriInput, rail: RailNetwork | null): PlacePrices 
     if (!leg) return 0;
     // Where the engine would send a traveller by taxi beyond a short hop,
     // or by taxi although the bundled network has a train about as fast,
-    // public transport is the plan — for every pair, before anything is
-    // ordered, so the order is chosen on the minutes printed.
+    // or on foot over water a boat crosses or up to a summit, public
+    // transport is the plan — for every pair, before anything is ordered,
+    // so the order is chosen on the minutes printed.
     const key = routeLegKey(from.id, to.id);
     const train = leg.comparison.options.find((option) => option.mode === "transit");
     if (train && heldToTransit(tables, key, leg.comparison.recommended.mode, leg.comparison.recommended.minutes)) {
@@ -801,13 +869,13 @@ type TripPrices = PlacePrices & { hotel: { out: number[]; back: number[]; taxiOu
 const tripPrices = new WeakMap<object, Map<string, TripPrices>>();
 
 /** The places' prices plus, with a hotel, the way out of it and back to it from every place. */
-function priceTrip(input: ShioriInput, rail: RailNetwork | null): TripPrices {
-  const places = pricePlaces(input, rail);
+function priceTrip(input: ShioriInput, rail: RailNetwork | null, cities: Sights): TripPrices {
+  const places = pricePlaces(input, rail, cities);
   if (!input.hotel || input.places.length === 0) return { ...places, hotel: null };
   // (Every hotel area that is tried is priced once, however often it is planned.)
   const shelf = tripPrices.get(rail ?? NO_RAIL) ?? new Map<string, TripPrices>();
   tripPrices.set(rail ?? NO_RAIL, shelf);
-  const cacheKey = JSON.stringify([input.locale, input.places.map((place) => [place.id, place.lat, place.lon]), input.hotel.lat, input.hotel.lon]);
+  const cacheKey = JSON.stringify([input.locale, input.places.map((place) => [place.id, place.lat, place.lon, reachOf(place, cities) ?? 0]), input.hotel.lat, input.hotel.lon]);
   const known = shelf.get(cacheKey);
   if (known) return known;
   const stops = input.places.map(resolvedStop);
@@ -819,13 +887,15 @@ function priceTrip(input: ShioriInput, rail: RailNetwork | null): TripPrices {
     driving: { ...places.tables.driving },
     legModeOverrides: { ...places.tables.legModeOverrides },
     noTaxi: new Set(places.tables.noTaxi),
+    noWalk: new Set(places.tables.noWalk),
   };
+  const ground = groundOf(input, places.holdLongTaxi, cities);
   // The engine renames the base "base-<id>"; priced under any other id,
   // the way out of and back to the hotel never finds its train.
   const door = resolvedStop({ id: `base-${hotelId(input.hotel)}`, name: input.hotel.name, lat: input.hotel.lat, lon: input.hotel.lon, stayMinutes: 15 }, 9_999);
   for (const stop of stops) {
-    priceLeg(tables, door, stop, rail, input.locale, places.holdLongTaxi);
-    priceLeg(tables, stop, door, rail, input.locale, places.holdLongTaxi);
+    priceLeg(tables, door, stop, rail, input.locale, ground);
+    priceLeg(tables, stop, door, rail, input.locale, ground);
   }
   const out = stops.map(() => 0);
   const back = stops.map(() => 0);
@@ -934,8 +1004,8 @@ function straightKm(from: { lat: number; lon: number }, to: { lat: number; lon: 
  * against an exhaustive search: `minutes[from][to]` between places in list
  * order, and the hotel legs when there is a hotel.
  */
-export function shioriPricing(input: ShioriInput, options: { rail?: RailNetwork | null } = {}) {
-  const prices = priceTrip(input, options.rail ?? null);
+export function shioriPricing(input: ShioriInput, options: { rail?: RailNetwork | null; cities?: readonly PopularDestination[] } = {}) {
+  const prices = priceTrip(input, options.rail ?? null, options.cities);
   return {
     minutes: prices.minutes,
     fromHotel: prices.hotel?.out ?? null,
@@ -1147,7 +1217,7 @@ function planCore(input: ShioriInput, options: PlanOptions, frames: Frames | nul
    * per trip and remembered.
    */
   const structure = (): Structure => {
-    const pricing = priceTrip(input, rail);
+    const pricing = priceTrip(input, rail, options.cities);
     const { journeys, transit, walking, walkAdvised, driving, legModeOverrides } = pricing.tables;
     // Which places share a day and in what order is decided on the priced
     // minutes alone (see day-search.ts).
@@ -1193,7 +1263,7 @@ function planCore(input: ShioriInput, options: PlanOptions, frames: Frames | nul
     }, trip.slots, frames, slackFree);
     return { built, journeys, transit, walking, walkAdvised, driving, pins, legModeOverrides, tables: pricing.tables, timing, weatherDays: numbering.wetDays, slackFree };
   };
-  const cacheKey = structureKey(input, frames, excluded);
+  const cacheKey = structureKey(input, frames, excluded, options.cities);
   const shelf = structures.get(rail ?? NO_RAIL) ?? new Map<string, Structure>();
   structures.set(rail ?? NO_RAIL, shelf);
   let known = shelf.get(cacheKey);
@@ -1246,7 +1316,8 @@ function planCore(input: ShioriInput, options: PlanOptions, frames: Frames | nul
     }, known.built.usedDays, frames, known.slackFree);
     built = measured(timing);
     // A measured walk or drive is held to the same rules as an estimated
-    // one: a long ride does not turn into a taxi across town.
+    // one: a long ride does not turn into a taxi across town, nor the
+    // 87-minute climb into a taxi to the summit.
     const stray = strayLegs(built.plan, known.tables);
     if (stray.length > 0) {
       held = { ...held, ...Object.fromEntries(stray.map((key) => [key, "transit" as const])) };
@@ -1519,7 +1590,7 @@ function planFramed(input: ShioriInput, options: PlanOptions, frames: Frames): S
     return { ...planCore(input, options, frames, excluded), freeDays: 0, freeDayIdeas: [], unplaced, notices: [{ kind: "frame-order", start: clock(frames.start), finish: clock(frames.finish) }] };
   }
   if (input.places.length > 0) {
-    const pricing = priceTrip(input, rail);
+    const pricing = priceTrip(input, rail, options.cities);
     // 1. The bookings alone. A booked visit starts at its time and leaves a
     // stay later whatever else the day holds, so these checks — each booking
     // against the day's ends, neighbours on the clock against each other —
@@ -1682,7 +1753,7 @@ function planFramed(input: ShioriInput, options: PlanOptions, frames: Frames): S
       if (edge === "start" && !anyPin) return without.length < input.places.length;
       const other: Frames = { ...frames, [edge]: null };
       const rest = other.start === null && other.finish === null && other.booked.size === 0 ? null : other;
-      return sideSearchFor(input, priceTrip(input, rail), rest).choose(input.days, { without }).days.some((entry) => entry.day === day);
+      return sideSearchFor(input, priceTrip(input, rail, options.cities), rest).choose(input.days, { without }).days.some((entry) => entry.day === day);
     };
     if (frames.start !== null && !printed.has(1) && usedWithout("start", 1)) emptied.push({ kind: "day-empty", day: 1, edge: "start", time: clock(frames.start) });
     // (A one-day trip's only day is named once.)
@@ -1796,7 +1867,7 @@ export function buildShioriPlan(input: ShioriInput, options: PlanOptions = {}): 
     const entered = framesOf(trip);
     return entered && entered.booked.size > 0 ? { start: null, finish: null, booked: entered.booked } : null;
   };
-  const searched = (trip: ShioriInput) => daySearch(searchProblem(trip, priceTrip(trip, rail), areaFrames(trip)), frames ? { bookedDayStops: 4 } : {});
+  const searched = (trip: ShioriInput) => daySearch(searchProblem(trip, priceTrip(trip, rail, options.cities), areaFrames(trip)), frames ? { bookedDayStops: 4 } : {});
   const unkept = (days: ReturnType<ReturnType<typeof daySearch>["choose"]>["days"]) => days.filter((day) => day.overrun > 0 || day.missed > 0 || day.late > 0 || day.hardOver > 0).length;
   const runsLate = plan.days.some((day) => day.runsLate);
   // Left out by the engine, not by an entered time (as on any trip).
@@ -1843,7 +1914,7 @@ export function buildShioriPlan(input: ShioriInput, options: PlanOptions = {}): 
       .map((place) => ({ place, cost: place.stayMinutes + 2 * straightMinutes({ latitude: centre.lat, longitude: centre.lon }, { latitude: place.lat, longitude: place.lon }) }))
       .sort((left, right) => right.cost - left.cost)
       .slice(0, input.places.length <= 12 ? input.places.length : 6);
-    const pricing = priceTrip(input, rail);
+    const pricing = priceTrip(input, rail, options.cities);
     const whole = searchFor(input, pricing, frames);
     // How far over the plan is, all its days together. A place whose stay
     // and longest rides in and out are well short of that cannot be the one
