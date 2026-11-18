@@ -1,5 +1,6 @@
 import { appleRelayUrl } from "../apple-relay-client.ts";
-import type { ShioriDay, ShioriLeg } from "./plan.ts";
+import type { ShioriDay, ShioriLeg, ShioriRoute } from "./plan.ts";
+import { holdsAppleData } from "./state.ts";
 
 /*
  * The printed booklet's maps. On paper there is no MapKit map, yet a printed
@@ -125,4 +126,21 @@ export async function requestSnapshotUrl(
   } catch {
     return null;
   }
+}
+
+/**
+ * Whether a printed day carries what Apple said: a place (or the hotel)
+ * known from Apple, or a walk or drive Apple measured. Such a day is printed
+ * only with its Apple map beside it; without the picture (no relay, a spent
+ * budget, the browser's own print command before the picture is in) it is
+ * left off the paper.
+ */
+export function dayHoldsAppleData(
+  day: Pick<ShioriDay, "stops" | "legs" | "fromHotel" | "toHotel">,
+  hotel: { id?: string } | null,
+  routes: ReadonlyMap<string, Pick<ShioriRoute, "source"> | null>,
+): boolean {
+  if (day.stops.some((stop) => holdsAppleData(stop.place) || stop.within?.some((place) => holdsAppleData(place)))) return true;
+  if ((day.fromHotel || day.toHotel) && holdsAppleData(hotel, true)) return true;
+  return [day.fromHotel, ...day.legs, day.toHotel].some((leg) => leg && ["walk", "drive"].some((mode) => routes.get(`${mode}|${leg.key}`)?.source === "apple"));
 }

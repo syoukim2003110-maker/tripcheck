@@ -17,7 +17,7 @@ import { loadRailNetwork, loadToeiTimetable } from "../../lib/rail-network-clien
 import type { RailNetwork } from "../../lib/rail-router";
 import { fetchStreetRoute } from "../../lib/street-route-client";
 import { RETIRED_ROUTE_KEYS, ROUTES_KEY, appleEndedLeg, parseStoredRoutes, serializeRoutes } from "../../lib/shiori/route-store";
-import { daySnapshotSpec, requestSnapshotUrl } from "../../lib/shiori/print-map";
+import { dayHoldsAppleData, daySnapshotSpec, requestSnapshotUrl } from "../../lib/shiori/print-map";
 import { addAnchor, openCandidate, openLookupHit, placeOfCandidate, putPlace, searchAddCandidates, type AddCandidate } from "../../lib/shiori/add-search";
 import { BulkBudgetError, bulkAfterTripChange, bulkLeftover, bulkProgress, bulkSummary, bundledMatches, chooseBulk, confirmBulk, mergeBulk, requeueBulk, resolveBulk, startBulk, tripChange, type BulkLine, type BulkStatus } from "../../lib/shiori/bulk-add";
 import { findCafes, withListedCafes, type CafeBreak, type CafePick } from "../../lib/shiori/cafes";
@@ -424,6 +424,7 @@ const text = {
     appleMapsLink: "Apple マップ",
     printMapAlt: (dayIndex: number) => `${dayIndex + 1}日目の地図（Apple マップ）`,
     printMapNone: "この日の地図（Apple マップ）を印刷用に用意できませんでした。",
+    printHeld: (dayIndex: number) => `${dayIndex + 1}日目は、Apple マップの地図を印刷用に用意できなかったため印刷していません（Apple マップの情報は、その地図と一緒にしか印刷できません）。しおりの「印刷」ボタンからもう一度お試しください。`,
     appleFailed: (count: number) => `Apple マップで見つけた場所${count}件を読み込めませんでした。読み込めるまで、その場所を外して予定を作っています（場所は消えていません）。`,
     appleRetry: "もう一度読み込む",
     appleGone: (count: number) => `Apple マップで見つからなくなった場所が${count}件あります。`,
@@ -739,6 +740,7 @@ const text = {
     appleMapsLink: "Apple Maps",
     printMapAlt: (dayIndex: number) => `Map of day ${dayIndex + 1} (Apple Maps)`,
     printMapNone: "The Apple map of this day could not be prepared for printing.",
+    printHeld: (dayIndex: number) => `Day ${dayIndex + 1} is not printed: its Apple map could not be prepared, and what Apple Maps says can be printed only with that map. Please try again with the booklet's Print button.`,
     appleFailed: (count: number) => `${count === 1 ? "1 place" : `${count} places`} found on Apple Maps could not be loaded. Until they load, the plan is made without them (they are still in your list).`,
     appleRetry: "Try again",
     appleGone: (count: number) => `${count === 1 ? "1 place is" : `${count} places are`} no longer on Apple Maps.`,
@@ -2161,6 +2163,14 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
       window.setTimeout(resolve, 6_000);
     })] : [])));
   }, [plan, planKey, locale, usable.hotel]);
+  // Days whose picture did not load: on paper they are what they would be without one.
+  const [printBroken, setPrintBroken] = useState<{ key: string; days: number[] } | null>(null);
+  // A day that carries what Apple said is printed only with its Apple map beside it (see dayHoldsAppleData).
+  const printHeld = (day: ShioriPlan["days"][number]) => {
+    if (!dayHoldsAppleData(day, usable.hotel, routes)) return false;
+    const url = printMaps && printMaps.key === planKey ? printMaps.urls[day.index] : null;
+    return !url || Boolean(printBroken && printBroken.key === planKey && printBroken.days.includes(day.index));
+  };
   const printBooklet = async () => {
     await preparePrintMaps();
     window.print();
@@ -2652,7 +2662,8 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
   const shareLink = typeof window === "undefined" ? "" : `${window.location.origin}${window.location.pathname}#s=${encodeTrip(trip)}`;
 
   return (
-    <main className="shiori is-plan">
+    // (While any day is held back, what is said about the trip as a whole — notices, places left out, where to stay — stays off paper too: it names the same places.)
+    <main className="shiori is-plan" data-print-held={plan?.days.some(printHeld) ? "" : undefined}>
       {header}
       <div className="shiori-plan">
         <div className="shiori-plan-main">
@@ -2777,10 +2788,12 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
                   className={`shiori-day${day.index === activeDay ? " is-current" : ""}`}
                   id={`shiori-day-${day.index}`}
                   key={day.index}
+                  data-print-held={printHeld(day) ? "" : undefined}
                   role="tabpanel"
                   style={{ ["--day" as string]: dayColor(day.index) }}
                   tabIndex={-1}
                 >
+                  {printHeld(day) ? <p className="shiori-print-held">{t.printHeld(day.index)}</p> : null}
                   <header className="shiori-day-head">
                     <h2><small>{t.dayTab(day.index)}{trip.startDate ? ` ・ ${dayDateLabel(day.index)}` : ""}</small> <span>{phrases(day.title)}</span></h2>
                     {/* What the traveller entered for this day, on screen and on paper. */}
@@ -2806,7 +2819,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
                       {printMaps.urls[day.index] ? (
                         <>
                           {/* eslint-disable-next-line @next/next/no-img-element -- Apple's signed image, shown as it is */}
-                          <img alt={t.printMapAlt(day.index)} height={400} src={printMaps.urls[day.index]!} width={600} />
+                          <img alt={t.printMapAlt(day.index)} height={400} onError={() => setPrintBroken((now) => ({ key: planKey ?? "", days: [...(now && now.key === planKey ? now.days : []), day.index] }))} src={printMaps.urls[day.index]!} width={600} />
                           <figcaption>{t.mapRailCredit}{locale === "ja" ? " ・ " : " · "}{t.mapStreetCredit}</figcaption>
                         </>
                       ) : <figcaption>{t.printMapNone}</figcaption>}

@@ -5,7 +5,7 @@ import test from "node:test";
 
 import { SNAPSHOT_MAX_URL, readSnapshotSpec, signSnapshotPath, snapshotFrame, snapshotPath } from "../lib/server/apple-snapshot.ts";
 import type { ShioriLeg, ShioriStop } from "../lib/shiori/plan.ts";
-import { SNAPSHOT_LIMITS, daySnapshotSpec, encodePolyline, requestSnapshotUrl, snapshotSpecParam, type SnapshotSpec } from "../lib/shiori/print-map.ts";
+import { SNAPSHOT_LIMITS, dayHoldsAppleData, daySnapshotSpec, encodePolyline, requestSnapshotUrl, snapshotSpecParam, type SnapshotSpec } from "../lib/shiori/print-map.ts";
 
 /*
  * The printed booklet's Apple maps: one Apple Maps Web Snapshot per day,
@@ -159,11 +159,44 @@ test("on paper each day carries its Apple map, asked for when the traveller prin
   // The browser's own print menu asks for them too.
   assert.match(app, /void preparePrintMaps\(\);\s*\};/);
   const figure = app.slice(app.indexOf('<figure className="shiori-print-map">'), app.indexOf("</figure>"));
-  assert.match(figure, /<img alt=\{t\.printMapAlt\(day\.index\)\} height=\{400\} src=\{printMaps\.urls\[day\.index\]!\} width=\{600\} \/>/);
+  assert.match(figure, /<img alt=\{t\.printMapAlt\(day\.index\)\} height=\{400\} onError=\{[^}]*\}\)\)\} src=\{printMaps\.urls\[day\.index\]!\} width=\{600\} \/>/);
   // TripCheck's own lines on Apple's picture are credited under it; Apple's logo is in the picture.
   assert.match(figure, /\{t\.mapRailCredit\}[\s\S]*\{t\.mapStreetCredit\}/);
   assert.match(figure, /\{t\.printMapNone\}/);
   assert.match(css, /^\.shiori-print-map \{ display: none; \}$/m);
   assert.match(css, /@media print \{[\s\S]*\.shiori-print-map \{ break-inside: avoid; display: block;/);
-  for (const key of ["printMapAlt", "printMapNone"]) assert.equal(app.split("\n").filter((line) => line.startsWith(`    ${key}: `)).length, 2, key);
+  for (const key of ["printMapAlt", "printMapNone", "printHeld"]) assert.equal(app.split("\n").filter((line) => line.startsWith(`    ${key}: `)).length, 2, key);
+});
+
+test("a day that carries what Apple said is left off paper unless its Apple map is printed with it", () => {
+  const plain = { stops: [stop("wikidata-Q1", 34.39, 132.45), stop("osm-node-2", 34.4, 132.46)], legs: [{ ...leg("walk", [[34.39, 132.45], [34.4, 132.46]]), key: "wikidata-Q1::osm-node-2" }], fromHotel: null, toHotel: null };
+  const none = new Map();
+  assert.equal(dayHoldsAppleData(plain, null, none), false);
+  // An Apple place, an old Apple stop, or a place seen within a stop.
+  assert.equal(dayHoldsAppleData({ ...plain, stops: [...plain.stops, stop("apple-IAAAABBBBCCCC0001", 34.41, 132.47)] }, null, none), true);
+  assert.equal(dayHoldsAppleData({ ...plain, stops: [stop("apple-34.41000,132.47000", 34.41, 132.47)] }, null, none), true);
+  assert.equal(dayHoldsAppleData({ ...plain, stops: [{ ...plain.stops[0], within: [{ id: "apple-IAAAABBBBCCCC0001", name: "x", lat: 1, lon: 2, stayMinutes: 15 }] } as ShioriStop] }, null, none), true);
+  // A walk Apple measured.
+  assert.equal(dayHoldsAppleData(plain, null, new Map([["walk|wikidata-Q1::osm-node-2", { source: "apple" as const }]])), true);
+  assert.equal(dayHoldsAppleData(plain, null, new Map([["walk|wikidata-Q1::osm-node-2", { source: "osm" as const }]])), false);
+  // The hotel, on a day that starts or ends there.
+  const fromHotel = { ...leg("walk", [[34.38, 132.45], [34.39, 132.45]]), key: "base-shiori-hotel@at-34.3800,132.4500::wikidata-Q1" };
+  assert.equal(dayHoldsAppleData({ ...plain, fromHotel }, { id: "apple-IAAAABBBBCCCC0002" }, none), true);
+  assert.equal(dayHoldsAppleData({ ...plain, fromHotel }, { id: "osm-node-7" }, none), false);
+  assert.equal(dayHoldsAppleData({ ...plain, fromHotel }, {}, none), true);
+});
+
+test("on paper such a day without its picture is only a line saying so, and the trip-wide notes stay off paper with it", () => {
+  const app = readFileSync(new URL("../app/shiori/ShioriApp.tsx", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../app/shiori/shiori.css", import.meta.url), "utf8");
+  // Held unless that day's signed picture is in hand for this very plan and did not fail to load.
+  const held = app.slice(app.indexOf("const printHeld = (day"), app.indexOf("const printBooklet"));
+  assert.match(held, /if \(!dayHoldsAppleData\(day, usable\.hotel, routes\)\) return false;/);
+  assert.match(held, /printMaps && printMaps\.key === planKey \? printMaps\.urls\[day\.index\] : null/);
+  assert.match(app, /data-print-held=\{printHeld\(day\) \? "" : undefined\}/);
+  assert.match(app, /\{printHeld\(day\) \? <p className="shiori-print-held">\{t\.printHeld\(day\.index\)\}<\/p> : null\}/);
+  assert.match(app, /<main className="shiori is-plan" data-print-held=\{plan\?\.days\.some\(printHeld\) \? "" : undefined\}>/);
+  assert.match(css, /^\.shiori-print-held \{ display: none; \}$/m);
+  assert.match(css, /\.shiori-day\[data-print-held\] > :not\(\.shiori-print-held\) \{ display: none !important; \}/);
+  assert.match(css, /\.shiori\[data-print-held\] \.shiori-notices, \.shiori\[data-print-held\] \.shiori-section \{ display: none !important; \}/);
 });
