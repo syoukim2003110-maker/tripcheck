@@ -4,7 +4,8 @@ import test from "node:test";
 
 import { buildMealBrief, EMPTY_MEAL_PREFS, mealSights } from "../lib/shiori/meal-advice.ts";
 import { FAR_PAST_END, buildShioriPlan, type ShioriDay, type ShioriHotel, type ShioriInput, type ShioriPlace, type ShioriPlan, type ShioriRoute } from "../lib/shiori/plan.ts";
-import { decodeTrip, emptyTrip, encodeTrip, placeFromSight, withCity, withPackAnyway, type ShioriTrip } from "../lib/shiori/state.ts";
+import { decodeTrip, emptyTrip, encodeTrip, withCity, withPackAnyway, type ShioriTrip } from "../lib/shiori/state.ts";
+import { placeByKind } from "./helpers/kind-stays.ts";
 import { auditPlan, cities, railOf, scenarioPlaces, scenarios } from "../scripts/audit-scenarios.ts";
 
 /*
@@ -87,13 +88,27 @@ function assertFitsOrSaysSo(input: Omit<ShioriInput, "locale">, cityId: string |
 
 const LEFT_OUT: Record<string, { before: string; after: string; out: string[]; days: number }> = {
   // id: the latest stop of each day planned anyway → as first shown, what is left out, the days that hold everything.
-  "tokyo-2": { before: "19:55 19:59", after: "15:31 16:19", out: ["東京ディズニーランド"], days: 3 },
-  "osaka-1": { before: "+00:44", after: "17:18", out: ["ユニバーサル・スタジオ・ジャパン"], days: 2 },
-  "osaka-2": { before: "18:19 19:59", after: "12:49 17:05", out: ["ユニバーサル・スタジオ・ジャパン"], days: 3 },
-  "hakone-1": { before: "19:40", after: "17:30", out: ["小田原城"], days: 2 },
-  "nikko-3": { before: "19:23 18:00 18:48", after: "16:48 17:25 17:40", out: ["宇都宮動物園"], days: 4 },
-  "naha-1": { before: "19:19", after: "16:39", out: ["斎場御嶽"], days: 2 },
-  "yokohama-1": { before: "19:08", after: "15:39", out: ["新横浜ラーメン博物館"], days: 2 },
+  // (With the usual stays of the sight notes — the Louvre four hours, the Statue of Liberty three, 箱根山 four —
+  // nineteen of the 63 trips have more than their days hold; with the stays by kind it was seven.)
+  "tokyo-1": { before: "20:13", after: "16:58", out: ["東京国立博物館"], days: 2 },
+  "tokyo-2": { before: "20:25 21:01", after: "16:46 16:39", out: ["東京ディズニーランド"], days: 3 },
+  "kyoto-1": { before: "19:05", after: "16:25", out: ["伏見稲荷大社"], days: 2 },
+  "osaka-1": { before: "+01:54", after: "13:59", out: ["ユニバーサル・スタジオ・ジャパン", "海遊館"], days: 3 },
+  "osaka-2": { before: "18:49 20:29", after: "16:01 16:04", out: ["ユニバーサル・スタジオ・ジャパン"], days: 3 },
+  "fukuoka-1": { before: "19:10", after: "16:52", out: ["九州国立博物館"], days: 2 },
+  "hakone-1": { before: "22:05", after: "17:40", out: ["箱根山"], days: 2 },
+  "hakone-2": { before: "19:06 19:24", after: "17:53 16:07", out: ["箱根山"], days: 3 },
+  "nikko-1": { before: "22:52", after: "16:32", out: ["華厳滝", "東武ワールドスクウェア"], days: 2 },
+  "nikko-2": { before: "18:19 19:12", after: "17:57 15:49", out: ["日光の社寺"], days: 3 },
+  "nikko-3": { before: "19:23 19:43 21:10", after: "17:50 17:25 17:53", out: ["女峰山"], days: 4 },
+  "paris-1": { before: "22:12", after: "17:47", out: ["ルーヴル美術館"], days: 2 },
+  "london-1": { before: "21:33", after: "18:02", out: ["ロンドン塔"], days: 2 },
+  "london-2": { before: "19:29 19:04", after: "17:57 17:12", out: ["ロンドン塔"], days: 3 },
+  "newyork-1": { before: "+00:25", after: "17:07", out: ["自由の女神像", "アメリカ自然史博物館"], days: 2 },
+  "seoul-1": { before: "20:18", after: "17:34", out: ["景福宮"], days: 2 },
+  "seoul-2": { before: "18:47 19:16", after: "16:46 17:54", out: ["オリンピック公園"], days: 3 },
+  "taipei-1": { before: "+00:32", after: "19:30", out: ["台北市立動物園"], days: 2 },
+  "bangkok-1": { before: "21:44", after: "17:41", out: ["チャトチャック・ウィークエンド・マーケット"], days: 2 },
 };
 
 test("the audit's lists too full for their days are shown as the set that fits: USJ is not followed by four sights until 00:44, and what is left out is named with the days that hold it", () => {
@@ -115,9 +130,9 @@ test("the audit's lists too full for their days are shown as the set that fits: 
   }
 });
 
-test("a day that runs less than an hour over keeps everything and says it runs late, as before; so does a day whose night market ends at 20:17", () => {
+test("a day that runs less than an hour over keeps everything and says it runs late, as before; a day that closes at its night market ends inside its evening", () => {
   // The ordinary end is 18:00 for sightseeing; a place of the evening may run to 21:30.
-  for (const [id, ends] of [["tokyo-1", "18:33"], ["fukuoka-1", "18:35"], ["nikko-1", "18:42"], ["yokohama-2", "17:48 18:44"], ["newyork-1", "18:55"], ["taipei-1", "20:17"]] as const) {
+  for (const [id, ends] of [["nara-1", "18:29"], ["yokohama-1", "18:43"], ["kobe-1", "18:16"], ["paris-2", "18:56 17:58"], ["newyork-2", "18:32 18:44"]] as const) {
     const shown = auditPlan(id).plan;
     assert.equal(latest(shown), ends, id);
     assert.deepEqual([shown.leftOut, shown.overfull], [[], []], id);
@@ -126,7 +141,7 @@ test("a day that runs less than an hour over keeps everything and says it runs l
     assert.ok(shown.notices.some((notice) => notice.kind === "needs-days"), id);
     assert.deepEqual(printed(shown), printed(auditPlan(id, { packAnyway: true }).plan), id);
   }
-  // 台北 day 1: the sights are over within the hour, and the day closes at the night market inside its own evening.
+  // 台北 day 1 (as first shown, without the zoo its day has no room for): the day closes at the night market inside its own evening.
   const taipei = auditPlan("taipei-1").plan.days[0];
   assert.equal(taipei.stops.at(-1)!.evening, true);
   assert.ok(clock(taipei.stops.at(-1)!.leave, false) <= 21 * 60 + 30);
@@ -158,7 +173,7 @@ function randomTrip(next: () => number, most: number) {
   const city = cities[Math.floor(next() * cities.length)];
   const pool = [...city.sights];
   const count = Math.min(pool.length, 2 + Math.floor(next() * (most - 1)));
-  const places = Array.from({ length: count }, () => placeFromSight(pool.splice(Math.floor(next() * pool.length), 1)[0], "ja"));
+  const places = Array.from({ length: count }, () => placeByKind(pool.splice(Math.floor(next() * pool.length), 1)[0], "ja"));
   const days = 1 + Math.floor(next() * 3);
   const roll = next();
   const hotel: ShioriHotel | null = roll < 0.5 ? null : roll < 0.8 ? { name: "中心部のホテル", lat: city.lat, lon: city.lon } : { name: "外れのホテル", lat: places[0].lat + 0.05, lon: places[0].lon + 0.05 };
@@ -276,7 +291,7 @@ test("a list that no week holds says so instead of naming a number of days", () 
 
 test("with a time entered the same holds: the booked place stays, the entered times are kept, and what the days cannot hold by evening is left out and named", () => {
   const tokyo = cities.find((city) => city.id === "tokyo")!;
-  const places = tokyo.sights.slice(0, 7).map((sight) => placeFromSight(sight, "ja"));
+  const places = tokyo.sights.slice(0, 7).map((sight) => placeByKind(sight, "ja"));
   const bookedId = places[1].id;
   const input = { places: places.map((place) => (place.id === bookedId ? { ...place, day: 1, reserve: { day: 1, time: "15:00" } } : place)), days: 2, hotel: null, firstDayStart: "10:00" };
   const { shown, packed } = both(input, "tokyo");
@@ -310,7 +325,7 @@ test("a street path measured later corrects a clock and never throws a place out
 test("a list too full for its day is planned in the time any list is, and planning it again when a street path arrives costs next to nothing", () => {
   // Was 1.3 s, and a quarter of a second again for every street path that arrived: ten Kyoto sights for one day.
   const kyoto = cities.find((entry) => entry.id === "kyoto")!;
-  const places = kyoto.sights.slice(0, 10).map((sight) => placeFromSight(sight, "ja"));
+  const places = kyoto.sights.slice(0, 10).map((sight) => placeByKind(sight, "ja"));
   const options = { rail: railOf("kyoto"), cities };
   const routes = new Map<string, ShioriRoute | null>();
   const timed = () => {

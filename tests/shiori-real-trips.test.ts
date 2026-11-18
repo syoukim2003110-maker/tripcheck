@@ -6,7 +6,7 @@ import { curateSights, type PopularDestination } from "../lib/popular-sights.ts"
 import { RailNetwork } from "../lib/rail-router.ts";
 import { placeHabit } from "../lib/shiori/habits.ts";
 import { buildShioriPlan, shioriPricing, type ShioriInput, type ShioriPlace, type ShioriPlan, type ShioriRoute } from "../lib/shiori/plan.ts";
-import { placeFromSight } from "../lib/shiori/state.ts";
+import { placeByKind } from "./helpers/kind-stays.ts";
 
 /*
  * The booklet on real cities with their real station maps. These are the
@@ -20,7 +20,7 @@ function trip(cityId: string, count: number, days: number, extra: Partial<Shiori
   const city = cities.find((entry) => entry.id === cityId)!;
   if (!networks.has(cityId)) networks.set(cityId, new RailNetwork(JSON.parse(readFileSync(new URL(`../public/rail/${cityId}.json`, import.meta.url), "utf8"))));
   // `raw` keeps the uncurated ranking the reviewer used.
-  const sights = (extra.raw ? city.sights : curateSights(city.sights)).slice(0, count).map((sight) => placeFromSight(sight, "ja"));
+  const sights = (extra.raw ? city.sights : curateSights(city.sights)).slice(0, count).map((sight) => placeByKind(sight, "ja"));
   return buildShioriPlan({ places: [...sights, ...(extra.more ?? [])], days, hotel: extra.hotel ?? null, locale: "ja", packAnyway: extra.packAnyway }, { rail: networks.get(cityId)!, cities });
 }
 const minutes = (clock: string) => Number(clock.slice(0, 2)) * 60 + Number(clock.slice(3));
@@ -86,7 +86,7 @@ test("the way out of and back to the hotel is a train with its stations, like an
 test("a chosen dinner does not turn two easy days into one eleven-hour day", () => {
   const names = ["浅草寺", "東京スカイツリー", "東京国立博物館", "明治神宮", "東京タワー"];
   const city = cities.find((entry) => entry.id === "tokyo")!;
-  const sights = names.map((name) => placeFromSight(city.sights.find((sight) => sight.ja === name)!, "ja"));
+  const sights = names.map((name) => placeByKind(city.sights.find((sight) => sight.ja === name)!, "ja"));
   const dinner: ShioriPlace = { id: "r-shibuya", name: "渋谷の店", lat: 35.6595, lon: 139.7005, stayMinutes: 90, kind: "restaurant", meal: "dinner" };
   const rail = networks.get("tokyo") ?? new RailNetwork(JSON.parse(readFileSync(new URL("../public/rail/tokyo.json", import.meta.url), "utf8")));
   const plan = buildShioriPlan({ places: [...sights, dinner], days: 2, hotel: null, locale: "ja" }, { rail, cities });
@@ -103,7 +103,7 @@ test("a chosen dinner does not turn two easy days into one eleven-hour day", () 
 
 test("a place pinned to day 3 is printed as day 3, with the free days before it", () => {
   const city = cities.find((entry) => entry.id === "kyoto")!;
-  const pick = (name: string) => placeFromSight(city.sights.find((sight) => sight.ja === name)!, "ja");
+  const pick = (name: string) => placeByKind(city.sights.find((sight) => sight.ja === name)!, "ja");
   const plan = buildShioriPlan({ places: [pick("清水寺"), { ...pick("金閣寺"), day: 3 }], days: 3, hotel: null, locale: "ja" }, { cities });
   const pinned = plan.days.find((day) => day.stops.some((stop) => stop.place.name === "金閣寺"))!;
   assert.equal(pinned.index, 2);
@@ -124,7 +124,7 @@ test("the suggested hotel area is where this plan travels least, and a far hotel
   const free = trip("tokyo", 6, 2);
   assert.ok(free.stayNear);
   const city = cities.find((entry) => entry.id === "tokyo")!;
-  const places = curateSights(city.sights).slice(0, 6).map((sight) => placeFromSight(sight, "ja"));
+  const places = curateSights(city.sights).slice(0, 6).map((sight) => placeByKind(sight, "ja"));
   const rail = networks.get("tokyo")!;
   const travel = (plan: ShioriPlan) => plan.days.reduce((sum, day) => sum + day.travelMinutes, 0);
   const at = (lat: number, lon: number) => buildShioriPlan({ places, days: 2, hotel: { name: "h", lat, lon }, locale: "ja" }, { rail, cities });
@@ -161,9 +161,9 @@ function planned(cityId: string, places: ShioriPlace[], days: number, hotel: Shi
 }
 const sightsOf = (cityId: string, names: string[]) => {
   const city = cities.find((entry) => entry.id === cityId)!;
-  return names.map((name) => placeFromSight(city.sights.find((sight) => sight.ja === name)!, "ja"));
+  return names.map((name) => placeByKind(city.sights.find((sight) => sight.ja === name)!, "ja"));
 };
-const topOf = (cityId: string, count: number) => curateSights(cities.find((entry) => entry.id === cityId)!.sights).slice(0, count).map((sight) => placeFromSight(sight, "ja"));
+const topOf = (cityId: string, count: number) => curateSights(cities.find((entry) => entry.id === cityId)!.sights).slice(0, count).map((sight) => placeByKind(sight, "ja"));
 
 /** Travel of one order, hotel legs included. */
 function travelOf(order: number[], trip: Checked) {
@@ -468,9 +468,9 @@ const railOf = (cityId: string) => new RailNetwork(JSON.parse(readFileSync(new U
 const cold = (cityId: string, input: ShioriInput) => buildShioriPlan(input, { rail: railOf(cityId), cities });
 const sightsEn = (cityId: string, names: string[]) => {
   const city = cities.find((entry) => entry.id === cityId)!;
-  return names.map((name) => placeFromSight(city.sights.find((sight) => sight.en === name)!, "en"));
+  return names.map((name) => placeByKind(city.sights.find((sight) => sight.en === name)!, "en"));
 };
-const rawOf = (cityId: string, count: number) => cities.find((entry) => entry.id === cityId)!.sights.slice(0, count).map((sight) => placeFromSight(sight, "ja"));
+const rawOf = (cityId: string, count: number) => cities.find((entry) => entry.id === cityId)!.sights.slice(0, count).map((sight) => placeByKind(sight, "ja"));
 const restaurant = (id: string, meal: "lunch" | "dinner", lat: number, lon: number): ShioriPlace => ({ id, name: id, lat, lon, stayMinutes: meal === "lunch" ? 60 : 90, kind: "restaurant", meal });
 /** The restaurants the regression auditor placed around a city's sights. */
 const auditRestaurants = (cityId: string, count: number, kinds: Array<"lunch" | "dinner">) => {
@@ -667,7 +667,7 @@ test("a requested day is used when the days in use are packed and it relieves th
   for (const day of london.days) assert.ok(lastSightLeaves(day) <= 17 * 60, `day ${day.index + 1} until ${day.end}`);
   assert.ok(totalTravel(london) <= 200, `${totalTravel(london)}`);
   // Eighteen Paris sights from a hotel at Opéra, six days asked: was four days sightseeing until 18:00, two free.
-  const paris = cold("paris", { places: [...cities.find((entry) => entry.id === "paris")!.sights].reverse().slice(0, 18).map((sight) => placeFromSight(sight, "ja")), days: 6, hotel: { name: "Opéra", lat: 48.8706, lon: 2.3319 }, locale: "ja" });
+  const paris = cold("paris", { places: [...cities.find((entry) => entry.id === "paris")!.sights].reverse().slice(0, 18).map((sight) => placeByKind(sight, "ja")), days: 6, hotel: { name: "Opéra", lat: 48.8706, lon: 2.3319 }, locale: "ja" });
   assert.equal(paris.days.length, 5);
   for (const day of paris.days) assert.ok(lastSightLeaves(day) <= 17 * 60, `day ${day.index + 1} until ${day.end}`);
 });
@@ -748,7 +748,7 @@ test("the suggested area is a listed place whose days are no more packed than fr
   // Was: on lists up to twelve places only the six best by a quick measure were planned, and 12–16 minutes were lost.
   // Then: the least travel alone decided, and a place far out won by putting the list on fewer, fuller days.
   const city = cities.find((entry) => entry.id === "nagoya")!;
-  const places = curateSights(city.sights).slice(0, 9).map((sight) => placeFromSight(sight, "ja"));
+  const places = curateSights(city.sights).slice(0, 9).map((sight) => placeByKind(sight, "ja"));
   const rail = railOf("nagoya");
   const free = buildShioriPlan({ places, days: 2, hotel: null, locale: "ja" }, { rail, cities });
   assert.ok(free.stayNear?.nearName);

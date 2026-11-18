@@ -35,7 +35,7 @@ import {
   widerMealMeters,
 } from "../lib/shiori/meal-advice.ts";
 import { buildShioriPlan, type ShioriPlace, type ShioriPlan } from "../lib/shiori/plan.ts";
-import { placeFromSight } from "../lib/shiori/state.ts";
+import { placeByKind } from "./helpers/kind-stays.ts";
 
 /*
  * The page's half of the meal advisor: what leaves the page, what an answer
@@ -52,7 +52,7 @@ const FOUND: ShioriPlace = { id: "apple-I7C250D2CDCB364A", name: "検索で見�
 const TYPED: ShioriPlace = { id: "open-123", name: "友だちの家の近くの公園", lat: 35.6712, lon: 139.7650, stayMinutes: 30, day: 2 };
 
 function tokyoPlan(more: ShioriPlace[] = [], days = 2): ShioriPlan {
-  const sights = curateSights(tokyo.sights).slice(0, 6).map((sight) => placeFromSight(sight, "ja"));
+  const sights = curateSights(tokyo.sights).slice(0, 6).map((sight) => placeByKind(sight, "ja"));
   return buildShioriPlan({ places: [...sights, ...more], days, hotel: { name: "ひみつのホテル", lat: 35.6909, lon: 139.7003 }, locale: "ja" }, { rail: tokyoRail, cities });
 }
 
@@ -119,7 +119,7 @@ test("Seoul and Busan are inside the box around Japan but not in Japan: the advi
 });
 
 test("a full trip stays inside the relay's limits", () => {
-  const many = curateSights(tokyo.sights).slice(6, 24).map((sight) => placeFromSight(sight, "ja"));
+  const many = curateSights(tokyo.sights).slice(6, 24).map((sight) => placeByKind(sight, "ja"));
   const plan = tokyoPlan(many, 7);
   const brief = buildMealBrief({ sights: SIGHTS, plan, city: "東京", prefs: { party: null, budget: null, wish: "あ".repeat(200) } })!;
   assert.ok(brief);
@@ -416,14 +416,14 @@ test("a place that only looks bundled goes without its name: a live lookup, a sh
   assert.ok(brief.days.flatMap((day) => day.stops).some((stop) => stop.kind === "other" && stop.name === undefined));
 
   // A bundled id under other words (a link edited by hand, a renamed stop): the id is not enough.
-  const renamed = { ...placeFromSight(bundled, "ja"), name: "山田さんと待ち合わせ" };
-  const others = curateSights(tokyo.sights).slice(1, 6).map((sight) => placeFromSight(sight, "ja"));
+  const renamed = { ...placeByKind(bundled, "ja"), name: "山田さんと待ち合わせ" };
+  const others = curateSights(tokyo.sights).slice(1, 6).map((sight) => placeByKind(sight, "ja"));
   const edited = buildShioriPlan({ places: [renamed, ...others], days: 2, hotel: null, locale: "ja" }, { rail: tokyoRail, cities });
   const second = JSON.stringify(buildMealBrief({ sights: SIGHTS, plan: edited, city: null, prefs: EMPTY_MEAL_PREFS }));
   assert.equal(second.includes("山田さん"), false);
   assert.equal(second.includes(bundled.ja), false);
   // Either of the bundled list's two names is the sight's own.
-  const english = buildShioriPlan({ places: [placeFromSight(bundled, "en"), ...others], days: 2, hotel: null, locale: "en" }, { rail: tokyoRail, cities });
+  const english = buildShioriPlan({ places: [placeByKind(bundled, "en"), ...others], days: 2, hotel: null, locale: "en" }, { rail: tokyoRail, cities });
   assert.ok(JSON.stringify(buildMealBrief({ sights: SIGHTS, plan: english, city: null, prefs: EMPTY_MEAL_PREFS })).includes(JSON.stringify(bundled.en.trim()).slice(1, -1)));
   // With no bundled list at hand nothing is named at all.
   const bare = buildMealBrief({ sights: new Map(), plan, city: null, prefs: EMPTY_MEAL_PREFS })!;
@@ -485,7 +485,7 @@ test("a long trip is asked a few meals at a time, the pressed row's turn first",
 });
 
 test("each turn is a request the relay accepts, carries what the earlier turns put first, and is shown as it arrives", async () => {
-  const many = curateSights(tokyo.sights).slice(6, 24).map((sight) => placeFromSight(sight, "ja"));
+  const many = curateSights(tokyo.sights).slice(6, 24).map((sight) => placeByKind(sight, "ja"));
   const brief = buildMealBrief({ sights: SIGHTS, plan: tokyoPlan(many, 7), city: "東京", prefs: EMPTY_MEAL_PREFS })!;
   assert.ok(brief.slots.length > 8, `${brief.slots.length} open slots`);
   const ids = brief.slots.map((slot) => slot.slot);
@@ -512,7 +512,7 @@ test("each turn is a request the relay accepts, carries what the earlier turns p
 });
 
 test("a turn without an answer ends the asking: the rest is reported unanswered and not sent", async () => {
-  const many = curateSights(tokyo.sights).slice(6, 24).map((sight) => placeFromSight(sight, "ja"));
+  const many = curateSights(tokyo.sights).slice(6, 24).map((sight) => placeByKind(sight, "ja"));
   const brief = buildMealBrief({ sights: SIGHTS, plan: tokyoPlan(many, 7), city: "東京", prefs: EMPTY_MEAL_PREFS })!;
   const ids = brief.slots.map((slot) => slot.slot);
   let calls = 0;

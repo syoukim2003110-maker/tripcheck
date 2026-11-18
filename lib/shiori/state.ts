@@ -1,6 +1,7 @@
 import type { PopularDestination, PopularSight } from "../popular-sights.ts";
 import { MAX_TRIP_DAYS, clockOfDay, type ShioriHotel, type ShioriPace, type ShioriPlace, type ShioriReservation } from "./plan.ts";
-import { shioriStayMinutes } from "./stay.ts";
+import { sightNote } from "./sight-notes.ts";
+import { EXTERIOR_STAY, namedParkStay, shioriStayMinutes } from "./stay.ts";
 import { usableStartDate } from "./trip-dates.ts";
 
 /*
@@ -87,6 +88,20 @@ export function keepAside(inHand: ShioriTrip, saved: ShioriTrip | null, next: Sh
   return leaving;
 }
 
+/**
+ * How long a bundled sight is planned at when it is added. A park that takes
+ * the day is named in stay.ts and keeps its day; otherwise the usual stay
+ * both drafts of the sight notes agreed on (sight-notes.ts); otherwise the
+ * rule by kind. A place seen from outside only is a short stop whatever the
+ * rest says. An estimate, as every stay is: the traveller changes it.
+ */
+export function sightStayMinutes(sight: Pick<PopularSight, "q" | "ja" | "en" | "kind">) {
+  const name = `${sight.ja} ${sight.en}`;
+  const note = sightNote(sight.q);
+  const minutes = namedParkStay(sight.kind, name) ?? note?.stay ?? shioriStayMinutes(sight.kind, name);
+  return note?.access === "exterior" ? Math.min(minutes, EXTERIOR_STAY) : minutes;
+}
+
 export function placeFromSight(sight: PopularSight, locale: "ja" | "en"): ShioriPlace {
   const name = (locale === "ja" ? sight.ja : sight.en).trim();
   return {
@@ -95,7 +110,7 @@ export function placeFromSight(sight: PopularSight, locale: "ja" | "en"): Shiori
     lat: sight.lat,
     lon: sight.lon,
     kind: sight.kind,
-    stayMinutes: shioriStayMinutes(sight.kind, `${sight.ja} ${sight.en}`),
+    stayMinutes: sightStayMinutes(sight),
     ...(sight.img ? { img: sight.img } : {}),
     ...(sight.desc ? { desc: sight.desc } : {}),
   };

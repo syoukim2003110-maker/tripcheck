@@ -50,11 +50,21 @@ const names: Array<[RegExp, number]> = [
 const NOT_THE_PARK_NAME = /タワー|tower|ストア|store|ショップ|shop|ホテル|hotel|駅|station|モール|mall|ホール|\bhall\b|シティウォーク|citywalk/i;
 const NOT_THE_PARK_KIND = /skyscraper|\btower\b|hotel|station|\bstore\b|\bshop\b|shopping|\bmall\b|concert|theat/;
 
-export function shioriStayMinutes(kind: string | undefined, name: string) {
+/** The stay of a park named above (a day, most of one, half of one), or null for any other place. */
+export function namedParkStay(kind: string | undefined, name: string): number | null {
   const lowered = (kind ?? "").toLowerCase();
-  if (!NOT_THE_PARK_NAME.test(name) && !NOT_THE_PARK_KIND.test(lowered)) {
-    for (const [pattern, minutes] of names) if (pattern.test(name)) return minutes;
-  }
+  if (NOT_THE_PARK_NAME.test(name) || NOT_THE_PARK_KIND.test(lowered)) return null;
+  for (const [pattern, minutes] of names) if (pattern.test(name)) return minutes;
+  return null;
+}
+
+export function shioriStayMinutes(kind: string | undefined, name: string) {
+  const named = namedParkStay(kind, name);
+  if (named !== null) return named;
+  const lowered = (kind ?? "").toLowerCase();
   for (const [pattern, minutes] of rules) if (pattern.test(lowered)) return minutes;
   return 75;
 }
+
+/** A place seen from outside only (a residence, an office, a closed precinct) is a stop of at most this long. */
+export const EXTERIOR_STAY = 30;

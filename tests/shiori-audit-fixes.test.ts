@@ -10,6 +10,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { isBoatLineName } from "../lib/rail-router.ts";
 import { buildShioriPlan, departureAfterStop, dinnerHourAt, dinnerSlot, habitOf, hardToReach, legWord, nobodySleepsAt, type ShioriDay } from "../lib/shiori/plan.ts";
 import { placeFromSight } from "../lib/shiori/state.ts";
+import { placeByKind } from "./helpers/kind-stays.ts";
 import { shioriStayMinutes } from "../lib/shiori/stay.ts";
 import { auditPlan as auditPlanShown, cities, railOf, scenarioPlaces, scenarios } from "../scripts/audit-scenarios.ts";
 
@@ -23,11 +24,13 @@ import { auditPlan as auditPlanShown, cities, railOf, scenarioPlaces, scenarios 
  * printed only when the traveller asks for everything (a list too full for
  * its days is otherwise planned as the set that fits: see
  * tests/shiori-left-out.test.ts, which also reads the trips as they are
- * first shown). The trips here are the ones the audit read: planned anyway.
- * For the 56 of the 63 that fit, or run less than an hour over, that is the
- * plan a traveller first sees.
+ * first shown). The trips here are the ones the audit read: planned anyway,
+ * and with the stays it read them with — the rule by kind (stay.ts), from
+ * before the sight notes gave most bundled sights their usual stay. What
+ * those stays changed in the trips a traveller now first sees is pinned at
+ * the end of this file ("the usual stays of the sight notes").
  */
-const auditPlan = (id: string) => auditPlanShown(id, { packAnyway: true });
+const auditPlan = (id: string) => auditPlanShown(id, { packAnyway: true, stays: "kind" });
 
 const stopNamed = (id: string, name: RegExp) => {
   const { plan } = auditPlan(id);
@@ -119,8 +122,8 @@ test("the area to stay is not a far-out place that wins by putting the trip on f
   const { scenario, plan } = auditPlan("kyoto-3");
   assert.equal(plan.stayNear?.nearName, "京都御所");
   const from = (name: string) => {
-    const base = scenarioPlaces(scenario).find((place) => place.name === name)!;
-    return buildShioriPlan({ places: scenarioPlaces(scenario), days: scenario.days, hotel: { name: "h", lat: base.lat, lon: base.lon }, locale: "ja" }, { rail: railOf("kyoto"), cities });
+    const base = scenarioPlaces(scenario, "kind").find((place) => place.name === name)!;
+    return buildShioriPlan({ places: scenarioPlaces(scenario, "kind"), days: scenario.days, hotel: { name: "h", lat: base.lat, lon: base.lon }, locale: "ja" }, { rail: railOf("kyoto"), cities });
   };
   const packed = (name: string) => from(name).days.filter((day) => day.load === "tight").length;
   assert.equal(packed("京都御所"), 1);
@@ -142,7 +145,7 @@ test("a summit, a volcano, an island, a forest or a cable-car line is never the 
   // In every trip of the audit.
   for (const scenario of scenarios) {
     const { plan } = auditPlan(scenario.id);
-    const places = scenarioPlaces(scenario);
+    const places = scenarioPlaces(scenario, "kind");
     if (!plan.stayNear?.nearName || places.every((place) => nobodySleepsAt(place.kind))) continue;
     const named = places.find((place) => place.name === plan.stayNear!.nearName)!;
     assert.equal(nobodySleepsAt(named.kind), false, `${scenario.id}: ${named.name} [${named.kind}]`);
@@ -319,7 +322,7 @@ let kobeAsRead: ReturnType<typeof buildShioriPlan> | null = null;
 const kobeAcrossLunch = () => {
   if (!kobeAsRead) {
     const scenario = scenarios.find((entry) => entry.id === "kobe-3")!;
-    const places = scenarioPlaces(scenario).map((place) => (/須磨海浜水族園|アンパンマン|湊川神社/.test(place.name) ? { ...place, kind: undefined } : place));
+    const places = scenarioPlaces(scenario, "kind").map((place) => (/須磨海浜水族園|アンパンマン|湊川神社/.test(place.name) ? { ...place, kind: undefined } : place));
     kobeAsRead = buildShioriPlan({ places, days: scenario.days, hotel: scenario.hotel, locale: "ja" }, { rail: railOf("kobe"), cities });
   }
   const plan = kobeAsRead;
@@ -501,7 +504,7 @@ test("the stay that fills the day gives way only to an order that can be kept or
   assert.deepEqual([meal.order, meal.missed], [[2, 1, 0], 0]);
 });
 
-const sightOf = (cityId: string, name: string) => placeFromSight(cities.find((city) => city.id === cityId)!.sights.find((sight) => sight.ja === name)!, "ja");
+const sightOf = (cityId: string, name: string) => placeByKind(cities.find((city) => city.id === cityId)!.sights.find((sight) => sight.ja === name)!, "ja");
 const allLegs = (plan: ReturnType<typeof auditPlan>["plan"]) => plan.days.flatMap((day) => [day.fromHotel, ...day.legs, day.toHotel]).flatMap((leg) => (leg ? [leg] : []));
 const straightKm = (leg: { from: { latitude: number; longitude: number }; to: { latitude: number; longitude: number } }) => Math.hypot(
   (leg.from.latitude - leg.to.latitude) * 111,
@@ -715,8 +718,8 @@ test("the area to stay is not a place far out that costs hours more of riding to
     const { scenario, plan } = auditPlan(id);
     assert.equal(plan.stayNear?.nearName, named, id);
     const moving = (name: string) => {
-      const base = scenarioPlaces(scenario).find((place) => place.name === name)!;
-      const from = buildShioriPlan({ places: scenarioPlaces(scenario), days: scenario.days, hotel: { name: "h", lat: base.lat, lon: base.lon }, locale: "ja" }, { rail: railOf(scenario.city.id), cities });
+      const base = scenarioPlaces(scenario, "kind").find((place) => place.name === name)!;
+      const from = buildShioriPlan({ places: scenarioPlaces(scenario, "kind"), days: scenario.days, hotel: { name: "h", lat: base.lat, lon: base.lon }, locale: "ja" }, { rail: railOf(scenario.city.id), cities });
       return from.days.reduce((sum, day) => sum + day.travelMinutes, 0);
     };
     assert.ok(moving(named) + 60 <= moving(farOut), `${id}: ${named} ${moving(named)}, ${farOut} ${moving(farOut)}`);
@@ -740,7 +743,7 @@ test("a hotel that squeezes the trip onto fewer, packed days is said to be far, 
   assert.ok(notice.savedMinutes >= 20);
   // It is true of the plan the traveller would get from the area named: no packed day, and less moving.
   const base = plan.stayNear!;
-  const there = buildShioriPlan({ places: scenarioPlaces(scenario), days: scenario.days, hotel: { name: "h", lat: base.latitude, lon: base.longitude }, locale: "ja" }, { rail: railOf("nara"), cities });
+  const there = buildShioriPlan({ places: scenarioPlaces(scenario, "kind"), days: scenario.days, hotel: { name: "h", lat: base.latitude, lon: base.longitude }, locale: "ja" }, { rail: railOf("nara"), cities });
   assert.equal(there.days.filter((day) => day.load === "tight").length, 0);
   const moving = (days: readonly ShioriDay[]) => days.reduce((sum, day) => sum + day.travelMinutes, 0);
   assert.ok(moving(there.days) < moving(plan.days));
@@ -752,7 +755,7 @@ test("a hotel that squeezes the trip onto fewer, packed days is said to be far, 
     const far = audit.notices.find((item) => item.kind === "hotel-far");
     if (!far || far.kind !== "hotel-far" || !far.calmerDays) continue;
     const near = audit.stayNear!;
-    const from = buildShioriPlan({ places: scenarioPlaces(entry), days: entry.days, hotel: { name: "h", lat: near.latitude, lon: near.longitude }, locale: "ja" }, { rail: railOf(entry.city.id), cities });
+    const from = buildShioriPlan({ places: scenarioPlaces(entry, "kind"), days: entry.days, hotel: { name: "h", lat: near.latitude, lon: near.longitude }, locale: "ja" }, { rail: railOf(entry.city.id), cities });
     const packed = (days: readonly ShioriDay[]) => days.filter((day) => day.load === "tight").length;
     assert.ok(packed(audit.days) - packed(from.days) >= far.calmerDays, `${entry.id}: ${packed(audit.days)} → ${packed(from.days)}, said ${far.calmerDays}`);
   }
@@ -1343,8 +1346,9 @@ test("the hours the traveller entered come before the planner's evening: a night
 
 test("a volcano is climbed in the daytime, before the hot spring: 女峰山 from 11:40 after the waterfall, not from 15:35 until dusk", () => {
   // Was: nikko-3 day 3, 09:25 裏見滝, 11:35–13:35 大江戸温泉物語 日光霧降, 15:35–17:35 女峰山.
-  // (As first shown: the trip without the place its three days have no room for.)
-  const day = auditPlanShown("nikko-3").plan.days.find((entry) => entry.stops.some((stop) => stop.place.name === "女峰山"))!;
+  // (As first shown: the trip without the place its three days have no room for. With the stays by kind it was
+  // found with: with the usual stays of the sight notes 女峰山 is a climb of a whole day, and the trip has no room for it.)
+  const day = auditPlanShown("nikko-3", { stays: "kind" }).plan.days.find((entry) => entry.stops.some((stop) => stop.place.name === "女峰山"))!;
   assert.deepEqual(day.stops.map((stop) => `${stop.arrive}-${stop.leave} ${stop.place.name}`), ["09:25-10:40 裏見滝", "11:40-13:40 女峰山", "15:40-17:40 大江戸温泉物語 日光霧降"]);
   assert.equal(day.runsLate, false);
   // In every trip of the audit no volcano is still being walked after 17:00.
@@ -1357,7 +1361,8 @@ test("a volcano is climbed in the daytime, before the hot spring: 女峰山 from
 
 test("a fish market opens its day instead of closing it: 築地市場 from 09:09, not from 14:08 after the museum and the tower", () => {
   // Was: tokyo-2 day 1 as first shown, 09:01 東京国立博物館, 11:16 東京スカイツリー, 14:08–15:23 築地市場.
-  const day = auditPlanShown("tokyo-2").plan.days[0];
+  // (With the stays by kind it was found with.)
+  const day = auditPlanShown("tokyo-2", { stays: "kind" }).plan.days[0];
   assert.deepEqual(day.stops.map((stop) => `${stop.arrive}-${stop.leave} ${stop.place.name}`), ["09:09-10:24 築地市場", "11:16-12:16 東京スカイツリー", "14:01-15:31 東京国立博物館"]);
   // The same minutes on the way as before: the day is the same day, the other way round.
   assert.equal(day.travelMinutes, 127);
@@ -1398,4 +1403,18 @@ test("a day that starts later for its evening does not push a temple past five, 
   // Nor does the planner's table of habits hold an hour of any place: kinds and names only.
   const habits = readFileSync(new URL("../lib/shiori/habits.ts", import.meta.url), "utf8");
   assert.equal(/\d{1,2}:\d{2}|\d+ \* 60/.test(habits.replace(/\/\*[\s\S]*?\*\//g, "")), false);
+});
+
+/* ------------------------------------------------- the usual stays of the sight notes */
+
+test("the trips of the audit are planned with the usual stays of the sight notes: the Louvre four hours, the Skytree an hour and a half, a temple's stay its own", () => {
+  const stays = (id: string) => auditPlanShown(id).scenario.sights.map((sight) => `${sight.ja} ${scenarioPlaces(auditPlanShown(id).scenario).find((place) => place.id === `wikidata-${sight.q}`)!.stayMinutes}`);
+  // Were 60, 60, 50, 75, 90 by kind.
+  assert.deepEqual(stays("tokyo-1"), ["東京スカイツリー 90", "東京タワー 60", "靖国神社 45", "皇居 90", "東京国立博物館 150"]);
+  // Were 60, 90, 90, 30, 50.
+  assert.deepEqual(stays("paris-1"), ["エッフェル塔 120", "ルーヴル美術館 240", "オルセー美術館 150", "エトワール凱旋門 45", "ノートルダム大聖堂 60"]);
+  // Five such sights are more than one day holds: the day keeps four and names the one left out, with the two days
+  // that hold everything (the list of such trips is in tests/shiori-left-out.test.ts).
+  const paris = auditPlanShown("paris-1").plan;
+  assert.deepEqual([paris.leftOut, paris.days[0].runsLate, paris.notices.find((notice) => notice.kind === "left-out")], [["ルーヴル美術館"], false, { kind: "left-out", places: [{ placeId: "wikidata-Q19675", name: "ルーヴル美術館" }], days: 2 }]);
 });

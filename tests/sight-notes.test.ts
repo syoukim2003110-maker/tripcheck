@@ -4,6 +4,8 @@ import test from "node:test";
 
 import type { PopularDestination } from "../lib/popular-sights.ts";
 import { isClosedSight, isExteriorSight, sightNote } from "../lib/shiori/sight-notes.ts";
+import { placeFromSight, sightStayMinutes } from "../lib/shiori/state.ts";
+import { EXTERIOR_STAY, namedParkStay, shioriStayMinutes } from "../lib/shiori/stay.ts";
 import { buildNotes, notesText, snapStay, STAYS } from "../scripts/build-sight-notes.ts";
 
 const cities = (JSON.parse(readFileSync(new URL("../lib/popular-sights-data.json", import.meta.url), "utf8")) as { cities: PopularDestination[] }).cities;
@@ -71,4 +73,52 @@ test("nothing in the notes reads as an hour of the day", () => {
     for (const key of Object.keys(note)) assert.ok(["stay", "hours", "access", "partOf"].includes(key), key);
     if (note.hours !== undefined) assert.ok(["morning", "early", "day", "evening", "any"].includes(note.hours as string));
   }
+});
+
+/* ------------------------------------------------------------------ stays */
+
+const sight = (cityId: string, name: string) => cities.find((city) => city.id === cityId)!.sights.find((entry) => entry.ja === name)!;
+
+test("a bundled sight is added with the usual stay of its note, before the rule by kind: the Louvre four hours, not ninety minutes like any museum", () => {
+  assert.deepEqual([shioriStayMinutes("art museum", "ルーヴル美術館 Louvre Museum"), placeFromSight(sight("paris", "ルーヴル美術館"), "ja").stayMinutes], [90, 240]);
+  assert.deepEqual([shioriStayMinutes("buddhist temple", "清水寺 Kiyomizu-dera"), placeFromSight(sight("kyoto", "清水寺"), "en").stayMinutes], [50, 90]);
+  // Shorter too: a gate is a few minutes, not half an hour; an islet off Busan is seen from the shore, not a day trip of three hours.
+  assert.equal(placeFromSight(sight("naha", "守礼門"), "ja").stayMinutes, 15);
+  assert.deepEqual([shioriStayMinutes("island", "五六島"), placeFromSight(sight("busan", "五六島"), "ja").stayMinutes], [180, 30]);
+  // Without a note the rule by kind is the stay, as it was.
+  const plain = cities.flatMap((city) => city.sights).find((entry) => sightNote(entry.q)?.stay === undefined && sightNote(entry.q)?.access !== "exterior")!;
+  assert.equal(sightStayMinutes(plain), shioriStayMinutes(plain.kind, `${plain.ja} ${plain.en}`));
+});
+
+test("a park named for the day it takes keeps that day whatever its note says: 日光江戸村 six hours, Disneyland eight", () => {
+  assert.deepEqual([sightNote("Q11504885")?.stay, sightStayMinutes(sight("nikko", "日光江戸村"))], [240, 360]);
+  assert.equal(sightStayMinutes(sight("tokyo", "東京ディズニーランド")), 480);
+  for (const city of cities) {
+    for (const entry of city.sights) {
+      const named = namedParkStay(entry.kind, `${entry.ja} ${entry.en}`);
+      if (named !== null) assert.equal(sightStayMinutes(entry), named, entry.ja);
+    }
+  }
+});
+
+test("a place seen from outside only is a short stop, at most half an hour, whatever else is said of it", () => {
+  // 正倉院: the drafts said private, the web says fence and exterior only.
+  assert.equal(sightStayMinutes(sight("nara", "正倉院")), 15);
+  // イスタナ: no stay both drafts agree on; as a palace the rule by kind would plan 75 minutes.
+  assert.deepEqual([shioriStayMinutes("palace", "x"), sightStayMinutes(sight("singapore", "イスタナ・シンガポール"))], [75, EXTERIOR_STAY]);
+  for (const city of cities) for (const entry of city.sights) if (isExteriorSight(entry.q)) assert.ok(sightStayMinutes(entry) <= EXTERIOR_STAY, entry.ja);
+});
+
+test("of the 2,277 bundled sights 1,826 are added with another stay than the rule by kind gave, 613 longer and 1,213 shorter", () => {
+  let changed = 0;
+  let longer = 0;
+  for (const city of cities) {
+    for (const entry of city.sights) {
+      const before = shioriStayMinutes(entry.kind, `${entry.ja} ${entry.en}`);
+      const after = sightStayMinutes(entry);
+      if (after !== before) changed += 1;
+      if (after > before) longer += 1;
+    }
+  }
+  assert.deepEqual([changed, longer], [1826, 613]);
 });

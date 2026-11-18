@@ -6,7 +6,7 @@ import { curateSights, type PopularDestination } from "../lib/popular-sights.ts"
 import { RailNetwork } from "../lib/rail-router.ts";
 import { dayClock } from "../lib/shiori/day-search.ts";
 import { buildShioriPlan, clockOfDay, departureAfterStop, shioriPricing, type ShioriInput, type ShioriPlace, type ShioriPlan, type ShioriRoute } from "../lib/shiori/plan.ts";
-import { placeFromSight } from "../lib/shiori/state.ts";
+import { placeByKind } from "./helpers/kind-stays.ts";
 
 /*
  * Times a traveller entered, in the booklet itself, on real cities with
@@ -23,11 +23,11 @@ function railOf(cityId: string) {
 }
 function sightsOf(cityId: string, count: number, from = 0): ShioriPlace[] {
   const city = cities.find((entry) => entry.id === cityId)!;
-  return curateSights(city.sights).slice(from, from + count).map((sight) => placeFromSight(sight, "ja"));
+  return curateSights(city.sights).slice(from, from + count).map((sight) => placeByKind(sight, "ja"));
 }
 function named(cityId: string, names: string[]): ShioriPlace[] {
   const city = cities.find((entry) => entry.id === cityId)!;
-  return names.map((name) => placeFromSight(city.sights.find((sight) => sight.ja === name)!, "ja"));
+  return names.map((name) => placeByKind(city.sights.find((sight) => sight.ja === name)!, "ja"));
 }
 const plan = (cityId: string, input: Omit<ShioriInput, "locale">, routes?: ReadonlyMap<string, ShioriRoute | null>) => (
   buildShioriPlan({ ...input, locale: "ja" }, { rail: railOf(cityId), cities, ...(routes ? { routes } : {}) })
@@ -391,7 +391,7 @@ test("no more places are set aside than have to be: 220 tight trips against ever
       const other = random(index + 1);
       [pool[index], pool[other]] = [pool[other], pool[index]];
     }
-    const places: ShioriPlace[] = pool.slice(0, 2 + random(5)).map((sight) => placeFromSight(sight, "ja"));
+    const places: ShioriPlace[] = pool.slice(0, 2 + random(5)).map((sight) => placeByKind(sight, "ja"));
     let lunch = false;
     let dinner = false;
     places.forEach((place, index) => {

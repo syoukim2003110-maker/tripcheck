@@ -9,6 +9,7 @@ import type { PopularDestination, PopularSight } from "../lib/popular-sights.ts"
 import { RailNetwork } from "../lib/rail-router.ts";
 import { buildShioriPlan, type ShioriHotel, type ShioriPlan } from "../lib/shiori/plan.ts";
 import { placeFromSight } from "../lib/shiori/state.ts";
+import { shioriStayMinutes } from "../lib/shiori/stay.ts";
 
 export const cities = (JSON.parse(readFileSync(new URL("../lib/popular-sights-data.json", import.meta.url), "utf8")) as { cities: PopularDestination[] }).cities;
 const networks = new Map<string, RailNetwork | null>();
@@ -53,14 +54,23 @@ for (const [cityIndex, id] of CITY_IDS.entries()) {
   for (const [shapeIndex, shape] of shapes.entries()) scenarios.push({ id: `${id}-${shapeIndex + 1}`, city, ...shape });
 }
 
-export const scenarioPlaces = (scenario: Scenario) => scenario.sights.map((sight) => placeFromSight(sight, "ja"));
+/**
+ * The places of an audit trip, as a traveller adds them. `stays: "kind"`: with
+ * the stay the rule by kind gives each (stay.ts) instead of the usual stay of
+ * the sight notes — the trips as they were when most of the planner's rules
+ * were found on them, so that a test of such a rule keeps its scenario.
+ */
+export const scenarioPlaces = (scenario: Scenario, stays: "notes" | "kind" = "notes") => scenario.sights.map((sight) => (
+  stays === "kind" ? { ...placeFromSight(sight, "ja"), stayMinutes: shioriStayMinutes(sight.kind, `${sight.ja} ${sight.en}`) } : placeFromSight(sight, "ja")
+));
 /**
  * The plan of one audit trip, by its name in the audit ("kyoto-3"): as a
  * traveller first sees it, or — `packAnyway` — with every place planned on
  * the days asked for however late they run, as the audit first read them.
+ * `stays: "kind"`: see scenarioPlaces.
  */
-export function auditPlan(id: string, options: { packAnyway?: boolean } = {}): { scenario: Scenario; plan: ShioriPlan } {
+export function auditPlan(id: string, options: { packAnyway?: boolean; stays?: "notes" | "kind" } = {}): { scenario: Scenario; plan: ShioriPlan } {
   const scenario = scenarios.find((entry) => entry.id === id);
   if (!scenario) throw new Error(`no audit trip ${id}`);
-  return { scenario, plan: buildShioriPlan({ places: scenarioPlaces(scenario), days: scenario.days, hotel: scenario.hotel, locale: "ja", packAnyway: options.packAnyway === true }, { rail: railOf(scenario.city.id), cities }) };
+  return { scenario, plan: buildShioriPlan({ places: scenarioPlaces(scenario, options.stays), days: scenario.days, hotel: scenario.hotel, locale: "ja", packAnyway: options.packAnyway === true }, { rail: railOf(scenario.city.id), cities }) };
 }

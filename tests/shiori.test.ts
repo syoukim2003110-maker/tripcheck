@@ -242,7 +242,8 @@ test("a trip survives the share link, and a tampered link opens nothing", () => 
   trip = { ...trip, hotel: { name: "駅前ホテル", lat: 34.9858, lon: 135.7588 } };
   const decoded = decodeTrip(encodeTrip(trip));
   assert.deepEqual(decoded, { ...trip, places: trip.places.map((entry) => ({ ...entry, lat: Number(entry.lat.toFixed(5)), lon: Number(entry.lon.toFixed(5)) })) });
-  assert.equal(decoded?.places[0].stayMinutes, 50);
+  // (清水寺: the usual stay of the sight notes, an hour and a half.)
+  assert.equal(decoded?.places[0].stayMinutes, 90);
 
   assert.equal(decodeTrip("not-base64!"), null);
   const tamper = (change: (wire: Record<string, unknown>) => void) => {
