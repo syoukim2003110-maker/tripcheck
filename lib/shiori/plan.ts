@@ -7,7 +7,7 @@ import { estimateTravelOptions } from "../time-feasibility.ts";
 import { cafeBreakFor, type CafeBreak } from "./cafes.ts";
 import { DAY_CLOCK, DAY_FILLING_STAY, LATE_LUNCH, daySearch, daylightEnd, packedDay, pastEnd, scheduleDay, type SearchProblem } from "./day-search.ts";
 import { isDaytime, isOpenEarly, placeHabit, type PlaceHabit } from "./habits.ts";
-import { sightNote } from "./sight-notes.ts";
+import { isExteriorSight, sightNote } from "./sight-notes.ts";
 import { weatherDayOrder } from "./weather-days.ts";
 import {
   buildTripFromWishlist,
@@ -211,6 +211,12 @@ export type ShioriStop = {
    * In the order of the list. Absent when there are none.
    */
   within?: ShioriPlace[];
+  /**
+   * A place its sight note says is seen from outside only (a residence, an
+   * office, a closed precinct: sight-notes.ts): its short stay is a look from
+   * outside, and the card says so. Absent otherwise.
+   */
+  exterior?: true;
   /** The restaurant could not be reached inside its meal hours on this day. */
   mealMissed: boolean;
   /**
@@ -1766,6 +1772,7 @@ function planCore(input: ShioriInput, options: PlanOptions, frames: Frames | nul
         leaveNextDay: leaveMinutes >= 1_440,
         reserved: bookedIds.has(place.id),
         ...(!bookedIds.has(place.id) && habitOf(place) === "evening" ? { evening: true as const } : {}),
+        ...(!place.meal && isExteriorSight(place.id) ? { exterior: true as const } : {}),
       }];
     });
     if (stops.length === 0) return [];

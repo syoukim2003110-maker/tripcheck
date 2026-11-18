@@ -147,6 +147,7 @@ const text = {
     waitEvening: (minutes: string) => `ここで約${minutes}の空き時間（夜に楽しむ場所なので、夕方からの予定にしています）`,
     mealMissed: "この店に食事の時間帯に着けません。",
     within: (names: string[]) => `ここで一緒に見る：${names.join("、")}`,
+    exterior: "外から見る予定です（中には入りません）",
     noticesTitle: "このままだと無理がある点",
     noticeNeedsDays: (asked: number, days: number) => `この内容は${asked}日では回りきれません。${days}日あれば無理なく収まります。`,
     noticeNeedsDaysAction: (days: number) => `${days}日にする`,
@@ -451,6 +452,7 @@ const text = {
     waitEvening: (minutes: string) => `About ${minutes} free here (a place for the evening, so it is planned from early evening)`,
     mealMissed: "This restaurant cannot be reached during the meal.",
     within: (names: string[]) => `Also seen here: ${names.join(", ")}`,
+    exterior: "Planned as a look from outside (not going in)",
     noticesTitle: "What does not work as it stands",
     noticeNeedsDays: (asked: number, days: number) => `This does not fit in ${asked} day${asked === 1 ? "" : "s"}. It fits comfortably in ${days}.`,
     noticeNeedsDaysAction: (days: number) => `Make it ${days} days`,
@@ -2591,6 +2593,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
                                 <b className="shiori-stop-name">{stop.place.name}</b>
                                 <small>{stop.place.meal ? t.mealLabels[stop.place.meal] : kindLabel(stop.place.kind, locale)} ・ <span className="shiori-nb">{stayText(stop.stayMinutes, stop.lunchMinutes)}</span></small>
                                 {stop.within ? <small className="shiori-within">{t.within(stop.within.map((place) => place.name))}</small> : null}
+                                {stop.exterior ? <small className="shiori-within">{t.exterior}</small> : null}
                                 {stop.mealMissed ? <small className="shiori-warn">{t.mealMissed}</small> : null}
                               </span>
                               <Photo alt="" icon={stop.place.meal ? "meal" : "pin"} img={stop.place.img} width={160} />

@@ -381,6 +381,18 @@ test("a trip with a part folded into its place survives the share link, and the 
   assert.equal(ideas.some((idea) => idea.ja === "眠り猫" || idea.ja === "日光東照宮"), false);
 });
 
+test("a place seen from outside only says so on its card: バチカン宮殿's fifteen minutes are a look from outside, not a rushed visit", () => {
+  const rome = (name: string) => placeFromSight(sight("rome", name), "ja");
+  const plan = buildShioriPlan({ places: [rome("サン・ピエトロ大聖堂"), rome("バチカン宮殿")], days: 1, hotel: null, locale: "ja" }, { cities });
+  const stops = plan.days[0].stops;
+  assert.deepEqual(stops.map((stop) => [stop.place.name, stop.stayMinutes, stop.exterior]).sort(), [["サン・ピエトロ大聖堂", 75, undefined], ["バチカン宮殿", 15, true]].sort());
+  const source = readFileSync(new URL("../app/shiori/ShioriApp.tsx", import.meta.url), "utf8");
+  const lines = source.match(/^ {4}exterior: .*$/gm) ?? [];
+  assert.equal(lines.length, 2);
+  for (const line of lines) assert.equal(/営業|開店|閉店|開く|閉ま|\bopens?\b|\bcloses?\b|\d{1,2}:\d{2}|\d時/i.test(line), false, line);
+  assert.equal(source.match(/stop\.exterior \? <small className="shiori-within">\{t\.exterior\}/g)?.length, 1);
+});
+
 test("the card of a stop names what is seen within it, in both languages, and says nothing about hours", () => {
   const source = readFileSync(new URL("../app/shiori/ShioriApp.tsx", import.meta.url), "utf8");
   const lines = source.match(/^ {4}within: .*$/gm) ?? [];
