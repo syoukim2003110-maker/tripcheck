@@ -18,6 +18,8 @@ export default function PrivacyPage() {
               <li>経路や施設を探す時だけ、必要な情報を外部サービスへ送信</li>
               <li>旅程全文をAIへ送らない</li>
               <li>共有リンクを知る人は旅程を読める</li>
+              <li>しおりの地図は Apple マップ。Apple マップで見つけた場所は Apple の場所 ID だけを保存し、しおりを開くたびに Apple から名前と位置を読み直す（名前・住所・位置は保存しない）</li>
+              <li>ブラウザに保存する道のりは OpenStreetMap のものだけ（Apple の道のりは保存しない）</li>
             </ul>
           </div>
           <div lang="en">
@@ -27,6 +29,8 @@ export default function PrivacyPage() {
               <li>Only what&apos;s needed to look up routes and places is sent to external services, only when you search</li>
               <li>Your full itinerary is never sent to an AI</li>
               <li>Anyone with a share link can read that trip</li>
+              <li>The booklet&apos;s map is Apple Maps. A place found on Apple Maps is kept only as its Apple place ID, and its name and position are looked up again from Apple each time the trip is opened (its name, address and position are not stored)</li>
+              <li>Street paths kept in your browser come from OpenStreetMap only (Apple&apos;s are never stored)</li>
             </ul>
           </div>
         </div>
@@ -75,6 +79,7 @@ export default function PrivacyPage() {
       <section>
         <h2>Device storage</h2>
         <p>TripCheck stores your interface language and up to ten recently generated plans in this browser. Plans use IndexedDB when it is available and fall back to non-persistent in-memory storage when private-mode or browser restrictions prevent it. A saved entry contains the user-authored inputs and edits needed to reopen that plan. If you explicitly choose one ambiguous Google match, it may also contain only that stable Google Place ID so TripCheck can request the current listing again; it does not save Google&apos;s display name, address, hours, reviews, photos, route response or other variable provider content. A manual pin retains only the name, address and coordinates you entered. You can remove each recent plan from the planner, and clearing this site&apos;s browser data removes all persistent copies.</p>
+        <p>In the trip booklet, a place, restaurant, café or hotel you chose from an Apple Maps search is kept on this device (and in a share link) only as its Apple place identifier, together with what you set for it yourself — the length of stay, the day, lunch or dinner, a booked time, and the booklet&apos;s own one-word kind such as &ldquo;museum&rdquo; or &ldquo;cafe&rdquo;. Apple&apos;s name, address, category and position of the place are not stored. Each time the trip or a link is opened, those identifiers and the interface language are sent through TripCheck&apos;s relay to Apple, which answers the current name and position; the answer is held only in the open page. Until it arrives — or when it cannot, for example offline — the place is set aside and the booklet says so; it is not removed. A trip saved by an earlier version with Apple&apos;s names and positions in it is saved again in this form as soon as it is opened; one with no Apple identifier is looked for once by its name near where it is. Bundled sights (Wikidata), HotPepper shops (name, position and shop ID) and places found by the open lookups are stored as before. Lists of places found on Apple Maps are shown only beside a small Apple map, which your browser loads from Apple as described above. Street paths kept in this browser&apos;s storage come from the OpenStreetMap router only; Apple&apos;s walking and driving paths stay in the open page.<span lang="ja"> しおりでは、Apple マップの検索から選んだ場所・お店・ホテルは、Apple の場所 ID と、滞在時間・日・昼食か夕食か・予約時刻・しおり独自の種類（「美術館」「カフェ」など）といった利用者自身の設定だけをこの端末と共有リンクに保存します。Apple の名前・住所・カテゴリ・位置は保存しません。しおりやリンクを開くたびに、場所 ID と表示言語を TripCheck の中継を通じて Apple に送り、現在の名前と位置を受け取って開いているページの中だけで使います。受け取れないあいだ（オフラインなど）は、その場所を消さずに予定から外し、その旨を表示します。以前の版が Apple の名前や位置ごと保存した旅程は、開いた時点でこの形に保存し直します。Apple マップで見つけた場所の一覧は、小さな Apple マップと一緒にだけ表示します。ブラウザに保存する道のりは OpenStreetMap のものだけで、Apple の道のりは保存しません。</span></p>
         <p>If you enter your passport expiry date for the validity check, it is kept only in this browser&apos;s local storage and is never sent to TripCheck or any provider — the comparison against the destination&apos;s validity rule happens entirely on this device. Clearing the field or this site&apos;s browser data removes it.</p>
       </section>
       <section>

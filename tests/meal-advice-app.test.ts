@@ -585,3 +585,17 @@ test("the screen: one question at a time, a status line that is always there, an
   assert.match(source, /const sights = useMemo\(\(\) => mealSights\(cities\), \[cities\]\);/);
   assert.match(asking, /buildMealBrief\(\{ plan, sights, /);
 });
+
+test("a place found through Apple goes without its name or position even when Apple's name is a bundled sight's", () => {
+  // Apple's name for a place it found, the same words as a bundled sight's: still Apple's, so not sent.
+  const sight = curateSights(tokyo.sights)[0];
+  const appleTwin: ShioriPlace = { id: "apple-I0123456789ABCDEF", name: sight.ja, lat: 35.7101, lon: 139.8107, stayMinutes: 60, day: 1 };
+  const plan = tokyoPlan([appleTwin]);
+  const brief = buildMealBrief({ sights: SIGHTS, plan, city: "東京", prefs: EMPTY_MEAL_PREFS });
+  const stop = plan.days.flatMap((day) => day.stops).find((entry) => entry.place.id === appleTwin.id);
+  assert.ok(brief && stop, "the Apple place is on a day and a brief is built");
+  const sent = brief!.days.flatMap((day) => day.stops).find((entry) => entry.start === stop!.arrive && entry.name === undefined);
+  assert.ok(sent, "the Apple place is in the outline, without a name");
+  assert.equal(JSON.stringify(brief).includes("I0123456789ABCDEF"), false);
+  assert.equal(/35\.71|139\.81/.test(JSON.stringify(brief)), false);
+});

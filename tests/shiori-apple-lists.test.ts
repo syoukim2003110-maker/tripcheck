@@ -74,3 +74,12 @@ test("the strings of the small map exist in both languages", () => {
     assert.equal(app.split("\n").filter((line) => line.startsWith(`    ${key}: `)).length, 2, key);
   }
 });
+
+test("the privacy page says, in both languages, that the map is Apple's, that Apple places are kept as their IDs and looked up again, and that stored paths are OpenStreetMap's", () => {
+  const privacy = readFileSync(new URL("../app/privacy/page.tsx", import.meta.url), "utf8");
+  assert.match(privacy, /しおりの地図は Apple マップ。Apple マップで見つけた場所は Apple の場所 ID だけを保存し、しおりを開くたびに Apple から名前と位置を読み直す/);
+  assert.match(privacy, /ブラウザに保存する道のりは OpenStreetMap のものだけ/);
+  assert.match(privacy, /The booklet&apos;s map is Apple Maps\. A place found on Apple Maps is kept only as its Apple place ID, and its name and position are looked up again from Apple each time the trip is opened/);
+  assert.match(privacy, /Street paths kept in your browser come from OpenStreetMap only/);
+  assert.match(privacy, /Apple&apos;s name, address, category and position of the place are not stored\./);
+});
