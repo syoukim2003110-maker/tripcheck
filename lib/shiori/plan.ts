@@ -6,6 +6,7 @@ import type { ResolvedInputStop, RouteStop } from "../route-optimizer.ts";
 import { estimateTravelOptions } from "../time-feasibility.ts";
 import { cafeBreakFor, type CafeBreak } from "./cafes.ts";
 import { DAY_CLOCK, DAY_FILLING_STAY, LATE_LUNCH, daySearch, packedDay, pastEnd, scheduleDay, type SearchProblem } from "./day-search.ts";
+import { isDaytime, isOpenEarly, placeHabit, type PlaceHabit } from "./habits.ts";
 import { weatherDayOrder } from "./weather-days.ts";
 import {
   buildTripFromWishlist,
@@ -595,6 +596,21 @@ function hotelBase(hotel: ShioriHotel): ResolvedInputStop {
 
 type Built = { plan: BuiltTripPlan; context: TripPlannerContext; raw: string; usedDays: number };
 const stayOf = (place: ShioriPlace) => Math.max(15, Math.round(place.stayMinutes));
+/**
+ * The planner's habit about the hours of a place of this kind (habits.ts): a
+ * preference for ordering a day, never printed and never a claim about when
+ * the place is open. A restaurant chosen for a meal has its meal instead.
+ */
+export const habitOf = (place: Pick<ShioriPlace, "kind" | "name" | "meal">): PlaceHabit | null => (place.meal ? null : placeHabit(place.kind, place.name));
+/**
+ * The same, as the search is told it. (Every stop is handed over with the
+ * same fields in the same order: the search reads them millions of times,
+ * and stops of several shapes made it a third slower.)
+ */
+function hoursOf(place: ShioriPlace) {
+  const habit = habitOf(place);
+  return { daytime: isDaytime(habit), ticketed: habit === "ticketed", early: isOpenEarly(habit) };
+}
 
 /**
  * `slackFree`: booked places that come straight after another entered time —
@@ -718,7 +734,8 @@ function structureKey(input: ShioriInput, frames: Frames | null = null, excluded
     // The names too: they are printed on the legs, and a renamed place or
     // hotel must not come back under its old name.
     // (And what kind and name say about the way there: an island, a summit.)
-    input.places.map((place) => [place.id, place.name, place.lat, place.lon, place.stayMinutes, place.day ?? 0, place.meal ?? "", reachOf(place, cities) ?? 0]),
+    // (And about its hours: a museum, a shrine, a night market.)
+    input.places.map((place) => [place.id, place.name, place.lat, place.lon, place.stayMinutes, place.day ?? 0, place.meal ?? "", reachOf(place, cities) ?? 0, habitOf(place) ?? 0]),
     input.days,
     input.hotel ? [input.hotel.name, input.hotel.lat, input.hotel.lon] : 0,
     input.locale,
@@ -986,9 +1003,10 @@ function searchProblem(input: ShioriInput, pricing: TripPrices, frames: Frames |
   return {
     stops: input.places.map((place) => {
       const booked = frames?.booked.get(place.id);
+      // (A booked stop has no habit: its hour is the traveller's own.)
       return booked
         ? { stay: stayOf(place), meal: place.meal ?? null, day: booked.day, fixed: booked.at }
-        : { stay: stayOf(place), meal: place.meal ?? null, day: typeof place.day === "number" ? place.day : null };
+        : { stay: stayOf(place), meal: place.meal ?? null, day: typeof place.day === "number" ? place.day : null, ...hoursOf(place) };
     }),
     minutes: pricing.minutes,
     km: input.places.map((from) => input.places.map((to) => straightKm(from, to))),
@@ -1004,7 +1022,7 @@ function searchProblem(input: ShioriInput, pricing: TripPrices, frames: Frames |
  * it has already worked out instead of solving them again.
  */
 let lastSearch: { minutes: number[][]; out: number[] | null; key: string; search: ReturnType<typeof daySearch> } | null = null;
-const searchKey = (input: ShioriInput, frames: Frames | null) => JSON.stringify(input.places.map((place) => [stayOf(place), place.meal ?? "", place.day ?? 0]))
+const searchKey = (input: ShioriInput, frames: Frames | null) => JSON.stringify(input.places.map((place) => [stayOf(place), place.meal ?? "", place.day ?? 0, habitOf(place) ?? 0]))
   + (frames ? JSON.stringify([frames.start, frames.finish, input.places.map((place) => { const booked = frames.booked.get(place.id); return booked ? [booked.day, booked.at] : 0; })]) : "");
 function searchFor(input: ShioriInput, pricing: TripPrices, frames: Frames | null = null) {
   const key = searchKey(input, frames);

@@ -15,7 +15,10 @@
  *     places (every way of splitting the list is costed), and beyond that
  *     by a search that tries every single move and swap until none helps;
  *   - equal minutes are settled by distance, so of two plans that cost the
- *     same the one a person would draw on the map wins.
+ *     same the one a person would draw on the map wins;
+ *   - once the days are chosen, each is put in the order that costs least
+ *     with the hours of the day counted (HABITS): a few minutes more on the
+ *     way for a museum not to open the day or a temple not to close it.
  *
  * Nothing here knows about trains or names: it works on a table of minutes.
  */
@@ -34,6 +37,17 @@ export type SearchStop = {
    * aside before asking).
    */
   fixed?: number | null;
+  /**
+   * Habits of the planner about the hours of a day, by the kind of place
+   * (lib/shiori/habits.ts) — preferences among the orders of a day that are
+   * otherwise close, never a fact about the place and never a ban (see
+   * HABITS). `daytime`: visited in the daytime, better over by about 17:00.
+   */
+  daytime?: boolean;
+  /** A place with a door and a counter: better not the first thing in the morning when a place under the open sky could open the day. */
+  ticketed?: boolean;
+  /** A place under the open sky that can open a day. */
+  early?: boolean;
 };
 
 export type SearchProblem = {
@@ -166,6 +180,36 @@ export function pastEnd(leave: number, end: number) {
  * minutes. The printed minutes are untouched.
  */
 export const TAXI_SURCHARGE = 15;
+
+/**
+ * What the hours of a day cost, in minutes of travel: the planner's habits
+ * about kinds of places, weighed against the rides when the order of a day
+ * is settled. The planner knows no opening hours, and none is implied; this
+ * only decides between orders of one day that are close.
+ *
+ * A daytime place (a temple, a garden, a museum) that ends after 17:00 costs
+ * ten minutes and half of every minute past it, thirty at most: a street, a
+ * tower or a viewpoint takes the end of the day when that costs less than
+ * that in rides. A place with a door and a counter (a museum, a zoo, a
+ * castle) reached before 09:30 as the first of a day that has a place under
+ * the open sky to start with costs fifteen: the shrine or the park goes
+ * first when that is no more than a quarter of an hour longer.
+ * A stop the traveller booked, or a chosen restaurant, has no habit.
+ *
+ * It is a preference with a price, not a ban, and only about the order: a
+ * day of nothing but temples is planned as it always was, and which places
+ * share a day is decided on the minutes on the way alone, as it always was
+ * (the days are chosen first; then each is put in the order that costs
+ * least with its hours counted: see byHours).
+ */
+export const HABITS = {
+  daytimeEnd: 17 * 60,
+  lateBase: 10,
+  latePerMinute: 0.5,
+  lateCap: 30,
+  firstDoor: 9 * 60 + 30,
+  firstCost: 15,
+} as const;
 
 /** Seven and a half hours from the first arrival to the end of the last sight: a day from 09:00 that ends after 16:30. */
 const LONG_DAY = 450;
@@ -589,9 +633,34 @@ export function daySearch(
       : hotel ? DAY_CLOCK.hotelStart + hotel.out[stop] + DAY_CLOCK.legBuffer : DAY_CLOCK.start
   );
   const penalty = (overrun: number, missed: number) => (overrun > 0 ? 500 + overrun * 10 + (overrun * overrun) / 6 : 0) + missed * 1000;
+  /** Whether any place has a habit about its hours: without one every day is ordered as it always was. */
+  const habitsOn = stops.some((stop, index) => (stop.daytime || stop.ticketed) && !stop.meal && fixedOf[index] === null);
+  /**
+   * What the hours of a day cost in this order (see HABITS), on its clock.
+   * One function for every copy of the clock, so that they cannot drift.
+   */
+  function habitCost(order: ArrayLike<number>, total: number, arrive: ArrayLike<number>, leave: ArrayLike<number>) {
+    let cost = 0;
+    let early = false;
+    for (let position = 0; position < total; position += 1) {
+      const stop = order[position];
+      const entry = stops[stop];
+      if (entry.meal || fixedOf[stop] !== null) continue;
+      if (entry.daytime && leave[position] > HABITS.daytimeEnd) cost += Math.min(HABITS.lateCap, HABITS.lateBase + (leave[position] - HABITS.daytimeEnd) * HABITS.latePerMinute);
+      if (position > 0 && entry.early) early = true;
+    }
+    const first = stops[order[0]];
+    if (early && first.ticketed && !first.meal && fixedOf[order[0]] === null && arrive[0] < HABITS.firstDoor) cost += HABITS.firstCost;
+    return cost;
+  }
 
-  /** Everything the search needs to know about a day visited in this order (`cls`: the day's class). */
-  function describe(order: number[], cls = 0) {
+  /**
+   * Everything the search needs to know about a day visited in this order
+   * (`cls`: the day's class). `hours`: with what the hours of the day cost
+   * (see HABITS) counted in the order's cost — asked only once the days are
+   * chosen, when each is put in order for printing.
+   */
+  function describe(order: number[], cls = 0, hours = false) {
     const stays = order.map((stop) => stops[stop].stay);
     const meals = order.map((stop) => stops[stop].meal);
     const rides: number[] = [];
@@ -671,7 +740,8 @@ export function daySearch(
     // day's own midnight. Such an order is only ever compared with other
     // broken ones — any order that breaks less is better whatever it costs.
     const broken = clock.late + (hardOver > 0 ? 1 : 0);
-    const orderCost = ride + waiting / 2 + penalty(overrun, clock.missed) + (broken > 0 ? 1000 * clock.late + penalty(hardOver, 0) : 0);
+    const habit = hours && habitsOn ? habitCost(order, order.length, clock.arrive, clock.leave) : 0;
+    const orderCost = ride + waiting / 2 + habit + penalty(overrun, clock.missed) + (broken > 0 ? 1000 * clock.late + penalty(hardOver, 0) : 0);
     return {
       order,
       travel,
@@ -688,12 +758,16 @@ export function daySearch(
       // whatever it runs beyond seven and a half hours, on the clock the
       // booklet prints. That is a property of the day, not a reason to
       // prefer a longer route within it.
-      cost: orderCost + Math.max(0, span - LONG_DAY) / 2,
+      // (Nor is what the day's hours cost: that too is about the order alone.)
+      cost: orderCost - habit + Math.max(0, span - LONG_DAY) / 2,
       orderCost,
       /** The minutes the search counts for the rides: a taxi a quarter of an hour dearer. */
       ride,
       /** The order's cost before anything that makes it impossible to keep. */
-      base: ride + waiting / 2,
+      base: ride + waiting / 2 + habit,
+      /** What the hours of the day cost in this order (see HABITS); 0 unless asked with `hours`. */
+      habit,
+      hours,
       keepable: overrun === 0 && clock.missed === 0 && broken === 0,
       /** How bad a packed day is, for comparing the worst day of two plans. */
       strain: tight ? 1 + Math.max(0, span - PACKED_SPAN) + 30 * Math.max(0, order.length - 5) + (rides.filter((minutes) => minutes >= 45).length >= 2 ? 20 : 0) : 0,
@@ -715,7 +789,9 @@ export function daySearch(
    * nobody can keep, or a meal that cannot be eaten, outweighs all of it;
    * the later a day runs, the more each further minute costs. Among orders
    * a traveller can keep this is simply the travel: the order chosen is the
-   * one with the fewest minutes on the way.
+   * one with the fewest minutes on the way. (When a day that has been chosen
+   * is put in order for printing, what its hours cost is counted too: see
+   * HABITS and byHours.)
    */
 
   type Described = ReturnType<typeof describe>;
@@ -1191,9 +1267,9 @@ export function daySearch(
    * fills the day comes before them, unless another order can be kept or
    * breaks less (see openerYields).
    */
-  function framedOrders(ids: readonly number[], cls: number, seed: Described | null): Described {
+  function framedOrders(ids: readonly number[], cls: number, seed: Described | null, hours = false): Described {
     const total = ids.length;
-    if (total < 2) return seed ?? describe([...ids], cls);
+    if (total < 2) return seed ?? describe([...ids], cls, hours);
     // The cheapest ride into each stop from any other of the day's, and the cheapest way home.
     const cheapestIn = new Float64Array(count);
     const nearest: number[][] = [];
@@ -1335,7 +1411,9 @@ export function daySearch(
         }
         const broken = late + (hardOver > 0 ? 1 : 0);
         const over = ends[Math.max(0, lastSight)];
-        const cost = rideOf(weightTotal) + waiting / 2 + penalty(overrun, missed) + (broken > 0 ? 1000 * late + penalty(hardOver, 0) : 0);
+        let cost = rideOf(weightTotal) + waiting / 2 + penalty(overrun, missed) + (broken > 0 ? 1000 * late + penalty(hardOver, 0) : 0);
+        // (What the hours cost is never less than nothing: an order already dearer without it is not asked.)
+        if (hours && !(found && (broken > found.broken || (broken === found.broken && cost > found.cost + EPSILON)))) cost += habitCost(order, total, arrive, ends);
         if (found) {
           if (broken > found.broken) return;
           if (broken === found.broken && (cost > found.cost + EPSILON || (cost > found.cost - EPSILON && (over > found.over || (over === found.over && weightTotal >= found.weight))))) return;
@@ -1407,11 +1485,11 @@ export function daySearch(
       const opened = search(true, start(true));
       found = opened?.keepable ? opened : search(false, opened ?? start(false));
       if (opened && found && found.order !== opened.order) {
-        const told = (day: Found) => (seed && day.order === seed.order ? seed : describe(day.order, cls));
+        const told = (day: Found) => (seed && day.order === seed.order ? seed : describe(day.order, cls, hours));
         if (!openerYields(told(opened), told(found))) found = opened;
       }
     } else found = search(false, start(false));
-    return seed && found!.order === seed.order ? seed : describe(found!.order, cls);
+    return seed && found!.order === seed.order ? seed : describe(found!.order, cls, hours);
   }
 
   /**
@@ -1484,13 +1562,16 @@ export function daySearch(
   function everyOrder(start: Solved): Described {
     const ids = start.order;
     const total = ids.length;
+    // `hours`: the day is being put in order with what its hours cost counted (see byHours),
+    // which the tables know nothing of: every order is tried whether or not they left a doubt.
+    const hours = start.hours;
     if (start.framed) {
-      if (!start.doubt || total < 2) return start;
+      if (!(start.doubt || hours) || total < 2) return start;
       // (Asked for every candidate count of days and again when printed: worked out once.)
-      const key = `${start.cls}|${[...ids].sort((left, right) => left - right).join(",")}`;
+      const key = `${hours ? "h" : ""}${start.cls}|${[...ids].sort((left, right) => left - right).join(",")}`;
       let known = enumerated.get(key);
       if (!known) {
-        if (total <= EVERY_ORDER_STOPS) known = framedOrders(ids, start.cls, start);
+        if (total <= EVERY_ORDER_STOPS) known = framedOrders(ids, start.cls, start, hours);
         else {
           // Too long for every order: each stop moved wherever it helps. Good, not proven best.
           const moved = laidOut(ids, start.cls);
@@ -1500,7 +1581,7 @@ export function daySearch(
       }
       return known;
     }
-    if (!start.doubt || total > EVERY_ORDER_STOPS || total < 2) return start;
+    if (!(start.doubt || hours) || total > EVERY_ORDER_STOPS || total < 2) return start;
     const dinners = new Set(ids.filter((stop) => stops[stop].meal === "dinner"));
     const openers = new Set(ids.filter((stop) => !stops[stop].meal && stops[stop].stay >= DAY_FILLING_STAY));
     const lunchChosen = ids.some((stop) => stops[stop].meal === "lunch");
@@ -1571,7 +1652,9 @@ export function daySearch(
             dinners.has(order[total - 1]) ? ends[total - 1] - DAY_CLOCK.dinnerEnd : 0,
           );
           const over = sightsOver >= 0 ? sightsOver : ends[0];
-          const cost = rideOf(weightTotal) + waiting / 2 + penalty(overrun, missed);
+          let cost = rideOf(weightTotal) + waiting / 2 + penalty(overrun, missed);
+          // (What the hours cost is never less than nothing: an order already dearer without it is not asked.)
+          if (hours && !(found && cost > found.cost + EPSILON)) cost += habitCost(order, total, arrivals, ends);
           if (found && (cost > found.cost + EPSILON || (cost > found.cost - EPSILON && (over > found.over || (over === found.over && weightTotal >= found.weight))))) return;
           found = { cost, over, weight: weightTotal, order: [...order], keepable: overrun === 0 && missed === 0 };
           return;
@@ -1603,11 +1686,31 @@ export function daySearch(
       const opened = search(true, opensWithStay ? from(start) : null);
       found = opened?.keepable ? opened : search(false, opened && (!opensWithStay || opened.order !== start.order) && opened.cost <= start.orderCost ? opened : from(start));
       if (opened && found && found.order !== opened.order) {
-        const told = (day: Found) => (day.order === start.order ? start : describe(day.order));
+        const told = (day: Found) => (day.order === start.order ? start : describe(day.order, 0, hours));
         if (!openerYields(told(opened), told(found))) found = opened;
       }
     } else found = search(false, from(start));
-    return found && found.order !== start.order ? describe(found.order) : start;
+    return found && found.order !== start.order ? describe(found.order, 0, hours) : start;
+  }
+
+  /**
+   * A day that has been chosen, put in the order a traveller would keep it
+   * in: the order that costs least with what its hours cost counted (see
+   * HABITS) — the museum not at half past eight while a shrine could open
+   * the day, the temple not after five while a street could close it, when
+   * that is a few minutes more on the way and no more. Every order of the
+   * day is tried, on the same clock and under the same rules as ever (a
+   * dinner closes the day, a stay that fills it opens it, an entered time
+   * is kept before anything), so the order found is the best there is by
+   * that cost; a day of more than eight stops keeps the order it has.
+   * Which places share the day was decided before this, without it.
+   */
+  function byHours(day: Solved): Described {
+    if (!habitsOn || day.order.length < 2 || day.order.length > EVERY_ORDER_STOPS) return everyOrder(day);
+    const told = describe(day.order, day.cls, true);
+    // Nothing about its hours to mend: the day as it always was.
+    if (told.habit === 0) return everyOrder(day);
+    return everyOrder({ ...told, doubt: day.doubt });
   }
 
   /*
@@ -2163,7 +2266,7 @@ export function daySearch(
 
   /** The day as it is printed: tried in every order where the tables left a doubt, and started late where it would wait. */
   function printed(day: Solved, thorough: boolean): PlannedDay {
-    const final = thorough ? everyOrder(day) : day;
+    const final = thorough ? byHours(day) : day;
     const order = final.order;
     const clock = scheduleDay(
       order.map((stop) => stops[stop].stay),
@@ -2682,9 +2785,10 @@ export function daySearch(
     /** For tests: the best order of one set of places as it is printed, and what any order costs. */
     solveDay: (ids: readonly number[], cls = 0) => {
       const day = solveDay(ids, cls);
-      return { ...everyOrder(day), ...printed(day, true) };
+      return { ...byHours(day), ...printed(day, true) };
     },
-    describe: (order: number[], cls = 0) => describe(order, cls),
+    /** `hours`: with what the hours of the day cost counted in `orderCost` (see HABITS), as when a chosen day is put in order. */
+    describe: (order: number[], cls = 0, hours = false) => describe(order, cls, hours),
     /**
      * For tests: a set of places as the search costs it while choosing which
      * places share a day — before a day left in doubt is tried in every

@@ -4,6 +4,7 @@ import test from "node:test";
 
 import { curateSights, type PopularDestination } from "../lib/popular-sights.ts";
 import { RailNetwork } from "../lib/rail-router.ts";
+import { placeHabit } from "../lib/shiori/habits.ts";
 import { buildShioriPlan, shioriPricing, type ShioriInput, type ShioriPlace, type ShioriPlan, type ShioriRoute } from "../lib/shiori/plan.ts";
 import { placeFromSight } from "../lib/shiori/state.ts";
 
@@ -157,12 +158,13 @@ function travelOf(order: number[], trip: Checked) {
   return total;
 }
 
-/** Can a traveller keep this day in this order? The booklet's rules, written out once more. */
-function keepable(order: number[], trip: Checked) {
+/** The clock of a day in this order, or null when a chosen dinner is not last or a stay that fills the day does not open it. The booklet's rules, written out once more. */
+function clockOf(order: number[], trip: Checked) {
   const places = trip.input.places;
   const run = (lunchAt: number) => {
     let cursor = trip.out ? 8 * 60 + 30 + trip.out[order[0]] + 10 : 9 * 60;
     let seated = true;
+    const arrive: number[] = [];
     const leave = order.map((stop, position) => {
       const place = places[stop];
       if (place.meal) {
@@ -170,16 +172,17 @@ function keepable(order: number[], trip: Checked) {
         if (Math.max(cursor, open) > lastSeat) seated = false;
         else cursor = Math.max(cursor, open);
       }
+      arrive.push(cursor);
       cursor += place.stayMinutes + (position === lunchAt ? 60 : 0);
       const end = cursor;
       if (position < order.length - 1) cursor += trip.minutes[stop][order[position + 1]] + 10;
       return end;
     });
-    return { leave, seated };
+    return { arrive, leave, seated };
   };
   // A chosen dinner is last; a stay that fills the day opens it.
   const rank = (stop: number) => (places[stop].meal === "dinner" ? 2 : !places[stop].meal && places[stop].stayMinutes >= 300 ? 0 : 1);
-  if (order.some((stop, position) => position > 0 && rank(stop) < rank(order[position - 1]))) return false;
+  if (order.some((stop, position) => position > 0 && rank(stop) < rank(order[position - 1]))) return null;
   const before = run(-1);
   // Lunch is an hour after the stop that ends nearest 12:30 (11:00–14:30), unless a restaurant is the lunch.
   let lunchAt = -1;
@@ -190,9 +193,56 @@ function keepable(order: number[], trip: Checked) {
       if (lunchAt < 0 || Math.abs(end - 750) < Math.abs(before.leave[lunchAt] - 750)) lunchAt = position;
     });
   }
-  const { leave, seated } = lunchAt >= 0 ? run(lunchAt) : before;
-  const lastSight = order.findLastIndex((stop) => places[stop].meal !== "dinner");
-  return seated && (lastSight < 0 || leave[lastSight] <= 18 * 60) && (lastSight === order.length - 1 || leave.at(-1)! <= 21 * 60 + 30);
+  return lunchAt >= 0 ? run(lunchAt) : before;
+}
+
+/** Can a traveller keep this day in this order? */
+function keepable(order: number[], trip: Checked) {
+  const clock = clockOf(order, trip);
+  if (!clock) return false;
+  const lastSight = order.findLastIndex((stop) => trip.input.places[stop].meal !== "dinner");
+  return clock.seated && (lastSight < 0 || clock.leave[lastSight] <= 18 * 60) && (lastSight === order.length - 1 || clock.leave.at(-1)! <= 21 * 60 + 30);
+}
+
+/**
+ * What the hours of a day cost in this order, in minutes — the planner's
+ * habits about kinds of places (HABITS in day-search.ts), written out once
+ * more: a temple, a garden or a museum that ends after 17:00 costs ten and
+ * half of every minute past it, thirty at most; a museum, a zoo or a castle
+ * reached before 09:30 as the first stop of a day that has a shrine, a park
+ * or a street to start with costs fifteen.
+ */
+function hoursCost(order: number[], trip: Checked) {
+  const clock = clockOf(order, trip);
+  if (!clock) return Infinity;
+  const habits = order.map((stop) => (trip.input.places[stop].meal ? null : placeHabit(trip.input.places[stop].kind, trip.input.places[stop].name)));
+  let cost = 0;
+  habits.forEach((habit, position) => {
+    const daytime = habit === "ticketed" || habit === "daytime" || habit === "daytime-open";
+    if (daytime && clock.leave[position] > 17 * 60) cost += Math.min(30, 10 + (clock.leave[position] - 17 * 60) / 2);
+  });
+  if (habits[0] === "ticketed" && clock.arrive[0] < 9 * 60 + 30 && habits.slice(1).some((habit) => habit === "open" || habit === "daytime-open")) cost += 15;
+  return cost;
+}
+
+/** The least of travel and what the hours cost together, of any keepable order of these places. */
+function leastWithHours(stops: number[], trip: Checked) {
+  let least = Infinity;
+  const order: number[] = [];
+  const visit = () => {
+    if (order.length === stops.length) {
+      if (keepable(order, trip)) least = Math.min(least, travelOf(order, trip) + hoursCost(order, trip));
+      return;
+    }
+    for (const stop of stops) {
+      if (order.includes(stop)) continue;
+      order.push(stop);
+      visit();
+      order.pop();
+    }
+  };
+  visit();
+  return least;
 }
 
 /** The least travel of any keepable order of these places, or Infinity when none is. */
@@ -255,8 +305,11 @@ const namesOn = (day: ShioriPlan["days"][number]) => day.stops.map((stop) => sto
 const KYOTO_EIGHT = ["清水寺", "金閣寺", "伏見稲荷大社", "銀閣寺", "龍安寺", "二条城", "八坂神社", "平安神宮"];
 const kyotoStation = { name: "京都駅", lat: 34.9858, lon: 135.7588 };
 
-test("within every day the order is the one with the least priced travel", () => {
+test("within every day the order is the one with the least priced travel — or, where the hours of the day are better another way round, the one that costs least with those hours counted", () => {
   // Was: the order followed straight lines, up to a quarter of an hour a day worse than the best.
+  // (Then: least travel and nothing else, which put a museum first at 08:45 beside a shrine and a temple
+  // last after five beside a tower. Now a few minutes of travel are spent on the hours of the day, and only
+  // as many as those hours are worth: see HABITS in day-search.ts.)
   const trips: Checked[] = [
     planned("osaka", sightsOf("osaka", ["大阪城", "四天王寺", "通天閣", "あべのハルカス"]), 1),
     planned("tokyo", topOf("tokyo", 10), 3),
@@ -269,6 +322,7 @@ test("within every day the order is the one with the least priced travel", () =>
     planned("tokyo", [...topOf("tokyo", 7), { id: "r-ginza", name: "銀座の店", lat: 35.6717, lon: 139.765, stayMinutes: 60, kind: "restaurant", meal: "lunch" }], 3, { name: "新宿", lat: 35.6909, lon: 139.7003 }),
     planned("paris", [...topOf("paris", 7), { id: "r-marais", name: "マレの店", lat: 48.8575, lon: 2.3622, stayMinutes: 90, kind: "restaurant", meal: "dinner" }], 2, { name: "オペラ", lat: 48.8706, lon: 2.3319 }),
   ];
+  let reordered = 0;
   for (const trip of trips) {
     assert.equal(trip.plan.days.some((day) => day.runsLate), false);
     for (const day of trip.plan.days) {
@@ -278,9 +332,17 @@ test("within every day the order is the one with the least priced travel", () =>
       day.legs.forEach((leg, position) => assert.equal(leg.minutes, trip.minutes[order[position]][order[position + 1]], label));
       assert.equal(day.travelMinutes, travelOf(order, trip), label);
       assert.equal(keepable(order, trip), true, label);
-      assert.equal(day.travelMinutes, leastTravel(order, trip), label);
+      // No order of the day costs less, travel and hours together …
+      assert.equal(day.travelMinutes + hoursCost(order, trip), leastWithHours(order, trip), label);
+      // … so it is never further from the least travel than what the hours of that order would have cost,
+      // and a day whose places have nothing to say about their hours has exactly the least travel.
+      const least = leastTravel(order, trip);
+      assert.ok(day.travelMinutes >= least && day.travelMinutes - least <= 45, `${label}: ${day.travelMinutes} against ${least}`);
+      if (order.every((stop) => placeHabit(trip.input.places[stop].kind, trip.input.places[stop].name) === null)) assert.equal(day.travelMinutes, least, label);
+      reordered += day.travelMinutes > least ? 1 : 0;
     }
   }
+  assert.ok(reordered >= 1, "at least one of these days spends minutes on its hours");
 });
 
 test("Kyoto from a hotel: Yasaka Shrine goes with Kiyomizu-dera next door, and no split of the eight travels less", () => {
