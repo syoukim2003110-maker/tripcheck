@@ -11,6 +11,7 @@ import { isBoatLineName } from "../lib/rail-router.ts";
 import { buildShioriPlan, departureAfterStop, dinnerHourAt, dinnerSlot, habitOf, hardToReach, legWord, nobodySleepsAt, type ShioriDay } from "../lib/shiori/plan.ts";
 import { placeFromSight } from "../lib/shiori/state.ts";
 import { placeByKind } from "./helpers/kind-stays.ts";
+import { isClosedSight } from "../lib/shiori/sight-notes.ts";
 import { shioriStayMinutes } from "../lib/shiori/stay.ts";
 import { auditPlan as auditPlanShown, cities, railOf, scenarioPlaces, scenarios } from "../scripts/audit-scenarios.ts";
 
@@ -1460,4 +1461,15 @@ test("in the trips of the audit as first shown, a palace or a large zoo opens it
   }
   assert.deepEqual([firstHalfLate, ticketedFirst, daytimeLate], [5, 3, 16]);
   assert.ok(total <= 17_765, `${total} minutes on the way`);
+});
+
+test("the audit's draw is as it was: seven of its trips have a place that is closed or gone by the web check, and plan it as a trip that already had it would", () => {
+  const closed = scenarios.flatMap((scenario) => scenario.sights.filter((sight) => isClosedSight(sight.q)).map((sight) => `${scenario.id} ${sight.ja}`));
+  assert.deepEqual(closed, ["tokyo-2 築地市場", "osaka-2 石山本願寺", "osaka-3 石山本願寺", "hiroshima-3 マリーナホップ", "kobe-3 神戸市立須磨海浜水族園", "paris-2 バスティーユ牢獄", "paris-3 バスティーユ牢獄"]);
+  // None of them is offered to a traveller any more (tests/sight-notes.test.ts); in the audit they stay on their trips.
+  for (const entry of closed) {
+    const [id, name] = entry.split(" ");
+    const { plan } = auditPlanShown(id);
+    assert.ok(plan.days.some((day) => day.stops.some((stop) => stop.place.name === name)) || plan.leftOut.includes(name), entry);
+  }
 });
