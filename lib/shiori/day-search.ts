@@ -50,6 +50,8 @@ export type SearchStop = {
   early?: boolean;
   /** A place of the morning (a fish market, a morning market): better over by about 13:00. */
   morning?: boolean;
+  /** A daytime place of the first half of the day (a palace, a large zoo): better over by about 16:00. */
+  firstHalf?: boolean;
 };
 
 export type SearchProblem = {
@@ -194,7 +196,9 @@ export const TAXI_SURCHARGE = 15;
  * tower or a viewpoint takes the end of the day when that costs less than
  * that in rides. A place of the morning (a fish market, a morning market)
  * costs the same counted from 13:00: it opens the day or comes before lunch
- * when that is no more than half an hour longer. A place with a door and a counter (a museum, a zoo, a
+ * when that is no more than half an hour longer. A place of the first half of
+ * the day (a palace, a large zoo: a sight's note says so) costs the same
+ * counted from 16:00, and can open a day. A place with a door and a counter (a museum, a zoo, a
  * castle) reached before 09:30 as the first of a day that has a place under
  * the open sky to start with costs fifteen: the shrine or the park goes
  * first when that is no more than a quarter of an hour longer.
@@ -208,6 +212,7 @@ export const TAXI_SURCHARGE = 15;
  */
 export const HABITS = {
   daytimeEnd: 17 * 60,
+  firstHalfEnd: 16 * 60,
   morningEnd: 13 * 60,
   lateBase: 10,
   latePerMinute: 0.5,
@@ -215,6 +220,15 @@ export const HABITS = {
   firstDoor: 9 * 60 + 30,
   firstCost: 15,
 } as const;
+
+/**
+ * When a place is better over by, for the clock that starts a day later
+ * (scheduleDay): the end of the daytime, of the first half of the day for a
+ * place of it; false for a place with no such habit.
+ */
+export const daylightEnd = (stop: Pick<SearchStop, "daytime" | "firstHalf">): number | false => (
+  stop.firstHalf ? HABITS.firstHalfEnd : stop.daytime ? HABITS.daytimeEnd : false
+);
 
 /** Seven and a half hours from the first arrival to the end of the last sight: a day from 09:00 that ends after 16:30. */
 const LONG_DAY = 450;
@@ -497,9 +511,10 @@ export function dayClock(stays: readonly number[], meals: readonly Meal[], rides
  * start that still leaves an hour for lunch is preferred to the latest one.
  *
  * `daytime` (per position): places the planner visits in the daytime (see
- * HABITS). A later start never carries one of them past 17:00 — the day
- * that waits for its evening starts later, but not so late that the temple
- * before the night market is seen at dusk.
+ * HABITS), true or the minute such a place is better over by (daylightEnd).
+ * A later start never carries one of them past 17:00 (past that minute) —
+ * the day that waits for its evening starts later, but not so late that the
+ * temple before the night market is seen at dusk.
  */
 export function scheduleDay(
   stays: readonly number[],
@@ -507,12 +522,13 @@ export function scheduleDay(
   rides: readonly number[],
   hotelOut: number | null,
   frame?: ClockFrame & { /** The day does not begin before this minute. */ open?: number | null },
-  daytime?: readonly (boolean | undefined)[],
+  daytime?: readonly (boolean | number | undefined)[],
 ) {
   const door = hotelOut === null ? 0 : hotelOut + DAY_CLOCK.legBuffer;
-  /** No daytime place is over later than it was, where that is after 17:00. */
+  /** No daytime place is over later than it was, where that is after 17:00 (after the minute it is better over by). */
   const inDaylight = (clock: { leave: number[] }, base: { leave: number[] }) => !daytime || daytime.every((flag, position) => (
-    !flag || meals[position] || (frame?.fixed?.[position] ?? null) !== null || clock.leave[position] <= Math.max(base.leave[position], HABITS.daytimeEnd)
+    flag === false || flag === undefined || meals[position] || (frame?.fixed?.[position] ?? null) !== null
+    || clock.leave[position] <= Math.max(base.leave[position], typeof flag === "number" ? flag : HABITS.daytimeEnd)
   ));
   if (!frame) {
     const usual = (hotelOut === null ? DAY_CLOCK.start : DAY_CLOCK.hotelStart) + door;
@@ -661,8 +677,8 @@ export function daySearch(
       const stop = order[position];
       const entry = stops[stop];
       if (entry.meal || fixedOf[stop] !== null) continue;
-      // (A place of the morning is a daytime place with an earlier hour: one fine, counted from 13:00.)
-      const over = entry.morning ? leave[position] - HABITS.morningEnd : entry.daytime ? leave[position] - HABITS.daytimeEnd : 0;
+      // (A place of the morning is a daytime place with an earlier hour: one fine, counted from 13:00; a place of the first half of the day, from 16:00.)
+      const over = entry.morning ? leave[position] - HABITS.morningEnd : entry.firstHalf ? leave[position] - HABITS.firstHalfEnd : entry.daytime ? leave[position] - HABITS.daytimeEnd : 0;
       if (over > 0) cost += Math.min(HABITS.lateCap, HABITS.lateBase + over * HABITS.latePerMinute);
       if (position > 0 && entry.early) early = true;
     }
@@ -2299,7 +2315,7 @@ export function daySearch(
           night: DAY_CLOCK.lastMinute,
         }
         : undefined,
-      habitsOn ? order.map((stop) => stops[stop].daytime) : undefined,
+      habitsOn ? order.map((stop) => daylightEnd(stops[stop])) : undefined,
     );
     return {
       order,

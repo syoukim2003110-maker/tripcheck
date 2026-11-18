@@ -5,7 +5,7 @@ import { RailNetwork, walkMinutes, type GeoPoint, type RailAdvice, type RailJour
 import type { ResolvedInputStop, RouteStop } from "../route-optimizer.ts";
 import { estimateTravelOptions } from "../time-feasibility.ts";
 import { cafeBreakFor, type CafeBreak } from "./cafes.ts";
-import { DAY_CLOCK, DAY_FILLING_STAY, LATE_LUNCH, daySearch, packedDay, pastEnd, scheduleDay, type SearchProblem } from "./day-search.ts";
+import { DAY_CLOCK, DAY_FILLING_STAY, LATE_LUNCH, daySearch, daylightEnd, packedDay, pastEnd, scheduleDay, type SearchProblem } from "./day-search.ts";
 import { isDaytime, isOpenEarly, placeHabit, type PlaceHabit } from "./habits.ts";
 import { weatherDayOrder } from "./weather-days.ts";
 import {
@@ -644,7 +644,7 @@ const stayOf = (place: ShioriPlace) => Math.max(15, Math.round(place.stayMinutes
  * preference for ordering a day, never printed and never a claim about when
  * the place is open. A restaurant chosen for a meal has its meal instead.
  */
-export const habitOf = (place: Pick<ShioriPlace, "kind" | "name" | "meal" | "anyHour">): PlaceHabit | null => (place.meal || place.anyHour ? null : placeHabit(place.kind, place.name));
+export const habitOf = (place: Pick<ShioriPlace, "kind" | "name" | "meal" | "anyHour"> & { id?: string }): PlaceHabit | null => (place.meal || place.anyHour ? null : placeHabit(place.kind, place.name, place.id));
 /**
  * What a place is to the day's clock. A place that belongs to the evening (a
  * night market, a night-life street) is kept like a chosen dinner: it closes
@@ -655,7 +655,7 @@ export const habitOf = (place: Pick<ShioriPlace, "kind" | "name" | "meal" | "any
  * when a market opens. (The place is still a sight: no table is booked, and
  * the day's open dinner is suggested there.)
  */
-const clockMeal = (place: Pick<ShioriPlace, "kind" | "name" | "meal" | "anyHour">): "lunch" | "dinner" | null => place.meal ?? (habitOf(place) === "evening" ? "dinner" : null);
+const clockMeal = (place: Pick<ShioriPlace, "kind" | "name" | "meal" | "anyHour"> & { id?: string }): "lunch" | "dinner" | null => place.meal ?? (habitOf(place) === "evening" ? "dinner" : null);
 
 /**
  * The same, as the search is told it. (Every stop is handed over with the
@@ -664,7 +664,7 @@ const clockMeal = (place: Pick<ShioriPlace, "kind" | "name" | "meal" | "anyHour"
  */
 function hoursOf(place: ShioriPlace) {
   const habit = habitOf(place);
-  return { daytime: isDaytime(habit), ticketed: habit === "ticketed", early: isOpenEarly(habit), morning: habit === "morning" };
+  return { daytime: isDaytime(habit), ticketed: habit === "ticketed", early: isOpenEarly(habit), morning: habit === "morning", firstHalf: habit === "early" };
 }
 
 /**
@@ -1541,7 +1541,7 @@ function planCore(input: ShioriInput, options: PlanOptions, frames: Frames | nul
           ? { fixed: places.map((place) => frames.booked.get(place.id)?.at ?? null), open, close, homeward: day.endBase && day.hotelInboundMinutes !== null ? day.hotelInboundMinutes : 0, night: DAY_CLOCK.lastMinute }
           : undefined,
         // (As the search is told: a later start does not carry a daytime place past 17:00.)
-        places.map((place) => !frames?.booked.has(place.id) && isDaytime(habitOf(place))),
+        places.map((place) => (frames?.booked.has(place.id) ? false : daylightEnd(hoursOf(place)))),
       );
       if (schedule.noLunchRoom) timing.noLunchRoom.add(index);
       timing.dayStartTimes[index] = clock(schedule.start);

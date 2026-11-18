@@ -4,8 +4,7 @@ import test from "node:test";
 
 import { curateSights, type PopularDestination } from "../lib/popular-sights.ts";
 import { RailNetwork } from "../lib/rail-router.ts";
-import { placeHabit } from "../lib/shiori/habits.ts";
-import { buildShioriPlan, shioriPricing, type ShioriInput, type ShioriPlace, type ShioriPlan, type ShioriRoute } from "../lib/shiori/plan.ts";
+import { buildShioriPlan, habitOf, shioriPricing, type ShioriInput, type ShioriPlace, type ShioriPlan, type ShioriRoute } from "../lib/shiori/plan.ts";
 import { placeByKind } from "./helpers/kind-stays.ts";
 
 /*
@@ -222,22 +221,25 @@ function keepable(order: number[], trip: Checked) {
  * What the hours of a day cost in this order, in minutes — the planner's
  * habits about kinds of places (HABITS in day-search.ts), written out once
  * more: a temple, a garden or a museum that ends after 17:00 costs ten and
- * half of every minute past it, thirty at most; a museum, a zoo or a castle
- * reached before 09:30 as the first stop of a day that has a shrine, a park
- * or a street to start with costs fifteen.
+ * half of every minute past it, thirty at most (a place of the first half of
+ * the day — a palace, a large zoo, by its sight note — the same from 16:00);
+ * a museum, a zoo or a castle reached before 09:30 as the first stop of a day
+ * that has a shrine, a park, a street or a place of the first half of the day
+ * to start with costs fifteen.
  */
 function hoursCost(order: number[], trip: Checked) {
   const clock = clockOf(order, trip);
   if (!clock) return Infinity;
-  const habits = order.map((stop) => (trip.input.places[stop].meal ? null : placeHabit(trip.input.places[stop].kind, trip.input.places[stop].name)));
+  const habits = order.map((stop) => habitOf(trip.input.places[stop]));
   let cost = 0;
   habits.forEach((habit, position) => {
     const daytime = habit === "ticketed" || habit === "daytime" || habit === "daytime-open";
-    // (A fish market or a morning market: the same, counted from 13:00.)
+    // (A fish market or a morning market: the same, counted from 13:00; a palace or a large zoo, from 16:00.)
     if (habit === "morning") { if (clock.leave[position] > 13 * 60) cost += Math.min(30, 10 + (clock.leave[position] - 13 * 60) / 2); }
+    else if (habit === "early") { if (clock.leave[position] > 16 * 60) cost += Math.min(30, 10 + (clock.leave[position] - 16 * 60) / 2); }
     else if (daytime && clock.leave[position] > 17 * 60) cost += Math.min(30, 10 + (clock.leave[position] - 17 * 60) / 2);
   });
-  if (habits[0] === "ticketed" && clock.arrive[0] < 9 * 60 + 30 && habits.slice(1).some((habit) => habit === "open" || habit === "daytime-open" || habit === "morning")) cost += 15;
+  if (habits[0] === "ticketed" && clock.arrive[0] < 9 * 60 + 30 && habits.slice(1).some((habit) => habit === "open" || habit === "daytime-open" || habit === "early" || habit === "morning")) cost += 15;
   return cost;
 }
 
@@ -354,7 +356,7 @@ test("within every day the order is the one with the least priced travel — or,
       // and a day whose places have nothing to say about their hours has exactly the least travel.
       const least = leastTravel(order, trip);
       assert.ok(day.travelMinutes >= least && day.travelMinutes - least <= 45, `${label}: ${day.travelMinutes} against ${least}`);
-      if (order.every((stop) => placeHabit(trip.input.places[stop].kind, trip.input.places[stop].name) === null)) assert.equal(day.travelMinutes, least, label);
+      if (order.every((stop) => habitOf(trip.input.places[stop]) === null)) assert.equal(day.travelMinutes, least, label);
       reordered += day.travelMinutes > least ? 1 : 0;
     }
   }

@@ -3,6 +3,9 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import type { PopularDestination } from "../lib/popular-sights.ts";
+import { HABITS, daySearch, daylightEnd, scheduleDay, type SearchProblem } from "../lib/shiori/day-search.ts";
+import { isDaytime, isOpenEarly, placeHabit } from "../lib/shiori/habits.ts";
+import { habitOf } from "../lib/shiori/plan.ts";
 import { isClosedSight, isExteriorSight, sightNote } from "../lib/shiori/sight-notes.ts";
 import { placeFromSight, sightStayMinutes } from "../lib/shiori/state.ts";
 import { EXTERIOR_STAY, namedParkStay, shioriStayMinutes } from "../lib/shiori/stay.ts";
@@ -121,4 +124,56 @@ test("of the 2,277 bundled sights 1,826 are added with another stay than the rul
     }
   }
   assert.deepEqual([changed, longer], [1826, 613]);
+});
+
+/* ------------------------------------------------------------------ hours */
+
+test("the part of the day a sight's note gives it is the planner's habit for it, before the rule by kind", () => {
+  const habit = (cityId: string, name: string) => {
+    const entry = sight(cityId, name);
+    return [placeHabit(entry.kind, entry.ja), placeHabit(entry.kind, entry.ja, `wikidata-${entry.q}`)];
+  };
+  // early: a palace, a large zoo, a museum that takes a morning — of the first half of the day, a good place to open it.
+  assert.deepEqual(habit("kyoto", "京都御所"), ["ticketed", "early"]);
+  assert.deepEqual(habit("bangkok", "王宮"), ["ticketed", "early"]);
+  assert.deepEqual(habit("sapporo", "札幌市円山動物園"), ["ticketed", "early"]);
+  assert.deepEqual(habit("rome", "バチカン美術館"), ["ticketed", "early"]);
+  // any: under the open sky at any hour.
+  assert.deepEqual(habit("kyoto", "伏見稲荷大社"), ["daytime-open", "open"]);
+  // evening: a mountain of night views, a night safari.
+  assert.deepEqual(habit("sapporo", "藻岩山"), ["open", "evening"]);
+  assert.deepEqual(habit("singapore", "ナイトサファリ"), ["evening", "evening"]);
+  // day: in the daytime — with a door when the kind has one, reachable first thing when the kind is a shrine.
+  assert.deepEqual(habit("tokyo", "東京国立博物館"), ["ticketed", "ticketed"]);
+  assert.deepEqual(habit("tokyo", "明治神宮"), ["daytime-open", "daytime-open"]);
+  assert.deepEqual(habit("tokyo", "東京タワー"), [null, "daytime"]);
+  // A hotel, a shop or a station is not kept for the evening by a note either: only the place itself.
+  const safari = sight("singapore", "ナイトサファリ");
+  assert.equal(placeHabit(safari.kind, "ナイトサファリ駅", `wikidata-${safari.q}`), "ticketed");
+  // A place with no note — not a bundled sight, or one the drafts did not agree on — keeps the rule by kind.
+  assert.equal(placeHabit("royal palace", "どこかの宮殿", "osm-node-1"), "ticketed");
+  assert.equal(habitOf({ id: "wikidata-Q1202239", kind: "royal palace", name: "京都御所" }), "early");
+  // A restaurant chosen for a meal has its meal, not a habit, whatever its id.
+  assert.equal(habitOf({ id: "wikidata-Q1202239", kind: "royal palace", name: "京都御所", meal: "lunch" }), null);
+  // A place of the first half of the day is a daytime place that can open the day.
+  assert.deepEqual([isDaytime("early"), isOpenEarly("early")], [true, true]);
+});
+
+test("a place of the first half of the day is better over by four, and goes first when that costs no more on the way: the palace before the temple", () => {
+  const stop = (hours: Partial<SearchProblem["stops"][number]>) => ({ stay: 180, meal: null, day: null, ...hours });
+  const line = (stops: SearchProblem["stops"]): SearchProblem => ({ stops, minutes: [[0, 10], [10, 0]], km: [[0, 1], [1, 0]], hotel: null });
+  // Two visits of three hours and a lunch hour: whichever is second is over at 16:20. The temple there costs
+  // nothing; the palace, twenty minutes past four, twenty: the palace goes first.
+  const palace = stop({ daytime: true, early: true, firstHalf: true });
+  const temple = stop({ daytime: true });
+  assert.deepEqual(daySearch(line([temple, palace])).choose(1).days[0].order, [1, 0]);
+  assert.deepEqual(daySearch(line([palace, temple])).choose(1).days[0].order, [0, 1]);
+  assert.equal(daySearch(line([temple, palace])).choose(1).days[0].leave.at(-1), 16 * 60 + 20);
+  assert.equal(HABITS.firstHalfEnd, 16 * 60);
+  // The later start of a day that waits for its evening does not carry it past four either.
+  assert.equal(daylightEnd(palace), 16 * 60);
+  assert.equal(daylightEnd(temple), 17 * 60);
+  assert.equal(daylightEnd(stop({})), false);
+  assert.equal(scheduleDay([50, 75], [null, "dinner"], [10], null, undefined, [daylightEnd(palace), false]).leave[0], 16 * 60);
+  assert.equal(scheduleDay([50, 75], [null, "dinner"], [10], null, undefined, [daylightEnd(temple), false]).leave[0], 17 * 60);
 });

@@ -7,11 +7,15 @@
  * half past eight while a shrine could open the day, the temple not after
  * five while a street could close it, the night market in the evening.
  *
- * Read from the kind the catalogue gives a place (lib/popular-sights-data.json)
+ * Read first from the planning note of a bundled sight (sight-notes.ts:
+ * which part of the day suits it, as two independent drafts agreed), then
+ * from the kind the catalogue gives a place (lib/popular-sights-data.json)
  * and, for the few places of the evening or the morning, from the name. A
  * kind that says nothing — a tower, a market, a shopping street, a mountain
- * — has no habit.
+ * — has no habit unless its note gives one.
  */
+import { sightNote } from "./sight-notes.ts";
+
 
 /**
  * - `ticketed`: a place with a door and a counter (museum, gallery, aquarium,
@@ -20,12 +24,16 @@
  * - `daytime`: visited in the daytime (temple, garden, church, ruins).
  * - `daytime-open`: visited in the daytime, and reachable first thing
  *   (shrine, island, waterfall, volcano).
+ * - `early`: visited in the first half of the day, and a good place to open
+ *   it (a palace, a large zoo, a museum that takes most of a morning): a
+ *   daytime place preferred to be over by about four instead of five. Only
+ *   from a sight's note: no kind says it.
  * - `morning`: belongs to the morning, and can open the day (fish market,
  *   morning market).
  * - `open`: under the open sky at any hour (park, street, square, viewpoint).
  * - `evening`: belongs to the evening (night market, night-life street).
  */
-export type PlaceHabit = "ticketed" | "daytime" | "daytime-open" | "morning" | "open" | "evening";
+export type PlaceHabit = "ticketed" | "daytime" | "daytime-open" | "early" | "morning" | "open" | "evening";
 
 /** Places that belong to the evening, by what they are called. */
 const EVENING_NAME = /夜市|ナイトマーケット|ナイトバザール|ナイトサファリ|night ?market|night ?bazaar|night ?safari|パッポン|patpong|ソイ・?カウボーイ|soi cowboy/i;
@@ -62,29 +70,52 @@ const rules: Array<[RegExp, PlaceHabit | null]> = [
 /** Asked for every place each time a trip is planned, compared or looked up: worked out once per kind and name. */
 const known = new Map<string, PlaceHabit | null>();
 
-/** The planner's habit for a place of this kind and name, or null when it has none. */
-export function placeHabit(kind: string | undefined, name: string): PlaceHabit | null {
-  const key = `${kind ?? ""}\n${name}`;
+/** The habit by kind and name alone. */
+function habitByKind(kind: string | undefined, name: string): PlaceHabit | null {
+  const lowered = (kind ?? "").toLowerCase();
+  if (EVENING_KIND.test(lowered) || (EVENING_NAME.test(name) && !NAMED_AFTER.test(name))) return "evening";
+  if (MORNING_NAME.test(name) && !NAMED_AFTER.test(name)) return "morning";
+  for (const [pattern, found] of rules) if (pattern.test(lowered)) return found;
+  return null;
+}
+
+/**
+ * The habit a sight's note gives it, or undefined when the note says nothing
+ * the planner uses. The note wins over the kind: a mountain of night views
+ * is of the evening, a palace of the first half of the day. A hotel, a shop
+ * or a station is never kept for the evening by a note either.
+ */
+function habitByNote(id: string | undefined, kind: string | undefined, name: string): PlaceHabit | undefined {
+  const hours = sightNote(id)?.hours;
+  switch (hours) {
+    case "morning": return "morning";
+    case "early": return "early";
+    case "any": return "open";
+    case "evening": return NAMED_AFTER.test(name) ? undefined : "evening";
+    case "day": {
+      // In the daytime: with a door and a counter when the kind says so, reachable first thing when it says that.
+      const byKind = habitByKind(kind, name);
+      return byKind === "ticketed" || byKind === "daytime-open" ? byKind : "daytime";
+    }
+    default: return undefined;
+  }
+}
+
+/**
+ * The planner's habit for a place of this kind and name — and, for a bundled
+ * sight (`id` "wikidata-Q…"), its note — or null when it has none.
+ */
+export function placeHabit(kind: string | undefined, name: string, id?: string): PlaceHabit | null {
+  const key = `${kind ?? ""}\n${name}\n${id ?? ""}`;
   const answered = known.get(key);
   if (answered !== undefined) return answered;
-  const lowered = (kind ?? "").toLowerCase();
-  let habit: PlaceHabit | null = null;
-  if (EVENING_KIND.test(lowered) || (EVENING_NAME.test(name) && !NAMED_AFTER.test(name))) habit = "evening";
-  else if (MORNING_NAME.test(name) && !NAMED_AFTER.test(name)) habit = "morning";
-  else {
-    for (const [pattern, found] of rules) {
-      if (pattern.test(lowered)) {
-        habit = found;
-        break;
-      }
-    }
-  }
+  const habit = habitByNote(id, kind, name) ?? habitByKind(kind, name);
   if (known.size >= 4000) known.clear();
   known.set(key, habit);
   return habit;
 }
 
-/** Visited in the daytime: preferred to be over by about five. */
-export const isDaytime = (habit: PlaceHabit | null | undefined) => habit === "ticketed" || habit === "daytime" || habit === "daytime-open" || habit === "morning";
+/** Visited in the daytime: preferred to be over by about five (by about four for a place of the first half of the day). */
+export const isDaytime = (habit: PlaceHabit | null | undefined) => habit === "ticketed" || habit === "daytime" || habit === "daytime-open" || habit === "early" || habit === "morning";
 /** Reachable first thing in the morning. */
-export const isOpenEarly = (habit: PlaceHabit | null | undefined) => habit === "open" || habit === "daytime-open" || habit === "morning";
+export const isOpenEarly = (habit: PlaceHabit | null | undefined) => habit === "open" || habit === "daytime-open" || habit === "early" || habit === "morning";

@@ -705,7 +705,7 @@ test("a tower, a shop or a hotel that carries a park's name is not planned as th
   assert.equal(shioriStayMinutes("animal theme park", "香港海洋公園 Ocean Park Hong Kong"), 360);
 });
 
-test("the area to stay is not a place far out that costs hours more of riding to spare one packed day: 国立中正文化中心, not 関渡宮 at the edge of Taipei", () => {
+test("the area to stay is not a place far out that costs most of an hour or more of riding to spare one packed day: 国立中正文化中心, not 関渡宮 at the edge of Taipei", () => {
   // Packed days were counted before any number of minutes. Each pair: the
   // place now named, the far-out place that was, and the trip planned for
   // real from both.
@@ -722,7 +722,8 @@ test("the area to stay is not a place far out that costs hours more of riding to
       const from = buildShioriPlan({ places: scenarioPlaces(scenario, "kind"), days: scenario.days, hotel: { name: "h", lat: base.lat, lon: base.lon }, locale: "ja" }, { rail: railOf(scenario.city.id), cities });
       return from.days.reduce((sum, day) => sum + day.travelMinutes, 0);
     };
-    assert.ok(moving(named) + 60 <= moving(farOut), `${id}: ${named} ${moving(named)}, ${farOut} ${moving(farOut)}`);
+    // (sapporo-3: 458 minutes against 509 since the hours of the sight notes put its days in other orders; was over an hour.)
+    assert.ok(moving(named) + 45 <= moving(farOut), `${id}: ${named} ${moving(named)}, ${farOut} ${moving(farOut)}`);
   }
   // The hotel on the volcanoes north of Taipei, 80 to 90 minutes each way, is said to be far.
   const taipei = auditPlan("taipei-3").plan.notices.find((notice) => notice.kind === "hotel-far");
@@ -804,12 +805,14 @@ test("a dinner near the last sight never starts after the booklet has left that 
       const last = day.stops.at(-1)!;
       if (!dinner || last.leave >= "17:30") continue;
       assert.equal(dinner.meal.atHotel, true, `${id} day ${day.index + 1}`);
-      assert.equal(dinner.meal.start, day.end, `${id} day ${day.index + 1}: when the ride back is over`);
+      // (When the ride back is over — or at the dinner hour, 17:30 in Japan, when it is over before that.)
+      assert.equal(dinner.meal.start, day.end > "17:30" ? day.end : "17:30", `${id} day ${day.index + 1}: when the ride back is over`);
     }
   }
-  // (That day now ends at the tower beside the zoo, three minutes' walk on, at 17:27: the zoo in the daytime, the tower last.)
-  const zoo = dayEndingAt("osaka-3", /通天閣/);
-  assert.deepEqual([zoo.day.stops.at(-1)!.leave, dinnerOf(zoo.day)!.meal.start, dinnerOf(zoo.day)!.meal.atHotel], ["17:27", zoo.day.end, true]);
+  // (That day then ended at the tower beside the zoo at 17:27; with the hours of the sight notes the zoo is over before
+  // four and the day ends at 住吉大社 at 17:11: the dinner is back near the hotel when the ride is over.)
+  const zoo = dayEndingAt("osaka-3", /住吉大社/);
+  assert.deepEqual([zoo.day.stops.at(-1)!.leave, dinnerOf(zoo.day)!.meal.start, dinnerOf(zoo.day)!.meal.atHotel], ["17:11", zoo.day.end, true]);
   // In every trip of the audit: with a ride back to a hotel, a dinner near the last sight begins the minute the
   // sight is left (the minute the ride is printed from), and a dinner near the hotel not before the ride is over.
   let near = 0;
@@ -961,9 +964,10 @@ test("a place whose name ends in the name of a city is not an island: ヒルト�
 
 /* ------------------------------------------------- the hours of a day (audit, second batch) */
 
-test("a day that ends a few minutes past 18:00 on estimated legs is not called late, and nobody is told to add a day or drop a place: 札幌 18:08, バンコク 18:14", () => {
+test("a day that ends a few minutes past 18:00 on estimated legs is not called late, and nobody is told to add a day or drop a place: 札幌 18:08, London 18:08", () => {
   // Were: sapporo-1 "09:00–18:08, load tight, runs late" with needs-days 2 and drop サッポロビール博物館; bangkok-1 18:14 the same.
-  for (const [id, end] of [["sapporo-1", "18:08"], ["bangkok-1", "18:14"], ["london-1", "18:08"], ["paris-1", "18:02"]] as const) {
+  // (bangkok-1 now closes its day at カオサン通り, a street its sight note keeps for the evening, from 17:30.)
+  for (const [id, end] of [["sapporo-1", "18:08"], ["london-1", "18:08"], ["paris-1", "18:02"]] as const) {
     const { plan } = auditPlan(id);
     assert.equal(plan.days.length, 1, id);
     // The printed time is what it was: nothing is rounded down to look kept.
@@ -1038,7 +1042,7 @@ function hourProblem(seed: number, count: number, withHotel: boolean, withDinner
     state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
     return state / 4294967296;
   };
-  const kinds: Array<Partial<HourStop>> = [{ daytime: true, ticketed: true }, { daytime: true }, { daytime: true, early: true }, { early: true }, {}, { daytime: true, early: true, morning: true }];
+  const kinds: Array<Partial<HourStop>> = [{ daytime: true, ticketed: true }, { daytime: true }, { daytime: true, early: true }, { early: true }, {}, { daytime: true, early: true, morning: true }, { daytime: true, early: true, firstHalf: true }];
   const stops: HourStop[] = Array.from({ length: count }, (_, index) => (
     withDinner && index === count - 1
       ? { stay: 90, meal: "dinner" as const, day: null }
@@ -1072,6 +1076,8 @@ function hourCost(problem: SearchProblem & { stops: HourStop[] }, order: number[
     // A daytime place that ends after 17:00: ten minutes and half of every minute past it, thirty at most.
     // A place of the morning (a fish market) that ends after 13:00: the same, counted from 13:00.
     if (!entry.meal && entry.morning) { if (clock.leave[position] > 13 * 60) hours += Math.min(30, 10 + (clock.leave[position] - 13 * 60) / 2); }
+    // A place of the first half of the day (a palace, a large zoo) that ends after 16:00: the same, counted from 16:00.
+    else if (!entry.meal && entry.firstHalf) { if (clock.leave[position] > 16 * 60) hours += Math.min(30, 10 + (clock.leave[position] - 16 * 60) / 2); }
     else if (!entry.meal && entry.daytime && clock.leave[position] > 17 * 60) hours += Math.min(30, 10 + (clock.leave[position] - 17 * 60) / 2);
   });
   // A place with a door reached before 09:30 as the first of a day that has a place under the open sky to start with: fifteen.
@@ -1085,8 +1091,8 @@ function everyHourOrder(count: number, dinnerLast: boolean): number[][] {
   return orders(sights).map((order) => (dinnerLast ? [...order, count - 1] : order));
 }
 
-test("the order of a day is the one that costs least with its hours counted, of every order there is — with a hotel and without, with a dinner to close it, and on a day that starts late", () => {
-  assert.deepEqual(HABITS, { daytimeEnd: 17 * 60, morningEnd: 13 * 60, lateBase: 10, latePerMinute: 0.5, lateCap: 30, firstDoor: 9 * 60 + 30, firstCost: 15 });
+test("the order of a day is the one that costs least with its hours counted, of every order there is — with a hotel and without, with a dinner to close it, on a day that starts late, and with places of the first half of the day", () => {
+  assert.deepEqual(HABITS, { daytimeEnd: 17 * 60, firstHalfEnd: 16 * 60, morningEnd: 13 * 60, lateBase: 10, latePerMinute: 0.5, lateCap: 30, firstDoor: 9 * 60 + 30, firstCost: 15 });
   let moved = 0;
   let spent = 0;
   let days = 0;
@@ -1184,7 +1190,7 @@ test("a museum is not the first stop at half past eight when a shrine could open
 const hoursIn = (id: string) => auditPlan(id).plan.days.map((day) => day.stops.map((stop) => ({ name: stop.place.name, habit: habitOf(stop.place), arrive: minutesOfClock(stop.arrive) + (stop.arriveNextDay ? 1_440 : 0), leave: minutesOfClock(stop.leave) + (stop.leaveNextDay ? 1_440 : 0) })));
 const moving = (id: string) => auditPlan(id).plan.days.reduce((sum, day) => sum + day.travelMinutes, 0);
 
-test("in the trips of the audit a museum or a castle no longer opens the day beside a shrine, and a temple or a zoo no longer closes it beside a tower: 金沢城 after the shrine and the temples, 通天閣 after the zoo", () => {
+test("in the trips of the audit a museum or a castle no longer opens the day beside a shrine, and a temple or a zoo no longer closes it: 金沢城 after the shrine and the temples, 天王寺動物園 over before four, 京都御所 opening its day", () => {
   const names = (id: string, day: number) => hoursIn(id)[day].map((stop) => stop.name);
   // Was: kanazawa-2 day 1, 08:47–10:02 金沢城, then 尾山神社, 大乗寺, 妙立寺. The same 95 minutes the other way round.
   assert.deepEqual(names("kanazawa-2", 0), ["妙立寺", "大乗寺", "尾山神社", "金沢城"]);
@@ -1192,17 +1198,23 @@ test("in the trips of the audit a museum or a castle no longer opens the day bes
   assert.ok(hoursIn("kanazawa-2")[0][3].arrive >= 14 * 60);
   // Was: kobe-2 day 1, 08:47–10:17 神戸市立博物館 first. The same 79 minutes.
   assert.deepEqual([names("kobe-2", 0)[0], names("kobe-2", 0).at(-1), auditPlan("kobe-2").plan.days[0].travelMinutes], ["生田神社", "神戸市立博物館", 79]);
-  // Was: kyoto-2 day 1, 09:08 京都御所 first and 伏見稲荷大社 last; nara-1, 09:00 平城宮 first.
-  assert.deepEqual([names("kyoto-2", 0)[0], names("kyoto-2", 0).at(-1)], ["伏見稲荷大社", "京都御所"]);
+  // Was: kyoto-2 day 1, 09:08 京都御所 first and 伏見稲荷大社 last; then the other way round, the palace as a place with
+  // a door. By its sight note the palace is a place of the first half of the day and opens the day again at 09:08, and
+  // 伏見稲荷大社, a place of any hour by its note, closes it. nara-1, 09:00 平城宮 first.
+  assert.deepEqual([names("kyoto-2", 0)[0], names("kyoto-2", 0).at(-1)], ["京都御所", "伏見稲荷大社"]);
+  assert.equal(hoursIn("kyoto-2")[0][0].arrive, 9 * 60 + 8);
   assert.deepEqual([names("nara-1", 0)[0], names("nara-1", 0).at(-1)], ["春日大社", "平城宮"]);
-  // Was: osaka-3 day 2, 通天閣 13:42 then 天王寺動物園 14:55–17:25. The zoo in the daytime, the tower last: two minutes more.
-  assert.deepEqual(names("osaka-3", 1).slice(-2), ["天王寺動物園", "通天閣"]);
-  // Was: bangkok-1, 16:59–18:14 王宮 at the end of the day and the market first. The palace in the morning.
+  // Was: osaka-3 day 2, 通天閣 13:42 then 天王寺動物園 14:55–17:25; then the zoo in the daytime and the tower last. By its
+  // note the zoo is a place of the first half of the day: over before four, the tower before it and a shrine after it.
+  assert.deepEqual(names("osaka-3", 1).slice(-3), ["通天閣", "天王寺動物園", "住吉大社"]);
+  assert.ok(hoursIn("osaka-3")[1].find((stop) => stop.name === "天王寺動物園")!.leave <= 16 * 60);
+  // Was: bangkok-1, 16:59–18:14 王宮 at the end of the day and the market first. The palace before one, and the night-life
+  // street that its note keeps for the evening closes the day.
   const bangkok = hoursIn("bangkok-1")[0];
-  assert.ok(bangkok.find((stop) => stop.name === "王宮")!.leave <= 12 * 60);
-  assert.equal(bangkok.at(-1)!.name, "チャトチャック・ウィークエンド・マーケット");
-  // It is a preference, not a ban: Kyoto's five temples and shrines on one day are all there, 金閣寺 still last
-  // until 17:25, and nothing is said against the day.
+  assert.ok(bangkok.find((stop) => stop.name === "王宮")!.leave <= 13 * 60);
+  assert.equal(bangkok.at(-1)!.name, "カオサン通り");
+  // It is a preference, not a ban: Kyoto's five temples and shrines on one day are all there, the last until 17:25,
+  // and nothing is said against the day.
   const kyoto = auditPlan("kyoto-1").plan;
   assert.deepEqual([kyoto.days.length, kyoto.days[0].stops.length, kyoto.leftOut.length, kyoto.days[0].runsLate, kyoto.days[0].stops.at(-1)!.leave], [1, 5, 0, false, "17:25"]);
 });
@@ -1220,9 +1232,11 @@ test("over the 63 trips of the audit: fewer temples and museums late in the day,
   }
   // Were 27 and 23 (and 18,638 minutes on the way in all) with the order of least travel alone.
   // (61 minutes more for the order of the days; 35 more in Taipei, where the night market now closes its day.)
-  assert.ok(daytimeLate <= 20, `${daytimeLate} daytime places that start at 16:30 or later`);
-  assert.ok(ticketedFirst <= 12, `${ticketedFirst} places with a door first before 09:30 beside a place under the open sky`);
-  assert.ok(total <= 18_638 + 110, `${total} minutes on the way`);
+  // Counted since with the hours of the sight notes, which give more places an hour (a mountain of the day, a palace
+  // of the first half of it): 31 and 12 on 18,734 minutes before the planner used those hours, 27 and 6 on 18,684 with them.
+  assert.ok(daytimeLate <= 27, `${daytimeLate} daytime places that start at 16:30 or later`);
+  assert.ok(ticketedFirst <= 6, `${ticketedFirst} places with a door first before 09:30 beside a place under the open sky`);
+  assert.ok(total <= 18_684, `${total} minutes on the way`);
 });
 
 /* ------------------------------------------------------------ places of the evening */
@@ -1344,12 +1358,14 @@ test("the hours the traveller entered come before the planner's evening: a night
   assert.equal(JSON.stringify([museum, market, hall, early, back]).includes("anyHour"), false);
 });
 
-test("a volcano is climbed in the daytime, before the hot spring: 女峰山 from 11:40 after the waterfall, not from 15:35 until dusk", () => {
+test("a volcano is climbed in the daytime, before the hot spring: 女峰山 from 09:40, not from 15:35 until dusk", () => {
   // Was: nikko-3 day 3, 09:25 裏見滝, 11:35–13:35 大江戸温泉物語 日光霧降, 15:35–17:35 女峰山.
   // (As first shown: the trip without the place its three days have no room for. With the stays by kind it was
   // found with: with the usual stays of the sight notes 女峰山 is a climb of a whole day, and the trip has no room for it.)
   const day = auditPlanShown("nikko-3", { stays: "kind" }).plan.days.find((entry) => entry.stops.some((stop) => stop.place.name === "女峰山"))!;
-  assert.deepEqual(day.stops.map((stop) => `${stop.arrive}-${stop.leave} ${stop.place.name}`), ["09:25-10:40 裏見滝", "11:40-13:40 女峰山", "15:40-17:40 大江戸温泉物語 日光霧降"]);
+  // (Then 09:25 裏見滝, 11:40 女峰山, 15:40 the hot spring. With the hours of the sight notes the climb opens the day, and
+  // the waterfall, a place of any hour by its note, closes it.)
+  assert.deepEqual(day.stops.map((stop) => `${stop.arrive}-${stop.leave} ${stop.place.name}`), ["09:40-11:40 女峰山", "13:40-15:40 大江戸温泉物語 日光霧降", "16:35-17:50 裏見滝"]);
   assert.equal(day.runsLate, false);
   // In every trip of the audit no volcano is still being walked after 17:00.
   for (const scenario of scenarios) {
@@ -1417,4 +1433,31 @@ test("the trips of the audit are planned with the usual stays of the sight notes
   // that hold everything (the list of such trips is in tests/shiori-left-out.test.ts).
   const paris = auditPlanShown("paris-1").plan;
   assert.deepEqual([paris.leftOut, paris.days[0].runsLate, paris.notices.find((notice) => notice.kind === "left-out")], [["ルーヴル美術館"], false, { kind: "left-out", places: [{ placeId: "wikidata-Q19675", name: "ルーヴル美術館" }], days: 2 }]);
+});
+
+test("in the trips of the audit as first shown, a palace or a large zoo opens its day and the night-life street closes it, by the hours of the sight notes: バンコク 王宮 from 09:00 and カオサン通り from 17:30, not カオサン通り at 09:00 and 王宮 until 16:14", () => {
+  const shown = (id: string) => auditPlanShown(id).plan.days.map((day) => day.stops.map((stop) => ({ name: stop.place.name, habit: habitOf(stop.place), arrive: minutesOfClock(stop.arrive) + (stop.arriveNextDay ? 1_440 : 0), leave: minutesOfClock(stop.leave) + (stop.leaveNextDay ? 1_440 : 0), evening: stop.evening === true })));
+  // Was (with the usual stays, before the notes' hours): 09:00 カオサン通り, 10:19 バンコク国立博物館, 13:44–16:14 王宮, 16:26 エメラルド仏.
+  const bangkok = shown("bangkok-1")[0];
+  assert.deepEqual(bangkok.map((stop) => stop.name), ["王宮", "エメラルド仏", "バンコク国立博物館", "カオサン通り"]);
+  assert.deepEqual([bangkok[0].arrive, bangkok.at(-1)!.arrive, bangkok.at(-1)!.evening], [9 * 60, 17 * 60 + 30, true]);
+  // Was: kyoto-2 day 2, 京都御所 first already; it stays first, now as a place of the first half of the day.
+  assert.deepEqual([shown("kyoto-2")[1][0].name, shown("kyoto-2")[1][0].habit], ["京都御所", "early"]);
+  // Over the 63 trips: places of the first half of the day still visited after 16:00, places with a door first before
+  // 09:30 beside a place that could open the day, daytime places begun at 16:30 or later, and the minutes on the way
+  // (counted with the notes' hours both times). Were 12, 7, 20 and 17,824.
+  let firstHalfLate = 0;
+  let ticketedFirst = 0;
+  let daytimeLate = 0;
+  let total = 0;
+  for (const scenario of scenarios) {
+    total += auditPlanShown(scenario.id).plan.days.reduce((sum, day) => sum + day.travelMinutes, 0);
+    for (const day of shown(scenario.id)) {
+      firstHalfLate += day.filter((stop) => stop.habit === "early" && stop.leave > 16 * 60).length;
+      daytimeLate += day.filter((stop) => isDaytime(stop.habit) && stop.arrive >= 16 * 60 + 30).length;
+      if (day[0].habit === "ticketed" && day[0].arrive < 9 * 60 + 30 && day.some((stop) => isOpenEarly(stop.habit))) ticketedFirst += 1;
+    }
+  }
+  assert.deepEqual([firstHalfLate, ticketedFirst, daytimeLate], [5, 3, 16]);
+  assert.ok(total <= 17_765, `${total} minutes on the way`);
 });

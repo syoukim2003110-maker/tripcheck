@@ -91,7 +91,7 @@ const LEFT_OUT: Record<string, { before: string; after: string; out: string[]; d
   // (With the usual stays of the sight notes — the Louvre four hours, the Statue of Liberty three, 箱根山 four —
   // nineteen of the 63 trips have more than their days hold; with the stays by kind it was seven.)
   "tokyo-1": { before: "20:13", after: "16:58", out: ["東京国立博物館"], days: 2 },
-  "tokyo-2": { before: "20:25 21:01", after: "16:46 16:39", out: ["東京ディズニーランド"], days: 3 },
+  "tokyo-2": { before: "20:25 21:01", after: "16:46 16:34", out: ["東京ディズニーランド"], days: 3 },
   "kyoto-1": { before: "19:05", after: "16:25", out: ["伏見稲荷大社"], days: 2 },
   "osaka-1": { before: "+01:54", after: "13:59", out: ["ユニバーサル・スタジオ・ジャパン", "海遊館"], days: 3 },
   "osaka-2": { before: "18:49 20:29", after: "16:01 16:04", out: ["ユニバーサル・スタジオ・ジャパン"], days: 3 },
@@ -108,7 +108,8 @@ const LEFT_OUT: Record<string, { before: string; after: string; out: string[]; d
   "seoul-1": { before: "20:18", after: "17:34", out: ["景福宮"], days: 2 },
   "seoul-2": { before: "18:47 19:16", after: "16:46 17:54", out: ["オリンピック公園"], days: 3 },
   "taipei-1": { before: "+00:32", after: "19:30", out: ["台北市立動物園"], days: 2 },
-  "bangkok-1": { before: "21:44", after: "17:41", out: ["チャトチャック・ウィークエンド・マーケット"], days: 2 },
+  // (Its day closes at カオサン通り, a street its sight note keeps for the evening: 17:30–18:30, not called late.)
+  "bangkok-1": { before: "21:59", after: "18:30", out: ["チャトチャック・ウィークエンド・マーケット"], days: 2 },
 };
 
 test("the audit's lists too full for their days are shown as the set that fits: USJ is not followed by four sights until 00:44, and what is left out is named with the days that hold it", () => {
