@@ -361,7 +361,6 @@ const text = {
     legendOther: "道順を取得できなかった区間（直線）",
     newTrip: "新しい旅行",
     privacy: "プライバシー",
-    classic: "以前の画面",
     brand: "TripCheck",
     otherCities: "ほかの街は\n上の欄に入力",
     coverMeta: (days: number, places: number) => `${days}日間 ・ ${places}か所`,
@@ -661,7 +660,6 @@ const text = {
     legendOther: "No route found (straight line)",
     newTrip: "New trip",
     privacy: "Privacy",
-    classic: "Previous version",
     brand: "TripCheck",
     otherCities: "Type any other\ncity above",
     coverMeta: (days: number, places: number) => `${days} day${days === 1 ? "" : "s"} · ${places} place${places === 1 ? "" : "s"}`,
@@ -2203,7 +2201,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
         <footer className="shiori-foot">
           <p>{t.credits}</p>
           <p className="shiori-credit">Powered by <a href="http://webservice.recruit.co.jp/">ホットペッパーグルメ Webサービス</a></p>
-          <p><Link href="/privacy">{t.privacy}</Link> ・ <Link href={locale === "ja" ? "/classic/ja" : "/classic"}>{t.classic}</Link></p>
+          <p><Link href="/privacy">{t.privacy}</Link></p>
         </footer>
       </main>
     );

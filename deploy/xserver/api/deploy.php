@@ -10,7 +10,8 @@
  *   2. open  /api/deploy.php?key=<deploy token>.
  *
  * It extracts the newest uploaded build over the site, removes the previous
- * build's hashed assets, and deletes the zip (which carries the Apple key).
+ * build's hashed assets and retired pages, and deletes the zip (which carries
+ * the Apple key).
  * It can only ever unpack a zip that is already in the site folder, and only
  * with the token from deploy-config.php. Requires the zip extension.
  */
@@ -38,6 +39,23 @@ function remove_tree(string $directory): void
         $item->isDir() && !$item->isLink() ? @rmdir($item->getPathname()) : @unlink($item->getPathname());
     }
     @rmdir($directory);
+}
+
+// Pages earlier builds published and this one does not (scripts/static-build-scope.ts,
+// RETIRED_PAGES): the old planner showed Apple travel times without an Apple map.
+const RETIRED_PAGES = ['classic'];
+
+function remove_retired_pages(string $root): int
+{
+    $removed = 0;
+    foreach (RETIRED_PAGES as $page) {
+        $directory = $root . '/' . $page;
+        if (is_dir($directory) && !is_link($directory)) {
+            remove_tree($directory);
+            $removed += 1;
+        }
+    }
+    return $removed;
 }
 
 $configPath = __DIR__ . '/deploy-config.php';
@@ -87,9 +105,11 @@ if ($zips === [] && $nested) {
         if (preg_match('/^tripcheck-site-[0-9a-f]{12}$/', basename($directory)) === 1) remove_tree($directory);
     }
     if (is_file($root . '/default_page.png')) @unlink($root . '/default_page.png');
+    $retired = remove_retired_pages($root);
     echo "更新しました（展開済みフォルダから移動）。\n";
     echo 'コピーしたファイル: ', count($names), "\n";
     echo '削除した古いファイル: ', $removed, "\n";
+    echo '削除した古いページ: ', $retired, "\n";
     exit;
 }
 if ($zips === []) stop(404, 'アップロードされた zip が見つかりません。tripcheck-site-….zip をサイトのフォルダに置いてから、もう一度開いてください。');
@@ -139,8 +159,10 @@ foreach (glob($root . '/tripcheck-site-*', GLOB_ONLYDIR) ?: [] as $directory) {
 }
 // The host's placeholder files, if they are still around.
 if (is_file($root . '/default_page.png')) @unlink($root . '/default_page.png');
+$retired = remove_retired_pages($root);
 
 echo "更新しました。\n";
 echo '展開したファイル: ', $fileCount, "\n";
 echo '削除した古いファイル: ', $removed, "\n";
+echo '削除した古いページ: ', $retired, "\n";
 echo 'zip: 削除済み (', basename($zipPath), ")\n";

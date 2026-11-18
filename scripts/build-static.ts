@@ -9,17 +9,19 @@
  * the browser, so the only server-side pieces are api/apple.php, a small
  * relay that keeps the Apple Maps key off the page, and api/ai.php, the same
  * for the meal advisor's AI keys. The server routes under app/api/ belong to
- * the Workers deployment and are left out of this build.
+ * the Workers deployment and are left out of this build, as is the old
+ * planner under app/classic (see scripts/static-build-scope.ts).
  */
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { appendFileSync, chmodSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve, sep } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { productionContentSecurityPolicy } from "../lib/security-headers.ts";
 import { appleMapsCredentialsFromEnvironment } from "../lib/server/apple-maps.ts";
 import { aiConfigPhp, aiKeysFromEnvironment } from "../lib/server/meal-advice-relay.ts";
+import { copiedIntoStaticBuild } from "./static-build-scope.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const work = join(root, ".static-build");
@@ -63,8 +65,8 @@ mkdirSync(work, { recursive: true });
 for (const entry of ["app", "lib", "public"]) {
   cpSync(join(root, entry), join(work, entry), {
     recursive: true,
-    // Server routes and server-only modules stay out of a static site.
-    filter: (source) => !source.startsWith(join(root, "app", "api") + sep) && source !== join(root, "app", "api"),
+    // Server routes and the old planner stay out of a static site.
+    filter: (source) => copiedIntoStaticBuild(root, source),
   });
 }
 for (const file of ["tsconfig.json", "next-env.d.ts", "package.json"]) cpSync(join(root, file), join(work, file));
