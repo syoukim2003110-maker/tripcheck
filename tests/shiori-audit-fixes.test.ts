@@ -79,3 +79,11 @@ test("every bundled sight of an amusement or theme-park kind has the stay its si
   assert.equal(shioriStayMinutes("amusement park", "どこかの遊園地"), 150);
   assert.equal(shioriStayMinutes("theme park", "富士急ハイランド"), 420);
 });
+
+test("the way back to a Taipei hotel is not a ride on a line that does not run there", () => {
+  // Was: 台北捷運環状線 松山駅→永春駅 (1 stop, 3 min), then 23 minutes on foot.
+  const { plan } = auditPlan("taipei-2");
+  const rides = plan.days.flatMap((day) => [day.fromHotel, ...day.legs, day.toHotel]).flatMap((leg) => leg?.rail?.rides ?? []);
+  assert.ok(rides.length > 0);
+  for (const ride of rides.filter((entry) => entry.line === "台北捷運環状線")) assert.ok(!/松山|永春/.test(`${ride.from}${ride.to}`), `${ride.from}→${ride.to}`);
+});

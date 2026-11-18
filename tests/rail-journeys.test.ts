@@ -454,13 +454,13 @@ const linesInPieces: Record<string, { lines: string[]; why: string }> = {
   nagoya: { lines: ["名鉄尾西線"], why: "the map ends between 苅安賀 and 上丸渕; the stations between them are outside its radius" },
   bangkok: { lines: ["東本線"], why: "Wikidata has no link across the gap" },
   barcelona: { lines: ["バルセロナ地下鉄9号線", "バルセロナ地下鉄10号線"], why: "the two halves of L9/L10 are not joined yet: the central section is unbuilt" },
-  beijing: { lines: ["北京地下鉄3号線", "豊双線"], why: "Wikidata has no link across the gap" },
+  beijing: { lines: ["豊双線"], why: "Wikidata has no link across the gap" },
   berlin: { lines: ["ベルリン環状線"], why: "only two stretches carry the track's own name; the S-Bahn services name the rest" },
   budapest: { lines: ["トラム"], why: "the catch-all name for tram stretches whose route numbers do not join up; the stretches are apart" },
   florence: { lines: ["フィレンツェ＝ファエンツァ線"], why: "Wikidata has no link across the gap" },
   kualalumpur: { lines: ["ラピドKLBRTサンウェイ線"], why: "Wikidata has no link across the gap" },
   london: {
-    lines: ["トラム", "ブライトン本線", "サットン&モール・ヴァレー・ラインズ", "Stratford International/Woolwich Arsenal service", "イーストロンドン線", "リー・ヴァレー・ラインズ", "Tramlink route 1", "Tramlink route 2", "ドックランズ・ライト・レイルウェイ", "ロンドン・ケーブルカー"],
+    lines: ["トラム", "ブライトン本線", "サットン&モール・ヴァレー・ラインズ", "Stratford International/Woolwich Arsenal service", "イーストロンドン線", "リー・ヴァレー・ラインズ", "Tramlink route 1", "Tramlink route 2", "ロンドン・ケーブルカー"],
     why: "National Rail and DLR links with no line recorded lie between the pieces; the tram stretches without a route are apart",
   },
   madrid: { lines: ["Line C-7"], why: "Wikidata has no link across the gap" },
@@ -473,7 +473,6 @@ const linesInPieces: Record<string, { lines: string[]; why: string }> = {
   sanfrancisco: { lines: ["青線", "水上バス", "トラム"], why: "two lines share the name 青線 / Blue Line; the ferry and tram stretches without a service are apart" },
   seoul: { lines: ["京義急行 (龍山)", "議政府軽電鉄", "京義急行", "京春線", "京釜線", "京義線"], why: "express services and track names recorded on scattered links; the numbered lines are whole" },
   sydney: { lines: ["バンクスタウン線", "Main Suburban railway line"], why: "Wikidata has no link across the gap" },
-  taipei: { lines: ["台北捷運環状線"], why: "Wikidata has no link across the gap" },
   vancouver: { lines: ["エキスポライン"], why: "Wikidata has no link across the gap" },
   vienna: { lines: ["トラム"], why: "the catch-all name for tram stretches whose route numbers do not join up; the stretches are apart" },
 };
@@ -495,6 +494,87 @@ test("every named line is one connected run of links, or the gap is explained", 
     assert.deepEqual(inPieces.sort(), [...(linesInPieces[id]?.lines ?? [])].sort(), `${id}: lines in pieces (${linesInPieces[id]?.why ?? "none expected"})`);
   }
   for (const [id, entry] of Object.entries(linesInPieces)) assert.ok(networks.has(id) && entry.why.length > 20, `${id}: stale or unexplained`);
+});
+
+/*
+ * A line in service with one link of it lying apart from the rest. That is
+ * how a section that has not been built shows up: Taipei's Circular line had
+ * 永春–松山 (its east section, under construction) 7 km from the line that
+ * runs, between two stations that are open on other lines, and a journey
+ * rode it. Each link here was looked at; the ones that were such a section
+ * (Taipei, Beijing's Line 3) or joined stations no train joins (London's
+ * Limehouse–Bromley-by-Bow) are dropped by the generator, and what is left
+ * is real track whose neighbours Wikidata has not recorded under that name.
+ */
+const lonelyLinks: Array<{ city: string; line: string; links: string[]; why: string }> = [
+  { city: "bangkok", line: "東本線", links: ["バーンタップチャーン駅–Hua Mak Railway Station"], why: "two neighbouring stations of the Eastern Line; Wikidata has no link on either side of them" },
+  { city: "beijing", line: "豊双線", links: ["北京豊台駅–Fengtaixi Railway Station"], why: "a stretch of main-line track recorded on scattered links; Wikidata has no link across the gap" },
+  { city: "berlin", line: "ベルリン環状線", links: ["ベルリン・シェーンハウザー・アレー駅–ベルリン・プレンツラウアー・アレー駅", "ベルリン＝ノイケルン駅–ベルリン・ヘルマンシュトラーセ駅"], why: "two stretches of the Ringbahn that carry the track's own name; the S-Bahn services name the rest of the ring" },
+  { city: "florence", line: "フィレンツェ＝ファエンツァ線", links: ["Fiesole-Caldine train station–Pian di Mugnone train station"], why: "two neighbouring stations of the Faentina line; Wikidata has no link from them to the rest" },
+  { city: "kualalumpur", line: "ラピドKLBRTサンウェイ線", links: ["USJ7駅–サウス・クアイ＝USJ1駅", "スティア・ジャヤ駅–メンタリ駅"], why: "two pairs of neighbouring stops of the BRT; Wikidata has no link between the pairs" },
+  { city: "london", line: "イーストロンドン線", links: ["キャノンベリー駅–ハイベリー&イズリントン"], why: "the Overground's own stretch into Highbury & Islington; the services name the track between it and the rest" },
+  { city: "london", line: "ロンドン・ケーブルカー", links: ["Greenwich Peninsula–Royal Docks", "ノース・グリニッジ駅–ロイヤル・ヴィクトリア駅"], why: "the whole cable car: one link, recorded once for each pair of names its two terminals have" },
+  { city: "london", line: "ブライトン本線", links: ["ニュー・クロス・ゲート駅–ロンドン・ブリッジ駅"], why: "the main line into London Bridge; links with no line recorded lie between it and the rest" },
+  { city: "london", line: "リー・ヴァレー・ラインズ", links: ["リバプール・ストリート駅–Bethnal Green railway station"], why: "the first stretch out of Liverpool Street; the services name the track between it and the rest" },
+  { city: "london", line: "サットン&モール・ヴァレー・ラインズ", links: ["Motspur Park railway station–レインズ・パーク駅"], why: "neighbouring stations of the line; links with no line recorded lie between it and the rest" },
+  { city: "london", line: "Stratford International/Woolwich Arsenal service", links: ["Stratford DLR station–Stratford International DLR station"], why: "the DLR's last stretch to Stratford International; a link with no line recorded lies between it and the rest" },
+  { city: "madrid", line: "Line C-7", links: ["Delicias railway station–メンデス・アルバロ駅"], why: "neighbouring stations of the Cercanías; Wikidata has no C-7 link from them to the rest" },
+  { city: "melbourne", line: "メルボルン地下鉄", links: ["Anzac–Hawksburn", "Footscray–Arden"], why: "the two ends of the Metro Tunnel, each one link under the tunnel's own name; the lines that run through it name the rest" },
+  { city: "milan", line: "Milan–Saronno railway", links: ["Bollate Centro railway station–Novate Milanese railway station", "ミラノ・カドルナ駅–Milano Nord Domodossola railway station", "ミラノ・ボヴィーザ・ポリテクニコ駅–Milano Quarto Oggiaro railway station"], why: "three stretches of the track that carry its own name; the suburban services name the rest" },
+  { city: "munich", line: "ミュンヒェン-ホルツキルヒェン線", links: ["Deisenhofen station–Munich-Solln station", "ミュンヘン中央駅–Munich Donnersbergerbrücke station"], why: "two stretches of the track that carry its own name; the S-Bahn services name the rest" },
+  { city: "prague", line: "トラム", links: ["Albertov–Výtoň", "Kubánské náměstí–Průběžná", "Lazarská–Národní třída", "Lipanská–Olšanské náměstí", "Moráň–Botanická zahrada", "Sídliště Modřany–Hasičská stanice Modřany", "Vinohradské hřbitovy–ジェリフスケーホ駅", "Štvanice–ヴルタヴスカー駅", "Šumavská–Vinohradská vodárna", "イジーホ・ズ・ポジェブラト駅–Radhošťská", "ナードラジー・ホレショヴィツェ駅–Trojská"], why: "the catch-all name for tram stretches with no route in Wikidata; each stretch is a real piece of tramway" },
+  { city: "sanfrancisco", line: "青線", links: ["Rental Car Center–Long Term Parking"], why: "the airport's AirTrain Blue Line, which shares its name with another Blue Line of the network" },
+  { city: "sanfrancisco", line: "トラム", links: ["Folsom and The Embarcadero–Ferry Building station", "エンバーカデロ駅–Market and 1st Street / Market and Battery stations"], why: "the catch-all name for tram stretches with no route in Wikidata; each stretch is a real piece of tramway" },
+  { city: "sanfrancisco", line: "水上バス", links: ["Oakland Ferry Terminal–Main Street Alameda Ferry Terminal"], why: "the catch-all name for ferry crossings with no service in Wikidata; this crossing is apart from the others" },
+  { city: "seoul", line: "京釜線", links: ["新道林駅–鷺梁津駅"], why: "a track name recorded on scattered links; the numbered line that runs on it is whole" },
+  { city: "sydney", line: "Main Suburban railway line", links: ["Flemington railway station–Olympic Park railway station", "セントラル駅–Redfern railway station"], why: "two stretches of the track that carry its own name; the services name the rest" },
+  { city: "vancouver", line: "エキスポライン", links: ["ローヒード・タウンセンター駅–プロダクション・ウェイ-ユニバーシティ駅"], why: "a real stretch of the Expo Line's branch to Production Way–University; Wikidata has no link from it to the rest" },
+  { city: "vienna", line: "トラム", links: ["Reumannplatz–Reumannplatz U (Buchengasse)"], why: "the catch-all name for tram stretches whose route numbers do not join up; this stretch is a real piece of tramway" },
+];
+
+test("no named line has a single link lying apart from the rest of it, unless the link is listed with what it is", () => {
+  const found = new Map<string, string[]>();
+  for (const [id, data] of networks) {
+    data.lines.forEach(([ja], line) => {
+      const own = data.edges.filter((edge) => edge[2] === line);
+      const piece = new Map<number, number>();
+      const pieceOf = (station: number): number => {
+        const parent = piece.get(station) ?? station;
+        if (parent === station) return station;
+        const top = pieceOf(parent);
+        piece.set(station, top);
+        return top;
+      };
+      for (const [a, b] of own) piece.set(pieceOf(a), pieceOf(b));
+      const sizes = new Map<number, number>();
+      for (const [a] of own) sizes.set(pieceOf(a), (sizes.get(pieceOf(a)) ?? 0) + 1);
+      if (sizes.size < 2) return;
+      const alone = own.filter(([a]) => sizes.get(pieceOf(a)) === 1).map(([a, b]) => `${data.stations[a][0]}–${data.stations[b][0]}`).sort();
+      if (alone.length > 0) found.set(`${id} ${ja}`, alone);
+    });
+  }
+  const listed = new Map(lonelyLinks.map((entry) => [`${entry.city} ${entry.line}`, [...entry.links].sort()]));
+  assert.deepEqual(Object.fromEntries([...found].sort()), Object.fromEntries([...listed].sort()));
+  for (const entry of lonelyLinks) assert.ok(entry.why.length > 20, `${entry.city} ${entry.line}: unexplained`);
+});
+
+test("a section of a line that has not been built is not ridden", () => {
+  const linksOf = (city: string, line: string) => {
+    const data = networks.get(city)!;
+    const index = data.lines.findIndex(([ja]) => ja === line);
+    return data.edges.filter((edge) => edge[2] === index).map(([a, b]) => `${data.stations[a][0]}–${data.stations[b][0]}`);
+  };
+  // Was: 松山駅 →(台北捷運環状線, 1)→ 永春駅. The Circular line runs 大坪林–新北産業園区; its east section is under construction.
+  assert.equal(linksOf("taipei", "台北捷運環状線").some((link) => /永春|松山/.test(link)), false);
+  assert.equal(linksOf("taipei", "台北捷運環状線").length, 13);
+  const taipei = journey("taipei", "松山駅", "永春駅", { fromLine: "台北捷運松山新店線" });
+  assert.ok(!lines(taipei).includes("台北捷運環状線"), rides(taipei));
+  // Line 3 of Beijing runs 東四十条–東壩北; west of 東四十条 it is a plan.
+  assert.equal(linksOf("beijing", "北京地下鉄3号線").some((link) => /白堆子|甘家口|阜成門|平安里|南鑼鼓巷|張自忠路/.test(link)), false);
+  assert.equal(linksOf("beijing", "北京地下鉄3号線").length, 9);
+  assert.ok(!lines(journey("beijing", "平安里駅", "東四十条駅")).includes("北京地下鉄3号線"));
+  // The DLR's Limehouse lies between Shadwell and Westferry; nothing runs from it to Bromley-by-Bow.
+  assert.equal(linksOf("london", "ドックランズ・ライト・レイルウェイ").some((link) => /ブロムリー/.test(link)), false);
 });
 
 test("through-running groups and guest marks are well formed", () => {

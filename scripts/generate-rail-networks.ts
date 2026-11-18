@@ -323,6 +323,17 @@ const fixes: Record<string, Fixes> = {
   venice: { tram: ["ヴァポレット", "Vaporetto"] },
   // The cable car from Tung Chung up to the Big Buddha, by way of two angle stations.
   hongkong: { nameless: [{ at: "昂坪駅", name: ["昂坪360", "Ngong Ping 360"] }] },
+  /*
+   * A "next station" recorded for a section that has not been built, between
+   * two stations that are open on other lines: the line itself is in service,
+   * so nothing marks the link, and a journey rode it.
+   */
+  // The Circular line runs 大坪林–新北産業園区; its east section (松山–永春) is under construction.
+  taipei: { dropLinks: [["永春駅", "松山駅"]] },
+  // Line 3 runs 東四十条–東壩北; the section west of 東四十条 is a plan.
+  beijing: { dropLinks: [["白堆子駅", "甘家口駅"], ["阜成門駅", "平安里駅"], ["平安里駅", "南鑼鼓巷駅"], ["張自忠路駅", "南鑼鼓巷駅"], ["東四十条駅", "張自忠路駅"]] },
+  // The DLR's Limehouse lies between Shadwell and Westferry; no train of any line runs from it to Bromley-by-Bow.
+  london: { dropLinks: [["ライムハウス駅", "ブロムリー・バイ・ボウ駅"]] },
 };
 
 /*
