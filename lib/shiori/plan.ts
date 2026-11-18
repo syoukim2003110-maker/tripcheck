@@ -131,8 +131,12 @@ export type ShioriInput = {
   packAnyway?: boolean;
 };
 
-/** A street path looked up for one leg ("walk|<key>" or "drive|<key>"). */
-export type ShioriRoute = { minutes: number | null; path: GeoPoint[] };
+/**
+ * A street path looked up for one leg ("walk|<key>" or "drive|<key>").
+ * `source` says where it came from; only OpenStreetMap paths are kept in the
+ * browser (lib/shiori/route-store.ts), and no Apple route is ever one of these.
+ */
+export type ShioriRoute = { minutes: number | null; path: GeoPoint[]; source?: "osm" };
 
 export type ShioriLeg = {
   /** Identifies the pair of places; stable across re-plans. */

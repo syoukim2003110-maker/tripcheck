@@ -16,6 +16,7 @@ import { curateSights, filterDestinations, type PopularDestination, type Popular
 import { loadRailNetwork, loadToeiTimetable } from "../../lib/rail-network-client";
 import type { RailNetwork } from "../../lib/rail-router";
 import { fetchStreetRoute } from "../../lib/street-route-client";
+import { RETIRED_ROUTE_KEYS, ROUTES_KEY, parseStoredRoutes, serializeRoutes } from "../../lib/shiori/route-store";
 import { addAnchor, openCandidate, openLookupHit, placeOfCandidate, putPlace, searchAddCandidates, type AddCandidate } from "../../lib/shiori/add-search";
 import { BulkBudgetError, bulkAfterTripChange, bulkLeftover, bulkProgress, bulkSummary, bundledMatches, chooseBulk, confirmBulk, mergeBulk, requeueBulk, resolveBulk, startBulk, tripChange, type BulkLine, type BulkStatus } from "../../lib/shiori/bulk-add";
 import { findCafes, withListedCafes, type CafeBreak, type CafePick } from "../../lib/shiori/cafes";
@@ -61,8 +62,6 @@ type Screen = "home" | "pick" | "plan";
 const STORAGE_KEY = "shiori-trip-v1";
 /** The booklet this device had before a shared link or another city replaced it. */
 const PREVIOUS_KEY = "shiori-trip-prev";
-/** Street paths already looked up, so a reopened booklet keeps its clock and lines offline. */
-const ROUTES_KEY = "shiori-routes-v1";
 /** What the traveller told the meal advisor (who, budget, a wish). Kept on this device only; never in a share link. */
 const MEAL_PREFS_KEY = "shiori-meal-prefs-v1";
 
@@ -75,37 +74,21 @@ function readTrip(key: string) {
   }
 }
 
+/** Street paths already looked up (OpenStreetMap only), so a reopened booklet keeps its clock and lines offline. */
 function readRoutes(): Map<string, ShioriRoute> {
-  const routes = new Map<string, ShioriRoute>();
   try {
-    const stored = JSON.parse(window.localStorage.getItem(ROUTES_KEY) ?? "[]") as unknown;
-    if (!Array.isArray(stored)) return routes;
-    for (const entry of stored.slice(0, 160)) {
-      if (!Array.isArray(entry) || typeof entry[0] !== "string" || !/^(walk|drive)\|.{3,400}$/.test(entry[0]) || !Array.isArray(entry[2])) continue;
-      const minutes = typeof entry[1] === "number" && Number.isFinite(entry[1]) && entry[1] > 0 && entry[1] < 1_440 ? Math.round(entry[1]) : null;
-      const path = entry[2].flatMap((point: unknown) => (
-        Array.isArray(point) && typeof point[0] === "number" && typeof point[1] === "number" && Math.abs(point[0]) <= 90 && Math.abs(point[1]) <= 180
-          ? [{ latitude: point[0], longitude: point[1] }]
-          : []
-      )).slice(0, 80);
-      if (path.length >= 2) routes.set(entry[0], { minutes, path });
-    }
+    // The old store held paths without a source, Apple's among them: deleted, not read.
+    for (const key of RETIRED_ROUTE_KEYS) window.localStorage.removeItem(key);
+    return parseStoredRoutes(window.localStorage.getItem(ROUTES_KEY));
   } catch {
     // Unreadable storage is an empty cache.
+    return new Map();
   }
-  return routes;
 }
 
 function writeRoutes(routes: ReadonlyMap<string, ShioriRoute | null>) {
-  const entries = [...routes].flatMap(([key, route]) => {
-    if (!route) return [];
-    const stride = Math.max(1, (route.path.length - 1) / 59);
-    const count = Math.min(route.path.length, 60);
-    const path = Array.from({ length: count }, (_, index) => route.path[Math.min(route.path.length - 1, Math.round(index * stride))]);
-    return [[key, route.minutes, path.map((point) => [Number(point.latitude.toFixed(5)), Number(point.longitude.toFixed(5))])]];
-  }).slice(-120);
   try {
-    window.localStorage.setItem(ROUTES_KEY, JSON.stringify(entries));
+    window.localStorage.setItem(ROUTES_KEY, serializeRoutes(routes));
   } catch {
     // Full or private storage: the paths are looked up again next time.
   }
@@ -1725,7 +1708,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
           askedRoutes.current.delete(routeKey);
           routeAttempts.current.set(routeKey, (routeAttempts.current.get(routeKey) ?? 0) + 1);
         } else {
-          found.set(routeKey, answer.status === "found" ? { minutes: answer.route.minutes, path: answer.route.path } : null);
+          found.set(routeKey, answer.status === "found" ? { minutes: answer.route.minutes, path: answer.route.path, source: answer.route.source } : null);
         }
         if (Date.now() - lastFlush > 1_200) flush();
       }
