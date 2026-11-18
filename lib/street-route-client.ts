@@ -32,6 +32,13 @@ type Dependencies = {
   /** Null means "no relay configured"; undefined reads the build's setting. */
   relayUrl?: string | null;
   fetcher?: typeof fetch;
+  /**
+   * A leg with an end at a place found through Apple: its ends are Apple's
+   * positions, which are not handed to another service (Attachment 6, 2.2
+   * and 2.3). Only Apple is asked; where Apple has no way, or cannot be
+   * asked, the leg stays the dashed estimate.
+   */
+  appleOnly?: boolean;
 };
 
 /** found: a path · none: the sources have no route · failed: could not ask (offline, busy); ask again later. */
@@ -105,16 +112,20 @@ async function lookUp(
   mode: "walk" | "drive",
   relayUrl: string | null,
   fetcher: typeof fetch,
+  appleOnly: boolean,
 ): Promise<StreetRouteAnswer> {
   if (relayUrl && Date.now() >= relayRestsUntil) {
     try {
       const route = await appleRelayRoute({ origin, destination, mode, signal: AbortSignal.timeout(REQUEST_DEADLINE_MS) }, relayUrl, fetcher);
       if (route) return { status: "found", route: { minutes: route.minutes, path: route.path, source: "apple" } };
+      if (appleOnly) return { status: "none" };
     } catch {
       // Down, over budget or too slow: that is what the second source is for.
       relayRestsUntil = Date.now() + RELAY_REST_MS;
+      if (appleOnly) return { status: "failed" };
     }
   }
+  if (appleOnly) return { status: relayUrl ? "failed" : "none" };
   const turn = openRouterTurn.then(() => openRoute(origin, destination, mode, fetcher));
   openRouterTurn = turn.catch(() => undefined);
   return turn.catch((): StreetRouteAnswer => ({ status: "failed" }));
@@ -132,10 +143,11 @@ export function fetchStreetRoute(
   const relayUrl = dependencies.relayUrl === undefined ? appleRelayUrl() : dependencies.relayUrl;
   const fetcher = dependencies.fetcher ?? ((input, init) => globalThis.fetch(input, init));
   const point = (value: StreetPoint) => `${value.latitude.toFixed(5)},${value.longitude.toFixed(5)}`;
-  const key = [relayUrl ?? "-", options.mode, point(options.origin), point(options.destination)].join("|");
+  const appleOnly = dependencies.appleOnly === true;
+  const key = [relayUrl ?? "-", appleOnly ? "apple" : "any", options.mode, point(options.origin), point(options.destination)].join("|");
   const known = remembered.get(key);
   if (known) return known;
-  const pending = lookUp(options.origin, options.destination, options.mode, relayUrl, fetcher).then((answer) => {
+  const pending = lookUp(options.origin, options.destination, options.mode, relayUrl, fetcher, appleOnly).then((answer) => {
     if (answer.status === "failed") remembered.delete(key);
     return answer;
   });

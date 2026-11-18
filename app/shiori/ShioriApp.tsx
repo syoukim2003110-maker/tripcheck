@@ -16,7 +16,7 @@ import { curateSights, filterDestinations, type PopularDestination, type Popular
 import { loadRailNetwork, loadToeiTimetable } from "../../lib/rail-network-client";
 import type { RailNetwork } from "../../lib/rail-router";
 import { fetchStreetRoute } from "../../lib/street-route-client";
-import { RETIRED_ROUTE_KEYS, ROUTES_KEY, parseStoredRoutes, serializeRoutes } from "../../lib/shiori/route-store";
+import { RETIRED_ROUTE_KEYS, ROUTES_KEY, appleEndedLeg, parseStoredRoutes, serializeRoutes } from "../../lib/shiori/route-store";
 import { daySnapshotSpec, requestSnapshotUrl } from "../../lib/shiori/print-map";
 import { addAnchor, openCandidate, openLookupHit, placeOfCandidate, putPlace, searchAddCandidates, type AddCandidate } from "../../lib/shiori/add-search";
 import { BulkBudgetError, bulkAfterTripChange, bulkLeftover, bulkProgress, bulkSummary, bundledMatches, chooseBulk, confirmBulk, mergeBulk, requeueBulk, resolveBulk, startBulk, tripChange, type BulkLine, type BulkStatus } from "../../lib/shiori/bulk-add";
@@ -101,9 +101,9 @@ function readRoutes(): Map<string, ShioriRoute> {
   }
 }
 
-function writeRoutes(routes: ReadonlyMap<string, ShioriRoute | null>, appleHotel: boolean) {
+function writeRoutes(routes: ReadonlyMap<string, ShioriRoute | null>) {
   try {
-    window.localStorage.setItem(ROUTES_KEY, serializeRoutes(routes, appleHotel));
+    window.localStorage.setItem(ROUTES_KEY, serializeRoutes(routes));
   } catch {
     // Full or private storage: the paths are looked up again next time.
   }
@@ -1794,12 +1794,15 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
   useEffect(() => {
     if (!plan || !railSettled || appleMap === "pending") return;
     // Apple first while its map is shown; the OpenStreetMap router otherwise, and wherever Apple has no way.
+    // A leg with an end at a place found through Apple is asked of Apple
+    // alone: Apple's position of the place is not handed to another service.
     const relayUrl = appleMap === "ready" ? appleRelayUrl() : null;
     const wanted: Array<[string, ShioriLeg]> = [];
     for (const day of plan.days) {
       for (const leg of [day.fromHotel, ...day.legs, day.toHotel]) {
         if (!leg || leg.hasPath || leg.mode === "rail") continue;
         const routeKey = `${leg.mode === "walk" ? "walk" : "drive"}|${leg.key}`;
+        if (!relayUrl && appleEndedLeg(routeKey)) continue;
         if (askedRoutes.current.has(routeKey) || (routeAttempts.current.get(routeKey) ?? 0) >= 2) continue;
         askedRoutes.current.add(routeKey);
         wanted.push([routeKey, leg]);
@@ -1820,7 +1823,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
     const worker = async () => {
       for (let next = wanted.shift(); next; next = wanted.shift()) {
         const [routeKey, leg] = next;
-        const answer = await fetchStreetRoute({ origin: leg.from, destination: leg.to, mode: routeKey.startsWith("walk|") ? "walk" : "drive" }, { relayUrl });
+        const answer = await fetchStreetRoute({ origin: leg.from, destination: leg.to, mode: routeKey.startsWith("walk|") ? "walk" : "drive" }, { relayUrl, appleOnly: appleEndedLeg(routeKey) });
         if (answer.status === "failed") {
           // Offline or busy is not "no route": the leg may be asked about
           // once more when the plan next changes.
@@ -1929,9 +1932,8 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, []);
-  // (The legs to and from a hotel found through Apple start at Apple's position of it: they are not kept.)
-  const appleHotel = Boolean(trip.hotel && (trip.hotel.pending || placeSource(trip.hotel.id) === "apple"));
-  useEffect(() => { if (hydrated.current) writeRoutes(routes, appleHotel); }, [routes, appleHotel]);
+  // (The legs to and from a place or hotel found through Apple start at Apple's position of it: they are not kept; see route-store.ts.)
+  useEffect(() => { if (hydrated.current) writeRoutes(routes); }, [routes]);
   // A pasted list under review was checked against the trip in hand. When
   // another trip takes its place (a new one, a saved one, another
   // destination) the running check is cancelled and the review dropped; what

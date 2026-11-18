@@ -653,14 +653,24 @@ function groundOf(input: ShioriInput, holdLongTaxi: boolean, cities: Sights): Gr
   return { holdLongTaxi, reach: (id) => reach.get(id) ?? null };
 }
 
+/**
+ * The hotel's stop id, which names where the hotel came from (the route
+ * store reads it: a street path with an end at Apple's position of a hotel is
+ * never kept, even after the traveller has chosen another hotel). A hotel
+ * found through Apple is named by its Place ID; one kept from before hotels
+ * had ids may be Apple's and is marked so too; any other carries its position.
+ */
 function hotelId(hotel: ShioriHotel) {
-  return `shiori-hotel@${hotel.lat.toFixed(4)},${hotel.lon.toFixed(4)}`;
+  const apple = /^(?:apple|maps)-([A-Za-z0-9]{4,64})$/.exec(hotel.id ?? "");
+  if (apple) return `shiori-hotel@apple-${apple[1]}`;
+  const at = `${hotel.lat.toFixed(4)},${hotel.lon.toFixed(4)}`;
+  return hotel.id ? `shiori-hotel@at-${at}` : `shiori-hotel@apple-${at}`;
 }
 
 /** The hotel as the engine's base. */
 function hotelBase(hotel: ShioriHotel): ResolvedInputStop {
   return {
-    // The id carries the position: a leg to another hotel is another leg,
+    // The id names the hotel (its Place ID or its position): a leg to another hotel is another leg,
     // and a street path looked up for the old one must not be reused.
     ...resolvedStop({ id: hotelId(hotel), name: hotel.name, lat: hotel.lat, lon: hotel.lon, stayMinutes: 15 }, 9_999),
     input: hotel.name,

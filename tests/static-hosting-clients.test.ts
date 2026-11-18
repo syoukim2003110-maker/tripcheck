@@ -221,6 +221,24 @@ test("a leg Apple cannot route is asked of the open router, once", async () => {
   assert.deepEqual(seen, ["apple walk", "osm routed-foot"]);
 });
 
+test("a leg with an end at a place found through Apple is asked of Apple alone, never of the open router", async () => {
+  const { fetchStreetRoute, OPEN_ROUTER_ORIGIN } = await import("../lib/street-route-client.ts");
+  const seen: string[] = [];
+  const fetcher = (async (input: RequestInfo | URL) => {
+    const url = new URL(String(input));
+    seen.push(url.origin === OPEN_ROUTER_ORIGIN ? "osm" : "apple");
+    return url.origin === OPEN_ROUTER_ORIGIN
+      ? Response.json({ code: "Ok", routes: [{ duration: 600, geometry: { coordinates: [[8, 7], [8.01, 7.01]] } }] })
+      : Response.json({ minutes: null, distanceMeters: null, path: [] });
+  }) as typeof fetch;
+  const options = { origin: { latitude: 7, longitude: 8 }, destination: { latitude: 7.01, longitude: 8.01 }, mode: "walk" as const };
+  // Apple has no way: the leg stays the dashed estimate.
+  assert.deepEqual(await fetchStreetRoute(options, { relayUrl: "https://example.test/street-apple-only.php", fetcher, appleOnly: true }), { status: "none" });
+  // No Apple map (no relay): nobody is asked.
+  assert.deepEqual(await fetchStreetRoute({ ...options, mode: "drive" }, { relayUrl: null, fetcher, appleOnly: true }), { status: "none" });
+  assert.deepEqual(seen, ["apple"]);
+});
+
 test("with no relay the open router draws the road, without a drive time to plan with", async () => {
   const { fetchStreetRoute } = await import("../lib/street-route-client.ts");
   const fetcher = (async (input: RequestInfo | URL) => {
@@ -297,7 +315,9 @@ test("the page asks Apple only while its Apple map is on screen, and drops Apple
   const { readFile } = await import("node:fs/promises");
   const page = await readFile(new URL("../app/shiori/ShioriApp.tsx", import.meta.url), "utf8");
   assert.match(page, /const relayUrl = appleMap === "ready" \? appleRelayUrl\(\) : null;/);
-  assert.match(page, /fetchStreetRoute\(\{[^}]*\}[^)]*\{ relayUrl \}\)/);
+  assert.match(page, /fetchStreetRoute\(\{[^}]*\}[^)]*\{ relayUrl, appleOnly: appleEndedLeg\(routeKey\) \}\)/);
+  // With no Apple map, a leg with an Apple end is not asked of anyone.
+  assert.match(page, /if \(!relayUrl && appleEndedLeg\(routeKey\)\) continue;/);
   // The streets wait for the map's answer rather than racing it.
   assert.match(page, /appleMap === "pending"\) return;/);
   const dropping = page.slice(page.indexOf("const onMapState = useCallback"), page.indexOf("}, []);", page.indexOf("const onMapState = useCallback")));
