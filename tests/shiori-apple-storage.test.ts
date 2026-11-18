@@ -4,12 +4,12 @@ import test from "node:test";
 import { openCandidate, putPlace } from "../lib/shiori/add-search.ts";
 import type { ShioriPlace } from "../lib/shiori/plan.ts";
 import {
-  OWN_KINDS,
   appleDataCount,
   appleRematches,
   canonicalPlaceId,
   decodeTrip,
   emptyTrip,
+  keptAppleKind,
   encodeTrip,
   pendingAppleIds,
   placeSource,
@@ -79,7 +79,8 @@ test("no Apple name, address, category or position is ever in the saved trip or 
   const wire = wireOf(encoded);
   // Apple stops: the Place ID and the traveller's own settings.
   assert.deepEqual(wire.s[1], ["apple-I7EA0EDCABFD8E819", "", 0, 0, 60, 2, null, null, null]);
-  assert.deepEqual(wire.s[2], ["apple-I63802885C8189B2B", "", 0, 0, 90, 1, "museum", null, null, [1, 600]]);
+  // (Apple's category, even in the booklet's words, is not kept: "museum" came from Apple.)
+  assert.deepEqual(wire.s[2], ["apple-I63802885C8189B2B", "", 0, 0, 90, 1, null, null, null, [1, 600]]);
   assert.deepEqual(wire.h, ["", 0, 0, "apple-IA1B2C3D4E5F60718"]);
   // Everyone else's places are kept as they always were.
   assert.deepEqual(wire.s[0], ["wikidata-Q1", "原爆ドーム", 34.39555, 132.45358, 30, null, "memorial", "Genbaku Dome.jpg", null]);
@@ -95,8 +96,9 @@ test("whatever a trip in hand holds, its Apple places leave nothing of Apple's i
     });
     const text = Buffer.from(encodeTrip({ ...emptyTrip, places: [place] }), "base64url").toString("utf8");
     assert.equal(/Apple の名前|35\.12|139\.65|Something\.jpg|Apple's/.test(text), false, text);
-    // The booklet's own kind words are kept; Apple's category text never is.
-    assert.equal(text.includes(`"${kind}"`), OWN_KINDS.has(kind), `${kind}: ${text}`);
+    // Only a kind the traveller's own action gave is kept (a meal's restaurant, a break's café); Apple's category never is, in any words.
+    const kept = keptAppleKind(kind, index % 2 ? "dinner" : undefined);
+    assert.equal(kept === null ? !/"(?:shinto shrine|Cafe|museum|restaurant|Apple's own category|cafe|theme park)"/.test(text) : text.includes(`"${kept}"`), true, `${kind}: ${text}`);
   }
 });
 
@@ -105,7 +107,7 @@ test("a new link opens with the same places, the Apple ones waiting for their lo
   const opened = decodeTrip(encodeTrip(trip))!;
   assert.deepEqual(opened.places.map((place) => place.id), trip.places.map((place) => place.id));
   assert.deepEqual(opened.places[1], { id: "apple-I7EA0EDCABFD8E819", name: "", lat: 0, lon: 0, stayMinutes: 60, day: 2, pending: true });
-  assert.deepEqual(opened.places[2], { id: "apple-I63802885C8189B2B", name: "", lat: 0, lon: 0, stayMinutes: 90, day: 1, kind: "museum", reserve: { day: 1, time: "10:00" }, pending: true });
+  assert.deepEqual(opened.places[2], { id: "apple-I63802885C8189B2B", name: "", lat: 0, lon: 0, stayMinutes: 90, day: 1, reserve: { day: 1, time: "10:00" }, pending: true });
   assert.deepEqual(opened.hotel, { name: "", lat: 0, lon: 0, id: "apple-IA1B2C3D4E5F60718", pending: true });
   assert.deepEqual(pendingAppleIds(opened), [ITSUKUSHIMA.id, MUSEUM.id, HOTEL.id]);
   // Waiting places are set aside for planning, never removed.
@@ -140,7 +142,7 @@ test("a link made before this change opens with the same places, and is saved ag
   assert.deepEqual(opened.places.map((place) => [place.id, place.name, place.stayMinutes, place.day ?? null, place.kind ?? null, place.meal ?? null, place.pending ?? false]), [
     ["wikidata-Q1", "原爆ドーム", 30, null, "memorial", null, false],
     ["apple-I7EA0EDCABFD8E819", "", 60, 2, null, null, true],
-    ["apple-I63802885C8189B2B", "", 90, 1, "museum", null, true],
+    ["apple-I63802885C8189B2B", "", 90, 1, null, null, true],
     ["apple-IABCDEF0123456789", "", 90, 1, "restaurant", "dinner", true],
   ]);
   assert.deepEqual(opened.places[2].reserve, { day: 1, time: "10:00" });
@@ -201,11 +203,20 @@ test("choosing a waiting Apple place again from a search puts it in hand; the op
   assert.equal(openCandidate({ id: "maps-34.29600,132.31970", name: "嚴島神社", latitude: 34.296, longitude: 132.3197, planningDurationMinutes: 60 }, null, 100), null);
 });
 
-test("every kind word the booklet gives a map category is one it may keep", async () => {
+test("an Apple stop keeps a kind word only when the traveller's own action gave it", async () => {
   const { kindOfCategory } = await import("../lib/shiori/add-search.ts");
-  for (const category of ["Restaurant", "Cafe", "Bakery", "Hotel", "Museum", "Park", "Store", "Nightlife", "Theater", "Zoo", "Aquarium", "AmusementPark", "Beach", "NationalPark", "Winery", "Brewery", "FoodMarket"]) {
-    assert.ok(OWN_KINDS.has(kindOfCategory(category)!), category);
+  // What a map category becomes is Apple's, whatever the words: not kept for a place added as a sight.
+  for (const category of ["Restaurant", "Bakery", "Hotel", "Museum", "Park", "Store", "Nightlife", "Theater", "Zoo", "Aquarium", "AmusementPark", "Beach", "NationalPark", "Winery", "Brewery", "FoodMarket"]) {
+    assert.equal(keptAppleKind(kindOfCategory(category)!, undefined), null, category);
   }
+  // A restaurant chosen for a meal, and a café or bakery chosen for a break, keep the booklet's word.
+  assert.equal(keptAppleKind("restaurant", "lunch"), "restaurant");
+  assert.equal(keptAppleKind("cafe", undefined), "cafe");
+  assert.equal(keptAppleKind("bakery cafe", undefined), "cafe");
+  // A link from before this rule: the kind is dropped when read.
+  const old = linkOf({ v: 1, c: null, n: "", d: 1, p: "standard", s: [["apple-IAAAABBBBCCCC0001", "", 0, 0, 60, null, "museum", null, null]], h: null });
+  assert.equal(decodeTrip(old)?.places[0].kind, undefined);
+  assert.ok(resavedForm(old));
 });
 
 test("while no Apple map can be shown, every place known from Apple is set aside, not removed, and the trip is not named after one", () => {

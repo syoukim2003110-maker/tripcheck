@@ -68,8 +68,9 @@ export function safePlaceId(raw: string) {
  *     position of the place (Apple Developer Program License Agreement,
  *     Attachment 6, 2.5; Apple's Place ID article). Such a stop is kept as
  *     `apple-<Place ID>` with only what the traveller set (stay, day, meal,
- *     booking, and the booklet's own kind word), and its name and position
- *     are looked up again whenever the trip is opened.
+ *     booking, and a kind word only when the traveller's own action gave it;
+ *     see keptAppleKind), and its name and position are looked up again
+ *     whenever the trip is opened.
  *   - "apple-legacy": an Apple stop saved before Place IDs were kept, with
  *     no Place ID in it (`apple-<lat>,<lon>`). There is nothing to look it
  *     up by, so it is kept as it was until the page has found it again by
@@ -114,18 +115,20 @@ export function canonicalPlaceId(id: string) {
 }
 
 /**
- * The booklet's own kind words (add-search.ts maps Apple's categories onto
- * them; a restaurant or a café the traveller adds is named so by the
- * booklet). One of these is a planning setting of TripCheck's, like the
- * stay: it is the one description of an Apple place that is kept, because
- * Apple's lookup by Place ID does not answer a category and without it a
- * museum would be planned as a sight of no particular kind after a reload.
- * Apple's own category text is never kept.
+ * The kind word an Apple stop may keep: only one the traveller's own action
+ * gave it — a restaurant chosen for a meal ("restaurant" with its meal), a
+ * café chosen for a break ("cafe"). Any other kind word of an Apple place is
+ * Apple's category put into the booklet's words (add-search.ts maps Apple's
+ * categories onto them), which is Apple map data in another form and is not
+ * kept (Attachment 6, 2.2 and 2.5); it lives in the page's memory for the
+ * visit. After a reload such a place is planned as a sight of no particular
+ * kind (Apple's lookup by Place ID does not answer a category).
  */
-export const OWN_KINDS: ReadonlySet<string> = new Set([
-  "restaurant", "cafe", "bakery", "bakery cafe", "hotel", "museum", "park", "shop", "bar", "theatre", "zoo",
-  "aquarium", "theme park", "beach", "winery", "brewery", "market",
-]);
+export function keptAppleKind(kind: string | undefined, meal: string | null | undefined): string | null {
+  if (kind === "restaurant" && (meal === "lunch" || meal === "dinner")) return "restaurant";
+  if (kind === "cafe" || kind === "bakery cafe") return "cafe";
+  return null;
+}
 
 /** What the page needs to look up again: the Apple Place IDs of the stops (and hotel) whose name and position are not in hand. */
 export function pendingAppleIds(trip: ShioriTrip): string[] {
@@ -467,7 +470,7 @@ export function encodeTrip(trip: ShioriTrip): string {
         place.stayMinutes,
         // A booking's day is the place's day.
         reserve ? reserve.day : place.day ?? null,
-        place.kind && place.kind.length <= MAX_KIND && (!apple || OWN_KINDS.has(place.kind)) ? place.kind : null,
+        apple ? keptAppleKind(place.kind, place.meal) : place.kind && place.kind.length <= MAX_KIND ? place.kind : null,
         apple ? null : place.img ?? null,
         place.meal ?? null,
       ];
@@ -570,7 +573,9 @@ export function decodeTrip(encoded: string, now: Date = new Date()): ShioriTrip 
         stayMinutes: Math.round(stay),
         // A booking's day is the place's day.
         ...(reserve ? { day: reserve.day } : finite(day, 1, MAX_DAYS) ? { day: Math.round(day) } : {}),
-        ...(typeof kind === "string" && kind.length <= MAX_KIND && (!apple || OWN_KINDS.has(kind)) ? { kind } : {}),
+        ...(apple
+          ? (keptAppleKind(typeof kind === "string" ? kind : undefined, typeof meal === "string" ? meal : null) ? { kind: keptAppleKind(kind as string, meal as string)! } : {})
+          : typeof kind === "string" && kind.length <= MAX_KIND ? { kind } : {}),
         ...(meal === "lunch" || meal === "dinner" ? { meal } : {}),
         ...(reserve ? { reserve } : {}),
       } satisfies Partial<ShioriPlace>;
