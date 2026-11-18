@@ -5,7 +5,8 @@ import { openCandidate, searchAddCandidates, type AddCandidate, type AddSearch }
 
 const TOKYO = { latitude: 35.6812, longitude: 139.7671 };
 const mapPlace = (name: string) => ({
-  id: name, name, latitude: 35.68, longitude: 139.76, formattedAddress: "", locality: null, subLocality: null, countryCode: "JP", poiCategory: "Restaurant",
+  // (An Apple Place ID is letters and digits; one is made from the name.)
+  id: `I${Buffer.from(name).toString("hex").toUpperCase()}`.padEnd(4, "0").slice(0, 64), name, latitude: 35.68, longitude: 139.76, formattedAddress: "", locality: null, subLocality: null, countryCode: "JP", poiCategory: "Restaurant",
 });
 const openHit = (name: string): AddCandidate => ({ id: `osm-${name}`, name, lat: 35.68, lon: 139.76, address: "", category: null, km: 1 });
 function deferred<T>() {

@@ -1,3 +1,4 @@
+import { appleMapsLink } from "./apple-food.ts";
 import type { HotelCandidate, HotelSearchRequest } from "./google-hotels.ts";
 
 /*
@@ -63,15 +64,16 @@ export async function fetchAppleHotelCandidates(
   const candidates = places.flatMap((place, index): HotelCandidate[] => {
     const coordinate = `${place.latitude.toFixed(5)},${place.longitude.toFixed(5)}`;
     const key = `${place.name.normalize("NFKC").toLocaleLowerCase()}@${place.latitude.toFixed(3)},${place.longitude.toFixed(3)}`;
-    if (seen.has(key)) return [];
+    // Kept in a trip as its Apple Place ID only: a hit without one cannot be chosen.
+    if (seen.has(key) || !place.id || !/^[A-Za-z0-9]{4,64}$/.test(place.id)) return [];
     seen.add(key);
     return [{
-      id: `apple-${place.id ?? coordinate}`.slice(0, 300),
+      id: `apple-${place.id}`,
       name: place.name,
       address: place.formattedAddress,
-      // The card's outbound link: the same hotel in a maps app, where the
-      // traveller can see the price, rating and availability Apple omits.
-      googleMapsUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${place.name} ${coordinate}`)}`,
+      // The card's outbound link: the same hotel in Apple Maps, where the
+      // traveller can see what this search omits. Apple's data is not handed to another map.
+      googleMapsUrl: appleMapsLink(place.name, coordinate),
       websiteUrl: null,
       latitude: place.latitude,
       longitude: place.longitude,

@@ -238,7 +238,8 @@ test("a trip survives the share link, and a tampered link opens nothing", () => 
   const sight = { q: "Q221716", ja: "清水寺", en: "Kiyomizu-dera", lat: 34.9948, lon: 135.785, kind: "buddhist temple", img: "Kiyomizu-dera in Kyoto.jpg" };
   let trip: ShioriTrip = { ...emptyTrip, cityId: "kyoto", cityName: "京都", days: 2 };
   trip = togglePlace(trip, placeFromSight(sight, "ja"));
-  trip = togglePlace(trip, { id: "maps-abc", name: "町家カフェ", lat: 35.0, lon: 135.77, stayMinutes: 45, day: 2 });
+  // (A place of the open lookup's keeps its name and position; an Apple place does not — see shiori-apple-storage.test.ts.)
+  trip = togglePlace(trip, { id: "osm-node-123", name: "町家カフェ", lat: 35.0, lon: 135.77, stayMinutes: 45, day: 2 });
   trip = { ...trip, hotel: { name: "駅前ホテル", lat: 34.9858, lon: 135.7588 } };
   const decoded = decodeTrip(encodeTrip(trip));
   assert.deepEqual(decoded, { ...trip, places: trip.places.map((entry) => ({ ...entry, lat: Number(entry.lat.toFixed(5)), lon: Number(entry.lon.toFixed(5)) })) });
@@ -425,10 +426,10 @@ test("cafés are ordered by how little they take the traveller off the way", asy
       asked.push(options.withinMeters);
       assert.deepEqual(options.poiCategories, ["Cafe", "Bakery"]);
       return [
-        { id: "far", name: "遠回りの店", latitude: 35.004, longitude: 135.005, formattedAddress: "", poiCategory: "Cafe" },
-        { id: "on", name: "道沿いの店", latitude: 35.0001, longitude: 135.006, formattedAddress: "", poiCategory: "Bakery" },
-        { id: "on", name: "道沿いの店", latitude: 35.0001, longitude: 135.006, formattedAddress: "", poiCategory: "Bakery" },
-        { id: "mid", name: "少し入った店", latitude: 35.0012, longitude: 135.004, formattedAddress: "", poiCategory: "Cafe" },
+        { id: "IFAR0001", name: "遠回りの店", latitude: 35.004, longitude: 135.005, formattedAddress: "", poiCategory: "Cafe" },
+        { id: "ION00001", name: "道沿いの店", latitude: 35.0001, longitude: 135.006, formattedAddress: "", poiCategory: "Bakery" },
+        { id: "ION00001", name: "道沿いの店", latitude: 35.0001, longitude: 135.006, formattedAddress: "", poiCategory: "Bakery" },
+        { id: "IMID0001", name: "少し入った店", latitude: 35.0012, longitude: 135.004, formattedAddress: "", poiCategory: "Cafe" },
       ];
     },
   };
@@ -441,6 +442,11 @@ test("cafés are ordered by how little they take the traveller off the way", asy
   // Before a train ride the same cafés are ordered by the walk from the place just left.
   const after = await findCafes({ ...brk, reason: "after", to: { latitude: 35.0, longitude: 135.05 }, search: from }, client, "ja");
   assert.deepEqual(after.map((pick) => pick.name), ["少し入った店", "道沿いの店", "遠回りの店"]);
+  // A café is added as its Apple Place ID and opens in Apple Maps; one without a Place ID is not offered.
+  assert.equal(picks[0].id, "apple-ION00001");
+  assert.match(picks[0].mapsUrl, /^https:\/\/maps\.apple\.com\/\?q=/);
+  const noId = await findCafes(brk, { search: async () => [{ id: null, name: "番号のない店", latitude: 35.0001, longitude: 135.006, formattedAddress: "", poiCategory: "Cafe" }] }, "ja");
+  assert.deepEqual(noId, []);
 });
 
 /*

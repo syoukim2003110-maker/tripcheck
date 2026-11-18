@@ -162,6 +162,8 @@ export async function findCafes(brk: CafeBreak, client: CafeSearch, languageCode
   const straight = brk.to ? meters(brk.from, brk.to) : 0;
   const seen = new Set<string>();
   return places.flatMap((place): CafePick[] => {
+    // A café is kept in the trip as its Apple Place ID: one without one could be shown but not added.
+    if (!place.id || !/^[A-Za-z0-9]{4,64}$/.test(place.id)) return [];
     const key = `${place.name.normalize("NFKC").toLocaleLowerCase()}@${place.latitude.toFixed(3)},${place.longitude.toFixed(3)}`;
     if (seen.has(key)) return [];
     seen.add(key);
@@ -171,7 +173,7 @@ export async function findCafes(brk: CafeBreak, client: CafeSearch, languageCode
     const extra = brk.reason === "on-the-way" && brk.to ? meters(brk.from, place) + meters(place, brk.to) - straight : meters(brk.from, place);
     const coordinate = `${place.latitude.toFixed(5)},${place.longitude.toFixed(5)}`;
     return [{
-      id: `apple-${place.id ?? coordinate}`.slice(0, 160),
+      id: `apple-${place.id}`,
       name: place.name,
       address: place.formattedAddress,
       latitude: place.latitude,
@@ -179,7 +181,8 @@ export async function findCafes(brk: CafeBreak, client: CafeSearch, languageCode
       kind: place.poiCategory === "Bakery" ? "bakery" : "cafe",
       // Streets are not straight lines: 1.3× and 75 m a minute, as elsewhere.
       detourMinutes: Math.max(0, Math.round(extra * 1.3 / 75)),
-      mapsUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${place.name} ${coordinate}`)}`,
+      // Apple's place, opened in Apple Maps: Apple's data is not handed to another map.
+      mapsUrl: `https://maps.apple.com/?q=${encodeURIComponent(place.name)}&ll=${coordinate}`,
     }];
   }).sort((left, right) => left.detourMinutes - right.detourMinutes).slice(0, 5);
 }

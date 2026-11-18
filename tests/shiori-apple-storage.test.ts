@@ -1,0 +1,206 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { openCandidate, putPlace } from "../lib/shiori/add-search.ts";
+import type { ShioriPlace } from "../lib/shiori/plan.ts";
+import {
+  OWN_KINDS,
+  appleRematches,
+  canonicalPlaceId,
+  decodeTrip,
+  emptyTrip,
+  encodeTrip,
+  pendingAppleIds,
+  placeSource,
+  plannableTrip,
+  resavedForm,
+  withAppleDetails,
+  withRematch,
+  type ShioriTrip,
+} from "../lib/shiori/state.ts";
+
+/*
+ * A place found through Apple Maps is kept in the trip — on the device and
+ * in a share link — as its Apple Place ID alone, with what the traveller set
+ * (stay, day, meal, booking, the booklet's own kind word). Apple's name,
+ * address, category and position of it are looked up again when the trip is
+ * opened and live in the page's memory only (Apple Developer Program License
+ * Agreement, Attachment 6, 2.5; Place IDs may be kept and shared).
+ */
+
+const wireOf = (encoded: string) => JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")) as Record<string, unknown> & { s: unknown[][]; h: unknown[] | null };
+const linkOf = (wire: unknown) => Buffer.from(JSON.stringify(wire)).toString("base64url");
+
+const ITSUKUSHIMA = { id: "I7EA0EDCABFD8E819", name: "嚴島神社", latitude: 34.2960364, longitude: 132.31969 };
+const MUSEUM = { id: "I63802885C8189B2B", name: "広島平和記念資料館", latitude: 34.39155, longitude: 132.45254 };
+const HOTEL = { id: "IA1B2C3D4E5F60718", name: "宮島の宿 みやじま", latitude: 34.29718, longitude: 132.32411 };
+
+const applePlace = (from: typeof ITSUKUSHIMA, extra: Partial<ShioriPlace> = {}): ShioriPlace => ({
+  id: `apple-${from.id}`, name: from.name, lat: from.latitude, lon: from.longitude, stayMinutes: 60, ...extra,
+});
+
+const tripWithApple = (): ShioriTrip => ({
+  ...emptyTrip,
+  cityId: "hiroshima",
+  cityName: "広島",
+  days: 2,
+  places: [
+    { id: "wikidata-Q1", name: "原爆ドーム", lat: 34.39555, lon: 132.45358, stayMinutes: 30, kind: "memorial", img: "Genbaku Dome.jpg" },
+    applePlace(ITSUKUSHIMA, { day: 2, kind: "shinto shrine" }),
+    applePlace(MUSEUM, { kind: "museum", reserve: { day: 1, time: "10:00" }, day: 1, stayMinutes: 90 }),
+    { id: "hotpepper-J000123456", name: "お好み焼き 長田屋", lat: 34.3952, lon: 132.4527, stayMinutes: 60, kind: "restaurant", meal: "lunch" },
+    { id: "osm-node-42", name: "縮景園", lat: 34.4006, lon: 132.4673, stayMinutes: 60 },
+  ],
+  hotel: { name: HOTEL.name, lat: HOTEL.latitude, lon: HOTEL.longitude, id: `apple-${HOTEL.id}` },
+});
+
+const appleTexts = [ITSUKUSHIMA, MUSEUM, HOTEL].flatMap((entry) => [entry.name, entry.latitude.toFixed(4), entry.longitude.toFixed(4)]);
+
+test("each stop's source is read from its id, and only Apple's are kept as their Place ID", () => {
+  assert.equal(placeSource("apple-I7EA0EDCABFD8E819"), "apple");
+  // The open lookup named its Apple hits maps-<id>: the same Apple place.
+  assert.equal(placeSource("maps-I7EA0EDCABFD8E819"), "apple");
+  assert.equal(canonicalPlaceId("maps-I7EA0EDCABFD8E819"), "apple-I7EA0EDCABFD8E819");
+  assert.equal(placeSource("apple-34.29604,132.31969"), "apple-legacy");
+  assert.equal(placeSource("maps-34.29604,132.31969"), "apple-legacy");
+  assert.equal(placeSource("wikidata-Q1"), "wikidata");
+  assert.equal(placeSource("hotpepper-J000123456"), "hotpepper");
+  assert.equal(placeSource("osm-node-42"), "osm");
+  assert.equal(placeSource(undefined), "other");
+});
+
+test("no Apple name, address, category or position is ever in the saved trip or its link", () => {
+  const encoded = encodeTrip(tripWithApple());
+  const text = Buffer.from(encoded, "base64url").toString("utf8");
+  for (const kept of appleTexts) assert.equal(text.includes(kept), false, `${kept} is kept`);
+  const wire = wireOf(encoded);
+  // Apple stops: the Place ID and the traveller's own settings.
+  assert.deepEqual(wire.s[1], ["apple-I7EA0EDCABFD8E819", "", 0, 0, 60, 2, null, null, null]);
+  assert.deepEqual(wire.s[2], ["apple-I63802885C8189B2B", "", 0, 0, 90, 1, "museum", null, null, [1, 600]]);
+  assert.deepEqual(wire.h, ["", 0, 0, "apple-IA1B2C3D4E5F60718"]);
+  // Everyone else's places are kept as they always were.
+  assert.deepEqual(wire.s[0], ["wikidata-Q1", "原爆ドーム", 34.39555, 132.45358, 30, null, "memorial", "Genbaku Dome.jpg", null]);
+  assert.deepEqual(wire.s[3], ["hotpepper-J000123456", "お好み焼き 長田屋", 34.3952, 132.4527, 60, null, "restaurant", null, "lunch"]);
+  assert.deepEqual(wire.s[4], ["osm-node-42", "縮景園", 34.4006, 132.4673, 60, null, null, null, null]);
+});
+
+test("whatever a trip in hand holds, its Apple places leave nothing of Apple's in the link (each kind word, each setting)", () => {
+  const kinds = ["shinto shrine", "Cafe", "museum", "restaurant", "Apple's own category", "cafe", "theme park"];
+  for (const [index, kind] of kinds.entries()) {
+    const place = applePlace({ id: `IFAKE${String(index).padStart(11, "0")}`, name: `Apple の名前 ${index}`, latitude: 35.123456 + index, longitude: 139.654321 }, {
+      kind, meal: index % 2 ? "dinner" : undefined, day: (index % 3) + 1, img: "Something.jpg", desc: "Apple's words",
+    });
+    const text = Buffer.from(encodeTrip({ ...emptyTrip, places: [place] }), "base64url").toString("utf8");
+    assert.equal(/Apple の名前|35\.12|139\.65|Something\.jpg|Apple's/.test(text), false, text);
+    // The booklet's own kind words are kept; Apple's category text never is.
+    assert.equal(text.includes(`"${kind}"`), OWN_KINDS.has(kind), `${kind}: ${text}`);
+  }
+});
+
+test("a new link opens with the same places, the Apple ones waiting for their lookup", () => {
+  const trip = tripWithApple();
+  const opened = decodeTrip(encodeTrip(trip))!;
+  assert.deepEqual(opened.places.map((place) => place.id), trip.places.map((place) => place.id));
+  assert.deepEqual(opened.places[1], { id: "apple-I7EA0EDCABFD8E819", name: "", lat: 0, lon: 0, stayMinutes: 60, day: 2, pending: true });
+  assert.deepEqual(opened.places[2], { id: "apple-I63802885C8189B2B", name: "", lat: 0, lon: 0, stayMinutes: 90, day: 1, kind: "museum", reserve: { day: 1, time: "10:00" }, pending: true });
+  assert.deepEqual(opened.hotel, { name: "", lat: 0, lon: 0, id: "apple-IA1B2C3D4E5F60718", pending: true });
+  assert.deepEqual(pendingAppleIds(opened), [ITSUKUSHIMA.id, MUSEUM.id, HOTEL.id]);
+  // Waiting places are set aside for planning, never removed.
+  const usable = plannableTrip(opened);
+  assert.deepEqual(usable.places.map((place) => place.id), ["wikidata-Q1", "hotpepper-J000123456", "osm-node-42"]);
+  assert.equal(usable.hotel, null);
+  assert.equal(opened.places.length, 5);
+  // The lookup's answer fills them in, in memory; one Apple did not answer stays waiting.
+  const filled = withAppleDetails(opened, new Map([[ITSUKUSHIMA.id, ITSUKUSHIMA], [HOTEL.id, HOTEL]]));
+  assert.deepEqual(filled.places[1], { id: "apple-I7EA0EDCABFD8E819", name: "嚴島神社", lat: 34.2960364, lon: 132.31969, stayMinutes: 60, day: 2 });
+  assert.equal(filled.places[2].pending, true);
+  assert.deepEqual(filled.hotel, { name: HOTEL.name, lat: HOTEL.latitude, lon: HOTEL.longitude, id: "apple-IA1B2C3D4E5F60718" });
+  assert.deepEqual(pendingAppleIds(filled), [MUSEUM.id]);
+  // Filling in changes nothing that is kept.
+  assert.equal(encodeTrip(filled), encodeTrip(opened));
+  assert.equal(encodeTrip(filled), encodeTrip(trip));
+});
+
+test("a link made before this change opens with the same places, and is saved again without Apple's data", () => {
+  // As the booklet wrote it until now: Apple's name and position beside the id, maps-<id> from the open lookup, a hotel with no id.
+  const old = linkOf({
+    v: 1, c: "hiroshima", n: "広島", d: 2, p: "standard",
+    s: [
+      ["wikidata-Q1", "原爆ドーム", 34.39555, 132.45358, 30, null, "memorial", "Genbaku Dome.jpg", null],
+      ["apple-I7EA0EDCABFD8E819", "嚴島神社", 34.29604, 132.31969, 60, 2, "shinto shrine", null, null],
+      ["maps-I63802885C8189B2B", "広島平和記念資料館", 34.39155, 132.45254, 90, null, "museum", null, null, [1, 600]],
+      ["apple-IABCDEF0123456789", "お好み村", 34.3925, 132.4612, 90, 1, "restaurant", null, "dinner"],
+    ],
+    h: ["宮島の宿 みやじま", 34.29718, 132.32411],
+  });
+  const opened = decodeTrip(old)!;
+  assert.deepEqual(opened.places.map((place) => [place.id, place.name, place.stayMinutes, place.day ?? null, place.kind ?? null, place.meal ?? null, place.pending ?? false]), [
+    ["wikidata-Q1", "原爆ドーム", 30, null, "memorial", null, false],
+    ["apple-I7EA0EDCABFD8E819", "", 60, 2, null, null, true],
+    ["apple-I63802885C8189B2B", "", 90, 1, "museum", null, true],
+    ["apple-IABCDEF0123456789", "", 90, 1, "restaurant", "dinner", true],
+  ]);
+  assert.deepEqual(opened.places[2].reserve, { day: 1, time: "10:00" });
+  // A hotel from before hotels had ids is kept as it was until it is found again by name.
+  assert.deepEqual(opened.hotel, { name: "宮島の宿 みやじま", lat: 34.29718, lon: 132.32411 });
+  assert.deepEqual(appleRematches(opened), [{ key: "hotel", name: "宮島の宿 みやじま", lat: 34.29718, lon: 132.32411 }]);
+  // Saved again at once in the new form: Apple's names and positions of its places are gone.
+  const resaved = resavedForm(old)!;
+  assert.ok(resaved);
+  const text = Buffer.from(resaved, "base64url").toString("utf8");
+  for (const gone of ["嚴島神社", "34.29604", "広島平和記念資料館", "お好み村", "maps-"]) assert.equal(text.includes(gone), false, gone);
+  assert.ok(text.includes("原爆ドーム"));
+  assert.equal(resavedForm(resaved), null);
+  assert.deepEqual(decodeTrip(resaved), opened);
+  // Found again under its Place ID, the hotel is kept as that ID too.
+  const found = withRematch(opened, "hotel", HOTEL.id, HOTEL);
+  assert.deepEqual(wireOf(encodeTrip(found)).h, ["", 0, 0, "apple-IA1B2C3D4E5F60718"]);
+});
+
+test("one Apple place under both of its old names is one place; any other repeat still opens nothing", () => {
+  const twice = linkOf({ v: 1, c: null, n: "", d: 1, p: "standard", s: [
+    ["maps-I7EA0EDCABFD8E819", "嚴島神社", 34.29604, 132.31969, 60, null, null, null, null],
+    ["apple-I7EA0EDCABFD8E819", "嚴島神社", 34.29604, 132.31969, 60, null, null, null, null],
+  ], h: null });
+  assert.deepEqual(decodeTrip(twice)?.places.map((place) => place.id), ["apple-I7EA0EDCABFD8E819"]);
+  const forged = linkOf({ v: 1, c: null, n: "", d: 1, p: "standard", s: [["osm-1", "A", 35, 135, 60, null, null, null], ["osm-1", "A", 35, 135, 60, null, null, null]], h: null });
+  assert.equal(decodeTrip(forged), null);
+});
+
+test("an Apple stop saved with no Place ID is kept as it was until it is found again by its very name, then kept as the ID", () => {
+  const legacy: ShioriTrip = { ...emptyTrip, places: [{ id: "apple-34.29604,132.31969", name: "嚴島神社", lat: 34.29604, lon: 132.31969, stayMinutes: 60, day: 1 }] };
+  const opened = decodeTrip(encodeTrip(legacy))!;
+  assert.deepEqual(opened, legacy);
+  assert.deepEqual(appleRematches(opened), [{ key: "apple-34.29604,132.31969", name: "嚴島神社", lat: 34.29604, lon: 132.31969 }]);
+  const found = withRematch(opened, "apple-34.29604,132.31969", ITSUKUSHIMA.id, ITSUKUSHIMA);
+  assert.deepEqual(found.places, [{ id: "apple-I7EA0EDCABFD8E819", name: "嚴島神社", lat: 34.2960364, lon: 132.31969, stayMinutes: 60, day: 1 }]);
+  assert.deepEqual(wireOf(encodeTrip(found)).s, [["apple-I7EA0EDCABFD8E819", "", 0, 0, 60, 1, null, null, null]]);
+  assert.deepEqual(appleRematches(found), []);
+  // Found again as a place the trip already has: one place, not two.
+  const both = { ...opened, places: [...opened.places, applePlace(ITSUKUSHIMA)] };
+  assert.deepEqual(withRematch(both, "apple-34.29604,132.31969", ITSUKUSHIMA.id, ITSUKUSHIMA).places.map((place) => place.id), ["apple-I7EA0EDCABFD8E819"]);
+});
+
+test("a hotel from the open lookup keeps its name and where it was found", () => {
+  const trip: ShioriTrip = { ...emptyTrip, places: [applePlace(MUSEUM)], hotel: { name: "駅前ホテル", lat: 34.3975, lon: 132.4753, id: "osm-node-7" } };
+  assert.deepEqual(wireOf(encodeTrip(trip)).h, ["駅前ホテル", 34.3975, 132.4753, "osm-node-7"]);
+  assert.deepEqual(decodeTrip(encodeTrip(trip))?.hotel, trip.hotel);
+  assert.deepEqual(appleRematches(trip), []);
+});
+
+test("choosing a waiting Apple place again from a search puts it in hand; the open lookup's Apple hit is the same Apple place", () => {
+  const opened = decodeTrip(encodeTrip({ ...emptyTrip, places: [applePlace(ITSUKUSHIMA, { day: 2 })] }))!;
+  const chosen = putPlace(opened, applePlace(ITSUKUSHIMA));
+  assert.deepEqual(chosen.places, [{ id: "apple-I7EA0EDCABFD8E819", name: "嚴島神社", lat: 34.2960364, lon: 132.31969, stayMinutes: 60, day: 2 }]);
+  const hit = openCandidate({ id: "maps-I7EA0EDCABFD8E819", name: "嚴島神社", latitude: 34.296, longitude: 132.3197, planningDurationMinutes: 60 }, null, 100);
+  assert.equal(hit?.id, "apple-I7EA0EDCABFD8E819");
+  // One with no Place ID could not be kept, so it is not offered.
+  assert.equal(openCandidate({ id: "maps-34.29600,132.31970", name: "嚴島神社", latitude: 34.296, longitude: 132.3197, planningDurationMinutes: 60 }, null, 100), null);
+});
+
+test("every kind word the booklet gives a map category is one it may keep", async () => {
+  const { kindOfCategory } = await import("../lib/shiori/add-search.ts");
+  for (const category of ["Restaurant", "Cafe", "Bakery", "Hotel", "Museum", "Park", "Store", "Nightlife", "Theater", "Zoo", "Aquarium", "AmusementPark", "Beach", "NationalPark", "Winery", "Brewery", "FoodMarket"]) {
+    assert.ok(OWN_KINDS.has(kindOfCategory(category)!), category);
+  }
+});

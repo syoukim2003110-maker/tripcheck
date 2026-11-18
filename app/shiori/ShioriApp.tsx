@@ -5,8 +5,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, 
 
 import { fetchAppleFoodCandidates } from "../../lib/apple-food";
 import { budgetLabel, fetchHotpepperShops, inJapan, lunchPrice, searchHotpepperShops, shopsForMeal, type HotpepperShop } from "../../lib/hotpepper-client";
-import { placeCardsAvailable } from "../../lib/apple-place-card";
-import { AppleRelayError, appleRelayClient, appleRelaySearch, appleRelayUrl } from "../../lib/apple-relay-client";
+import { placeCardsAvailable, placeNameCertainty } from "../../lib/apple-place-card";
+import { AppleRelayError, appleRelayClient, appleRelayPlaces, appleRelaySearch, appleRelayUrl } from "../../lib/apple-relay-client";
 import { defaultFoodDiscoveryQuery, type FoodCandidate } from "../../lib/google-food";
 import { rerankHotelCandidates } from "../../lib/apple-hotels";
 import type { HotelCandidate } from "../../lib/google-hotels";
@@ -30,6 +30,8 @@ import { buildShioriPlan, departureAfterStop, legWord, type ShioriLeg, type Shio
 import {
   MAX_DAYS,
   MAX_PLACES,
+  appleRematches,
+  applePlaceIdOf,
   decodeTrip,
   durationText,
   emptyTrip,
@@ -38,15 +40,21 @@ import {
   kindLabel,
   photoCreditUrl,
   photoUrl,
+  pendingAppleIds,
   placeFromSight,
+  placeSource,
+  plannableTrip,
+  resavedForm,
   safePlaceId,
   settledTime,
   storageStep,
   togglePlace,
   withCity,
   withFirstDayStart,
+  withAppleDetails,
   withLastDayFinish,
   withPackAnyway,
+  withRematch,
   withReservation,
   withStartDate,
   type ShioriTrip,
@@ -68,7 +76,13 @@ const MEAL_PREFS_KEY = "shiori-meal-prefs-v1";
 function readTrip(key: string) {
   try {
     const raw = window.localStorage.getItem(key);
-    return raw ? decodeTrip(raw) : null;
+    const trip = raw ? decodeTrip(raw) : null;
+    // A trip saved before Apple places were kept as their Place IDs alone is
+    // saved again at once in that form: what Apple said about its places
+    // (names, positions) leaves this device's storage as soon as it is read.
+    const resaved = raw ? resavedForm(raw) : null;
+    if (resaved) window.localStorage.setItem(key, resaved);
+    return trip;
   } catch {
     return null;
   }
@@ -398,6 +412,13 @@ const text = {
     close: "閉じる",
     mapFailed: "地図を表示できませんでした。予定は引き続き確認できます。",
     mapRailCredit: "地図上の線路と駅 Wikidata",
+    appleLoading: "Apple マップで見つけた場所を読み込んでいます…",
+    appleFailed: (count: number) => `Apple マップで見つけた場所${count}件を読み込めませんでした。読み込めるまで、その場所を外して予定を作っています（場所は消えていません）。`,
+    appleRetry: "もう一度読み込む",
+    appleGone: (count: number) => `Apple マップで見つからなくなった場所が${count}件あります。`,
+    appleGoneRemove: "リストから外す",
+    applePendingChip: "読み込み中の場所",
+    appleFailedChip: "読み込めなかった場所",
     mapStreetCredit: "一部の道のり © OpenStreetMap contributors",
     pinLabel: (dayIndex: number, position: number, name: string) => `${dayIndex + 1}日目 ${position + 1}番 ${name}`,
     hotelMark: "泊",
@@ -697,6 +718,13 @@ const text = {
     close: "Close",
     mapFailed: "The map could not be shown. Your itinerary is still available.",
     mapRailCredit: "Rail lines and stations on the map: Wikidata",
+    appleLoading: "Loading the places found on Apple Maps…",
+    appleFailed: (count: number) => `${count === 1 ? "1 place" : `${count} places`} found on Apple Maps could not be loaded. Until they load, the plan is made without them (they are still in your list).`,
+    appleRetry: "Try again",
+    appleGone: (count: number) => `${count === 1 ? "1 place is" : `${count} places are`} no longer on Apple Maps.`,
+    appleGoneRemove: "Remove from the list",
+    applePendingChip: "Place loading",
+    appleFailedChip: "Place not loaded",
     mapStreetCredit: "Some street routes © OpenStreetMap contributors",
     pinLabel: (dayIndex: number, position: number, name: string) => `Day ${dayIndex + 1}, stop ${position + 1}: ${name}`,
     hotelMark: "H",
@@ -1279,7 +1307,7 @@ function StayNear({ plan, trip, locale, onHotel }: { plan: ShioriPlan; trip: Shi
                 <div className="shiori-hotel-actions">
                   {using
                     ? <button onClick={() => onHotel(null)} type="button">{t.clearHotel}</button>
-                    : <button className="is-primary" onClick={() => onHotel({ name: hotel.name, lat: hotel.latitude, lon: hotel.longitude })} type="button">{t.useHotel}</button>}
+                    : <button className="is-primary" onClick={() => onHotel({ name: hotel.name, lat: hotel.latitude, lon: hotel.longitude, id: safePlaceId(hotel.id) })} type="button">{t.useHotel}</button>}
                   {locale === "ja" ? <a className="shiori-action-link" href={`https://kw.travel.rakuten.co.jp/keyword/Search.do?f_query=${query}`} rel="noreferrer" target="_blank">{t.searchRakuten} ↗</a> : null}
                   <a className="shiori-action-link" href={`https://www.booking.com/searchresults.html?ss=${query}`} rel="noreferrer" target="_blank">{t.searchBooking} ↗</a>
                 </div>
@@ -1481,6 +1509,63 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
     }
   }, [trip]);
 
+  // The Apple places of the trip are kept as their Place IDs alone (see
+  // placeSource in state.ts): their names and positions are asked for again
+  // here, held in this page's memory only, and the trip is planned once they
+  // are in. One that cannot be looked up (offline, a spent budget, Apple
+  // down) is set aside and said so — never removed — until it can be.
+  const appleIds = useMemo(() => pendingAppleIds(trip), [trip]);
+  const appleKey = appleIds.join(",");
+  const [appleLookup, setAppleLookup] = useState<{ asking: string[]; failed: string[]; gone: string[] }>({ asking: [], failed: [], gone: [] });
+  /* eslint-disable react-hooks/set-state-in-effect -- the answer of an outside lookup, kept in state */
+  useEffect(() => {
+    if (!appleKey) return;
+    const wanted = appleKey.split(",").filter((id) => !appleLookup.asking.includes(id) && !appleLookup.failed.includes(id) && !appleLookup.gone.includes(id));
+    if (wanted.length === 0) return;
+    if (!appleRelayUrl()) {
+      setAppleLookup((now) => ({ ...now, failed: [...now.failed, ...wanted] }));
+      return;
+    }
+    setAppleLookup((now) => ({ ...now, asking: [...now.asking, ...wanted] }));
+    const settle = (failed: string[], gone: string[]) => setAppleLookup((now) => ({
+      asking: now.asking.filter((id) => !wanted.includes(id)),
+      failed: [...now.failed, ...failed],
+      gone: [...now.gone, ...gone],
+    }));
+    appleRelayPlaces(wanted, locale === "ja" ? "ja-JP" : "en-US").then((answer) => {
+      if (answer.found.size > 0) setTrip((current) => withAppleDetails(current, answer.found));
+      settle(wanted.filter((id) => !answer.found.has(id) && !answer.notFound.has(id)), wanted.filter((id) => answer.notFound.has(id)));
+    }, () => settle(wanted, []));
+    // Asked once per id; "try again" clears the failed ones and so asks anew.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appleKey, appleLookup.failed.length, locale]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+  const appleWaiting = appleIds.some((id) => !appleLookup.failed.includes(id) && !appleLookup.gone.includes(id));
+  const appleFailed = appleIds.filter((id) => appleLookup.failed.includes(id));
+  const appleGone = appleIds.filter((id) => appleLookup.gone.includes(id));
+  const retryApple = () => setAppleLookup((now) => ({ ...now, failed: [] }));
+
+  // A stop kept from before Place IDs were kept, with no Place ID to look it
+  // up by (and a hotel chosen before hotels had ids), is looked for once per
+  // visit by its very name where it is; found, it is kept as its Place ID.
+  const rematches = useMemo(() => appleRematches(trip), [trip]);
+  const rematchTried = useRef(new Set<string>());
+  useEffect(() => {
+    if (!appleRelayClient()) return;
+    for (const stop of rematches) {
+      const tried = `${stop.key}|${stop.name}`;
+      if (rematchTried.current.has(tried)) continue;
+      rematchTried.current.add(tried);
+      void appleRelaySearch({ query: stop.name, language: locale === "ja" ? "ja-JP" : "en-US", near: { latitude: stop.lat, longitude: stop.lon }, withinMeters: 500 }).then((results) => {
+        const same = results.find((result) => result.id && /^[A-Za-z0-9]{4,64}$/.test(result.id) && placeNameCertainty(result.name, stop.name) === 2);
+        if (same?.id) setTrip((current) => withRematch(current, stop.key, same.id!, same));
+      }, () => undefined);
+    }
+  }, [rematches, locale]);
+
+  // What can be planned and drawn now: the trip without the Apple places still being looked up.
+  const usable = useMemo(() => plannableTrip(trip), [trip]);
+
   useEffect(() => {
     const cityId = trip.cityId;
     if (!cityId || !railCities?.includes(cityId)) return;
@@ -1511,7 +1596,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
   // A trip with a city waits for the city list: asking about the middle of
   // the places first and the city's centre a moment later would be two
   // questions where one is promised.
-  const centre = useMemo(() => (trip.cityId && cities.length === 0 ? null : forecastCentre(city, trip.places)), [trip.cityId, cities.length, city, trip.places]);
+  const centre = useMemo(() => (trip.cityId && cities.length === 0 ? null : forecastCentre(city, usable.places)), [trip.cityId, cities.length, city, usable.places]);
   const centreLat = centre?.latitude ?? null;
   const centreLon = centre?.longitude ?? null;
   const startDate = trip.startDate ?? null;
@@ -1540,15 +1625,18 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
   const wetDays = useMemo(() => (weather ? wetDaysOf(weather.byIndex, trip.days) : null), [weather, trip.days]);
   // The forecast is part of what the plan is made from: a plan numbered for
   // one forecast is not shown for another.
-  const planKey = useMemo(() => screen === "plan" ? `${planVisit}|${locale}|${encodeTrip(trip)}|${JSON.stringify(wetDays)}` : null, [screen, planVisit, locale, trip, wetDays]);
+  // (encodeTrip leaves out what Apple says about its places, so the Place IDs still waiting are part of the key.)
+  const planKey = useMemo(() => screen === "plan" ? `${planVisit}|${locale}|${encodeTrip(trip)}|${appleKey}|${JSON.stringify(wetDays)}` : null, [screen, planVisit, locale, trip, appleKey, wetDays]);
   const [planned, setPlanned] = useState<{ key: string; visit: number; plan: ShioriPlan } | null>(null);
   useEffect(() => {
-    if (!planKey) return;
+    // The Apple places being looked up are waited for: a plan made without
+    // them and made again a moment later would move every stop twice.
+    if (!planKey || appleWaiting) return;
     const handle = window.setTimeout(() => {
-      setPlanned({ key: planKey, visit: planVisit, plan: buildShioriPlan({ places: trip.places, days: trip.days, hotel: trip.hotel, locale, wetDays, firstDayStart: trip.firstDayStart ?? null, lastDayFinish: trip.lastDayFinish ?? null, packAnyway: trip.packAnyway === true }, { rail, cities, routes }) });
+      setPlanned({ key: planKey, visit: planVisit, plan: buildShioriPlan({ places: usable.places, days: usable.days, hotel: usable.hotel, locale, wetDays, firstDayStart: usable.firstDayStart ?? null, lastDayFinish: usable.lastDayFinish ?? null, packAnyway: usable.packAnyway === true }, { rail, cities, routes }) });
     }, 0);
     return () => window.clearTimeout(handle);
-  }, [planKey, planVisit, trip, rail, cities, locale, routes, wetDays]);
+  }, [planKey, planVisit, usable, appleWaiting, rail, cities, locale, routes, wetDays]);
   // A plan made on an earlier visit to this screen is another trip's plan.
   const plan = screen === "plan" && planned && planned.visit === planVisit ? planned.plan : null;
   const planning = screen === "plan" && planned?.key !== planKey;
@@ -1851,7 +1939,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
 
   const putCandidate = (candidate: AddCandidate, kind: AddKind) => {
     if (kind === "hotel") {
-      update((current) => ({ ...current, hotel: { name: candidate.name, lat: candidate.lat, lon: candidate.lon } }));
+      update((current) => ({ ...current, hotel: { name: candidate.name, lat: candidate.lat, lon: candidate.lon, id: candidate.id } }));
     } else {
       update((current) => putPlace(current, placeOfCandidate(candidate, kind)));
     }
@@ -1865,7 +1953,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
   // One name looked up near the trip. `mapFailed` hears why the map search
   // could not be asked; the lookup itself still falls back to the open one.
   const lookUp = (name: string, kind: AddKind, isCurrent: () => boolean, mapFailed?: (error: unknown) => void, openFailed?: () => void) => {
-    const anchor = addAnchor(city, trip.places);
+    const anchor = addAnchor(city, usable.places);
     const reach = (city?.radiusKm ?? 60) + 80;
     return searchAddCandidates({
       poiFirst: kind !== "place",
@@ -1881,9 +1969,11 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
       // of which city this is.
       openLookup: async () => {
         try {
-          const context = trip.places.length >= 2 || !city
-            ? trip.places.map((place) => place.name)
-            : [...trip.places.map((place) => place.name), ...city.sights.slice(0, 3).map((sight) => locale === "ja" ? sight.ja : sight.en)];
+          // The open lookup asks open services: Apple's names of places are not sent there.
+          const named = usable.places.filter((place) => placeSource(place.id) !== "apple").map((place) => place.name);
+          const context = named.length >= 2 || !city
+            ? named
+            : [...named, ...city.sights.slice(0, 3).map((sight) => locale === "ja" ? sight.ja : sight.en)];
           const result = await requestPlaceResolution([...context, name].join("\n"), "", locale);
           // The first of several the lookup could not decide between is a guess, and is carried as one.
           const found = openLookupHit(result, name);
@@ -1924,7 +2014,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
   const checkBulk = async (lines: BulkLine[]) => {
     const run = ++bulkRun.current;
     const isCurrent = () => run === bulkRun.current;
-    const anchor = addAnchor(city, trip.places);
+    const anchor = addAnchor(city, usable.places);
     setBulk((current) => current ? { ...current, lines, busy: true, stopped: null } : current);
     const outcome = await resolveBulk(lines, {
       local: (name) => city ? bundledMatches(name, city.sights, locale, anchor) : [],
@@ -2093,9 +2183,9 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
       {extras.length > 0 || trip.hotel ? (
         <ul className="shiori-chips is-own">
           {extras.map((place) => (
-            <li key={place.id}><button onClick={() => update((current) => togglePlace(current, place))} type="button">{place.meal ? <small>{`${t.mealShort[place.meal]}: `}</small> : null}{place.name}<i aria-hidden="true"> ×</i></button></li>
+            <li key={place.id}><button onClick={() => update((current) => togglePlace(current, place))} type="button">{place.meal ? <small>{`${t.mealShort[place.meal]}: `}</small> : null}{place.pending ? appleWaiting ? t.applePendingChip : t.appleFailedChip : place.name}<i aria-hidden="true"> ×</i></button></li>
           ))}
-          {trip.hotel ? <li><button onClick={() => update((current) => ({ ...current, hotel: null }))} type="button"><small>{t.hotelChip}: </small>{trip.hotel.name}<i aria-hidden="true"> ×</i></button></li> : null}
+          {trip.hotel ? <li><button onClick={() => update((current) => ({ ...current, hotel: null }))} type="button"><small>{t.hotelChip}: </small>{trip.hotel.pending ? appleWaiting ? t.applePendingChip : t.appleFailedChip : trip.hotel.name}<i aria-hidden="true"> ×</i></button></li> : null}
         </ul>
       ) : null}
       <div className="shiori-bulk">
@@ -2209,7 +2299,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
               go("plan");
             }} type="button">
               <Icon name="clock" />
-              <span>{index === 0 ? t.resume : t.resumePrevious}：{candidate.cityName || candidate.places[0]?.name} ・ {candidate.places.length}</span>
+              <span>{index === 0 ? t.resume : t.resumePrevious}：{candidate.cityName || candidate.places.find((place) => place.name)?.name} ・ {candidate.places.length}</span>
             </button>
           )] : [])}
         </section>
@@ -2403,7 +2493,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
   );
 
   const dayColor = (index: number) => DAY_COLORS[index % DAY_COLORS.length];
-  const cityTitle = trip.cityName || trip.places[0]?.name || "";
+  const cityTitle = trip.cityName || trip.places.find((place) => place.name)?.name || "";
   const planTitle = t.planTitle(cityTitle, trip.days);
   const partOf = (clock: string) => {
     const hour = Number(clock.slice(0, 2));
@@ -2438,6 +2528,24 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
             <h1>{planTitle}</h1>
             <p className="shiori-cover-meta">{t.coverMeta(trip.days, trip.places.length)}</p>
           </div>
+
+          {/* Apple places that are not in hand: said once, above the plan that is made without them. */}
+          {appleWaiting ? <p aria-live="polite" className="shiori-working">{t.appleLoading}</p> : null}
+          {appleFailed.length > 0 || appleGone.length > 0 ? (
+            <div className="shiori-notices shiori-screen-only" role="status">
+              {appleFailed.length > 0 ? <p><span>{t.appleFailed(appleFailed.length)}</span> <button onClick={retryApple} type="button">{t.appleRetry}</button></p> : null}
+              {appleGone.length > 0 ? (
+                <p>
+                  <span>{t.appleGone(appleGone.length)}</span>{" "}
+                  <button onClick={() => update((current) => ({
+                    ...current,
+                    places: current.places.filter((place) => !(place.pending && appleGone.includes(applePlaceIdOf(place.id) ?? ""))),
+                    hotel: current.hotel?.pending && appleGone.includes(applePlaceIdOf(current.hotel.id) ?? "") ? null : current.hotel,
+                  }))} type="button">{t.appleGoneRemove}</button>
+                </p>
+              ) : null}
+            </div>
+          ) : null}
 
           {plan && problems.length > 0 ? (
             <section aria-label={t.noticesTitle} className="shiori-notices">
@@ -2684,7 +2792,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
               <ShioriMap
                 days={plan.days}
                 focus={focus}
-                hotel={trip.hotel}
+                hotel={usable.hotel}
                 label={t.mapLabel}
                 legend={{ rail: t.legendRail, street: t.legendWalk, straight: t.legendOther }}
                 locale={locale}
@@ -2750,7 +2858,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
 
           <section className="shiori-plan-add">{addForm}</section>
 
-          {plan ? <StayNear locale={locale} onHotel={(hotel) => update((current) => ({ ...current, hotel }))} plan={plan} trip={trip} /> : null}
+          {plan ? <StayNear locale={locale} onHotel={(hotel) => update((current) => ({ ...current, hotel }))} plan={plan} trip={usable} /> : null}
 
           {usedDays === 0 && plan ? <p className="shiori-quiet">{t.needOne}</p> : null}
           {toeiRide && !startDate ? <p className="shiori-quiet">{t.timetableHint}</p> : null}

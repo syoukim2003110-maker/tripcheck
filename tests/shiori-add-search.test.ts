@@ -3,7 +3,9 @@ import test from "node:test";
 
 import { addAnchor, addCandidates, kindOfCategory, kmBetween } from "../lib/shiori/add-search.ts";
 
-const place = (name: string, latitude: number, longitude: number, id: string | null = name) => ({
+// An Apple Place ID is letters and digits ("I63802885C8189B2B"); one is made up from the name here.
+const idOf = (name: string) => `I${Buffer.from(name).toString("hex").slice(0, 15).toUpperCase()}`.padEnd(4, "0");
+const place = (name: string, latitude: number, longitude: number, id: string | null = idOf(name)) => ({
   id, name, latitude, longitude, formattedAddress: `${name}の住所`, locality: null, subLocality: null, countryCode: "JP", poiCategory: "Restaurant",
 });
 const TOKYO = { lat: 35.6812, lon: 139.7671 };
@@ -21,9 +23,9 @@ test("a same-named shop in another city is not offered", () => {
 
 test("candidates keep the map's order, drop doubles and stop at the limit", () => {
   const anchor = addAnchor(TOKYO, []);
-  const results = [place("A", 35.68, 139.76), place("A", 35.68, 139.76, "other-id"), place("B", 35.69, 139.77), place("C", 35.7, 139.78)];
+  const results = [place("A", 35.68, 139.76), place("A", 35.68, 139.76, "OTHERID1"), place("B", 35.69, 139.77), place("C", 35.7, 139.78)];
   assert.deepEqual(addCandidates(results, anchor, 100, 2).map((entry) => entry.name), ["A", "B"]);
-  assert.equal(addCandidates(results, anchor, 100)[0].id, "apple-A");
+  assert.equal(addCandidates(results, anchor, 100)[0].id, `apple-${idOf("A")}`);
 });
 
 test("with no city the middle of the chosen places is the anchor, and with nothing chosen nothing is filtered", () => {
@@ -40,7 +42,7 @@ test("distances and kind labels", () => {
   assert.equal(kindOfCategory(null), null);
 });
 
-test("an id the map returns can always be saved with the trip", async () => {
+test("only a hit with an Apple Place ID is offered, and the trip keeps it as that ID alone", async () => {
   const { decodeTrip, emptyTrip, encodeTrip } = await import("../lib/shiori/state.ts");
   const found = addCandidates([
     place("Slash", 35.68, 139.76, "I/7+A=="),
@@ -48,9 +50,10 @@ test("an id the map returns can always be saved with the trip", async () => {
     place("Plain", 35.7, 139.78, "I63802885C8189B2B"),
     place("No id", 35.71, 139.79, null),
   ], addAnchor(TOKYO, []), 100);
-  assert.equal(found.length, 4);
-  for (const entry of found) assert.match(entry.id, /^[\w.:,@-]{1,160}$/);
-  assert.equal(found[2].id, "apple-I63802885C8189B2B");
+  // A hit with no Place ID could be shown but never kept, so it is not offered.
+  assert.deepEqual(found.map((entry) => entry.id), ["apple-I63802885C8189B2B"]);
   const trip = { ...emptyTrip, places: found.map((entry) => ({ id: entry.id, name: entry.name, lat: entry.lat, lon: entry.lon, stayMinutes: 60 })) };
-  assert.equal(decodeTrip(encodeTrip(trip))?.places.length, 4);
+  const encoded = encodeTrip(trip);
+  assert.doesNotMatch(Buffer.from(encoded, "base64url").toString("utf8"), /Plain|35\.7|139\.78/);
+  assert.deepEqual(decodeTrip(encoded)?.places, [{ id: "apple-I63802885C8189B2B", name: "", lat: 0, lon: 0, stayMinutes: 60, pending: true }]);
 });

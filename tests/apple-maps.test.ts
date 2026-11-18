@@ -176,7 +176,8 @@ test("a revoked access token is exchanged once; quota and outages are distinct e
 
 test("meal candidates are ordered by distance and never claim a rating", async () => {
   const places = (names: Array<[string, number]>) => names.map(([name, offset]) => ({
-    id: name,
+    // (An Apple Place ID is letters and digits; one is made from the name.)
+    id: `I${Buffer.from(name).toString("hex").slice(0, 20).toUpperCase()}`,
     name,
     latitude: 35.7148 + offset,
     longitude: 139.7967,
@@ -210,7 +211,9 @@ test("meal candidates are ordered by distance and never claim a rating", async (
   assert.deepEqual(candidates.map((candidate) => candidate.name), ["近い店", "遠い店", "もっと遠い店"]);
   assert.ok(candidates.every((candidate) => candidate.rating === null && candidate.userRatingCount === null));
   assert.ok(candidates[0].distanceMeters! < candidates[1].distanceMeters!);
-  assert.match(candidates[0].googleMapsUrl, /^https:\/\/www\.google\.com\/maps\/search\/\?api=1&query=/);
+  // Apple's place opens in Apple Maps: Apple's data is not handed to another map.
+  assert.match(candidates[0].googleMapsUrl, /^https:\/\/maps\.apple\.com\/\?q=/);
+  assert.match(candidates[0].id, /^apple-I[0-9A-F]+$/);
 });
 
 test("Apple only sees the wishlist lines the open sources could not settle", async () => {
@@ -271,7 +274,7 @@ test("Apple only sees the wishlist lines the open sources could not settle", asy
 test("hotel candidates are ordered by how little the whole trip has to travel", async () => {
   const { fetchAppleHotelCandidates } = await import("../lib/apple-hotels.ts");
   const hotel = (name: string, latitude: number, longitude: number) => ({
-    id: name, name, latitude, longitude, formattedAddress: "東京都", poiCategory: "Hotel",
+    id: `I${Buffer.from(name).toString("hex").slice(0, 20).toUpperCase()}`, name, latitude, longitude, formattedAddress: "東京都", poiCategory: "Hotel",
   });
   const searches: Array<{ query: string; withinMeters: number; poiCategories: readonly string[] }> = [];
   const client = {

@@ -96,9 +96,21 @@ export type ShioriPlace = {
    * (see planOnce).
    */
   anyHour?: true;
+  /**
+   * A place found through Apple whose name and position are not in hand:
+   * the trip keeps such a place as its Apple Place ID alone, and they are
+   * looked up again each time it is opened (lib/shiori/state.ts). Until
+   * then its name is "" and its position 0,0: it is never planned, never
+   * drawn and never sent anywhere.
+   */
+  pending?: true;
 };
 
-export type ShioriHotel = { name: string; lat: number; lon: number };
+/**
+ * Where the traveller sleeps. `id` says where it was found (as a place's id
+ * does); a hotel chosen before ids existed has none. `pending` as for a place.
+ */
+export type ShioriHotel = { name: string; lat: number; lon: number; id?: string; pending?: true };
 
 export type ShioriInput = {
   places: ShioriPlace[];

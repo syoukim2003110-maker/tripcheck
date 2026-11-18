@@ -1,6 +1,6 @@
 import type { AppleRelayPlace } from "../apple-relay-client";
 import type { ShioriPlace } from "./plan.ts";
-import { safePlaceId, togglePlace, type ShioriTrip } from "./state.ts";
+import { appleStopId, canonicalPlaceId, placeSource, safePlaceId, togglePlace, type ShioriTrip } from "./state.ts";
 
 /*
  * Looking up a place the traveller typed in. The map search is asked near the
@@ -58,8 +58,11 @@ export function addCandidates(results: readonly AppleRelayPlace[], anchor: AddAn
   for (const place of results) {
     const km = anchor ? kmBetween(anchor, place) : 0;
     if (anchor && km > maxKm) continue;
-    // The map's id is text from outside: kept in the form the saved trip accepts.
-    const id = safePlaceId(place.id ? `apple-${place.id}` : `apple-${place.latitude.toFixed(5)},${place.longitude.toFixed(5)}`);
+    // A place is kept in the trip as its Apple Place ID (state.ts,
+    // placeSource): a hit without one could be shown but never kept.
+    const placeId = place.id && /^[A-Za-z0-9]{4,64}$/.test(place.id) ? place.id : null;
+    if (!placeId) continue;
+    const id = appleStopId(placeId);
     const twin = `${place.name}|${place.latitude.toFixed(3)},${place.longitude.toFixed(3)}`;
     if (seen.has(id) || seen.has(twin)) continue;
     seen.add(id);
@@ -122,9 +125,12 @@ export function openLookupHit<Hit>(
 export function openCandidate(hit: OpenLookupHit, anchor: AddAnchor | null, reachKm: number, ambiguous = false): AddCandidate | null {
   const km = anchor ? Math.hypot(hit.latitude - anchor.latitude, (hit.longitude - anchor.longitude) * Math.cos((anchor.latitude * Math.PI) / 180)) * 111 : 0;
   if (km > reachKm) return null;
+  // The open lookup's Apple hit ("maps-<id>") is an Apple place like any other; one without a Place ID cannot be kept.
+  const id = canonicalPlaceId(safePlaceId(hit.id));
+  if (placeSource(id) === "apple-legacy") return null;
   const address = "";
   return {
-    id: safePlaceId(hit.id), name: hit.name, lat: hit.latitude, lon: hit.longitude, address, category: null, km,
+    id, name: hit.name, lat: hit.latitude, lon: hit.longitude, address, category: null, km,
     ...(ambiguous || !address ? { unsure: true } : {}),
     stayMinutes: Math.min(240, Math.max(30, hit.planningDurationMinutes)),
     ...(hit.placeTypes?.[0] ? { kind: hit.placeTypes[0].replace(/_/g, " ") } : {}),
@@ -199,7 +205,13 @@ export function placeOfCandidate(candidate: AddCandidate, kind: "place" | "lunch
  * updates it (a sight that is really tonight's dinner) instead of removing it.
  */
 export function putPlace(trip: ShioriTrip, place: ShioriPlace): ShioriTrip {
+  // (A place chosen anew from a search is in hand: if the trip had it waiting to be looked up, it waits no more.)
+  const fresh = (entry: ShioriPlace) => {
+    const { pending: _dropped, ...rest } = { ...entry, ...place };
+    void _dropped;
+    return place.pending ? { ...rest, pending: true as const } : rest;
+  };
   return trip.places.some((entry) => entry.id === place.id)
-    ? { ...trip, places: trip.places.map((entry) => entry.id === place.id ? { ...entry, ...place } : entry) }
+    ? { ...trip, places: trip.places.map((entry) => entry.id === place.id ? fresh(entry) : entry) }
     : togglePlace(trip, place);
 }

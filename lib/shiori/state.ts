@@ -57,6 +57,137 @@ export function safePlaceId(raw: string) {
   return raw.replace(/[^\w.:,@-]/g, "_").slice(0, 160);
 }
 
+/* ------------------------------------------------------------------ sources */
+
+/**
+ * Where a stop came from, read from its id. This decides what of it may be
+ * kept on the traveller's device and in a share link:
+ *
+ *   - "apple": found through Apple Maps search. Apple's terms let a Place ID
+ *     be kept and shared, but not Apple's name, address, category or
+ *     position of the place (Apple Developer Program License Agreement,
+ *     Attachment 6, 2.5; Apple's Place ID article). Such a stop is kept as
+ *     `apple-<Place ID>` with only what the traveller set (stay, day, meal,
+ *     booking, and the booklet's own kind word), and its name and position
+ *     are looked up again whenever the trip is opened.
+ *   - "apple-legacy": an Apple stop saved before Place IDs were kept, with
+ *     no Place ID in it (`apple-<lat>,<lon>`). There is nothing to look it
+ *     up by, so it is kept as it was until the page has found it again by
+ *     its name (see appleRematches) and can keep it as a Place ID.
+ *   - everything else ("wikidata" bundled sights, "hotpepper" shops — name,
+ *     position and shop ID, as the guide allows — and the open lookups'
+ *     "osm" places) is kept as it always was.
+ *
+ * `maps-<id>` is how the open lookup named an Apple hit; it is the same as
+ * `apple-<id>` and is read as that.
+ */
+export type PlaceSource = "apple" | "apple-legacy" | "wikidata" | "hotpepper" | "osm" | "other";
+
+const APPLE_STOP = /^(?:apple|maps)-([A-Za-z0-9]{4,64})$/;
+const APPLE_LEGACY_STOP = /^(?:apple|maps)-(-?\d{1,2}(?:\.\d+)?),(-?\d{1,3}(?:\.\d+)?)$/;
+
+export function placeSource(id: string | undefined): PlaceSource {
+  if (!id) return "other";
+  if (APPLE_STOP.test(id)) return "apple";
+  if (APPLE_LEGACY_STOP.test(id)) return "apple-legacy";
+  if (id.startsWith("wikidata-")) return "wikidata";
+  if (id.startsWith("hotpepper-")) return "hotpepper";
+  if (id.startsWith("osm-")) return "osm";
+  return "other";
+}
+
+/** The Apple Place ID in a stop's id, or null when the stop is not an Apple place with one. */
+export function applePlaceIdOf(id: string | undefined): string | null {
+  return id ? APPLE_STOP.exec(id)?.[1] ?? null : null;
+}
+
+/** The id the trip keeps an Apple place under. */
+export const appleStopId = (placeId: string) => `apple-${placeId}`;
+
+/**
+ * An id as the trip keeps it: an Apple hit the open lookup named `maps-<id>`
+ * is `apple-<id>`, so one place is one stop whichever search found it.
+ */
+export function canonicalPlaceId(id: string) {
+  const placeId = applePlaceIdOf(id);
+  return placeId ? appleStopId(placeId) : id;
+}
+
+/**
+ * The booklet's own kind words (add-search.ts maps Apple's categories onto
+ * them; a restaurant or a café the traveller adds is named so by the
+ * booklet). One of these is a planning setting of TripCheck's, like the
+ * stay: it is the one description of an Apple place that is kept, because
+ * Apple's lookup by Place ID does not answer a category and without it a
+ * museum would be planned as a sight of no particular kind after a reload.
+ * Apple's own category text is never kept.
+ */
+export const OWN_KINDS: ReadonlySet<string> = new Set([
+  "restaurant", "cafe", "bakery", "bakery cafe", "hotel", "museum", "park", "shop", "bar", "theatre", "zoo",
+  "aquarium", "theme park", "beach", "winery", "brewery", "market",
+]);
+
+/** What the page needs to look up again: the Apple Place IDs of the stops (and hotel) whose name and position are not in hand. */
+export function pendingAppleIds(trip: ShioriTrip): string[] {
+  const ids = trip.places.flatMap((place) => place.pending ? [applePlaceIdOf(place.id) ?? ""] : []);
+  if (trip.hotel?.pending) ids.push(applePlaceIdOf(trip.hotel.id) ?? "");
+  return [...new Set(ids.filter(Boolean))];
+}
+
+export type AppleDetails = Readonly<{ name: string; latitude: number; longitude: number }>;
+
+/**
+ * The trip with the Apple places whose details have arrived filled in, in
+ * the page's memory. encodeTrip leaves them out again, so what is kept does
+ * not change. Places still missing stay pending.
+ */
+export function withAppleDetails(trip: ShioriTrip, found: ReadonlyMap<string, AppleDetails>): ShioriTrip {
+  const fill = <T extends { id?: string; pending?: true; name: string; lat: number; lon: number }>(entry: T): T => {
+    if (!entry.pending) return entry;
+    const details = found.get(applePlaceIdOf(entry.id) ?? "");
+    if (!details) return entry;
+    const { pending: _dropped, ...rest } = entry;
+    void _dropped;
+    return { ...rest, name: clipName(details.name), lat: details.latitude, lon: details.longitude } as T;
+  };
+  const places = trip.places.map(fill);
+  const hotel = trip.hotel ? fill(trip.hotel) : null;
+  return places.every((place, index) => place === trip.places[index]) && hotel === trip.hotel ? trip : { ...trip, places, hotel };
+}
+
+/** The trip as it can be planned and drawn: Apple places not yet looked up are set aside (never removed). */
+export function plannableTrip(trip: ShioriTrip): ShioriTrip {
+  if (!trip.places.some((place) => place.pending) && !trip.hotel?.pending) return trip;
+  return { ...trip, places: trip.places.filter((place) => !place.pending), hotel: trip.hotel?.pending ? null : trip.hotel };
+}
+
+/**
+ * The stops kept from before Place IDs were kept that may be Apple's: an
+ * Apple stop with no Place ID in it, and a hotel chosen before hotels had an
+ * id (most were found through Apple; the open lookup's few are found again
+ * just the same, or stay as they are). Each is looked for again by its
+ * name, around where it is; a hit of the very same name gives its Place ID.
+ */
+export function appleRematches(trip: ShioriTrip): Array<{ key: string; name: string; lat: number; lon: number }> {
+  const stops = trip.places.flatMap((place) => placeSource(place.id) === "apple-legacy" && !place.pending ? [{ key: place.id, name: place.name, lat: place.lat, lon: place.lon }] : []);
+  if (trip.hotel && !trip.hotel.id && !trip.hotel.pending && trip.hotel.name) stops.push({ key: "hotel", name: trip.hotel.name, lat: trip.hotel.lat, lon: trip.hotel.lon });
+  return stops;
+}
+
+/**
+ * The trip with a legacy stop (or the id-less hotel, key "hotel") found
+ * again under its Place ID, with what Apple says about it now. From here on
+ * it is kept as that Place ID alone. A stop whose Place ID the trip already
+ * has is the same place twice: the legacy copy goes.
+ */
+export function withRematch(trip: ShioriTrip, key: string, placeId: string, details: AppleDetails): ShioriTrip {
+  const id = appleStopId(placeId);
+  const now = { name: clipName(details.name), lat: details.latitude, lon: details.longitude };
+  if (key === "hotel") return trip.hotel && !trip.hotel.id ? { ...trip, hotel: { ...now, id } } : trip;
+  if (trip.places.some((place) => place.id === id)) return { ...trip, places: trip.places.filter((place) => place.id !== key) };
+  return { ...trip, places: trip.places.map((place) => place.id === key ? { ...place, ...now, id } : place) };
+}
+
 /** A name short enough to be read back. Cut by whole characters, so an emoji is never split in two. */
 function clipName(name: string) {
   const trimmed = name.trim();
@@ -247,7 +378,12 @@ type Wire = {
    * exactly as it always did.
    */
   s: Array<[id: string, name: string, lat: number, lon: number, stay: number, day: number | null, kind: string | null, img: string | null, meal?: "lunch" | "dinner" | null, reserve?: [day: number, minutes: number] | null]>;
-  h: [name: string, lat: number, lon: number] | null;
+  /**
+   * The hotel. A fourth element is where it was found (as a place's id); a
+   * hotel found through Apple is `["", 0, 0, "apple-<Place ID>"]`, like an
+   * Apple place. A hotel chosen before hotels had ids has three elements.
+   */
+  h: [name: string, lat: number, lon: number, id?: string] | null;
   /** Start date. Written only when there is one, so a trip without a date encodes exactly as it always did. */
   t?: string;
   /**
@@ -258,6 +394,13 @@ type Wire = {
   /** 1 when the traveller asked for everything to be planned anyway. Written only then, so any other trip encodes exactly as it always did. */
   a?: 1;
 };
+
+function hotelWire(hotel: ShioriHotel): NonNullable<Wire["h"]> {
+  if (placeSource(hotel.id) === "apple") return ["", 0, 0, canonicalPlaceId(hotel.id!)];
+  const kept: NonNullable<Wire["h"]> = [clipName(hotel.name), Number(hotel.lat.toFixed(5)), Number(hotel.lon.toFixed(5))];
+  if (hotel.id && PLACE_ID.test(hotel.id)) kept.push(hotel.id);
+  return kept;
+}
 
 function isPace(value: unknown): value is ShioriPace {
   return value === "relaxed" || value === "standard" || value === "packed";
@@ -283,22 +426,25 @@ export function encodeTrip(trip: ShioriTrip): string {
     p: trip.pace,
     s: trip.places.map((place): Wire["s"][number] => {
       const reserve = usableReservation(place.reserve);
+      // An Apple place is kept as its Place ID and what the traveller set:
+      // no name, no position, no category of Apple's (see placeSource).
+      const apple = placeSource(place.id) === "apple";
       const entry: Wire["s"][number] = [
-        place.id,
-        clipName(place.name),
-        Number(place.lat.toFixed(5)),
-        Number(place.lon.toFixed(5)),
+        apple ? canonicalPlaceId(place.id) : place.id,
+        apple ? "" : clipName(place.name),
+        apple ? 0 : Number(place.lat.toFixed(5)),
+        apple ? 0 : Number(place.lon.toFixed(5)),
         place.stayMinutes,
         // A booking's day is the place's day.
         reserve ? reserve.day : place.day ?? null,
-        place.kind && place.kind.length <= MAX_KIND ? place.kind : null,
-        place.img ?? null,
+        place.kind && place.kind.length <= MAX_KIND && (!apple || OWN_KINDS.has(place.kind)) ? place.kind : null,
+        apple ? null : place.img ?? null,
         place.meal ?? null,
       ];
       if (reserve) entry.push([reserve.day, clockOfDay(reserve.time)!]);
       return entry;
     }),
-    h: trip.hotel ? [clipName(trip.hotel.name), Number(trip.hotel.lat.toFixed(5)), Number(trip.hotel.lon.toFixed(5))] : null,
+    h: trip.hotel ? hotelWire(trip.hotel) : null,
     ...(trip.startDate ? { t: trip.startDate } : {}),
     ...(start !== null || finish !== null ? { w: [start, finish] as [number | null, number | null] } : {}),
     ...(trip.packAnyway ? { a: 1 as const } : {}),
@@ -307,6 +453,29 @@ export function encodeTrip(trip: ShioriTrip): string {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+/** The hotel as it was written; null when there is none or it is malformed. */
+function readHotel(raw: unknown): ShioriHotel | null {
+  if (!Array.isArray(raw)) return null;
+  const [name, lat, lon, id] = raw as unknown[];
+  if (typeof id === "string" && placeSource(id) === "apple") return { name: "", lat: 0, lon: 0, id: canonicalPlaceId(id), pending: true };
+  if (typeof name !== "string" || name.length > MAX_NAME || !finite(lat, -90, 90) || !finite(lon, -180, 180)) return null;
+  return { name, lat, lon, ...(typeof id === "string" && PLACE_ID.test(id) ? { id } : {}) };
+}
+
+/**
+ * What a stored trip should be saved as now that it has been read: the same
+ * trip in the form kept today, when the stored text still carries what Apple
+ * said about an Apple place (a trip or link from before Place IDs alone were
+ * kept); null when it is already in that form or cannot be read.
+ */
+export function resavedForm(raw: string, now: Date = new Date()): string | null {
+  const trip = decodeTrip(raw, now);
+  if (!trip) return null;
+  const apple = [...trip.places.map((place) => place.id), trip.hotel?.id].some((id) => placeSource(id) === "apple");
+  const kept = encodeTrip(trip);
+  return apple && kept !== raw ? kept : null;
 }
 
 const wholeMinute = (value: unknown): value is number => typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 1_439;
@@ -349,31 +518,47 @@ export function decodeTrip(encoded: string, now: Date = new Date()): ShioriTrip 
     const places: ShioriPlace[] = [];
     for (const entry of wire.s) {
       if (!Array.isArray(entry)) return null;
-      const [id, name, lat, lon, stay, day, kind, img, meal, booked] = entry as unknown[];
+      const [rawId, name, lat, lon, stay, day, kind, img, meal, booked] = entry as unknown[];
       const reserve = wholeReservation(booked);
-      if (typeof id !== "string" || !PLACE_ID.test(id) || seen.has(id)) return null;
-      if (typeof name !== "string" || name.trim().length === 0 || name.length > MAX_NAME) return null;
-      if (!finite(lat, -90, 90) || !finite(lon, -180, 180) || !finite(stay, 15, 720)) return null;
+      if (typeof rawId !== "string" || !PLACE_ID.test(rawId) || !finite(stay, 15, 720)) return null;
+      // An Apple place is read as its Place ID alone, whatever else an
+      // older link or an older save carried with it (its name and position
+      // are looked up again; see placeSource). `maps-<id>` is `apple-<id>`.
+      const apple = placeSource(rawId) === "apple";
+      const id = canonicalPlaceId(rawId);
+      if (seen.has(id)) {
+        // The same Apple place under both of its old names is one place; any other repeat is a forged list.
+        if (apple) continue;
+        return null;
+      }
+      if (!apple) {
+        if (typeof name !== "string" || name.trim().length === 0 || name.length > MAX_NAME) return null;
+        if (!finite(lat, -90, 90) || !finite(lon, -180, 180)) return null;
+      }
       seen.add(id);
-      places.push({
-        id,
-        name: name.trim(),
-        lat,
-        lon,
+      const settings = {
         stayMinutes: Math.round(stay),
         // A booking's day is the place's day.
         ...(reserve ? { day: reserve.day } : finite(day, 1, MAX_DAYS) ? { day: Math.round(day) } : {}),
-        ...(typeof kind === "string" && kind.length <= MAX_KIND ? { kind } : {}),
-        // A file name, never a URL: it is only ever appended to the Commons path.
-        ...(typeof img === "string" && img.length <= 240 && !/[\\/?#]|\.\./.test(img) ? { img } : {}),
+        ...(typeof kind === "string" && kind.length <= MAX_KIND && (!apple || OWN_KINDS.has(kind)) ? { kind } : {}),
         ...(meal === "lunch" || meal === "dinner" ? { meal } : {}),
         ...(reserve ? { reserve } : {}),
+      } satisfies Partial<ShioriPlace>;
+      if (apple) {
+        places.push({ id, name: "", lat: 0, lon: 0, ...settings, pending: true });
+        continue;
+      }
+      places.push({
+        id,
+        name: (name as string).trim(),
+        lat: lat as number,
+        lon: lon as number,
+        ...settings,
+        // A file name, never a URL: it is only ever appended to the Commons path.
+        ...(typeof img === "string" && img.length <= 240 && !/[\\/?#]|\.\./.test(img) ? { img } : {}),
       });
     }
-    const hotel = Array.isArray(wire.h) && typeof wire.h[0] === "string" && wire.h[0].length <= MAX_NAME
-      && finite(wire.h[1], -90, 90) && finite(wire.h[2], -180, 180)
-      ? { name: wire.h[0], lat: wire.h[1], lon: wire.h[2] }
-      : null;
+    const hotel = readHotel(wire.h);
     return {
       cityId: typeof wire.c === "string" && /^[a-z]{2,24}$/.test(wire.c) ? wire.c : null,
       cityName: typeof wire.n === "string" ? wire.n.slice(0, 60) : "",

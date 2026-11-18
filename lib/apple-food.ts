@@ -50,17 +50,24 @@ function categoryLabel(category: string | null, languageCode: "en" | "ja") {
   return ja ? "レストラン" : "Restaurant";
 }
 
+const APPLE_PLACE_ID = /^[A-Za-z0-9]{4,64}$/;
+
+/** A place of Apple's, opened in Apple Maps. */
+export function appleMapsLink(name: string, coordinate: string) {
+  return `https://maps.apple.com/?q=${encodeURIComponent(name)}&ll=${coordinate}`;
+}
+
 function candidateFromPlace(place: AppleMapsPlace, request: FoodSearchRequest): FoodCandidate {
   const coordinate = `${place.latitude.toFixed(5)},${place.longitude.toFixed(5)}`;
   return {
-    id: `apple-${place.id ?? coordinate}`.slice(0, 160),
+    id: `apple-${place.id}`,
     name: place.name,
     address: place.formattedAddress,
     type: categoryLabel(place.poiCategory, request.languageCode),
-    // The field is the card's outbound map link. A name-plus-coordinate
-    // search opens the same place for the traveller to check hours and
-    // reviews, which this source does not carry.
-    googleMapsUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${place.name} ${coordinate}`)}`,
+    // The field is the card's outbound map link. Apple's place opens in
+    // Apple Maps, where the traveller can check hours and reviews this
+    // source does not carry; Apple's data is not handed to another map.
+    googleMapsUrl: appleMapsLink(place.name, coordinate),
     latitude: place.latitude,
     longitude: place.longitude,
     distanceMeters: Math.round(distanceMeters(request, place)),
@@ -104,6 +111,8 @@ export async function fetchAppleFoodCandidates(
 
   const seen = new Set<string>();
   return places
+    // Kept in a trip as its Apple Place ID only: a hit without one cannot be added.
+    .filter((place) => place.id !== null && APPLE_PLACE_ID.test(place.id))
     .map((place) => candidateFromPlace(place, request))
     .filter((candidate) => {
       const key = `${candidate.name.normalize("NFKC").toLocaleLowerCase()}@${candidate.latitude?.toFixed(3)},${candidate.longitude?.toFixed(3)}`;
