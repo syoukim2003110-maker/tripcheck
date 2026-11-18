@@ -1007,7 +1007,9 @@ test("what kind of place has which habit about its hours: a museum has a door, a
   const habit = (kind: string, name = "x") => placeHabit(kind, name);
   for (const kind of ["art museum", "national museum", "zoo", "public aquarium", "japanese castle", "royal palace", "art gallery", "fortress", "open-air museum", "historical park museum"]) assert.equal(habit(kind), "ticketed", kind);
   for (const kind of ["buddhist temple", "japanese garden", "botanical garden", "cathedral", "minor basilica", "mosque", "pagoda", "archaeological site", "mausoleum"]) assert.equal(habit(kind), "daytime", kind);
-  for (const kind of ["shinto shrine", "inari shrine", "waterfall", "island"]) assert.equal(habit(kind), "daytime-open", kind);
+  for (const kind of ["shinto shrine", "inari shrine", "waterfall", "island", "volcano", "stratovolcano", "shield volcano"]) assert.equal(habit(kind), "daytime-open", kind);
+  // (A volcano observatory is no volcano.)
+  assert.equal(habit("volcano observatory"), "open");
   for (const kind of ["urban park", "street", "square", "neighborhood", "suspension bridge", "mountain", "monument", "boulevard", "castle park", "cathedral square", "beach"]) assert.equal(habit(kind), "open", kind);
   // Nothing is said of a tower, a market, a shop, a theme park, a stadium, a theatre — or of a kind nobody has heard of.
   for (const kind of ["observation tower", "skyscraper", "clock tower", "fish market", "flea market", "shopping center", "theme park", "amusement park", "stadium", "opera house", "onsen", "funicular", "something else", ""]) assert.equal(habit(kind), null, kind);
@@ -1333,6 +1335,20 @@ test("the hours the traveller entered come before the planner's evening: a night
   assert.deepEqual([kept.place.name, kept.arrive, kept.evening], ["士林夜市", "17:30", true]);
   // And the mark the planner works with never leaves it: the list handed in is untouched.
   assert.equal(JSON.stringify([museum, market, hall, early, back]).includes("anyHour"), false);
+});
+
+test("a volcano is climbed in the daytime, before the hot spring: 女峰山 from 11:40 after the waterfall, not from 15:35 until dusk", () => {
+  // Was: nikko-3 day 3, 09:25 裏見滝, 11:35–13:35 大江戸温泉物語 日光霧降, 15:35–17:35 女峰山.
+  // (As first shown: the trip without the place its three days have no room for.)
+  const day = auditPlanShown("nikko-3").plan.days.find((entry) => entry.stops.some((stop) => stop.place.name === "女峰山"))!;
+  assert.deepEqual(day.stops.map((stop) => `${stop.arrive}-${stop.leave} ${stop.place.name}`), ["09:25-10:40 裏見滝", "11:40-13:40 女峰山", "15:40-17:40 大江戸温泉物語 日光霧降"]);
+  assert.equal(day.runsLate, false);
+  // In every trip of the audit no volcano is still being walked after 17:00.
+  for (const scenario of scenarios) {
+    for (const entry of [...auditPlanShown(scenario.id).plan.days, ...auditPlan(scenario.id).plan.days]) {
+      for (const stop of entry.stops) if (/volcano$/.test(stop.place.kind ?? "")) assert.ok(stop.leave <= "17:00" && !stop.leaveNextDay, `${scenario.id}: ${stop.arrive}-${stop.leave} ${stop.place.name}`);
+    }
+  }
 });
 
 test("a day that starts later for its evening does not push a temple past five, and the free time before a place of the evening is said as that — in both languages, with no hour of any place in the words", () => {

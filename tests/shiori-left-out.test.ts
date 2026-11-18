@@ -91,7 +91,7 @@ const LEFT_OUT: Record<string, { before: string; after: string; out: string[]; d
   "osaka-1": { before: "+00:44", after: "17:18", out: ["ユニバーサル・スタジオ・ジャパン"], days: 2 },
   "osaka-2": { before: "18:19 19:59", after: "12:49 17:05", out: ["ユニバーサル・スタジオ・ジャパン"], days: 3 },
   "hakone-1": { before: "19:40", after: "17:30", out: ["小田原城"], days: 2 },
-  "nikko-3": { before: "19:23 18:00 18:48", after: "16:48 17:25 17:35", out: ["宇都宮動物園"], days: 4 },
+  "nikko-3": { before: "19:23 18:00 18:48", after: "16:48 17:25 17:40", out: ["宇都宮動物園"], days: 4 },
   "naha-1": { before: "19:19", after: "16:39", out: ["斎場御嶽"], days: 2 },
   "yokohama-1": { before: "19:08", after: "15:39", out: ["新横浜ラーメン博物館"], days: 2 },
 };

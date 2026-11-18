@@ -18,7 +18,7 @@
  *   the morning when something under the open sky could go first.
  * - `daytime`: visited in the daytime (temple, garden, church, ruins).
  * - `daytime-open`: visited in the daytime, and reachable first thing
- *   (shrine, island, waterfall).
+ *   (shrine, island, waterfall, volcano).
  * - `open`: under the open sky at any hour (park, street, square, viewpoint).
  * - `evening`: belongs to the evening (night market, night-life street).
  */
@@ -46,7 +46,9 @@ const rules: Array<[RegExp, PlaceHabit | null]> = [
   [/shrine/, "daytime-open"],
   [/garden/, "daytime"],
   [/island|waterfall|canyon|cemetery/, "daytime-open"],
-  [/park|mountain|hill|volcano|lake|historic(al)? (site|settlement)/, "open"],
+  [/volcano observatory/, "open"],
+  [/volcano/, "daytime-open"],
+  [/park|mountain|hill|lake|historic(al)? (site|settlement)/, "open"],
   [/temple|pagoda|monastery|mausoleum|church|cathedral|basilica|chapel|mosque|abbey|synagogue/, "daytime"],
 ];
 
