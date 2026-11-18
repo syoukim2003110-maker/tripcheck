@@ -5,6 +5,7 @@ import { cafeBreakFor } from "../lib/shiori/cafes.ts";
 import { buildMealBrief, EMPTY_MEAL_PREFS, mealSights, mealSlotKey, openMealSlots } from "../lib/shiori/meal-advice.ts";
 import { DAY_FILLING_STAY, dayClock, daySearch, type SearchProblem } from "../lib/shiori/day-search.ts";
 import { buildShioriPlan, departureAfterStop, dinnerHourAt, dinnerSlot, nobodySleepsAt, type ShioriDay } from "../lib/shiori/plan.ts";
+import { placeFromSight } from "../lib/shiori/state.ts";
 import { shioriStayMinutes } from "../lib/shiori/stay.ts";
 import { auditPlan, cities, railOf, scenarioPlaces, scenarios } from "../scripts/audit-scenarios.ts";
 
@@ -95,27 +96,31 @@ test("the way back to a Taipei hotel is not a ride on a line that does not run t
 
 test("the area to stay is not a far-out place that wins by putting the trip on fewer, fuller days", () => {
   // Was: 高山寺, a mountain temple ten kilometres out. From there the list
-  // goes on two packed days (337 minutes moving); from 本能寺 in the centre
+  // went on two packed days (337 minutes moving); from 本能寺 in the centre
   // on three easy ones (343). Fewer days are fewer ways out and back, and
   // the least total alone decided.
+  // (Those figures were with the long legs printed as taxis. By train and
+  // bus the list takes three days from anywhere: two of them packed from
+  // 高山寺, one from 京都御所 in the centre — which is the answer now.)
   const { scenario, plan } = auditPlan("kyoto-3");
-  assert.equal(plan.stayNear?.nearName, "本能寺");
+  assert.equal(plan.stayNear?.nearName, "京都御所");
   const from = (name: string) => {
     const base = scenarioPlaces(scenario).find((place) => place.name === name)!;
     return buildShioriPlan({ places: scenarioPlaces(scenario), days: scenario.days, hotel: { name: "h", lat: base.lat, lon: base.lon }, locale: "ja" }, { rail: railOf("kyoto"), cities });
   };
   const packed = (name: string) => from(name).days.filter((day) => day.load === "tight").length;
-  assert.equal(packed("本能寺"), 0);
-  assert.ok(packed("高山寺") > 0);
+  assert.equal(packed("京都御所"), 1);
+  assert.ok(packed("高山寺") > packed("京都御所"));
   // Top eight of Kyoto: not 伏見稲荷大社 at the southern edge for five minutes' difference, nor 延暦寺 on its mountain.
-  assert.equal(auditPlan("kyoto-2").plan.stayNear?.nearName, "清水寺");
+  // (清水寺 while 延暦寺 was a taxi ride away; 銀閣寺, on the side of town the way up the mountain starts from, now that it is not.)
+  assert.equal(auditPlan("kyoto-2").plan.stayNear?.nearName, "銀閣寺");
   // Tokyo: not the Skytree in the east for one minute over two days.
   assert.equal(auditPlan("tokyo-2").plan.stayNear?.nearName, "皇居");
 });
 
 test("a summit, a volcano, an island or a forest is never the area to stay while the list holds a place with beds near it", () => {
-  // Was: 箱根山, the volcano itself. (彫刻の森 at Gora, since every day from every candidate has its lunch hour.)
-  assert.equal(auditPlan("hakone-2").plan.stayNear?.nearName, "箱根 彫刻の森美術館");
+  // Was: 箱根山, the volcano itself. (Gora: 彫刻の森 while the far legs were taxis, the cable car beside it now that they are a bus.)
+  assert.equal(auditPlan("hakone-2").plan.stayNear?.nearName, "小田急箱根鋼索線");
   for (const kind of ["volcano", "stratovolcano", "mountain", "mountain range", "mountain pass", "island", "island group", "forest park", "waterfall", "canyon", "cave"]) assert.equal(nobodySleepsAt(kind), true, kind);
   for (const kind of [undefined, "buddhist temple", "artificial island", "hill castle", "cave church", "volcano observatory", "theme park", "beach", "urban park", "observation tower"]) assert.equal(nobodySleepsAt(kind), false, String(kind));
   // In every trip of the audit.
@@ -149,16 +154,20 @@ const dayEndingAt = (id: string, name: RegExp) => {
 
 test("the open dinner of a day is at dinner time and where one would eat: back near the hotel after a last sight that ends in mid-afternoon, not at 16:38 beside an earthwork", () => {
   // Was: (dinner 16:38 near 水城) (café break 16:38, after) — the minute the last sight ended, beside it, twice.
-  const fukuoka = dayEndingAt("fukuoka-2", /^水城$/);
+  // (That day ended at the earthwork while Dazaifu was reached by taxi. By train it ends at the museum in
+  // Dazaifu at 16:40 and is back at the hotel at 17:46: the dinner is then, not at 17:30 on the train.)
+  const fukuoka = dayEndingAt("fukuoka-2", /^九州国立博物館$/);
   const earthwork = dinnerOf(fukuoka.day)!;
   assert.equal(earthwork.meal.atHotel, true);
   assert.equal(earthwork.meal.nearName, fukuoka.scenario.hotel!.name);
   assert.deepEqual(earthwork.meal.near, { latitude: fukuoka.scenario.hotel!.lat, longitude: fukuoka.scenario.hotel!.lon });
-  assert.equal(earthwork.meal.start, "17:30");
+  assert.equal(fukuoka.day.stops.at(-1)!.leave, "16:40");
+  assert.equal(earthwork.meal.start, "17:46");
   assert.ok(earthwork.start >= minutesOfClock(fukuoka.day.end), "not before the ride back has reached the hotel");
   assert.notEqual(fukuoka.day.cafe?.afterStop, fukuoka.day.stops.length - 1, "no coffee an hour before that dinner");
   // Were: (dinner 16:30 near 兵庫県立美術館) (café break 16:30, after) and (dinner 16:36 near 国立中央博物館) (café break 16:36, after).
-  for (const [id, name] of [["kobe-2", /兵庫県立美術館/], ["seoul-2", /国立中央博物館/]] as const) {
+  // (Those days end elsewhere now that their long legs are not taxis: at 忉利天上寺 at 16:38 and at 青瓦台 at 16:56.)
+  for (const [id, name] of [["kobe-2", /忉利天上寺/], ["seoul-2", /青瓦台/]] as const) {
     const { day } = dayEndingAt(id, name);
     const dinner = dinnerOf(day)!;
     assert.equal(dinner.meal.atHotel, true, id);
@@ -249,12 +258,12 @@ test("where the dinner is: near the last sight as a rule, near the hotel after a
 });
 
 test("the meal advisor is asked about the dinner where and when the booklet prints it", () => {
-  const { scenario, plan, day } = dayEndingAt("fukuoka-2", /^水城$/);
+  const { scenario, plan, day } = dayEndingAt("fukuoka-2", /^九州国立博物館$/);
   const dinner = dinnerOf(day)!.meal;
   const asked = openMealSlots(plan).find((entry) => entry.slot === `d${day.index + 1}-dinner`)!;
   assert.equal(asked.meal, dinner);
   assert.equal(asked.key, mealSlotKey(day.index, dinner));
-  assert.equal(asked.key, `d${day.index + 1}-dinner|17:30|${scenario.hotel!.lat.toFixed(4)},${scenario.hotel!.lon.toFixed(4)}`);
+  assert.equal(asked.key, `d${day.index + 1}-dinner|17:46|${scenario.hotel!.lat.toFixed(4)},${scenario.hotel!.lon.toFixed(4)}`);
 });
 
 const dayWith = (id: string, name: RegExp) => {
@@ -267,12 +276,16 @@ const lunchOf = (day: ShioriDay) => day.meals.find((meal) => meal.kind === "lunc
 
 test("a day whose one long visit runs across lunchtime has its lunch during that visit, with the hour added to the visit: not a day from 09:09 to 16:09 with no lunch at all", () => {
   // Was: 09:09–10:39 広島市現代美術館, 11:39–14:39 厳島, 15:19–16:09 厳島神社 — no stop ends between 11:30 and 14:00, so no lunch.
-  const island = dayWith("hiroshima-2", /^厳島$/);
+  // (The island was reached by a taxi drawn across the sea then. By train and ferry its day has another shape,
+  // with a stop that ends at lunchtime; the visit across lunchtime of the audit is now the children's museum of kobe-3.)
+  assert.ok(lunchOf(dayWith("hiroshima-2", /^厳島$/).day), "the day of the island has a lunch");
+  const island = dayWith("kobe-3", /アンパンマン/);
   const lunch = lunchOf(island.day)!;
-  assert.deepEqual([lunch.during, lunch.afterStop, lunch.start, lunch.end, lunch.nearName], [true, island.index, "12:30", "13:30", "厳島"]);
-  // Three hours of the island and the hour at a table: four hours there, and the visit is still called three.
-  assert.equal(island.stop.stayMinutes, 180);
-  assert.equal(minutesOfClock(island.stop.leave) - minutesOfClock(island.stop.arrive), 240);
+  assert.deepEqual([lunch.during, lunch.afterStop, lunch.start, lunch.end, lunch.nearName], [true, island.index, "12:30", "13:30", island.stop.place.name]);
+  // Two and a half hours of the museum and the hour at a table: three and a half hours there, and the visit is still called two and a half.
+  assert.deepEqual([island.stop.arrive, island.stop.leave], ["11:54", "15:24"]);
+  assert.equal(island.stop.stayMinutes, 150);
+  assert.equal(minutesOfClock(island.stop.leave) - minutesOfClock(island.stop.arrive), 210);
   // What follows leaves when the visit is over, not when the lunch is.
   assert.equal(departureAfterStop(island.day, island.index), island.stop.leave);
   const next = island.day.stops[island.index + 1];
@@ -383,14 +396,14 @@ test("a day whose long ride runs across lunchtime has its lunch before setting o
 });
 
 test("the meal advisor is told how long a lunch during a visit has before a booked stop: what is left of the visit is not free time", () => {
-  const island = dayWith("hiroshima-2", /^厳島$/);
-  const plan = auditPlan("hiroshima-2").plan;
+  const island = dayWith("kobe-3", /アンパンマン/);
+  const plan = auditPlan("kobe-3").plan;
   const booked = { days: plan.days.map((day) => day.index !== island.day.index ? day : { ...day, stops: day.stops.map((stop, index) => index === island.index + 1 ? { ...stop, reserved: true } : stop) }) };
   const brief = buildMealBrief({ plan: booked, sights: mealSights(cities), city: null, prefs: EMPTY_MEAL_PREFS });
   const slot = brief?.slots.find((entry) => entry.slot === `d${island.day.index + 1}-lunch`);
   assert.ok(slot, "the lunch during the visit is asked about");
   assert.equal(slot.time, "12:30");
-  // 12:30 to the booked 厳島神社, less the ride and the two hours and nine minutes of island after the lunch: the lunch hour and the ten minutes of slack.
+  // 12:30 to the booked 湊川神社, less the ride and the hour and fifty-four minutes of museum after the lunch: the lunch hour and the ten minutes of slack.
   const next = island.day.stops[island.index + 1];
   assert.equal(slot.minutesUntilNext, minutesOfClock(next.arrive) - island.day.legs[island.index].minutes - minutesOfClock("12:30") - (minutesOfClock(island.stop.leave) - minutesOfClock("13:30")));
   assert.equal(slot.minutesUntilNext, 70);
@@ -398,7 +411,8 @@ test("the meal advisor is told how long a lunch during a visit has before a book
 
 test("a theme park that fills the day is entered at opening on a day too full to keep, and the rest follows it: not Disneyland from 10:53 after the Skytree", () => {
   // Were: 09:08–10:08 東京スカイツリー, 10:53–18:53 東京ディズニーランド; and 09:20–11:20 海遊館, 11:51–19:51 ユニバーサル・スタジオ・ジャパン.
-  for (const [id, park, then] of [["tokyo-2", /東京ディズニーランド/, "東京スカイツリー"], ["osaka-2", /ユニバーサル/, "海遊館"], ["osaka-1", /ユニバーサル/, null]] as const) {
+  // (The Skytree shared the park's day while the two were 35 minutes apart by taxi; by train the museum at Ueno does.)
+  for (const [id, park, then] of [["tokyo-2", /東京ディズニーランド/, "東京国立博物館"], ["osaka-2", /ユニバーサル/, "海遊館"], ["osaka-1", /ユニバーサル/, null]] as const) {
     const found = dayWith(id, park);
     assert.equal(found.index, 0, `${id}: ${found.day.stops.map((stop) => `${stop.arrive} ${stop.place.name}`).join(", ")}`);
     assert.ok(found.stop.arrive <= "09:30", `${id}: in at ${found.stop.arrive}`);
@@ -431,4 +445,74 @@ test("the stay that fills the day gives way only to an order that can be kept or
   // the restaurant is reached after its kitchen has closed. The order that eats the chosen lunch is the day.
   const meal = order({ stops: [stop(300), stop(60, "lunch"), stop(200)], minutes: [[0, 30, 10], [30, 0, 10], [10, 10, 0]], km: [[0, 5, 2], [5, 0, 2], [2, 2, 0]], hotel: null });
   assert.deepEqual([meal.order, meal.missed], [[2, 1, 0], 0]);
+});
+
+const sightOf = (cityId: string, name: string) => placeFromSight(cities.find((city) => city.id === cityId)!.sights.find((sight) => sight.ja === name)!, "ja");
+const allLegs = (plan: ReturnType<typeof auditPlan>["plan"]) => plan.days.flatMap((day) => [day.fromHotel, ...day.legs, day.toHotel]).flatMap((leg) => (leg ? [leg] : []));
+const straightKm = (leg: { from: { latitude: number; longitude: number }; to: { latitude: number; longitude: number } }) => Math.hypot(
+  (leg.from.latitude - leg.to.latitude) * 111,
+  (leg.from.longitude - leg.to.longitude) * 111 * Math.cos((leg.from.latitude * Math.PI) / 180),
+);
+
+test("beyond a short hop a leg is the train, not a taxi: the bundled journey where there is one, public transport with the way unknown where there is none", () => {
+  // Was: ↓ taxi 35 min between the Skytree and Disneyland, while the bundled network has the journey.
+  const pair = (cityId: string, from: string, to: string) => buildShioriPlan({ places: [sightOf(cityId, from), sightOf(cityId, to)], days: 1, hotel: null, locale: "ja" }, { rail: railOf(cityId), cities });
+  const tokyo = pair("tokyo", "東京スカイツリー", "東京ディズニーランド").days[0];
+  const ride = tokyo.legs[0];
+  assert.equal(ride.mode, "rail");
+  assert.equal(ride.minutes, ride.rail!.totalMinutes);
+  assert.ok(ride.rail!.rides.some((entry) => entry.line === "京葉線"), ride.rail!.rides.map((entry) => entry.line).join(" + "));
+  assert.ok(ride.minutes > 60, "the train's own estimate, not the taxi's 35 minutes");
+  // Was: ↓ taxi 45 min 筥崎宮 > 九州国立博物館 (rail: four lines, 96 minutes).
+  const dazaifu = pair("fukuoka", "筥崎宮", "九州国立博物館").days[0].legs[0];
+  assert.equal(dazaifu.mode, "rail");
+  assert.ok(dazaifu.rail!.rides.some((entry) => entry.line === "西鉄太宰府線"));
+  // Was: ↓ taxi 40 min from a hotel in Greenwich to Hyde Park (rail 66).
+  const london = auditPlan("london-3");
+  const hyde = buildShioriPlan({ places: [sightOf("london", "ハイド・パーク")], days: 1, hotel: london.scenario.hotel, locale: "ja" }, { rail: railOf("london"), cities }).days[0];
+  assert.deepEqual([hyde.fromHotel!.mode, hyde.toHotel!.mode], ["rail", "rail"]);
+  // No train in the data for the way up to the lake at Nikko (nine kilometres): a bus the planner does not
+  // know, printed as public transport and an estimate — 65 minutes, not a taxi of 35.
+  const nikko = pair("nikko", "日光東照宮", "華厳滝").days[0].legs[0];
+  assert.deepEqual([nikko.mode, nikko.rail, nikko.minutes], ["transit", null, 65]);
+  // Past ten kilometres such a leg is not a city bus all the way: twenty kilometres are 95 minutes, not 125.
+  const far = pair("nikko", "東武ワールドスクウェア", "華厳滝").days[0].legs[0];
+  assert.deepEqual([far.mode, far.minutes], ["transit", 95]);
+  // A measured drive does not bring the taxi back, on a leg with a train or without.
+  for (const [plan, leg] of [[pair("tokyo", "東京スカイツリー", "東京ディズニーランド"), ride], [pair("nikko", "日光東照宮", "華厳滝"), nikko]] as const) {
+    const input = { places: plan.days[0].stops.map((stop) => stop.place), days: 1, hotel: null, locale: "ja" as const };
+    const cityId = leg === ride ? "tokyo" : "nikko";
+    const measured = buildShioriPlan(input, { rail: railOf(cityId), cities, routes: new Map([[`drive|${leg.key}`, { minutes: 22, path: [leg.from, leg.to] }]]) });
+    assert.deepEqual([measured.days[0].legs[0].mode, measured.days[0].legs[0].minutes], [leg.mode, leg.minutes], cityId);
+  }
+  // Nor on a leg the engine itself gave to the train: 東京タワー to the Skytree, eight kilometres, with a road measured at ten minutes.
+  const tower = pair("tokyo", "東京タワー", "東京スカイツリー");
+  const towerLeg = tower.days[0].legs[0];
+  assert.equal(towerLeg.mode, "rail");
+  const quickRoad = buildShioriPlan({ places: tower.days[0].stops.map((stop) => stop.place), days: 1, hotel: null, locale: "ja" }, { rail: railOf("tokyo"), cities, routes: new Map([[`drive|${towerLeg.key}`, { minutes: 10, path: [towerLeg.from, towerLeg.to] }]]) });
+  assert.deepEqual([quickRoad.days[0].legs[0].mode, quickRoad.days[0].legs[0].minutes], ["rail", towerLeg.minutes]);
+  // A short hop is still a taxi where the engine says so, and where a car is how one gets about its choice stands: Bali.
+  const bali = buildShioriPlan({ places: [{ id: "ubud", name: "Ubud", lat: -8.5069, lon: 115.2625, stayMinutes: 60 }, { id: "lot", name: "Tanah Lot", lat: -8.6212, lon: 115.0868, stayMinutes: 60 }], days: 1, hotel: null, locale: "en" }, { cities });
+  assert.equal(bali.days[0].legs[0].mode, "taxi");
+});
+
+test("in every trip of the audit a taxi is a hop of four kilometres at most: 128 taxi rides, 106 of them of 35 minutes or more, are 3 short ones", () => {
+  let taxis = 0;
+  let unknown = 0;
+  for (const scenario of scenarios) {
+    for (const leg of allLegs(auditPlan(scenario.id).plan)) {
+      if (leg.mode === "transit") {
+        unknown += 1;
+        // Public transport with no line known is never dressed as a train: no journey, and the estimate chip's mode.
+        assert.equal(leg.rail, null, scenario.id);
+      }
+      if (leg.mode !== "taxi") continue;
+      taxis += 1;
+      assert.ok(straightKm(leg) <= 4.05 && leg.minutes <= 25, `${scenario.id}: taxi ${leg.minutes} min over ${straightKm(leg).toFixed(1)} km, ${leg.fromName} > ${leg.toName}`);
+    }
+  }
+  assert.ok(taxis <= 3, `${taxis} taxi rides`);
+  assert.ok(unknown > 0);
+  // The same pair goes the same way on every day: london-3 leaves its Greenwich hotel by train each morning.
+  for (const day of auditPlan("london-3").plan.days) assert.notEqual(day.fromHotel?.mode, "taxi");
 });

@@ -1,5 +1,5 @@
 import { bundledSightsNearRoute } from "../bundled-route-recommendations.ts";
-import { destinationForCoordinate } from "../destinations.ts";
+import { destinationById, destinationForCoordinate } from "../destinations.ts";
 import type { PopularDestination, PopularSight } from "../popular-sights.ts";
 import { RailNetwork, walkMinutes, type GeoPoint, type RailAdvice, type RailJourney } from "../rail-router.ts";
 import type { ResolvedInputStop, RouteStop } from "../route-optimizer.ts";
@@ -462,11 +462,27 @@ function dinnerIdsOf(input: ShioriInput) {
  * trip booklet takes the train unless a taxi saves real time: up to 25
  * minutes slower, the train is the plan. The engine's own rule gives a train
  * 15 minutes of grace, so within that band the taxi is counted as no better
- * than the train less 14 — beyond it, the taxi's own time stands and wins.
+ * than the train less 14 — beyond it, the taxi's own time stands, and wins
+ * on a short hop (see TAXI_HOP_MINUTES for anything longer).
  */
 function taxiAgainstTrain(taxiMinutes: number, trainMinutes: number) {
   return trainMinutes <= taxiMinutes + 25 ? Math.max(taxiMinutes, trainMinutes - 14) : taxiMinutes;
 }
+
+/**
+ * The longest ride (as estimated, about four kilometres) a taxi is the plan
+ * for. Someone following a trip booklet rides the train or the bus across
+ * town: forty minutes in a taxi costs many thousands of yen, and "taxi" on
+ * every long leg is what the planner said when it did not know the way.
+ * Beyond a short hop the leg goes by public transport — by the bundled
+ * journey where there is one, otherwise as an estimate with the way unknown
+ * (it is printed as that, and drawn dashed). Held wherever a rail network is
+ * bundled and wherever the country is one travelled by train; where a car is
+ * how one gets about (Guam, Bali), the engine's own choice stands.
+ */
+const TAXI_HOP_MINUTES = 20;
+/** How far (straight line) a leg with no known way is priced as a city bus all the way. */
+const CITY_BUS_KM = 10;
 
 function hotelId(hotel: ShioriHotel) {
   return `shiori-hotel@${hotel.lat.toFixed(4)},${hotel.lon.toFixed(4)}`;
@@ -582,6 +598,8 @@ type Structure = {
   driving: Record<string, number>;
   pins: Record<string, number>;
   legModeOverrides: Record<string, "transit">;
+  /** Every table the legs were priced with: what a measured leg is held to. */
+  tables: PriceTables;
   timing: DayTiming;
   /** Wet days (1-based, as printed) that were given another planned day because of the forecast. */
   weatherDays: number[];
@@ -626,15 +644,42 @@ type PriceTables = {
   /** Pairs where the network's answer is "no train helps, just walk". */
   walkAdvised: Set<string>;
   driving: Record<string, number>;
-  /** Pairs where the engine would take a taxi although a train is about as fast. */
+  /** Pairs the engine would send by taxi and the booklet sends by public transport (see noTaxi). */
   legModeOverrides: Record<string, "transit">;
+  /** Pairs a taxi is not the plan for: anything beyond a short hop. */
+  noTaxi: Set<string>;
 };
+const emptyTables = (): PriceTables => ({ journeys: new Map(), transit: {}, walking: {}, walkAdvised: new Set(), driving: {}, legModeOverrides: {}, noTaxi: new Set() });
+/** Whether the booklet sends this pair by public transport although the engine recommends `mode` at `minutes`. */
+function heldToTransit(tables: PriceTables, key: string, mode: string | null | undefined, minutes: number) {
+  if (mode !== "taxi") return false;
+  if (tables.noTaxi.has(key)) return true;
+  // A short hop: the engine assumes thin rail in New York or Sydney; a
+  // bundled train about as fast as the taxi is the plan there too.
+  const journey = tables.journeys.get(key);
+  return journey !== undefined && journey.totalMinutes <= minutes + 15;
+}
+/** The legs of a built plan (hotel rides included) that the booklet sends by public transport and the engine did not. */
+function strayLegs(plan: BuiltTripPlan, tables: PriceTables) {
+  const keys: string[] = [];
+  for (const day of plan.days) {
+    for (const leg of day.legs) {
+      const key = routeLegKey(leg.from.id, leg.to.id);
+      if (heldToTransit(tables, key, leg.comparison.recommended.mode, leg.comparison.recommended.minutes)) keys.push(key);
+    }
+    const first = day.stops[0]?.stop;
+    const last = day.stops.at(-1)?.stop;
+    if (day.startBase && first && heldToTransit(tables, routeLegKey(day.startBase.id, first.id), day.hotelOutboundMode, day.hotelOutboundMinutes ?? 0)) keys.push(routeLegKey(day.startBase.id, first.id));
+    if (day.endBase && last && heldToTransit(tables, routeLegKey(last.id, day.endBase.id), day.hotelInboundMode, day.hotelInboundMinutes ?? 0)) keys.push(routeLegKey(last.id, day.endBase.id));
+  }
+  return keys;
+}
 
 /**
  * Prices one pair with the bundled network: a train journey becomes that
  * pair's transit time, "no train helps, just walk" its walking time.
  */
-function priceLeg(tables: PriceTables, from: RouteStop, to: RouteStop, rail: RailNetwork | null, locale: "ja" | "en") {
+function priceLeg(tables: PriceTables, from: RouteStop, to: RouteStop, rail: RailNetwork | null, locale: "ja" | "en", holdLongTaxi: boolean) {
   const key = routeLegKey(from.id, to.id);
   const onFoot = walkMinutes(from, to);
   const advice: RailAdvice = rail ? rail.advise(from, to, locale) : onFoot <= 30 ? { kind: "walk", minutes: onFoot } : { kind: "none" };
@@ -656,8 +701,17 @@ function priceLeg(tables: PriceTables, from: RouteStop, to: RouteStop, rail: Rai
   // cost the same from across town. The price stays rounded, because it is
   // printed and must read as the estimate it is; the search breaks equal
   // minutes by distance instead.)
-  const bus = Math.ceil((12 + onFoot * 75 / 1.3 / 1_000 * 1.3 * 4.2) / 5) * 5;
-  if (advice.kind === "rail" && advice.journey.totalMinutes <= bus + 10) {
+  const straight = onFoot * 75 / 1.3 / 1_000;
+  const cityBus = Math.ceil((12 + straight * 1.3 * 4.2) / 5) * 5;
+  // That pace is a bus across a city, about ten kilometres of it. A leg
+  // that goes on beyond is a suburban line or a bus on an open road this
+  // data does not know: the kilometres past the tenth are counted at the
+  // engine's own pace for such a ride (26 km/h), not at 11 km/h all the way
+  // — 135 minutes from Yokohama to Tokyo would be wrong on its face. Such
+  // legs used to be printed as taxis and this number was never seen.
+  const bus = straight <= CITY_BUS_KM ? cityBus : Math.ceil((12 + CITY_BUS_KM * 1.3 * 4.2 + (straight - CITY_BUS_KM) * 2.3) / 5) * 5;
+  if (holdLongTaxi && taxi !== undefined && taxi > TAXI_HOP_MINUTES) tables.noTaxi.add(key);
+  if (advice.kind === "rail" && advice.journey.totalMinutes <= cityBus + 10) {
     // (A rail answer slower than the bus means the real answer is a
     // bus this data does not know: 82 minutes by three trains from
     // Yasaka Shrine to Kinkaku-ji, against 50 by bus.)
@@ -681,7 +735,7 @@ const liveTables = (tables: PriceTables): Partial<TripPlannerContext> => ({
   legModeOverrides: tables.legModeOverrides,
 });
 
-type PlacePrices = { tables: PriceTables; minutes: number[][]; /** Pairs the booklet sends by taxi. */ taxi: boolean[][] };
+type PlacePrices = { tables: PriceTables; minutes: number[][]; /** Pairs the booklet sends by taxi. */ taxi: boolean[][]; /** See TAXI_HOP_MINUTES. */ holdLongTaxi: boolean };
 const placePrices = new WeakMap<object, Map<string, PlacePrices>>();
 
 /**
@@ -700,10 +754,6 @@ function pricePlaces(input: ShioriInput, rail: RailNetwork | null): PlacePrices 
   const known = shelf.get(cacheKey);
   if (known) return known;
   const stops = input.places.map(resolvedStop);
-  const tables: PriceTables = { journeys: new Map(), transit: {}, walking: {}, walkAdvised: new Set(), driving: {}, legModeOverrides: {} };
-  for (const from of stops) {
-    for (const to of stops) if (from.id !== to.id) priceLeg(tables, from, to, rail, input.locale);
-  }
   const engine = paceSettings.standard.engine;
   // The engine's rules depend on the country the whole list is in. Each
   // pair is read from a two-place run (the cheapest there is), told that
@@ -712,6 +762,11 @@ function pricePlaces(input: ShioriInput, rail: RailNetwork | null): PlacePrices 
     resolvedStops: stops,
     dayOverrides: Object.fromEntries(stops.map((stop, index) => [stop.id, index + 1])),
   }).destination;
+  const holdLongTaxi = rail !== null || destinationById(destination).mobility === "transit_first";
+  const tables = emptyTables();
+  for (const from of stops) {
+    for (const to of stops) if (from.id !== to.id) priceLeg(tables, from, to, rail, input.locale, holdLongTaxi);
+  }
   const taxi = stops.map(() => stops.map(() => false));
   const minutes = stops.map((from, row) => stops.map((to, column) => {
     if (row === column) return 0;
@@ -723,21 +778,20 @@ function pricePlaces(input: ShioriInput, rail: RailNetwork | null): PlacePrices 
       lockedOrderByDay: { 0: [from.id, to.id] },
     }).days[0]?.legs[0];
     if (!leg) return 0;
-    // Where the engine would send a traveller by taxi although the
-    // bundled network has a train about as fast (it assumes thin rail in
-    // New York or Sydney), the train is the plan — for every pair, before
-    // anything is ordered, so the order is chosen on the minutes printed.
+    // Where the engine would send a traveller by taxi beyond a short hop,
+    // or by taxi although the bundled network has a train about as fast,
+    // public transport is the plan — for every pair, before anything is
+    // ordered, so the order is chosen on the minutes printed.
     const key = routeLegKey(from.id, to.id);
-    const journey = tables.journeys.get(key);
     const train = leg.comparison.options.find((option) => option.mode === "transit");
-    if (journey && train && leg.comparison.recommended.mode === "taxi" && journey.totalMinutes <= leg.comparison.recommended.minutes + 15) {
+    if (train && heldToTransit(tables, key, leg.comparison.recommended.mode, leg.comparison.recommended.minutes)) {
       tables.legModeOverrides[key] = "transit";
       return train.minutes;
     }
     taxi[row][column] = leg.comparison.recommended.mode === "taxi";
     return leg.comparison.recommended.minutes;
   }));
-  const prices = { tables, minutes, taxi };
+  const prices = { tables, minutes, taxi, holdLongTaxi };
   shelf.set(cacheKey, prices);
   if (shelf.size > 12) shelf.delete(shelf.keys().next().value as string);
   return prices;
@@ -764,13 +818,14 @@ function priceTrip(input: ShioriInput, rail: RailNetwork | null): TripPrices {
     walkAdvised: new Set(places.tables.walkAdvised),
     driving: { ...places.tables.driving },
     legModeOverrides: { ...places.tables.legModeOverrides },
+    noTaxi: new Set(places.tables.noTaxi),
   };
   // The engine renames the base "base-<id>"; priced under any other id,
   // the way out of and back to the hotel never finds its train.
   const door = resolvedStop({ id: `base-${hotelId(input.hotel)}`, name: input.hotel.name, lat: input.hotel.lat, lon: input.hotel.lon, stayMinutes: 15 }, 9_999);
   for (const stop of stops) {
-    priceLeg(tables, door, stop, rail, input.locale);
-    priceLeg(tables, stop, door, rail, input.locale);
+    priceLeg(tables, door, stop, rail, input.locale, places.holdLongTaxi);
+    priceLeg(tables, stop, door, rail, input.locale, places.holdLongTaxi);
   }
   const out = stops.map(() => 0);
   const back = stops.map(() => 0);
@@ -795,13 +850,12 @@ function priceTrip(input: ShioriInput, rail: RailNetwork | null): TripPrices {
       back[index] = day.hotelInboundMinutes ?? 0;
       taxiOut[index] = day.hotelOutboundMode === "taxi";
       taxiBack[index] = day.hotelInboundMode === "taxi";
-      // The same rule as between places: a train about as fast as the taxi is the plan.
+      // The same rule as between places.
       for (const [key, mode, legMinutes] of [
         [routeLegKey(door.id, stop.id), day.hotelOutboundMode, out[index]],
         [routeLegKey(stop.id, door.id), day.hotelInboundMode, back[index]],
       ] as const) {
-        const journey = tables.journeys.get(key);
-        if (journey && mode === "taxi" && !tables.legModeOverrides[key] && journey.totalMinutes <= legMinutes + 15) {
+        if (!tables.legModeOverrides[key] && heldToTransit(tables, key, mode, legMinutes)) {
           tables.legModeOverrides[key] = "transit";
           changed = true;
         }
@@ -810,7 +864,7 @@ function priceTrip(input: ShioriInput, rail: RailNetwork | null): TripPrices {
     return changed;
   };
   if (read()) read();
-  const prices = { tables, minutes: places.minutes, taxi: places.taxi, hotel: { out, back, taxiOut, taxiBack } };
+  const prices = { tables, minutes: places.minutes, taxi: places.taxi, holdLongTaxi: places.holdLongTaxi, hotel: { out, back, taxiOut, taxiBack } };
   shelf.set(cacheKey, prices);
   if (shelf.size > 60) shelf.delete(shelf.keys().next().value as string);
   return prices;
@@ -1137,7 +1191,7 @@ function planCore(input: ShioriInput, options: PlanOptions, frames: Frames | nul
       durationOverrides: timing.durationOverrides,
       dayStartTimes: timing.dayStartTimes,
     }, trip.slots, frames, slackFree);
-    return { built, journeys, transit, walking, walkAdvised, driving, pins, legModeOverrides, timing, weatherDays: numbering.wetDays, slackFree };
+    return { built, journeys, transit, walking, walkAdvised, driving, pins, legModeOverrides, tables: pricing.tables, timing, weatherDays: numbering.wetDays, slackFree };
   };
   const cacheKey = structureKey(input, frames, excluded);
   const shelf = structures.get(rail ?? NO_RAIL) ?? new Map<string, Structure>();
@@ -1171,9 +1225,10 @@ function planCore(input: ShioriInput, options: PlanOptions, frames: Frames | nul
     for (const [key, minutes] of Object.entries(measuredWalking)) {
       if (walkAdvised.has(key)) measuredTransit[key] = minutes + 8;
     }
+    let held = legModeOverrides;
     const measured = (when: DayTiming) => buildWithEngine(engineInput, {
       dayOverrides: pins,
-      legModeOverrides,
+      legModeOverrides: held,
       lockedOrderByDay: orderOf(known.built.plan),
       durationOverrides: when.durationOverrides,
       dayStartTimes: when.dayStartTimes,
@@ -1190,6 +1245,13 @@ function planCore(input: ShioriInput, options: PlanOptions, frames: Frames | nul
       },
     }, known.built.usedDays, frames, known.slackFree);
     built = measured(timing);
+    // A measured walk or drive is held to the same rules as an estimated
+    // one: a long ride does not turn into a taxi across town.
+    const stray = strayLegs(built.plan, known.tables);
+    if (stray.length > 0) {
+      held = { ...held, ...Object.fromEntries(stray.map((key) => [key, "transit" as const])) };
+      built = measured(timing);
+    }
     const corrected = timingOf(built.plan);
     if (!sameTiming(corrected, timing)) {
       timing = corrected;

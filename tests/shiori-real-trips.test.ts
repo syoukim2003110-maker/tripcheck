@@ -324,10 +324,11 @@ test("Fukuoka: the tower stays in the city, Dazaifu is a day of its own, and no 
   assert.ok(totalTravel(trip.plan) < totalTravel(two.plan));
   // (A split with a lone short visit on a day would save a quarter of an hour more; that is not a day.)
   assert.equal(trip.plan.days.every((day) => day.stops.length >= 2), true);
-  // From a hotel at Hakata the third day would cost travel, not save it — so it stays free.
+  // From a hotel at Hakata the third day would save no travel — so it stays free.
+  // (It cost travel while the way out to Dazaifu was priced as a taxi; by train the best three days travel exactly as much as these two.)
   const hakata = planned("fukuoka", topOf("fukuoka", 8), 3, { name: "博多駅", lat: 33.5897, lon: 130.4207 });
   assert.equal(hakata.plan.days.length, 2);
-  assert.ok(leastTravelOverSplits(hakata, 3) > totalTravel(hakata.plan));
+  assert.ok(leastTravelOverSplits(hakata, 3) >= totalTravel(hakata.plan));
 });
 
 test("a restaurant for dinner does not pull a sight away from its neighbour", () => {
@@ -591,8 +592,9 @@ test("a theme-park day is charged for its length on the real clock, lunch includ
   // Was: Olympic Park taken off the Lotte World day next door, 15 minutes more travel and a second taxi.
   const plan = cold("seoul", { places: rawOf("seoul", 10), days: 3, hotel: null, locale: "ja" });
   assert.ok(namesOn(dayWith(plan, "ロッテワールド")).includes("オリンピック公園"), namesOn(dayWith(plan, "ロッテワールド")).join(" > "));
-  assert.equal(totalTravel(plan), 126);
-  assert.ok(taxiLegs(plan) <= 1);
+  // (126 minutes while one of its legs was a taxi of forty minutes; that leg is a train now.)
+  assert.equal(totalTravel(plan), 147);
+  assert.equal(taxiLegs(plan), 0);
   assert.equal(plan.days.some((day) => day.runsLate), false);
 });
 

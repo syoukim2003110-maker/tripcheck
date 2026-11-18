@@ -9,7 +9,11 @@ import { buildShioriPlan, type ShioriPlace } from "../lib/shiori/plan.ts";
  * reason to split a list that fits one unhurried day.
  */
 
-const hotel = { name: "Hotel", lat: 35.5, lon: 139.61 };
+// An hour from the places below, as the planner prices it: nine kilometres
+// by a bus whose line it does not know. (It was 25 km away while a leg of
+// that length was printed as an hour in a taxi; such a leg is public
+// transport now, and nearer two hours.)
+const hotel = { name: "Hotel", lat: 35.617, lon: 139.765 };
 const place = (id: string, lat: number, lon: number, stayMinutes: number): ShioriPlace => ({ id, name: id, lat, lon, stayMinutes });
 const travel = (plan: ReturnType<typeof buildShioriPlan>) => plan.days.reduce((sum, day) => sum + day.travelMinutes, 0);
 
