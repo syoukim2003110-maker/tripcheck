@@ -121,9 +121,11 @@ test("the area to stay is not a far-out place that wins by putting the trip on f
   assert.equal(auditPlan("tokyo-2").plan.stayNear?.nearName, "皇居");
 });
 
-test("a summit, a volcano, an island or a forest is never the area to stay while the list holds a place with beds near it", () => {
-  // Was: 箱根山, the volcano itself. (Gora: 彫刻の森 while the far legs were taxis, the cable car beside it now that they are a bus.)
-  assert.equal(auditPlan("hakone-2").plan.stayNear?.nearName, "小田急箱根鋼索線");
+test("a summit, a volcano, an island, a forest or a cable-car line is never the area to stay while the list holds a place with beds near it: Gora is named by 彫刻の森美術館, not by 小田急箱根鋼索線", () => {
+  // Was: 箱根山, the volcano itself; then 小田急箱根鋼索線, the cable car at Gora, which is a line and not a place to stay around.
+  assert.equal(auditPlan("hakone-2").plan.stayNear?.nearName, "箱根 彫刻の森美術館");
+  for (const kind of ["funicular", "cable car", "ropeway"]) assert.equal(nobodySleepsAt(kind), true, kind);
+  for (const kind of ["cable-stayed bridge", "tramway museum"]) assert.equal(nobodySleepsAt(kind), false, kind);
   for (const kind of ["volcano", "stratovolcano", "mountain", "mountain range", "mountain pass", "island", "island group", "forest park", "waterfall", "canyon", "cave"]) assert.equal(nobodySleepsAt(kind), true, kind);
   for (const kind of [undefined, "buddhist temple", "artificial island", "hill castle", "cave church", "volcano observatory", "theme park", "beach", "urban park", "observation tower"]) assert.equal(nobodySleepsAt(kind), false, String(kind));
   // In every trip of the audit.

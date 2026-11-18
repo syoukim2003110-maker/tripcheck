@@ -1870,14 +1870,15 @@ const STAY_NEAR_SLACK_PER_DAY = 5;
 const STAY_NEAR_PACKED_DAY = 60;
 /**
  * A point on the map where there is no bed: the top of a mountain, the
- * middle of an island or of a forest, a waterfall, a gorge, a cave. (A
- * man-made island, a castle on a hill, a church in a cave and an
- * observatory on a volcano are not that.)
+ * middle of an island or of a forest, a waterfall, a gorge, a cave — or
+ * that is no point at all: a funicular or a cable-car line (小田急箱根鋼索線
+ * was named as the area to stay around). (A man-made island, a castle on a
+ * hill, a church in a cave and an observatory on a volcano are not that.)
  */
 export function nobodySleepsAt(kind: string | undefined) {
   const lowered = (kind ?? "").toLowerCase();
   if (/artificial|observatory|church|temple|shrine|castle|museum|resort|village|town/.test(lowered)) return false;
-  return /mountain|volcano|\bsummit\b|\bpeak\b|\bisland|\bislet\b|\batoll\b|\bforest\b|waterfall|\bcanyon\b|\bgorge\b|\bcave\b/.test(lowered);
+  return /mountain|volcano|\bsummit\b|\bpeak\b|\bisland|\bislet\b|\batoll\b|\bforest\b|waterfall|\bcanyon\b|\bgorge\b|\bcave\b|funicular|^cable car$|ropeway|aerial tramway/.test(lowered);
 }
 
 function straightMinutes(from: GeoPoint, to: GeoPoint) {
