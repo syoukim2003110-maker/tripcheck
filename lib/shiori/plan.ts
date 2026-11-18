@@ -146,6 +146,23 @@ export type ShioriLeg = {
   toName: string;
 };
 
+/**
+ * What a leg is called on the page. Its mode says how it is priced and
+ * drawn; the word above it must be true of the ride: a journey whose only
+ * ride is a boat is not a train (宮島口 to 宮島桟橋 was headed 電車), and a
+ * way up a hill that nobody knows is not a bus.
+ */
+export type ShioriLegWord = "walk" | "train" | "ferry" | "train-ferry" | "taxi" | "climb" | "transit";
+export function legWord(leg: Pick<ShioriLeg, "mode" | "rail" | "climb">): ShioriLegWord {
+  if (leg.mode === "walk" || leg.mode === "taxi") return leg.mode;
+  if (leg.mode === "rail") {
+    const rides = leg.rail?.rides ?? [];
+    const boats = rides.filter((ride) => ride.boat).length;
+    return boats === 0 ? "train" : boats === rides.length ? "ferry" : "train-ferry";
+  }
+  return leg.climb ? "climb" : "transit";
+}
+
 export type ShioriStop = {
   place: ShioriPlace;
   arrive: string;

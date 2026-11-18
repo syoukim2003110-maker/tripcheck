@@ -7,7 +7,7 @@ import { DAY_FILLING_STAY, dayClock, daySearch, type SearchProblem } from "../li
 import { readdirSync, readFileSync } from "node:fs";
 
 import { isBoatLineName } from "../lib/rail-router.ts";
-import { buildShioriPlan, departureAfterStop, dinnerHourAt, dinnerSlot, hardToReach, nobodySleepsAt, type ShioriDay } from "../lib/shiori/plan.ts";
+import { buildShioriPlan, departureAfterStop, dinnerHourAt, dinnerSlot, hardToReach, legWord, nobodySleepsAt, type ShioriDay } from "../lib/shiori/plan.ts";
 import { placeFromSight } from "../lib/shiori/state.ts";
 import { shioriStayMinutes } from "../lib/shiori/stay.ts";
 import { auditPlan, cities, railOf, scenarioPlaces, scenarios } from "../scripts/audit-scenarios.ts";
@@ -775,4 +775,31 @@ test("a dinner near the last sight never starts after the booklet has left that 
     }
   }
   assert.ok(near >= 5, `${near} dinners near the last sight on days with a hotel`);
+});
+
+test("a crossing by boat is headed 船 / Ferry, not 電車 / Train, and a train with a ferry after it says both", () => {
+  // Was: hotel at 宮島口, one place 厳島神社: 「電車 約22分」 with 1駅 on the ticket, for the JR ferry alone.
+  const pier = { name: "宮島口の宿", lat: 34.3117, lon: 132.303 };
+  for (const locale of ["ja", "en"] as const) {
+    const shrine = placeFromSight(cities.find((city) => city.id === "hiroshima")!.sights.find((sight) => sight.ja === "厳島神社")!, locale);
+    const day = buildShioriPlan({ places: [shrine], days: 1, hotel: pier, locale }, { rail: railOf("hiroshima"), cities }).days[0];
+    for (const leg of [day.fromHotel!, day.toHotel!]) {
+      assert.equal(leg.mode, "rail");
+      assert.ok(leg.rail!.rides.every((ride) => ride.boat), JSON.stringify(leg.rail!.rides));
+      assert.equal(legWord(leg), "ferry");
+    }
+  }
+  // From the city the same crossing follows a train: both are said.
+  const mixed = allLegs(auditPlan("hiroshima-1").plan).filter((leg) => leg.rail?.rides.some((ride) => ride.boat));
+  assert.ok(mixed.length >= 1);
+  for (const leg of mixed) assert.equal(legWord(leg), leg.rail!.rides.every((ride) => ride.boat) ? "ferry" : "train-ferry");
+  // Every other leg keeps its word.
+  const words = new Set(scenarios.flatMap((scenario) => allLegs(auditPlan(scenario.id).plan).map((leg) => `${leg.mode}:${legWord(leg)}`)));
+  for (const word of words) assert.match(word, /^(walk:walk|taxi:taxi|rail:train|rail:ferry|rail:train-ferry|transit:transit|transit:climb)$/);
+  assert.ok(words.has("rail:train") && words.has("walk:walk") && words.has("transit:transit"));
+  // The page has a word for each of them in both languages, and a boat ride is not counted in stations.
+  const source = readFileSync(new URL("../app/shiori/ShioriApp.tsx", import.meta.url), "utf8");
+  for (const key of ["ferry", "railFerry", "rideBoat", "climb"]) assert.equal(source.match(new RegExp(`^    ${key}: "`, "gm"))?.length, 2, key);
+  assert.match(source, /ride\.boat \? t\.rideBoat : t\.rideStops\(ride\.stops\)/);
+  assert.match(source, /\}\[legWord\(leg\)\]/);
 });

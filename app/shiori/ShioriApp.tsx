@@ -25,7 +25,7 @@ import { EMPTY_MEAL_PREFS, MEAL_QUICK_ASKS, MEAL_ROLE_LABELS, askMealAdviceInTur
 import { askMealAdvice, mealAdviceAvailable } from "../../lib/shiori/meal-advice-client";
 import { MEAL_ADVICE_LIMITS, MEAL_BUDGET_FEELS, MEAL_PARTIES, type MealAdviceAnswer, type MealAdviceRequest, type MealBriefPrefs, type MealBudgetFeel, type MealParty, type MealRefineAsk, type MealWithinMeters } from "../../lib/shiori/meal-advice-contract";
 import { clockOf, hasToeiRide, legTimetables, type RideTimetable, type ServiceCalendar, type TimetableTrain, type ToeiTimetableData } from "../../lib/shiori/timetable";
-import { buildShioriPlan, departureAfterStop, type ShioriLeg, type ShioriMeal, type ShioriNotice, type ShioriPlace, type ShioriPlan, type ShioriReservation, type ShioriRoute, type ShioriStop, type ShioriUnplaced } from "../../lib/shiori/plan";
+import { buildShioriPlan, departureAfterStop, legWord, type ShioriLeg, type ShioriMeal, type ShioriNotice, type ShioriPlace, type ShioriPlan, type ShioriReservation, type ShioriRoute, type ShioriStop, type ShioriUnplaced } from "../../lib/shiori/plan";
 import {
   MAX_DAYS,
   MAX_PLACES,
@@ -280,6 +280,9 @@ const text = {
     rail: "電車",
     transit: "電車・バス",
     climb: "山道・ロープウェイなど",
+    ferry: "船",
+    railFerry: "電車・船",
+    rideBoat: "船",
     taxi: "タクシー",
     about: "約",
     minute: "分",
@@ -568,6 +571,9 @@ const text = {
     rail: "Train",
     transit: "Transit",
     climb: "Trail or ropeway",
+    ferry: "Ferry",
+    railFerry: "Train + ferry",
+    rideBoat: "Boat",
     taxi: "Taxi",
     about: "~",
     minute: " min",
@@ -813,7 +819,7 @@ function LegCard({ leg, locale, heading, depart, times }: { leg: ShioriLeg; loca
   // planned time are handed to a transit search, which has the exact trains,
   // the platform and the fare.
   const timetable = leg.rail && depart && inJapan(leg.from) ? transitSearchUrl(leg.rail.rides[0].from, leg.rail.rides.at(-1)!.to, clockPlus(depart, leg.rail.walkToMinutes)) : null;
-  const label = leg.mode === "walk" ? t.walk : leg.mode === "rail" ? t.rail : leg.mode === "taxi" ? t.taxi : leg.climb ? t.climb : t.transit;
+  const label = { walk: t.walk, train: t.rail, ferry: t.ferry, "train-ferry": t.railFerry, taxi: t.taxi, climb: t.climb, transit: t.transit }[legWord(leg)];
   const icon = leg.mode === "walk" ? "walk" : leg.mode === "rail" ? "rail" : leg.mode === "taxi" ? "taxi" : "bus";
   // One change of train: the minutes on foot belong to it. With several, the
   // total cannot be split between them, so none is given a number.
@@ -880,7 +886,7 @@ function LegCard({ leg, locale, heading, depart, times }: { leg: ShioriLeg; loca
                       <span className="shiori-sr"> → </span>
                       <span>{ride.to}</span>
                     </span>
-                    <small>{t.rideStops(ride.stops)}</small>
+                    <small>{ride.boat ? t.rideBoat : t.rideStops(ride.stops)}</small>
                   </div>
                   <div className="shiori-ticket-stub">
                     <small>{t.rideLabel}</small>
