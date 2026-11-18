@@ -74,6 +74,17 @@ test("what the web found decides the places the drafts call closed or private", 
   assert.equal(isClosedSight("wikidata-Q0"), false);
 });
 
+test("every closed, gone or outside-only verdict cites a page, and the ones not fetched at the time say they are from memory: 32 fetched, 29 from memory", () => {
+  const items = (JSON.parse(readFileSync(new URL("../scripts/sight-notes/web-check.json", import.meta.url), "utf8")) as { items: Array<{ q: string; evidence: string }> }).items;
+  for (const item of items) assert.match(item.evidence, /https?:\/\//, item.q);
+  const fromMemory = items.filter((item) => /from memory/i.test(item.evidence)).length;
+  assert.deepEqual([items.length - fromMemory, fromMemory], [32, 29]);
+  // What the code and the guide say of them is no more than that.
+  for (const file of ["../scripts/build-sight-notes.ts", "../lib/shiori/sight-notes.ts", "../lib/popular-sights.ts", "../AGENTS.md"]) {
+    assert.equal(/checked on the web/.test(readFileSync(new URL(file, import.meta.url), "utf8")), false, file);
+  }
+});
+
 test("nothing in the notes reads as an hour of the day", () => {
   assert.equal(/\d{1,2}:\d{2}/.test(shipped), false);
   for (const note of Object.values(JSON.parse(shipped) as Record<string, Record<string, unknown>>)) {

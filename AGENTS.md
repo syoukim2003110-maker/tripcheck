@@ -92,7 +92,8 @@ Working branch: `claude/free-place-resolution`.
 - The per-sight notes (`lib/shiori/sight-notes.json`: usual stay, part of
   the day, closed or seen from outside, part of another sight) were drafted
   at development time by two independent model passes; only values both
-  agree on are kept, places called closed were checked on the web, and
+  agree on are kept, places called closed carry a verdict with a cited
+  source (fetched on the web, or from memory and marked so), and
   `scripts/build-sight-notes.ts` rebuilds the file from the drafts kept in
   `scripts/sight-notes/`. They are used as planning habits and estimates
   only, never printed as opening hours or as facts about a place.

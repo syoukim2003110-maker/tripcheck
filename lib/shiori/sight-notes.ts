@@ -5,8 +5,9 @@
  * at all, and which other sight of the same city it lies inside.
  *
  * They were drafted at development time by two independent model passes, and
- * only what both agreed on is kept; a place they called closed was checked on
- * the web. At run time nothing is asked of any model: this is a table.
+ * only what both agreed on is kept; a place they called closed was given a
+ * verdict with a cited source (fetched from the web, or from memory with the
+ * page it rests on: scripts/sight-notes/web-check.json says which). At run time nothing is asked of any model: this is a table.
  *
  * They are the planner's habits and estimates, like the rules by kind they
  * refine. Nothing here is an opening hour or a fact about a place, and

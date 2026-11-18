@@ -1,7 +1,7 @@
 /*
  * Builds lib/shiori/sight-notes.json: for the bundled sights
  * (lib/popular-sights-data.json), the planning notes two independent model
- * passes agreed on, checked on the web where they say a place cannot be
+ * passes agreed on, with a cited source where they say a place cannot be
  * visited. A development tool; nothing here runs on the site, and no model is
  * asked anything here: the two passes were drafted once, at development time,
  * and are kept in scripts/sight-notes/drafts so that this build gives the
@@ -24,8 +24,10 @@
  *           any place is without a note);
  *   partOf  the same id, of another sight of the same city.
  *
- * A place both passes call closed or private was then looked up on the web
- * (scripts/sight-notes/web-check.json), and the web decides: "closed" or
+ * A place both passes call closed or private was then given a verdict with a
+ * cited source (scripts/sight-notes/web-check.json): 32 of the 61 were
+ * fetched from the web at the time, 29 were written from memory with the
+ * page they rest on and say so ("from memory"). The verdict decides: "closed" or
  * "gone-historic" keep the place as closed ("closed" / "gone"),
  * "exterior-only" makes it a place seen from outside ("exterior"), "open"
  * removes the note. A closed or private place nobody checked keeps no access

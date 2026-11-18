@@ -134,7 +134,7 @@ const CONTAINER_KIND = /\bpark\b|square|plaza|neighbou?rhood|district|island|qua
  * down in 1580 on the site of Osaka Castle, a dynasty, a market that moved
  * away in 2018, and the castle, its park and its ruin as three stops at one
  * spot. Those are dropped here — a place its sight note calls closed or gone
- * (checked on the web: see scripts/build-sight-notes.ts) among them; a place
+ * (each with a cited source: see scripts/build-sight-notes.ts) among them; a place
  * already on someone's trip is unaffected.
  */
 export function curateSights(sights: readonly PopularSight[]): PopularSight[] {
