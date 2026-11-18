@@ -190,6 +190,28 @@ export function appleDataCount(trip: ShioriTrip): number {
   return trip.places.filter((place) => holdsAppleData(place)).length + (holdsAppleData(trip.hotel, true) ? 1 : 0);
 }
 
+/** Where the trip's places and hotel known from Apple are: Apple's positions, which are not handed to another service. */
+export function applePositions(trip: Pick<ShioriTrip, "places" | "hotel">): Array<{ latitude: number; longitude: number }> {
+  const points = trip.places.filter((place) => !place.pending && holdsAppleData(place)).map((place) => ({ latitude: place.lat, longitude: place.lon }));
+  if (trip.hotel && !trip.hotel.pending && holdsAppleData(trip.hotel, true)) points.push({ latitude: trip.hotel.lat, longitude: trip.hotel.lon });
+  return points;
+}
+
+/**
+ * Whether a point is (within a few metres of) one of Apple's positions, or
+ * lies between two of them: a meal next to an Apple place, a coffee break on
+ * the way from one. Such a point is Apple's data and is asked of Apple alone
+ * (Attachment 6, 2.2 and 2.3), never of the shop guide.
+ */
+export function atApplePosition(point: { latitude: number; longitude: number }, apple: ReadonlyArray<{ latitude: number; longitude: number }>): boolean {
+  return apple.some((spot) => Math.abs(spot.latitude - point.latitude) < 0.0003 && Math.abs(spot.longitude - point.longitude) < 0.0003);
+}
+
+/** The places that may stand for where the trip is (the forecast's and the search's centre): none known from Apple. */
+export function ownPlaces<T extends { id?: string }>(places: readonly T[]): T[] {
+  return places.filter((place) => !holdsAppleData(place));
+}
+
 /** The name a trip goes by (its title, the resume button, the LINE text): its destination, or else the first place not found through Apple. */
 export function tripTitleName(trip: ShioriTrip): string {
   return trip.cityName || trip.places.find((place) => place.name && !holdsAppleData(place))?.name || "";

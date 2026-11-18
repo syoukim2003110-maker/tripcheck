@@ -57,6 +57,9 @@ import {
   appleDataCount,
   holdsAppleData,
   tripTitleName,
+  applePositions,
+  atApplePosition,
+  ownPlaces,
   withLastDayFinish,
   withPackAnyway,
   withRematch,
@@ -1122,7 +1125,8 @@ function MealAdviceOptions({ advice, entry, lists, kind, locale, onAdd }: { advi
   );
 }
 
-function MealRow({ meal, locale, onAdd, advice, slot }: { meal: ShioriMeal; locale: Locale; onAdd: (shop: HotpepperShop, kind: "lunch" | "dinner") => void; advice?: MealRowAdvice | null; slot?: string }) {
+/** `appleNear`: the meal is at a place known from Apple, whose position is asked of Apple alone, never of the shop guide. */
+function MealRow({ meal, locale, onAdd, advice, slot, appleNear = false }: { meal: ShioriMeal; locale: Locale; onAdd: (shop: HotpepperShop, kind: "lunch" | "dinner") => void; advice?: MealRowAdvice | null; slot?: string; appleNear?: boolean }) {
   const t = text[locale];
   const [state, setState] = useState<"closed" | "loading" | "ready" | "failed">("closed");
   const [candidates, setCandidates] = useState<FoodCandidate[]>([]);
@@ -1139,7 +1143,7 @@ function MealRow({ meal, locale, onAdd, advice, slot }: { meal: ShioriMeal; loca
     if (!relay) { setState("failed"); return; }
     setState("loading");
     try {
-      if (inJapan(meal.near)) {
+      if (inJapan(meal.near) && !appleNear) {
         const listed = await fetchHotpepperShops({ near: meal.near, withinMeters: 1000, meal: meal.kind });
         if (listed.length >= 3) {
           setShops(shopsForMeal(listed, meal.kind));
@@ -1227,7 +1231,7 @@ function MealRow({ meal, locale, onAdd, advice, slot }: { meal: ShioriMeal; loca
   );
 }
 
-function CafeRow({ cafe, locale, onAdd }: { cafe: CafeBreak; locale: Locale; onAdd: (pick: CafePick) => void }) {
+function CafeRow({ cafe, locale, onAdd, appleNear = false }: { cafe: CafeBreak; locale: Locale; onAdd: (pick: CafePick) => void; appleNear?: boolean }) {
   const t = text[locale];
   const [state, setState] = useState<"closed" | "loading" | "ready" | "failed">("closed");
   const [picks, setPicks] = useState<CafePick[]>([]);
@@ -1240,7 +1244,8 @@ function CafeRow({ cafe, locale, onAdd }: { cafe: CafeBreak; locale: Locale; onA
       // Asked together: the map's cafés in walking order, and — in Japan — the shop guide's, for photos and prices.
       const [nearby, listed] = await Promise.all([
         findCafes(cafe, relay, locale),
-        inJapan(cafe.search) ? fetchHotpepperShops({ near: cafe.search, withinMeters: 1000, genre: "cafe" }) : Promise.resolve([]),
+        // (Not when the break is next to, or on the way from, a place known from Apple: that position is Apple's.)
+        inJapan(cafe.search) && !appleNear ? fetchHotpepperShops({ near: cafe.search, withinMeters: 1000, genre: "cafe" }) : Promise.resolve([]),
       ]);
       const found = listed.length > 0 ? withListedCafes(nearby, cafe, listed) : nearby;
       setPicks(found);
@@ -1630,6 +1635,8 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
   // What can be planned and drawn now: the trip without the Apple places still being looked up.
   const usable = useMemo(() => (appleMap === "failed" ? withoutAppleData(plannableTrip(trip)) : plannableTrip(trip)), [trip, appleMap]);
   const appleAside = appleMap === "failed" ? appleDataCount(plannableTrip(trip)) : 0;
+  // Apple's positions of the trip's places: a meal or a break there is asked of Apple alone.
+  const applePoints = useMemo(() => applePositions(usable), [usable]);
 
   useEffect(() => {
     const cityId = trip.cityId;
@@ -1661,7 +1668,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
   // A trip with a city waits for the city list: asking about the middle of
   // the places first and the city's centre a moment later would be two
   // questions where one is promised.
-  const centre = useMemo(() => (trip.cityId && cities.length === 0 ? null : forecastCentre(city, usable.places)), [trip.cityId, cities.length, city, usable.places]);
+  const centre = useMemo(() => (trip.cityId && cities.length === 0 ? null : forecastCentre(city, ownPlaces(usable.places))), [trip.cityId, cities.length, city, usable.places]);
   const centreLat = centre?.latitude ?? null;
   const centreLon = centre?.longitude ?? null;
   const startDate = trip.startDate ?? null;
@@ -2022,7 +2029,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
   // One name looked up near the trip. `mapFailed` hears why the map search
   // could not be asked; the lookup itself still falls back to the open one.
   const lookUp = (name: string, kind: AddKind, isCurrent: () => boolean, mapFailed?: (error: unknown) => void, openFailed?: () => void) => {
-    const anchor = addAnchor(city, usable.places);
+    const anchor = addAnchor(city, ownPlaces(usable.places));
     const reach = (city?.radiusKm ?? 60) + 80;
     return searchAddCandidates({
       poiFirst: kind !== "place",
@@ -2083,7 +2090,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
   const checkBulk = async (lines: BulkLine[]) => {
     const run = ++bulkRun.current;
     const isCurrent = () => run === bulkRun.current;
-    const anchor = addAnchor(city, usable.places);
+    const anchor = addAnchor(city, ownPlaces(usable.places));
     setBulk((current) => current ? { ...current, lines, busy: true, stopped: null } : current);
     const outcome = await resolveBulk(lines, {
       local: (name) => city ? bundledMatches(name, city.sights, locale, anchor) : [],
@@ -2900,7 +2907,8 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
                           </article>
                           {day.meals.filter((meal) => meal.afterStop === index).map((meal) => <MealRow
                             key={`${meal.kind}-${day.index}-${trip.places.length}`}
-                            advice={rowAdvice(day.index, meal)}
+                            advice={atApplePosition(meal.near, applePoints) ? null : rowAdvice(day.index, meal)}
+                            appleNear={atApplePosition(meal.near, applePoints)}
                             slot={mealSlotId(day.index, meal.kind)}
                             locale={locale}
                             meal={meal}
@@ -2916,6 +2924,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
                           />)}
                           {day.cafe && day.cafe.afterStop === index ? (
                             <CafeRow
+                              appleNear={[day.cafe.from, day.cafe.to, day.cafe.search].some((point) => point && atApplePosition(point, applePoints))}
                               cafe={day.cafe}
                               key={`cafe-${day.index}-${stop.place.id}`}
                               locale={locale}

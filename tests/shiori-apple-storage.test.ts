@@ -5,11 +5,14 @@ import { openCandidate, putPlace } from "../lib/shiori/add-search.ts";
 import type { ShioriPlace } from "../lib/shiori/plan.ts";
 import {
   appleDataCount,
+  applePositions,
   appleRematches,
+  atApplePosition,
   canonicalPlaceId,
   decodeTrip,
   emptyTrip,
   keptAppleKind,
+  ownPlaces,
   encodeTrip,
   pendingAppleIds,
   placeSource,
@@ -273,4 +276,24 @@ test("the page removes a legacy stop only when Apple answered without it, and sa
   // A search that could not be asked removes nothing.
   assert.match(effect, /\}, \(\) => undefined\);/);
   assert.equal(page.match(/rematchGone: \(count: number\) =>/g)?.length, 2);
+});
+
+test("Apple's positions of places are not handed to another service: not to the shop guide, the forecast or the open search", async () => {
+  const trip = tripWithApple();
+  const points = applePositions(trip);
+  // The two Apple places and the Apple hotel.
+  assert.equal(points.length, 3);
+  assert.equal(atApplePosition({ latitude: trip.places[1].lat, longitude: trip.places[1].lon }, points), true);
+  assert.equal(atApplePosition({ latitude: trip.places[0].lat, longitude: trip.places[0].lon }, points), false);
+  // The forecast's and the search's centre are made from the trip's other places only.
+  assert.deepEqual(ownPlaces(trip.places).map((place) => place.id), ["wikidata-Q1", "hotpepper-J000123456", "osm-node-42"]);
+  const { forecastCentre } = await import("../lib/shiori/forecast.ts");
+  assert.equal(forecastCentre(null, ownPlaces([trip.places[1]])), null);
+  const { readFile } = await import("node:fs/promises");
+  const page = await readFile(new URL("../app/shiori/ShioriApp.tsx", import.meta.url), "utf8");
+  assert.match(page, /forecastCentre\(city, ownPlaces\(usable\.places\)\)/);
+  assert.equal(page.match(/const anchor = addAnchor\(city, ownPlaces\(usable\.places\)\);/g)?.length, 2);
+  assert.match(page, /if \(inJapan\(meal\.near\) && !appleNear\) \{/);
+  assert.match(page, /inJapan\(cafe\.search\) && !appleNear \? fetchHotpepperShops/);
+  assert.match(page, /advice=\{atApplePosition\(meal\.near, applePoints\) \? null : rowAdvice\(day\.index, meal\)\}/);
 });
