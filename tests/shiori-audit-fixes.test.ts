@@ -222,7 +222,7 @@ test("in every trip of the audit a dinner is never before the dinner hour, never
   assert.ok(slots >= 50 && hotelSlots >= 20, `${slots} dinners, ${hotelSlots} near the hotel`);
 });
 
-test("where the dinner is: near the last sight as a rule, near the hotel after an early end or a place with no table around it, at its true time on a day that runs late", () => {
+test("where the dinner is: near the last sight on a day still out at the dinner hour or without a hotel, near the hotel after a sight that is over before the hour (were it by five minutes: the ride back leaves then) or a place with no table around it, at its true time on a day that runs late", () => {
   const hotel = { name: "宿", lat: 35.01, lon: 135.76, rideBack: 40 };
   const temple = { name: "寺", lat: 35.0, lon: 135.78, kind: "buddhist temple" };
   const forest = { name: "森", lat: 35.1, lon: 135.7, kind: "forest park" };
@@ -238,8 +238,14 @@ test("where the dinner is: near the last sight as a rule, near the hotel after a
   assert.deepEqual(slot(16 * 60 + 38, temple, hotel), at(17 * 60 + 30, true));
   // The ride back is longer than the wait: dinner when the hotel is reached.
   assert.deepEqual(slot(17 * 60, temple, { ...hotel, rideBack: 55 }), at(17 * 60 + 55, true));
-  // Over at 17:10, twenty minutes before dinner: near the temple, at 17:30.
-  assert.deepEqual(slot(17 * 60 + 10, temple, hotel), at(17 * 60 + 30, false));
+  // Over at 17:10 or at 17:25, before the dinner hour: the booklet rides back at that minute, so the dinner is
+  // near the hotel once there. (Was: near the temple at 17:30, under a ride that had left at 17:10.)
+  assert.deepEqual(slot(17 * 60 + 10, temple, hotel), at(17 * 60 + 50, true));
+  assert.deepEqual(slot(17 * 60 + 25, temple, hotel), at(18 * 60 + 5, true));
+  // Over at the dinner hour or after it: near the temple, the minute it is left.
+  assert.deepEqual(slot(17 * 60 + 30, temple, hotel), at(17 * 60 + 30, false));
+  // Without a hotel nothing rides away: near the temple at the dinner hour.
+  assert.deepEqual(slot(17 * 60 + 10, temple, null), at(17 * 60 + 30, false));
   // Still sightseeing at 20:10, or past midnight: the true time, near the last sight.
   assert.deepEqual(slot(20 * 60 + 10, temple, hotel), at(20 * 60 + 10, false));
   assert.deepEqual(slot(24 * 60 + 44, temple, null), at(24 * 60 + 44, false));
@@ -247,8 +253,8 @@ test("where the dinner is: near the last sight as a rule, near the hotel after a
   assert.deepEqual(slot(17 * 60 + 20, forest, hotel), at(18 * 60, true));
   assert.deepEqual(slot(19 * 60, forest, hotel), at(19 * 60 + 40, true));
   // A town's own park and a park of rides have tables around them.
-  for (const kind of ["urban park", "theme park", "amusement park", "artificial island", undefined]) assert.deepEqual(slot(17 * 60 + 20, { ...forest, kind: kind as string }, hotel), at(17 * 60 + 30, false), String(kind));
-  for (const kind of ["mountain", "volcano", "waterfall", "island", "beach", "ruins", "archaeological site", "national park", "park", "castle ruin in japan"]) assert.equal(slot(17 * 60 + 20, { ...forest, kind }, hotel).atHotel, true, kind);
+  for (const kind of ["urban park", "theme park", "amusement park", "artificial island", undefined]) assert.deepEqual(slot(17 * 60 + 40, { ...forest, kind: kind as string }, hotel), at(17 * 60 + 40, false), String(kind));
+  for (const kind of ["mountain", "volcano", "waterfall", "island", "beach", "ruins", "archaeological site", "national park", "park", "castle ruin in japan"]) assert.equal(slot(17 * 60 + 40, { ...forest, kind }, hotel).atHotel, true, kind);
   // Without a hotel the plan knows no other place: near the last sight, at the dinner hour.
   assert.deepEqual(slot(16 * 60 + 38, forest, null), at(17 * 60 + 30, false));
   // No coffee within an hour and a half of that dinner after the same stop; one in mid-afternoon stays.
@@ -735,4 +741,38 @@ test("a walk to a quarter named after a hill is a walk, and the way up a hill be
     }
   }
   assert.ok(marked >= 1, `${marked} legs up or down a hill in the audit`);
+});
+
+test("a dinner near the last sight never starts after the booklet has left that sight for the hotel: not 'dinner 17:30 near 天王寺動物園' under a train that left at 17:25", () => {
+  // Were: osaka-3 day 2, left 17:25, (dinner 17:30 near 天王寺動物園), back at the hotel 18:41;
+  // hakone-3 day 1, left 17:12, dinner 17:30 near the shrine, back 18:42.
+  for (const id of ["osaka-3", "hakone-3"]) {
+    for (const day of auditPlan(id).plan.days) {
+      const dinner = dinnerOf(day);
+      const last = day.stops.at(-1)!;
+      if (!dinner || last.leave >= "17:30") continue;
+      assert.equal(dinner.meal.atHotel, true, `${id} day ${day.index + 1}`);
+      assert.equal(dinner.meal.start, day.end, `${id} day ${day.index + 1}: when the ride back is over`);
+    }
+  }
+  const zoo = dayEndingAt("osaka-3", /天王寺動物園/);
+  assert.deepEqual([zoo.day.stops.at(-1)!.leave, dinnerOf(zoo.day)!.meal.start, dinnerOf(zoo.day)!.meal.atHotel], ["17:25", zoo.day.end, true]);
+  // In every trip of the audit: with a ride back to a hotel, a dinner near the last sight begins the minute the
+  // sight is left (the minute the ride is printed from), and a dinner near the hotel not before the ride is over.
+  let near = 0;
+  for (const scenario of scenarios) {
+    for (const day of auditPlan(scenario.id).plan.days) {
+      const dinner = dinnerOf(day);
+      if (!dinner || !day.toHotel) continue;
+      const last = day.stops.at(-1)!;
+      const lastLeave = minutesOfClock(last.leave) + (last.leaveNextDay ? 1_440 : 0);
+      const where = `${scenario.id} day ${day.index + 1}: left ${last.leave}, dinner ${dinner.meal.start} near ${dinner.meal.nearName}`;
+      if (dinner.meal.atHotel) assert.ok(dinner.start >= lastLeave + day.toHotel.minutes, where);
+      else {
+        near += 1;
+        assert.equal(dinner.start, lastLeave, where);
+      }
+    }
+  }
+  assert.ok(near >= 5, `${near} dinners near the last sight on days with a hotel`);
 });

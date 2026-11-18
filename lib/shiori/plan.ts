@@ -1033,8 +1033,6 @@ const lunchDuringStart = (arrive: number) => Math.max(arrive, 12 * 60 + 30);
 /** A sight with nowhere to sit down to dinner beside it, as far as its kind says: open country, not a town's own park or a park of rides. */
 const NO_TABLE_KIND = /mountain|volcano|waterfall|canyon|\bcave\b|\blake\b|forest|\bpark\b|wildlife|island|beach|ruin|archaeological|cemetery|lighthouse/;
 const TOWN_PARK_KIND = /theme park|amusement|urban park|science park|hi-tech park|exhibition park|miniature park|artificial/;
-/** The last sight is over this long before the dinner hour: nobody waits it out on the spot. */
-const DINNER_WAIT = 30;
 
 /** When the place's country sits down to dinner, in minutes since midnight (lib/destinations.ts); 17:30 where it is not known. */
 export function dinnerHourAt(place: { lat: number; lon: number }): number {
@@ -1047,9 +1045,15 @@ export function dinnerHourAt(place: { lat: number; lon: number }): number {
  * that is still sightseeing after it eats when its last sight is over.
  *
  * Near the last sight, as a rule. Back near the hotel when there is one and
- * the last sight is over well before dinner (nobody waits an hour beside an
- * earthwork) or is a place with no table around it (a forest park, a
- * mountain, ruins): then not before the ride back has got there.
+ * the last sight is over before the dinner hour (nobody waits an hour beside
+ * an earthwork — and the ride back that the booklet prints leaves when the
+ * sight is over, be it five minutes before the hour: a dinner "near the
+ * zoo at 17:30" under a train that left the zoo at 17:25 is a row the
+ * traveller cannot keep) or is a place with no table around it (a forest
+ * park, a mountain, ruins): then not before the ride back has got there.
+ * So a dinner near the last sight of a day with a hotel always begins the
+ * minute that sight is left, which is the minute the ride back is printed
+ * from: the traveller eats, and rides back that much later.
  */
 export function dinnerSlot(day: {
   /** When the last stop is left, in minutes since the day's midnight. */
@@ -1061,7 +1065,7 @@ export function dinnerSlot(day: {
   const hour = dinnerHourAt(day.lastPlace);
   const kind = (day.lastPlace.kind ?? "").toLowerCase();
   const noTable = NO_TABLE_KIND.test(kind) && !TOWN_PARK_KIND.test(kind);
-  if (day.hotel && (noTable || hour - day.lastLeave >= DINNER_WAIT)) {
+  if (day.hotel && (noTable || day.lastLeave < hour)) {
     return {
       start: Math.max(hour, day.lastLeave + day.hotel.rideBack),
       near: { latitude: day.hotel.lat, longitude: day.hotel.lon },
