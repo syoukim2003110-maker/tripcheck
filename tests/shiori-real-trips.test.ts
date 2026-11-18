@@ -658,18 +658,20 @@ test("a renamed hotel or place is printed under its new name, and a slot after m
   for (const plan of [first, renamed]) assert.equal(plan.days.some((day) => day.meals.some((meal) => meal.nextDay)), false);
 });
 
-test("the suggested area is the listed place with the least door-to-door travel", () => {
+test("the suggested area is a listed place whose days are no more packed than from any other, and within five minutes a day of the least door-to-door travel", () => {
   // Was: on lists up to twelve places only the six best by a quick measure were planned, and 12–16 minutes were lost.
+  // Then: the least travel alone decided, and a place far out won by putting the list on fewer, fuller days.
   const city = cities.find((entry) => entry.id === "nagoya")!;
   const places = curateSights(city.sights).slice(0, 9).map((sight) => placeFromSight(sight, "ja"));
   const rail = railOf("nagoya");
   const free = buildShioriPlan({ places, days: 2, hotel: null, locale: "ja" }, { rail, cities });
   assert.ok(free.stayNear?.nearName);
   const at = (place: { lat: number; lon: number }) => buildShioriPlan({ places, days: 2, hotel: { name: "h", lat: place.lat, lon: place.lon }, locale: "ja" }, { rail, cities });
-  const measure = (plan: ShioriPlan) => [plan.days.filter((day) => day.runsLate).length, totalTravel(plan)] as const;
+  const measure = (plan: ShioriPlan) => [plan.days.filter((day) => day.runsLate).length, plan.days.filter((day) => day.load === "tight").length, totalTravel(plan), plan.days.length] as const;
   const suggested = measure(at({ lat: free.stayNear.latitude, lon: free.stayNear.longitude }));
   for (const place of places) {
     const here = measure(at(place));
-    assert.ok(suggested[0] < here[0] || (suggested[0] === here[0] && suggested[1] <= here[1]), `${place.name}: ${here[1]} against ${suggested[1]} at ${free.stayNear.nearName}`);
+    const noWorse = suggested[0] < here[0] || (suggested[0] === here[0] && (suggested[1] < here[1] || (suggested[1] === here[1] && suggested[2] <= here[2] + 5 * suggested[3])));
+    assert.ok(noWorse, `${place.name}: ${here.join("/")} against ${suggested.join("/")} at ${free.stayNear.nearName}`);
   }
 });

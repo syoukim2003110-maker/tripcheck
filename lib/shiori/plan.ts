@@ -1586,6 +1586,20 @@ function brokenInPrint(plan: ShioriPlan, input: ShioriInput, frames: Frames, exc
   return null;
 }
 
+/** Minutes a day by which two places to stay are not told apart: the legs are estimates. */
+const STAY_NEAR_SLACK_PER_DAY = 5;
+/**
+ * A point on the map where there is no bed: the top of a mountain, the
+ * middle of an island or of a forest, a waterfall, a gorge, a cave. (A
+ * man-made island, a castle on a hill, a church in a cave and an
+ * observatory on a volcano are not that.)
+ */
+export function nobodySleepsAt(kind: string | undefined) {
+  const lowered = (kind ?? "").toLowerCase();
+  if (/artificial|observatory|church|temple|shrine|castle|museum|resort|village|town/.test(lowered)) return false;
+  return /mountain|volcano|\bsummit\b|\bpeak\b|\bisland|\bislet\b|\batoll\b|\bforest\b|waterfall|\bcanyon\b|\bgorge\b|\bcave\b/.test(lowered);
+}
+
 function straightMinutes(from: GeoPoint, to: GeoPoint) {
   const stop = (point: GeoPoint) => ({ latitude: point.latitude, longitude: point.longitude }) as RouteStop;
   return estimateTravelOptions(stop(from), stop(to)).recommended.minutes;
@@ -1717,27 +1731,39 @@ export function buildShioriPlan(input: ShioriInput, options: PlanOptions = {}): 
   // hotel there, its days searched again and summed — not a midpoint of
   // coordinates, which lands in Central Park or the harbour and knows
   // nothing of train lines.
+  //
+  // The trip from each candidate is judged as the traveller would live it:
+  // days that cannot be kept first, then packed days, then minutes moving.
+  // Without the packed days a place far out won: every day from there
+  // costs a long way out and back, so the search put the list on fewer,
+  // fuller days, and fewer days are fewer ways out and back — 高山寺, ten
+  // kilometres from Kyoto, at 337 minutes on two packed days against 343
+  // on three easy ones from 本能寺 in the centre.
   let stayNear = plan.stayNear;
   if (plan.stayNear) {
     const count = laid.places.length;
     const dayOf = new Map(plan.days.flatMap((day) => day.stops.map((stop) => [stop.place.id, day.engineDay] as const)));
     const usedDays = Math.max(...plan.days.map((day) => day.engineDay));
-    type Measure = { late: number; travel: number };
-    const sum = (days: ReturnType<ReturnType<typeof daySearch>["choose"]>["days"]): Measure => ({ late: unkept(days), travel: days.reduce((total, day) => total + day.travel, 0) });
+    type Measure = { late: number; tight: number; travel: number; days: number };
+    const sum = (days: ReturnType<ReturnType<typeof daySearch>["choose"]>["days"]): Measure => ({ late: unkept(days), tight: days.filter((day) => day.tight).length, travel: days.reduce((total, day) => total + day.travel, 0), days: days.length });
     // The days as planned, each in its best order from that hotel (cheap) …
     const kept = (hotel: ShioriHotel) => sum(searched({ ...laid, hotel }).keep(laid.places.map((place) => dayOf.get(place.id) ?? 1), usedDays, frames ? { quick: true, requested } : { quick: true }).days);
     // … and the trip planned afresh from that hotel, which changes which
     // places share a day. Short lists exactly as the booklet would plan
     // them; long ones with the lighter search.
     const planned = (hotel: ShioriHotel) => sum(searched({ ...laid, hotel }).choose(input.days, { quick: count > 10 }).days);
-    const less = (left: Measure, right: Measure) => left.late - right.late || left.travel - right.travel;
+    const less = (left: Measure, right: Measure) => left.late - right.late || left.tight - right.tight || left.travel - right.travel;
     const seen = new Set<string>();
-    const candidates = laid.places.flatMap((place) => {
+    const listed = laid.places.flatMap((place) => {
       const spot = `${place.lat.toFixed(4)},${place.lon.toFixed(4)}`;
       if (seen.has(spot)) return [];
       seen.add(spot);
-      return [{ name: place.name, lat: place.lat, lon: place.lon }];
+      return [{ name: place.name, lat: place.lat, lon: place.lon, kind: place.kind }];
     });
+    // A summit, an island or a forest is a point nobody sleeps at; it is
+    // named only when the list holds nothing else.
+    const sleepable = listed.filter((place) => !nobodySleepsAt(place.kind));
+    const candidates = (sleepable.length > 0 ? sleepable : listed).map(({ name, lat, lon }) => ({ name, lat, lon }));
     // Up to ten places every listed place is planned afresh, so the one
     // named really is the best of them. Beyond that the few best by the
     // cheap measure are; beyond 16 the cheap measure decides alone.
@@ -1747,7 +1773,15 @@ export function buildShioriPlan(input: ShioriInput, options: PlanOptions = {}): 
         .sort((left, right) => less(left.measure, right.measure))
         .slice(0, count > 16 ? 1 : count > 12 ? 2 : 4)
         .map((candidate) => (count > 16 ? candidate : { hotel: candidate.hotel, measure: planned(candidate.hotel) }));
-    const winner = finalists.reduce((best, candidate) => (less(candidate.measure, best.measure) < 0 ? candidate : best));
+    const least = finalists.reduce((best, candidate) => (less(candidate.measure, best.measure) < 0 ? candidate : best));
+    // The minutes are estimates, and five of them a day are not a reason to
+    // sleep at the edge of the list: of the places that close to the least
+    // (and no worse in days kept or packed), the one in the middle of the
+    // list — the least far, as the crow flies, from all the others.
+    const spread = (hotel: ShioriHotel) => listed.reduce((total, place) => total + straightKm(hotel, place), 0);
+    const winner = finalists
+      .filter((candidate) => candidate.measure.late <= least.measure.late && candidate.measure.tight <= least.measure.tight && candidate.measure.travel <= least.measure.travel + STAY_NEAR_SLACK_PER_DAY * least.measure.days)
+      .reduce((best, candidate) => (spread(candidate.hotel) < spread(best.hotel) - 0.05 ? candidate : best), least);
     stayNear = { ...plan.stayNear, latitude: winner.hotel.lat, longitude: winner.hotel.lon, nearName: winner.hotel.name };
     // The traveller's own hotel against that: said when it costs twenty
     // minutes a day or more, and half an hour each way.
@@ -1756,8 +1790,10 @@ export function buildShioriPlan(input: ShioriInput, options: PlanOptions = {}): 
       const oneWay = Math.round(hotelLegs / (plan.days.length * 2));
       const apart = Math.hypot((input.hotel.lat - winner.hotel.lat) * 111, (input.hotel.lon - winner.hotel.lon) * 111 * Math.cos((winner.hotel.lat * Math.PI) / 180));
       const mine = count > 16 ? kept(input.hotel) : planned(input.hotel);
+      // Far is judged against the least travel any listed place gives; the
+      // minutes said are what the area that is named saves.
       const saved = mine.travel - winner.measure.travel;
-      if (oneWay >= 30 && apart > 0.5 && saved >= 20 * plan.days.length && winner.measure.late <= mine.late) {
+      if (oneWay >= 30 && apart > 0.5 && saved > 0 && mine.travel - least.measure.travel >= 20 * plan.days.length && winner.measure.late <= mine.late && winner.measure.tight <= mine.tight) {
         notices.push({ kind: "hotel-far", oneWayMinutes: oneWay, savedMinutes: Math.round(saved / 10) * 10 });
       }
     }

@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { buildShioriPlan, nobodySleepsAt } from "../lib/shiori/plan.ts";
 import { shioriStayMinutes } from "../lib/shiori/stay.ts";
-import { auditPlan, cities } from "../scripts/audit-scenarios.ts";
+import { auditPlan, cities, railOf, scenarioPlaces, scenarios } from "../scripts/audit-scenarios.ts";
 
 /*
  * Faults a reader found in the 63 trips of the plan audit
@@ -86,4 +87,45 @@ test("the way back to a Taipei hotel is not a ride on a line that does not run t
   const rides = plan.days.flatMap((day) => [day.fromHotel, ...day.legs, day.toHotel]).flatMap((leg) => leg?.rail?.rides ?? []);
   assert.ok(rides.length > 0);
   for (const ride of rides.filter((entry) => entry.line === "台北捷運環状線")) assert.ok(!/松山|永春/.test(`${ride.from}${ride.to}`), `${ride.from}→${ride.to}`);
+});
+
+test("the area to stay is not a far-out place that wins by putting the trip on fewer, fuller days", () => {
+  // Was: 高山寺, a mountain temple ten kilometres out. From there the list
+  // goes on two packed days (337 minutes moving); from 本能寺 in the centre
+  // on three easy ones (343). Fewer days are fewer ways out and back, and
+  // the least total alone decided.
+  const { scenario, plan } = auditPlan("kyoto-3");
+  assert.equal(plan.stayNear?.nearName, "本能寺");
+  const from = (name: string) => {
+    const base = scenarioPlaces(scenario).find((place) => place.name === name)!;
+    return buildShioriPlan({ places: scenarioPlaces(scenario), days: scenario.days, hotel: { name: "h", lat: base.lat, lon: base.lon }, locale: "ja" }, { rail: railOf("kyoto"), cities });
+  };
+  const packed = (name: string) => from(name).days.filter((day) => day.load === "tight").length;
+  assert.equal(packed("本能寺"), 0);
+  assert.ok(packed("高山寺") > 0);
+  // Top eight of Kyoto: not 伏見稲荷大社 at the southern edge for five minutes' difference, nor 延暦寺 on its mountain.
+  assert.equal(auditPlan("kyoto-2").plan.stayNear?.nearName, "清水寺");
+  // Tokyo: not the Skytree in the east for one minute over two days.
+  assert.equal(auditPlan("tokyo-2").plan.stayNear?.nearName, "皇居");
+});
+
+test("a summit, a volcano, an island or a forest is never the area to stay while the list holds a place with beds near it", () => {
+  // Was: 箱根山, the volcano itself.
+  assert.equal(auditPlan("hakone-2").plan.stayNear?.nearName, "箱根神社");
+  for (const kind of ["volcano", "stratovolcano", "mountain", "mountain range", "mountain pass", "island", "island group", "forest park", "waterfall", "canyon", "cave"]) assert.equal(nobodySleepsAt(kind), true, kind);
+  for (const kind of [undefined, "buddhist temple", "artificial island", "hill castle", "cave church", "volcano observatory", "theme park", "beach", "urban park", "observation tower"]) assert.equal(nobodySleepsAt(kind), false, String(kind));
+  // In every trip of the audit.
+  for (const scenario of scenarios) {
+    const { plan } = auditPlan(scenario.id);
+    const places = scenarioPlaces(scenario);
+    if (!plan.stayNear?.nearName || places.every((place) => nobodySleepsAt(place.kind))) continue;
+    const named = places.find((place) => place.name === plan.stayNear!.nearName)!;
+    assert.equal(nobodySleepsAt(named.kind), false, `${scenario.id}: ${named.name} [${named.kind}]`);
+  }
+  // A list of nothing but mountains still gets an answer: one of them.
+  const kyoto = cities.find((city) => city.id === "kyoto")!;
+  const peaks = kyoto.sights.filter((sight) => sight.kind === "mountain").slice(0, 2);
+  assert.equal(peaks.length, 2);
+  const plan = buildShioriPlan({ places: peaks.map((sight, index) => ({ id: `m${index}`, name: sight.ja, lat: sight.lat, lon: sight.lon, stayMinutes: 120, kind: sight.kind })), days: 1, hotel: null, locale: "ja" }, { cities });
+  assert.ok(peaks.some((sight) => sight.ja === plan.stayNear?.nearName));
 });
