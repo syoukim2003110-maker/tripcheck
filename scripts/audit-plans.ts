@@ -22,7 +22,7 @@ function legText(leg: ShioriLeg | null): string {
     const rides = leg.rail.rides.map((ride) => `${ride.line ?? "line unknown"} ${ride.from}→${ride.to} (${ride.stops} stops, ${ride.minutes} min)`).join(" + ");
     return `    ↓ train ${leg.minutes} min (walk ${leg.rail.walkToMinutes} to ${leg.rail.walkToStation}; ${leg.rail.transfers} change(s); walk ${leg.rail.walkFromMinutes} from ${leg.rail.walkFromStation}) ${rides}`;
   }
-  return `    ↓ ${leg.mode} ${leg.minutes} min`;
+  return `    ↓ ${leg.mode} ${leg.minutes} min${leg.climb ? " (up or down a hill, way unknown)" : ""}`;
 }
 function dayText(day: ShioriDay, hotel: ShioriHotel | null): string {
   const lines = [`  Day ${day.index + 1} "${day.title}" — ${day.start}–${day.end}${day.endsNextDay ? " (next day)" : ""}, load ${day.load}${day.runsLate ? ", runs late" : ""}, moving ${day.travelMinutes} min, on foot ${day.walkMinutes} min${day.noLunchRoom ? ", NO ROOM FOR LUNCH" : ""}`];

@@ -702,3 +702,37 @@ test("a hotel that squeezes the trip onto fewer, packed days is said to be far, 
     assert.ok(packed(audit.days) - packed(from.days) >= far.calmerDays, `${entry.id}: ${packed(audit.days)} → ${packed(from.days)}, said ${far.calmerDays}`);
   }
 });
+
+test("a walk to a quarter named after a hill is a walk, and the way up a hill beside the last sight is not called a train or a bus: 嵐山 from 天龍寺, 若草山 from 春日大社", () => {
+  // Was: 天龍寺 > 嵐山 ↓ transit 25 min (a walk of 17), printed as 電車・バス with eight minutes added.
+  // 嵐山 is the quarter at the foot of the hill, whatever the catalogue calls it.
+  assert.equal(hardToReach(sightOf("kyoto", "嵐山")), null);
+  assert.equal(hardToReach({ kind: "mountain", name: "Arashiyama" }), null);
+  const arashiyama = buildShioriPlan({ places: [sightOf("kyoto", "天龍寺"), sightOf("kyoto", "嵐山")], days: 1, hotel: null, locale: "ja" }, { rail: railOf("kyoto"), cities }).days[0].legs[0];
+  assert.equal(arashiyama.mode, "walk");
+  assert.equal(arashiyama.climb, undefined);
+  // 若草山 is a hill of 342 m twenty minutes of level walking from 春日大社: not a level walk, and no bus either.
+  // The leg is an estimate with the way unknown, and says it is the way up or down a hill.
+  for (const pair of [["若草山", "春日大社"], ["春日大社", "若草山"]]) {
+    const leg = buildShioriPlan({ places: pair.map((name) => sightOf("nara", name)), days: 1, hotel: null, locale: "ja" }, { rail: railOf("nara"), cities }).days[0].legs[0];
+    assert.deepEqual([leg.mode, leg.rail, leg.climb], ["transit", null, true], pair.join(" > "));
+  }
+  const misen = buildShioriPlan({ places: [sightOf("hiroshima", "大聖院"), sightOf("hiroshima", "弥山")], days: 1, hotel: null, locale: "ja" }, { rail: railOf("hiroshima"), cities }).days[0].legs[0];
+  assert.equal(misen.climb, true);
+  // Only such a leg carries the mark: never a walk, a train, a taxi, or a ride across town to the foot of a mountain.
+  let marked = 0;
+  for (const scenario of scenarios) {
+    for (const day of auditPlan(scenario.id).plan.days) {
+      const ends = [null, ...day.stops.map((stop) => stop.place), null];
+      [day.fromHotel, ...day.legs, day.toHotel].forEach((leg, index) => {
+        if (!leg?.climb) return;
+        marked += 1;
+        const where = `${scenario.id}: ${leg.mode} ${leg.minutes} min ${leg.fromName} > ${leg.toName}`;
+        assert.deepEqual([leg.mode, leg.rail], ["transit", null], where);
+        assert.ok([ends[index], ends[index + 1]].some((place) => place && hardToReach(place) === "summit"), where);
+        assert.ok(straightKm(leg) <= 2.5, where);
+      });
+    }
+  }
+  assert.ok(marked >= 1, `${marked} legs up or down a hill in the audit`);
+});

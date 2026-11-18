@@ -279,6 +279,7 @@ const text = {
     walk: "徒歩",
     rail: "電車",
     transit: "電車・バス",
+    climb: "山道・ロープウェイなど",
     taxi: "タクシー",
     about: "約",
     minute: "分",
@@ -566,6 +567,7 @@ const text = {
     walk: "Walk",
     rail: "Train",
     transit: "Transit",
+    climb: "Trail or ropeway",
     taxi: "Taxi",
     about: "~",
     minute: " min",
@@ -811,7 +813,7 @@ function LegCard({ leg, locale, heading, depart, times }: { leg: ShioriLeg; loca
   // planned time are handed to a transit search, which has the exact trains,
   // the platform and the fare.
   const timetable = leg.rail && depart && inJapan(leg.from) ? transitSearchUrl(leg.rail.rides[0].from, leg.rail.rides.at(-1)!.to, clockPlus(depart, leg.rail.walkToMinutes)) : null;
-  const label = leg.mode === "walk" ? t.walk : leg.mode === "rail" ? t.rail : leg.mode === "taxi" ? t.taxi : t.transit;
+  const label = leg.mode === "walk" ? t.walk : leg.mode === "rail" ? t.rail : leg.mode === "taxi" ? t.taxi : leg.climb ? t.climb : t.transit;
   const icon = leg.mode === "walk" ? "walk" : leg.mode === "rail" ? "rail" : leg.mode === "taxi" ? "taxi" : "bus";
   // One change of train: the minutes on foot belong to it. With several, the
   // total cannot be split between them, so none is given a number.

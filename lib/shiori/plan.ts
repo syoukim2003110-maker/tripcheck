@@ -131,6 +131,13 @@ export type ShioriLeg = {
   noPath: boolean;
   /** Board / line / change / get off, when the bundled network knows. */
   rail: RailJourney | null;
+  /**
+   * Present (true) on a leg to or from a summit that is near enough to walk
+   * on level ground and whose way up is not known: a path, a ropeway, a
+   * cable car. Its mode is "transit" (an estimate, drawn dashed); no train
+   * or bus is known to run there, and the page does not say one does.
+   */
+  climb?: true;
   /** A maps link that opens this leg with live times. */
   mapsUrl: string;
   /** Points to draw: stations for a train leg, the two ends otherwise. */
@@ -503,6 +510,8 @@ export function hardToReach(place: Pick<ShioriPlace, "kind" | "name">): "island"
   if (/\bislands?\b|\bislet\b|\batoll\b/.test(kind)) return onLand ? null : "island";
   // (広島 and 福島 are cities, and so is anything of two characters ending in 島 as often as not.)
   if ((/^.{2,}島$/.test(name) && !/^(広島|福島|徳島|鹿児島)$/.test(name)) || /\b(island|isle)$/i.test(name)) return onLand ? null : "island";
+  // (嵐山 is a quarter of Kyoto on level ground at the foot of the hill it is named after; the catalogue calls it a mountain.)
+  if (/^(嵐山|arashiyama)$/i.test(name)) return null;
   if (/mountain|volcano|\bsummit\b|\bpeak\b/.test(kind) && !/\bpass\b|\brange\b|artificial|observatory|temple|shrine|castle|museum|resort|village|town|\bpark\b|railway|\bhut\b/.test(kind)) return "summit";
   return null;
 }
@@ -1359,6 +1368,7 @@ function planCore(input: ShioriInput, options: PlanOptions, frames: Frames | nul
       hasPath: Boolean(journey || street || adjacent),
       noPath: !journey && !street && !adjacent && routes.has(streetKey),
       rail: journey,
+      ...(mode === "transit" && !journey && known.tables.noWalk.has(key) && walkAdvised.has(key) ? { climb: true as const } : {}),
       mapsUrl: `https://www.google.com/maps/dir/?api=1&origin=${from.latitude},${from.longitude}&destination=${to.latitude},${to.longitude}&travelmode=${travelMode}`,
       // A routed path starts and ends on the nearest street; the line still
       // has to reach both pins.
