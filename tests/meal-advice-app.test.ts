@@ -583,7 +583,9 @@ test("the screen: one question at a time, a status line that is always there, an
   assert.match(table, /aiSearchFailed: "Could not look for restaurants just now/);
   // The brief is built with the bundled list, so only its sights are named.
   assert.match(source, /const sights = useMemo\(\(\) => mealSights\(cities\), \[cities\]\);/);
-  assert.match(asking, /buildMealBrief\(\{ plan, sights, /);
+  assert.match(asking, /buildMealBrief\(\{ plan: briefPlan, sights, /);
+  // Apple-measured walks and drives never reach the advisor: its plan is rebuilt without them.
+  assert.match(asking, /routesMeasuredByApple\(routes\) \? planWith\(routesWithoutApple\(routes\)\) : plan/);
 });
 
 test("a place found through Apple goes without its name or position even when Apple's name is a bundled sight's", () => {

@@ -16,7 +16,7 @@ import { curateSights, filterDestinations, type PopularDestination, type Popular
 import { loadRailNetwork, loadToeiTimetable } from "../../lib/rail-network-client";
 import type { RailNetwork } from "../../lib/rail-router";
 import { fetchStreetRoute } from "../../lib/street-route-client";
-import { RETIRED_ROUTE_KEYS, ROUTES_KEY, appleEndedLeg, parseStoredRoutes, serializeRoutes } from "../../lib/shiori/route-store";
+import { RETIRED_ROUTE_KEYS, ROUTES_KEY, appleEndedLeg, parseStoredRoutes, routesMeasuredByApple, routesWithoutApple, serializeRoutes } from "../../lib/shiori/route-store";
 import { dayHoldsAppleData, daySnapshotSpec, requestSnapshotUrl } from "../../lib/shiori/print-map";
 import { addAnchor, openCandidate, openLookupHit, placeOfCandidate, putPlace, searchAddCandidates, type AddCandidate } from "../../lib/shiori/add-search";
 import { BulkBudgetError, bulkAfterTripChange, bulkLeftover, bulkProgress, bulkSummary, bundledMatches, chooseBulk, confirmBulk, mergeBulk, requeueBulk, resolveBulk, startBulk, tripChange, type BulkLine, type BulkStatus } from "../../lib/shiori/bulk-add";
@@ -1700,12 +1700,13 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
   // (encodeTrip leaves out what Apple says about its places, so the Place IDs still waiting are part of the key.)
   const planKey = useMemo(() => screen === "plan" ? `${planVisit}|${locale}|${encodeTrip(trip)}|${appleKey}|${appleMap === "failed" ? "no-apple" : "apple"}|${JSON.stringify(wetDays)}` : null, [screen, planVisit, locale, trip, appleKey, appleMap, wetDays]);
   const [planned, setPlanned] = useState<{ key: string; visit: number; plan: ShioriPlan } | null>(null);
+  const planWith = (known: ReadonlyMap<string, ShioriRoute | null>) => buildShioriPlan({ places: usable.places, days: usable.days, hotel: usable.hotel, locale, wetDays, firstDayStart: usable.firstDayStart ?? null, lastDayFinish: usable.lastDayFinish ?? null, packAnyway: usable.packAnyway === true }, { rail, cities, routes: known });
   useEffect(() => {
     // The Apple places being looked up are waited for: a plan made without
     // them and made again a moment later would move every stop twice.
     if (!planKey || appleWaiting) return;
     const handle = window.setTimeout(() => {
-      setPlanned({ key: planKey, visit: planVisit, plan: buildShioriPlan({ places: usable.places, days: usable.days, hotel: usable.hotel, locale, wetDays, firstDayStart: usable.firstDayStart ?? null, lastDayFinish: usable.lastDayFinish ?? null, packAnyway: usable.packAnyway === true }, { rail, cities, routes }) });
+      setPlanned({ key: planKey, visit: planVisit, plan: planWith(routes) });
     }, 0);
     return () => window.clearTimeout(handle);
   }, [planKey, planVisit, usable, appleWaiting, rail, cities, locale, routes, wetDays]);
@@ -1740,7 +1741,10 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
     // that asks is switched off meanwhile), so no answer on its way — already
     // counted by the relay — is thrown away for another row's.
     if (!plan || !adviceOn || adviceRun.current) return;
-    const brief = buildMealBrief({ plan, sights, city: city ? (locale === "ja" ? city.ja : city.en) : null, startDate: startDate ?? null, weatherByIndex: weather?.byIndex ?? null, prefs });
+    // Walks and drives Apple measured are shown on Apple's map only: the
+    // advisor is told the times the booklet would have without them.
+    const briefPlan = routesMeasuredByApple(routes) ? planWith(routesWithoutApple(routes)) : plan;
+    const brief = buildMealBrief({ plan: briefPlan, sights, city: city ? (locale === "ja" ? city.ja : city.en) : null, startDate: startDate ?? null, weatherByIndex: weather?.byIndex ?? null, prefs });
     const keys = slotKeysNow.current;
     const asked = refine ? [from] : Object.keys(keys);
     const previous = refine ? liveMealEntry(adviceEntries, from, keys[from] ?? "") : null;

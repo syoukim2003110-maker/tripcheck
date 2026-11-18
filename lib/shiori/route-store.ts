@@ -87,3 +87,18 @@ export function serializeRoutes(routes: ReadonlyMap<string, ShioriRoute | null>)
   }).slice(-KEEP_ROUTES);
   return JSON.stringify(entries);
 }
+
+/** Whether any walk or drive in hand was measured by Apple. */
+export function routesMeasuredByApple(routes: ReadonlyMap<string, ShioriRoute | null>): boolean {
+  for (const route of routes.values()) if (route?.source === "apple") return true;
+  return false;
+}
+
+/**
+ * The routes without Apple's: what a plan is built from when its times leave
+ * the page for anyone but Apple (the meal advisor). Apple's measurements are
+ * Map Data and are shown only on Apple's map.
+ */
+export function routesWithoutApple(routes: ReadonlyMap<string, ShioriRoute | null>): Map<string, ShioriRoute | null> {
+  return new Map([...routes].filter(([, route]) => route?.source !== "apple"));
+}

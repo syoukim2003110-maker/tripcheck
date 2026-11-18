@@ -99,3 +99,13 @@ test("after an Apple hotel is swapped for another, the paths drawn to the Apple 
   // A hotel kept from before hotels had ids may be Apple's: its legs are not written either.
   assert.ok(keysOf({ name: "Old hotel", lat: 34.3853, lon: 132.4553 }).every(appleEndedLeg));
 });
+
+test("Apple's walks and drives are told apart and left out of what leaves the page", async () => {
+  const { routesMeasuredByApple, routesWithoutApple } = await import("../lib/shiori/route-store.ts");
+  const own = new Map<string, ShioriRoute | null>([["walk|a|b", { minutes: 7, path: [], source: "osm" }], ["walk|b|c", null]]);
+  assert.equal(routesMeasuredByApple(own), false);
+  const mixed = new Map<string, ShioriRoute | null>([...own, ["drive|c|d", { minutes: 12, path: [], source: "apple" }]]);
+  assert.equal(routesMeasuredByApple(mixed), true);
+  const left = routesWithoutApple(mixed);
+  assert.deepEqual([...left.keys()].sort(), ["walk|a|b", "walk|b|c"]);
+});
