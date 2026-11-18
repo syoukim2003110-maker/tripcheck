@@ -1469,9 +1469,9 @@ test("in the trips of the audit as first shown, a palace or a large zoo opens it
   assert.ok(total <= 17_805, `${total} minutes on the way`);
 });
 
-test("the audit's draw is as it was: seven of its trips have a place that is closed or gone by the web check, and plan it as a trip that already had it would", () => {
+test("the audit's draw is as it was: six of its trips have a place that is closed or gone by the web check, and plan it as a trip that already had it would (築地市場's outer market is open)", () => {
   const closed = scenarios.flatMap((scenario) => scenario.sights.filter((sight) => isClosedSight(sight.q)).map((sight) => `${scenario.id} ${sight.ja}`));
-  assert.deepEqual(closed, ["tokyo-2 築地市場", "osaka-2 石山本願寺", "osaka-3 石山本願寺", "hiroshima-3 マリーナホップ", "kobe-3 神戸市立須磨海浜水族園", "paris-2 バスティーユ牢獄", "paris-3 バスティーユ牢獄"]);
+  assert.deepEqual(closed, ["osaka-2 石山本願寺", "osaka-3 石山本願寺", "hiroshima-3 マリーナホップ", "kobe-3 神戸市立須磨海浜水族園", "paris-2 バスティーユ牢獄", "paris-3 バスティーユ牢獄"]);
   // None of them is offered to a traveller any more (tests/sight-notes.test.ts); in the audit they stay on their trips.
   for (const entry of closed) {
     const [id, name] = entry.split(" ");

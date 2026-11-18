@@ -6,7 +6,7 @@
 "Q653433":{"stay":150,"hours":"day"},
 "Q843997":{"stay":480,"hours":"day","access":"booking"},
 "Q287165":{"stay":60,"hours":"day"},
-"Q859471":{"stay":60,"hours":"morning","access":"closed"},
+"Q859471":{"stay":60,"hours":"morning"},
 "Q615183":{"stay":60,"hours":"any","partOf":"Q720644"},
 "Q720644":{"stay":120,"hours":"any"},
 "Q418096":{"stay":120,"hours":"day"},

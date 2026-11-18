@@ -48,9 +48,13 @@ test("a stay is kept only when both drafts are within half again of each other, 
 });
 
 test("what the web found decides the places the drafts call closed or private", () => {
-  // Both drafts: closed; the web: closed (the inner market moved to Toyosu in 2018).
-  assert.equal(sightNote("Q859471")?.access, "closed");
-  assert.ok(isClosedSight("wikidata-Q859471"));
+  // Both drafts: closed; the web: closed (ended operations in 2024).
+  assert.equal(sightNote("Q105438533")?.access, "closed");
+  assert.ok(isClosedSight("wikidata-Q105438533"));
+  // Both drafts and the web: closed — but only the inner market moved to Toyosu; the outer market still trades,
+  // and a reviewer struck the note out: 築地市場 is offered, a place of the morning.
+  assert.deepEqual([isClosedSight("wikidata-Q859471"), sightNote("Q859471")?.hours], [false, "morning"]);
+  assert.ok(OVERRIDES.Q859471.why.includes("場外市場"));
   // Burned in 1580; only a marker stone.
   assert.equal(sightNote("Q1098123")?.access, "gone");
   assert.ok(isClosedSight("Q1098123"));
@@ -63,7 +67,7 @@ test("what the web found decides the places the drafts call closed or private", 
   assert.equal(sightNote("Q61053357")?.access, "closed");
   const counts: Record<string, number> = {};
   for (const note of Object.values(JSON.parse(shipped) as Record<string, { access?: string }>)) if (note.access) counts[note.access] = (counts[note.access] ?? 0) + 1;
-  assert.deepEqual(counts, { booking: 49, closed: 12, gone: 18, exterior: 30, tour: 6 });
+  assert.deepEqual(counts, { booking: 49, closed: 11, gone: 18, exterior: 30, tour: 6 });
   // A place nobody made a note about, or not a bundled sight at all, has none.
   assert.equal(sightNote("osm-node-1"), null);
   assert.equal(sightNote(undefined), null);
@@ -181,26 +185,29 @@ test("a place of the first half of the day is better over by four, and goes firs
 /* ------------------------------------------------------------------ closed */
 
 test("a place closed for good or gone is not offered among a city's sights, and a trip that already has it still opens and plans it", () => {
-  const tokyo = cities.find((city) => city.id === "tokyo")!;
-  assert.ok(tokyo.sights.some((entry) => entry.ja === "築地市場"));
-  assert.equal(curateSights(tokyo.sights).some((entry) => entry.ja === "築地市場"), false);
+  const yokohama = cities.find((city) => city.id === "yokohama")!;
+  const factory = yokohama.sights.find((entry) => entry.q === "Q105438533")!;
+  assert.equal(curateSights(yokohama.sights).some((entry) => entry.q === factory.q), false);
+  // 築地市場's outer market still trades: offered among Tokyo's sights.
+  assert.ok(curateSights(cities.find((city) => city.id === "tokyo")!.sights).some((entry) => entry.ja === "築地市場"));
   let closed = 0;
   for (const city of cities) {
     closed += city.sights.filter((entry) => isClosedSight(entry.q)).length;
     assert.deepEqual(curateSights(city.sights).filter((entry) => isClosedSight(entry.q)), [], city.id);
   }
-  assert.equal(closed, 30);
+  assert.equal(closed, 29);
   // Seen from outside only is still offered: a short stop, not a closed door (正倉院, behind its fence).
   assert.ok(curateSights(cities.find((city) => city.id === "nara")!.sights).some((entry) => entry.ja === "正倉院"));
   // Reopened, by the web check: offered again.
   assert.ok(curateSights(cities.find((city) => city.id === "sapporo")!.sights).some((entry) => entry.q === "Q2420835"));
-  // A saved or shared trip that has the market keeps it, and the booklet plans it as before.
-  const market = placeFromSight(sight("tokyo", "築地市場"), "ja");
-  const trip: ShioriTrip = { ...emptyTrip, cityId: "tokyo", cityName: "東京", days: 1, places: [market, placeFromSight(sight("tokyo", "東京タワー"), "ja")] };
+  // A saved or shared trip that has the closed place keeps it, and the booklet plans it as before.
+  const closedPlace = placeFromSight(factory, "ja");
+  const park = placeFromSight(sight("yokohama", "山下公園"), "ja");
+  const trip: ShioriTrip = { ...emptyTrip, cityId: "yokohama", cityName: "横浜", days: 1, places: [closedPlace, park] };
   const opened = decodeTrip(encodeTrip(trip))!;
-  assert.deepEqual(opened.places.map((place) => place.name), ["築地市場", "東京タワー"]);
+  assert.deepEqual(opened.places.map((place) => place.name), [closedPlace.name, "山下公園"]);
   const plan = buildShioriPlan({ places: opened.places, days: 1, hotel: null, locale: "ja" }, { cities: cities.map((city) => ({ ...city, sights: curateSights(city.sights) })) });
-  assert.deepEqual(plan.days[0].stops.map((stop) => stop.place.name).sort(), ["東京タワー", "築地市場"]);
+  assert.deepEqual(plan.days[0].stops.map((stop) => stop.place.name).sort(), [closedPlace.name, "山下公園"].sort());
   assert.deepEqual(plan.leftOut, []);
   // Nor is it suggested back as an idea for a free day.
   const free = buildShioriPlan({ places: [placeFromSight(sight("tokyo", "東京タワー"), "ja")], days: 3, hotel: null, locale: "ja" }, { cities: cities.map((city) => ({ ...city, sights: curateSights(city.sights) })) });

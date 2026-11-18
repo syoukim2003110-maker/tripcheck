@@ -67,6 +67,7 @@ export const OVERRIDES: Record<string, { set: Partial<Record<keyof SightNote, Si
   Q30926295: { set: { partOf: null }, why: "本光寺 is 3.4 km from 卯辰山山麓寺院群, not one of its temples" },
   Q864752: { set: { partOf: null }, why: "the Hanoi flag tower stands on its own; the military history museum it was part of has moved 9 km away" },
   Q715264: { set: { partOf: null }, why: "Operation Anthropoid is an event, not a part of the cathedral 5.7 km away where it ended" },
+  Q859471: { set: { access: null }, why: "only the inner wholesale market of 築地市場 moved to Toyosu; the outer market (場外市場) still trades and is a usual morning visit" },
 };
 
 const root = new URL("../", import.meta.url);
