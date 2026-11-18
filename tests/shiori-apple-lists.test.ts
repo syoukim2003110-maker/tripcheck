@@ -44,8 +44,18 @@ test("every list of Apple's places is drawn beside that map, with the same numbe
     assert.match(source, /<CandidateMap failed=\{t\.candidateMapFailed\} label=\{t\.candidateMapLabel\} locale=\{locale\} onState=\{set\w*Map\}/, `${name}: no Apple map beside the list`);
     assert.match(source, /className="shiori-hit-no">\{/, `${name}: the list does not carry the pins' numbers`);
   }
-  // A failed map takes Apple's places off the list: by source on the search lists, the whole list elsewhere.
-  assert.match(app, /const withoutApple = <T extends \{ id: string \}>\(list: readonly T\[\]\) => \(listMap === "failed" \? list\.filter\(\(entry\) => placeSource\(entry\.id\) !== "apple"\) : \[\.\.\.list\]\);/);
+  // Apple's places are listed only once the map is drawn: by source on the search lists, the whole list elsewhere.
+  assert.match(app, /const withoutApple = <T extends \{ id: string \}>\(list: readonly T\[\]\) => \(listMap === "ready" \? \[\.\.\.list\] : list\.filter\(\(entry\) => placeSource\(entry\.id\) !== "apple"\)\);/);
+  assert.match(lists["search by name"], /const hitsShown|hitsShown\.map/);
+  assert.match(app, /const hitsShown = withoutApple\(hitsOnMap\);/);
+  for (const name of ["meal", "coffee break"] as const) assert.match(lists[name], /\{listMap !== "ready" \? <p className="shiori-quiet">\{t\.candidateMapLoading\}<\/p> : <>/, name);
+  assert.match(lists.hotels, /\{state === "ready" && listMap === "ready" \? \(\s*<ul className="shiori-hotels/);
+  // A map that never answers is a failed map after a few seconds; a new map is "pending" whatever an earlier one said.
+  const candidate = map.slice(map.indexOf("export function CandidateMap("));
+  assert.match(candidate, /onStateRef\.current\?\.\("pending"\);/);
+  assert.match(candidate, /window\.setTimeout\(\(\) => \{ if \(!shown\) fail\(\); \}, CANDIDATE_MAP_WAIT_MS\)/);
+  // A restaurant with no position is not listed (it would be pinned at 0,0).
+  assert.doesNotMatch(lists.meal, /latitude \?\? 0/);
   assert.match(lists.meal, /shops\.length === 0 && listMap !== "failed"/);
   assert.match(lists["coffee break"], /state === "ready" && listMap !== "failed"/);
   assert.match(lists.hotels, /hotels\.length > 0 && listMap !== "failed" \? "ready" : "failed"/);
@@ -70,7 +80,7 @@ test("Apple's places, and the places where a meal or a break falls, are handed t
 });
 
 test("the strings of the small map exist in both languages", () => {
-  for (const key of ["candidateMapLabel", "candidateMapFailed", "appleMapsLink", "appleLoading", "appleFailed", "appleRetry", "appleGone", "appleGoneRemove", "applePendingChip", "appleFailedChip", "appleChip", "chipMapLabel", "appleMapAside"]) {
+  for (const key of ["candidateMapLabel", "candidateMapFailed", "candidateMapLoading", "appleMapsLink", "appleLoading", "appleFailed", "appleRetry", "appleGone", "appleGoneRemove", "applePendingChip", "appleFailedChip", "appleChip", "chipMapLabel", "appleMapAside"]) {
     assert.equal(app.split("\n").filter((line) => line.startsWith(`    ${key}: `)).length, 2, key);
   }
 });

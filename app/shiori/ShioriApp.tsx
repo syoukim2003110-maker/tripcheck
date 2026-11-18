@@ -420,6 +420,7 @@ const text = {
     appleLoading: "Apple マップで見つけた場所を読み込んでいます…",
     candidateMapLabel: "見つかった場所の地図",
     candidateMapFailed: "地図を表示できないため、Apple マップで見つけた場所は表示していません。",
+    candidateMapLoading: "地図を読み込んでいます…",
     appleMapsLink: "Apple マップ",
     printMapAlt: (dayIndex: number) => `${dayIndex + 1}日目の地図（Apple マップ）`,
     printMapNone: "この日の地図（Apple マップ）を印刷用に用意できませんでした。",
@@ -734,6 +735,7 @@ const text = {
     appleLoading: "Loading the places found on Apple Maps…",
     candidateMapLabel: "Map of the places found",
     candidateMapFailed: "The map could not be shown, so places found on Apple Maps are not listed.",
+    candidateMapLoading: "Loading the map…",
     appleMapsLink: "Apple Maps",
     printMapAlt: (dayIndex: number) => `Map of day ${dayIndex + 1} (Apple Maps)`,
     printMapNone: "The Apple map of this day could not be prepared for printing.",
@@ -1151,8 +1153,10 @@ function MealRow({ meal, locale, onAdd, advice, slot }: { meal: ShioriMeal; loca
         languageCode: locale,
         destination: "auto",
       }, relay);
-      setCandidates(found.slice(0, 5));
-      setState(found.length > 0 ? "ready" : "failed");
+      // A place with no position cannot be pinned on the map it is listed with: it is not listed.
+      const placed = found.filter((candidate) => typeof candidate.latitude === "number" && typeof candidate.longitude === "number").slice(0, 5);
+      setCandidates(placed);
+      setState(placed.length > 0 ? "ready" : "failed");
     } catch {
       setState("failed");
     }
@@ -1197,7 +1201,9 @@ function MealRow({ meal, locale, onAdd, advice, slot }: { meal: ShioriMeal; loca
       ) : null}
       {state === "ready" && shops.length === 0 && listMap !== "failed" ? (
         <div className="shiori-screen-only">
-          <CandidateMap failed={t.candidateMapFailed} label={t.candidateMapLabel} locale={locale} onState={setListMap} points={candidates.map((candidate) => ({ id: candidate.id, name: candidate.name, lat: candidate.latitude ?? 0, lon: candidate.longitude ?? 0 }))} />
+          <CandidateMap failed={t.candidateMapFailed} label={t.candidateMapLabel} locale={locale} onState={setListMap} points={candidates.map((candidate) => ({ id: candidate.id, name: candidate.name, lat: candidate.latitude!, lon: candidate.longitude! }))} />
+          {/* Listed once the map is drawn, not before. */}
+          {listMap !== "ready" ? <p className="shiori-quiet">{t.candidateMapLoading}</p> : <>
           <ul className="shiori-food">
             {candidates.map((candidate, index) => (
               <li key={candidate.id}>
@@ -1209,6 +1215,7 @@ function MealRow({ meal, locale, onAdd, advice, slot }: { meal: ShioriMeal; loca
             ))}
           </ul>
           <p className="shiori-quiet">{t.foodNote}</p>
+          </>}
         </div>
       ) : null}
     </div>
@@ -1255,6 +1262,8 @@ function CafeRow({ cafe, locale, onAdd }: { cafe: CafeBreak; locale: Locale; onA
         <div className="shiori-screen-only">
           {/* The cafés Apple found (and the guide's), with the Apple map they are shown on; the detours are Apple's places' too. */}
           <CandidateMap failed={t.candidateMapFailed} label={t.candidateMapLabel} locale={locale} onState={setListMap} points={picks.map((pick) => ({ id: pick.id, name: pick.name, lat: pick.latitude, lon: pick.longitude }))} />
+          {/* Listed once the map is drawn, not before. */}
+          {listMap !== "ready" ? <p className="shiori-quiet">{t.candidateMapLoading}</p> : <>
           <ul className={`shiori-food${picks.some((pick) => pick.photo) ? " is-shops" : ""}`}>
             {picks.map((pick, index) => (
               <li className="has-action" key={pick.id}>
@@ -1273,6 +1282,7 @@ function CafeRow({ cafe, locale, onAdd }: { cafe: CafeBreak; locale: Locale; onA
           </ul>
           <p className="shiori-quiet">{t.cafeNote}</p>
           {picks.some((pick) => pick.photo) ? <p className="shiori-quiet shiori-credit">【画像提供：ホットペッパー グルメ】 Powered by <a href="http://webservice.recruit.co.jp/">ホットペッパーグルメ Webサービス</a></p> : null}
+          </>}
         </div>
       ) : null}
     </div>
@@ -1323,7 +1333,8 @@ function StayNear({ plan, trip, locale, onHotel }: { plan: ShioriPlan; trip: Shi
       {state === "loading" ? <p className="shiori-quiet shiori-screen-only">{t.stayLoading}</p> : null}
       {state === "failed" ? <p className="shiori-quiet shiori-screen-only">{listMap === "failed" ? t.candidateMapFailed : t.stayNone}</p> : null}
       {state === "ready" ? <CandidateMap failed={t.candidateMapFailed} label={t.candidateMapLabel} locale={locale} onState={setListMap} points={hotels.map((hotel) => ({ id: hotel.id, name: hotel.name, lat: hotel.latitude, lon: hotel.longitude }))} /> : null}
-      {state === "ready" ? (
+      {state === "ready" && listMap !== "ready" ? <p className="shiori-quiet shiori-screen-only">{t.candidateMapLoading}</p> : null}
+      {state === "ready" && listMap === "ready" ? (
         <ul className="shiori-hotels shiori-screen-only">
           {hotels.map((hotel, index) => {
             const using = trip.hotel?.name === hotel.name;
@@ -1448,7 +1459,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
   const [listMap, setListMap] = useState<"pending" | "ready" | "failed">("pending");
   // The same for the small map beside the chosen places' chips on the pick
   // screen (see appleChips), tagged with the screen it was drawn on.
-  const [chipMap, setChipMap] = useState<{ at: string; state: "ready" | "failed" } | null>(null);
+  const [chipMap, setChipMap] = useState<{ at: string; state: "pending" | "ready" | "failed" } | null>(null);
   // The last thing added, said out loud: the plan it changed is far up the page.
   const [added, setAdded] = useState<{ id: string | null; name: string; kind: AddKind; apple?: true } | null>(null);
   // The pasted-list mode of the add form: the text, and, once it is being checked, the review of its lines.
@@ -2239,14 +2250,17 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
   };
   // Apple's search results are listed only beside an Apple map: when the map
   // cannot be shown, only what other sources found is.
-  const withoutApple = <T extends { id: string }>(list: readonly T[]) => (listMap === "failed" ? list.filter((entry) => placeSource(entry.id) !== "apple") : [...list]);
-  const hitsShown = otherHits ? withoutApple(otherHits.candidates) : [];
+  // (What goes on the map: all of them, or, once the map has failed, only what other sources found. What is listed: Apple's only once the map is drawn.)
+  const onListMap = <T extends { id: string }>(list: readonly T[]) => (listMap === "failed" ? list.filter((entry) => placeSource(entry.id) !== "apple") : [...list]);
+  const withoutApple = <T extends { id: string }>(list: readonly T[]) => (listMap === "ready" ? [...list] : list.filter((entry) => placeSource(entry.id) !== "apple"));
+  const hitsOnMap = otherHits ? onListMap(otherHits.candidates) : [];
+  const hitsShown = withoutApple(hitsOnMap);
   // The pasted list's candidates, numbered down the list as their pins are on its map.
   const bulkShown = (bulk?.lines ?? []).flatMap((line) => {
-    if (line.status === "found" || line.status === "choose") return withoutApple(line.candidates).map((candidate) => ({ line: line.key, candidate }));
+    if (line.status === "found" || line.status === "choose") return onListMap(line.candidates).map((candidate) => ({ line: line.key, candidate }));
     if ((line.status === "already" || line.status === "repeat" || line.status === "added") && line.candidates[0] && line.candidates[0].name !== line.text) {
       const shown = line.candidates.find((candidate) => candidate.id === line.chosen) ?? line.candidates[0];
-      return withoutApple([shown]).map((candidate) => ({ line: line.key, candidate }));
+      return onListMap([shown]).map((candidate) => ({ line: line.key, candidate }));
     }
     return [];
   });
@@ -2271,13 +2285,14 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
         <div className="shiori-hits" role="group" aria-label={t.addChoose}>
           <p className="shiori-hits-head"><b>{t.addChoose}</b><button onClick={() => { otherRun.current += 1; setOtherHits(null); }} type="button">{t.addCancel}</button></p>
           {/* What Apple found is shown with the Apple map it belongs to, each hit a numbered pin. */}
-          {hitsShown.length > 0 ? <CandidateMap failed={t.candidateMapFailed} label={t.candidateMapLabel} locale={locale} onState={setListMap} points={hitsShown.map((candidate) => ({ id: candidate.id, name: candidate.name, lat: candidate.lat, lon: candidate.lon }))} /> : null}
-          {hitsShown.length < otherHits.candidates.length ? <p className="shiori-quiet">{t.candidateMapFailed}</p> : null}
+          {hitsOnMap.length > 0 ? <CandidateMap failed={t.candidateMapFailed} label={t.candidateMapLabel} locale={locale} onState={setListMap} points={hitsOnMap.map((candidate) => ({ id: candidate.id, name: candidate.name, lat: candidate.lat, lon: candidate.lon }))} /> : null}
+          {listMap === "failed" && hitsOnMap.length < otherHits.candidates.length ? <p className="shiori-quiet">{t.candidateMapFailed}</p> : null}
+          {listMap === "pending" && hitsShown.length < hitsOnMap.length ? <p className="shiori-quiet">{t.candidateMapLoading}</p> : null}
           <ul>
-            {hitsShown.map((candidate, index) => (
+            {hitsShown.map((candidate) => (
               <li key={candidate.id}>
                 <button onClick={() => putCandidate(candidate, otherHits.kind)} type="button">
-                  <b><i aria-hidden="true" className="shiori-hit-no">{index + 1}</i>{candidate.name}</b>
+                  <b><i aria-hidden="true" className="shiori-hit-no">{hitsOnMap.indexOf(candidate) + 1}</i>{candidate.name}</b>
                   <small>{[candidate.address, city ? t.addKm(candidate.km) : null].filter(Boolean).join(" ・ ")}</small>
                 </button>
               </li>
@@ -2324,7 +2339,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
             {bulk.stopped ? <p className="shiori-warn" role="alert">{t.bulkBudget}</p> : null}
             {bulk.leftOut.length > 0 ? <p className="shiori-warn">{t.bulkLeftOut(bulk.leftOut.length)} {bulk.leftOut.join(locale === "ja" ? "、" : ", ")}</p> : null}
             {bulkShown.length > 0 ? <CandidateMap failed={t.candidateMapFailed} label={t.candidateMapLabel} locale={locale} onState={setListMap} points={bulkShown.map(({ candidate }) => ({ id: candidate.id, name: candidate.name, lat: candidate.lat, lon: candidate.lon }))} /> : null}
-            {listMap === "failed" ? <p className="shiori-quiet">{t.candidateMapFailed}</p> : null}
+            {listMap === "failed" ? <p className="shiori-quiet">{t.candidateMapFailed}</p> : listMap === "pending" && bulkShown.some(({ candidate }) => placeSource(candidate.id) === "apple") ? <p className="shiori-quiet">{t.candidateMapLoading}</p> : null}
             <ol className="shiori-bulk-lines">
               {bulk.lines.map((line) => {
                 const about = (candidate: AddCandidate) => [candidate.address, city ? t.addKm(candidate.km) : null].filter(Boolean).join(" ・ ");
@@ -2367,7 +2382,7 @@ export default function ShioriApp({ locale }: { locale: Locale }) {
                         <button className="shiori-bulk-again" disabled={bulk.busy || !(bulk.edits[line.key] ?? line.query).trim()} onClick={() => retryBulk(line)} type="button">{line.status === "missing" ? t.bulkAgain : t.bulkRetry}</button>
                       </div>
                     ) : null}
-                    {bulkShown.filter((entry) => entry.line === line.key && (line.status === "already" || line.status === "repeat" || line.status === "added")).map(({ candidate }) => <p className="shiori-quiet" key={candidate.id}><i aria-hidden="true" className="shiori-hit-no">{bulkNumber(line.key, candidate.id)}</i>{candidate.name}</p>)}
+                    {withoutApple(bulkShown.filter((entry) => entry.line === line.key && (line.status === "already" || line.status === "repeat" || line.status === "added")).map(({ candidate }) => candidate)).map((candidate) => <p className="shiori-quiet" key={candidate.id}><i aria-hidden="true" className="shiori-hit-no">{bulkNumber(line.key, candidate.id)}</i>{candidate.name}</p>)}
                   </li>
                 );
               })}

@@ -537,6 +537,9 @@ export default function ShioriMap({ days, selectedDay, hotel, focus, onSelectSto
   );
 }
 
+/** How long a list waits for its small map before saying it cannot be shown. */
+const CANDIDATE_MAP_WAIT_MS = 8_000;
+
 /** A place in a list of search results, as its numbered pin on the small map beside the list. */
 export type CandidatePoint = { id: string; name: string; lat: number; lon: number };
 
@@ -545,15 +548,17 @@ export type CandidatePoint = { id: string; name: string; lat: number; lon: numbe
  * search by name, a pasted list, a meal, a coffee break, a hotel): Apple's
  * terms let what Apple says about places be shown only with the Apple map
  * it belongs to. Each place is a numbered pin; the list beside it carries
- * the same numbers. `onState` hears whether the map could be shown — a list
- * of Apple's places is not shown without it.
+ * the same numbers. `onState` hears whether the map is shown — a list of
+ * Apple's places is shown only once it is: "pending" when it starts,
+ * "ready" once it is drawn, "failed" when it cannot be (or has not been
+ * drawn within a few seconds; it may still turn "ready" after that).
  */
 export function CandidateMap({ points, locale, label, failed: failedText, onState }: {
   points: readonly CandidatePoint[];
   locale: "ja" | "en";
   label: string;
   failed: string;
-  onState?: (state: "ready" | "failed") => void;
+  onState?: (state: "pending" | "ready" | "failed") => void;
 }) {
   const container = useRef<HTMLDivElement | null>(null);
   const map = useRef<MapKitMap | null>(null);
@@ -566,12 +571,17 @@ export function CandidateMap({ points, locale, label, failed: failedText, onStat
     let cancelled = false;
     let instance: MapKitMap | null = null;
     let stopListening = () => {};
+    let shown = false;
     const fail = () => {
       if (cancelled) return;
       setFailed(true);
       onStateRef.current?.("failed");
     };
+    // A new map is not yet shown, whatever an earlier one said.
+    onStateRef.current?.("pending");
     if (!appleRelayUrl()) { fail(); return; }
+    // A script or token that never answers must not leave the list waiting with an empty frame.
+    const wait = window.setTimeout(() => { if (!shown) fail(); }, CANDIDATE_MAP_WAIT_MS);
     void mapToken().then(() => loadMapKit(locale)).then((mapkit) => {
       if (cancelled || !container.current) return;
       library.current = mapkit;
@@ -591,12 +601,13 @@ export function CandidateMap({ points, locale, label, failed: failedText, onStat
       const firstFrame = new Promise<void>((resolve) => window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve())));
       stopListening = onMapKitState((state) => {
         if (cancelled) return;
-        if (state === "ready") void firstFrame.then(() => { if (!cancelled) { setFailed(false); setReady(true); onStateRef.current?.("ready"); } });
+        if (state === "ready") void firstFrame.then(() => { if (!cancelled) { shown = true; window.clearTimeout(wait); setFailed(false); setReady(true); onStateRef.current?.("ready"); } });
         if (state === "failed") fail();
       });
     }).catch(fail);
     return () => {
       cancelled = true;
+      window.clearTimeout(wait);
       stopListening();
       instance?.destroy();
       map.current = null;
